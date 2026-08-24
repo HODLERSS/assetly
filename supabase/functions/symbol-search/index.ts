@@ -120,7 +120,17 @@ async function yahooChart(yahoo: string): Promise<ChartData | null> {
   };
 }
 
+// Browser-called (supabase-js functions.invoke): preflight + CORS on every response.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -134,10 +144,10 @@ Deno.serve(async (req) => {
   if (body.ensure) {
     const e = body.ensure as CatalogRow;
     if (!e.symbol || !e.yahoo || !e.name) {
-      return Response.json({ ok: false, error: "ensure needs symbol, yahoo, name" }, { status: 400 });
+      return json({ ok: false, error: "ensure needs symbol, yahoo, name" }, 400);
     }
     const chart: ChartData | null = fixture ? (body.chart ?? null) : await yahooChart(e.yahoo);
-    if (!chart) return Response.json({ ok: false, error: `Could not verify ${e.symbol} with the market data source` }, { status: 422 });
+    if (!chart) return json({ ok: false, error: `Could not verify ${e.symbol} with the market data source` }, 422);
     const currency = chart.currency === "KRW" ? "KRW" : "USD";
     const row = {
       symbol: e.symbol, name: e.name.slice(0, 200),
@@ -146,14 +156,14 @@ Deno.serve(async (req) => {
       yahoo: e.yahoo, active: true,
     };
     const { error: sErr } = await admin.from("symbols").upsert(row, { onConflict: "symbol" });
-    if (sErr) return Response.json({ ok: false, error: sErr.message }, { status: 500 });
+    if (sErr) return json({ ok: false, error: sErr.message }, 500);
     const prev = chart.prev_close;
     const { error: pErr } = await admin.from("prices").upsert({
       symbol: row.symbol, price: chart.price, prev_close: prev,
       change_pct: prev ? ((chart.price / prev) - 1) * 100 : null,
       currency, market_state: chart.market_state, as_of: chart.as_of, source: "yahoo-v8-chart",
     }, { onConflict: "symbol" });
-    if (pErr) return Response.json({ ok: false, error: pErr.message }, { status: 500 });
+    if (pErr) return json({ ok: false, error: pErr.message }, 500);
     // Dedupe by ts (a day's first 15m bar shares its timestamp with the daily bar —
     // duplicate keys in one statement make Postgres reject the whole upsert).
     const byTs = new Map<string, number>();
@@ -161,15 +171,15 @@ Deno.serve(async (req) => {
     const hist = [...byTs.entries()].map(([ts, price]) => ({ symbol: row.symbol, ts, price }));
     if (hist.length) {
       const { error: hErr } = await admin.from("price_history").upsert(hist, { onConflict: "symbol,ts" });
-      if (hErr) return Response.json({ ok: false, error: hErr.message }, { status: 500 });
+      if (hErr) return json({ ok: false, error: hErr.message }, 500);
     }
-    return Response.json({ ok: true, symbol: row, price: chart.price, history: hist.length });
+    return json({ ok: true, symbol: row, price: chart.price, history: hist.length });
   }
 
   // ---- search ----
-  if (!q) return Response.json({ ok: true, results: [] });
+  if (!q) return json({ ok: true, results: [] });
   const results = fixture
     ? (body.results ?? []).map((r: Record<string, unknown>) => mapQuote(r)).filter(Boolean)
     : await yahooSearch(q);
-  return Response.json({ ok: true, results });
+  return json({ ok: true, results });
 });
