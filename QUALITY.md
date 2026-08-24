@@ -51,7 +51,8 @@ production project; **Judged** = scored against the stated criterion.
 
 ## Honest limits
 - No physical iPhone / Xcode simulator on this Mac: "iPhone" runs use Playwright's iPhone 14
-  device profile (Chromium; WebKit run attempted — see RUNBOOK). Install on your phone via Safari.
+  device profile on Chromium; the WebKit (Safari-engine) bundle failed to download three times tonight, so
+  the Safari run is pending — install on your phone via Safari and it is the real test.
 - GitHub/Google live round-trips need the two OAuth app registrations (MORNING.md); everything
   downstream of the provider handshake is exercised by the fixture-user flows.
 - Judged sub-points on metrics 15/21/22/27 are why they sit at 98, not 100.
