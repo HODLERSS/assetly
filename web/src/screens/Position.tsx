@@ -8,14 +8,20 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
   onChanged: () => Promise<void> | void; onRemoved: () => Promise<void> | void; onBack: () => void;
 }) {
   const [lots, setLots] = useState<Lot[]>([]);
+  const [lotsLoaded, setLotsLoaded] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState<Lot | null>(null);
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (row) api.getLots(row.holding_id).then(setLots).catch(() => setLots([]));
-  }, [api, row]);
+    let live = true;
+    setLotsLoaded(false);
+    if (row) api.getLots(row.holding_id)
+      .then((l) => { if (live) { setLots(l); setLotsLoaded(true); } })
+      .catch(() => { if (live) { setLots([]); setLotsLoaded(true); } });
+    return () => { live = false; };
+  }, [api, row?.holding_id]);
 
   if (!row) return <p className="empty">Position not found. <button className="chip" onClick={onBack}>Back</button></p>;
 
@@ -51,12 +57,13 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
             <span className="sub">{l.acquired_on ?? "no date"}</span>
           </button>
         ))}
-        {lots.length === 0 && <p className="empty">No lots yet.</p>}
+        {lotsLoaded && lots.length === 0 && <p className="empty">No lots yet.</p>}
+        {!lotsLoaded && <p className="empty" aria-busy="true">&nbsp;</p>}
       </div>
       <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 0 16px" }}>The average is derived from lots — never typed.</p>
 
       {err && <div className="error-note" role="alert">{err}</div>}
-      <button className="btn danger" onClick={() => setConfirming(true)}>Remove position</button>
+      <button className="btn danger" style={{ marginBottom: 20 }} onClick={() => setConfirming(true)}>Remove position</button>
 
       {confirming && (
         <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Confirm removal">

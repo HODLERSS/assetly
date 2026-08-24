@@ -165,6 +165,20 @@ describe("U4 edit lots", () => {
   });
 });
 
+describe("U4b lots loading", () => {
+  it("never shows 'No lots yet' before the lots query resolves", async () => {
+    let resolve!: (v: unknown) => void;
+    const api = stubApi({ getLots: vi.fn().mockReturnValue(new Promise((r) => { resolve = r; })) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click((await screen.findAllByRole("button", { name: /RDDT/ }))[0]);
+    await screen.findByRole("heading", { name: /^lots$/i });
+    expect(screen.queryByText(/no lots yet/i)).toBeNull();
+    resolve([]);
+    await screen.findByText(/no lots yet/i);
+  });
+});
+
 describe("U5 remove with confirmation", () => {
   it("cancel keeps the position; confirm removes it", async () => {
     const api = stubApi();
