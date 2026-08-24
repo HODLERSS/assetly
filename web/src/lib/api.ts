@@ -59,7 +59,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (hErr) throw hErr;
       const { error: lErr } = await sb.from("lots")
         .insert({ holding_id: h.id, qty, cost_per_share, acquired_on: acquired_on ?? null });
-      if (lErr) throw lErr;
+      if (lErr) {
+        // never leave an empty holding behind when the lot is rejected (qty<=0, cost<0)
+        const { count } = await sb.from("lots").select("id", { count: "exact", head: true }).eq("holding_id", h.id);
+        if (!count) await sb.from("holdings").delete().eq("id", h.id);
+        throw lErr;
+      }
       return h.id as string;
     },
     async getLots(holding_id: string): Promise<Lot[]> {

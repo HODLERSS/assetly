@@ -113,6 +113,7 @@ describe("T10 constraints", () => {
   it("rejects non-positive qty and duplicate holdings resolve to one", async () => {
     const a = makeApi(alice);
     await expect(a.addPosition("AMD", -5, 100)).rejects.toBeTruthy();
+    expect((await a.getPortfolio()).find((x) => x.symbol === "AMD")).toBeUndefined();   // no orphan holding
     const h1 = await a.addPosition("AMD", 1, 100);
     const h2 = await a.addPosition("AMD", 2, 110);   // upsert on (user,symbol) → same holding
     expect(h1).toBe(h2);

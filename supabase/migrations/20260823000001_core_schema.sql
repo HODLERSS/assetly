@@ -150,3 +150,6 @@ insert into public.symbols (symbol, name, exchange, currency, kind, yahoo) value
  ('ETH','Ethereum','CRYPTO','USD','crypto','ETH-USD'),
  ('FXAIX','Fidelity 500 Index','MUTF','USD','fund','FXAIX'),
  ('QQQM','Invesco Nasdaq 100','NASDAQ','USD','etf','QQQM');
+
+-- prices.updated_at advances on every pipeline upsert (not only on insert)
+create trigger touch_prices before update on public.prices for each row execute function public.touch_updated_at();
