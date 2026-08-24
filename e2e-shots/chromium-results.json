@@ -21,7 +21,11 @@
  ],
  [
   "FAIL",
-  "position detail + add lot → derived average — derived average $14.45 not shown"
+  "news tab lists cloud-pipeline stories — locator.waitFor: Timeout 15000ms exceeded."
+ ],
+ [
+  "PASS",
+  "position detail + add lot → derived average"
  ],
  [
   "PASS",
@@ -33,7 +37,7 @@
  ],
  [
   "PASS",
-  "news tab lists cloud-pipeline stories"
+  "news empty state once nothing is held"
  ],
  [
   "PASS",

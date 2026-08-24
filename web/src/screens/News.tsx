@@ -12,13 +12,12 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
     let live = true;
     setState("loading");
     const held = rows.map((r) => r.symbol);
-    api.getNews(filter ?? undefined)
+    // "All holdings" = stories for the symbols you hold (scoped in the query), one row per story
+    api.getNews(filter ?? held)
       .then((n) => {
         if (!live) return;
-        // "All holdings" = stories for symbols you hold, one row per story even if it tags several
-        const scoped = filter ? n : n.filter((x) => held.includes(x.symbol));
         const seen = new Set<string>();
-        setItems(scoped.filter((x) => (seen.has(x.url) ? false : (seen.add(x.url), true))));
+        setItems(n.filter((x) => (seen.has(x.url) ? false : (seen.add(x.url), true))));
         setState("ok");
       })
       .catch(() => { if (live) setState("error"); });

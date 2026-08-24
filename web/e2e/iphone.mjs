@@ -63,6 +63,12 @@ await step("home shows net worth from live cloud price", async () => {
   if (!/^\$[\d,]+/.test(t)) throw new Error("net worth not rendered: " + t);
   await shot("06-home-priced");
 });
+await step("news tab lists cloud-pipeline stories", async () => {
+  await page.getByRole("button", { name: /^news$/i }).tap();
+  await page.getByRole("button", { name: /^MARA$/ }).waitFor();   // per-holding chip
+  await page.locator("a.row").first().waitFor({ timeout: 15000 });
+  await shot("12-news");
+});
 await step("position detail + add lot → derived average", async () => {
   await page.getByRole("button", { name: /^holdings$/i }).tap();
   await page.getByRole("button", { name: /MARA Holdings/i }).tap();
@@ -96,10 +102,10 @@ await step("remove: cancel keeps, confirm removes", async () => {
   await page.getByText(/nothing in this filter|no runners/i).waitFor({ timeout: 15000 });
   await shot("11-after-remove");
 });
-await step("news tab lists cloud-pipeline stories", async () => {
+await step("news empty state once nothing is held", async () => {
   await page.getByRole("button", { name: /^news$/i }).tap();
-  await page.locator("a.row").first().waitFor({ timeout: 15000 });
-  await shot("12-news");
+  await page.getByText(/add a position and its news follows/i).waitFor({ timeout: 15000 });
+  await shot("12b-news-empty");
 });
 await step("settings + sign out returns to auth", async () => {
   await page.getByRole("button", { name: /^settings$/i }).tap();

@@ -89,10 +89,11 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { error } = await sb.from("holdings").delete().eq("id", holding_id);
       if (error) throw error;
     },
-    async getNews(symbol?: string): Promise<NewsItem[]> {
+    async getNews(scope?: string | string[]): Promise<NewsItem[]> {
       let q = sb.from("news").select("id,symbol,title,url,source,published_at")
         .order("published_at", { ascending: false, nullsFirst: false }).limit(50);
-      if (symbol) q = q.eq("symbol", symbol);
+      if (typeof scope === "string") q = q.eq("symbol", scope);
+      else if (Array.isArray(scope)) { if (scope.length === 0) return []; q = q.in("symbol", scope); }
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as NewsItem[];

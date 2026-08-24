@@ -193,7 +193,7 @@ describe("U7 news", () => {
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
     await screen.findByText(/reddit posts strong quarter/i);
-    expect(screen.queryByText(/nvidia story/i)).toBeNull();
+    expect(api.getNews).toHaveBeenCalledWith(["RDDT"]);          // scoped in the query, not after
     expect(screen.getAllByText(/reddit posts strong quarter/i).length).toBe(1);
   });
   it("lists stories and filters by holding chip", async () => {
