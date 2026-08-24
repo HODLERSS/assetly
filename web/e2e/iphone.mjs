@@ -55,6 +55,8 @@ await step("add first position (MARA 100 @ 15.67)", async () => {
   await shot("04-add-form");
   await page.getByRole("button", { name: /^add position$/i }).tap();
   await page.getByText(/100 sh/).waitFor({ timeout: 15000 });
+  const col = await page.locator(".row .sub.gain, .row .sub.loss").first().evaluate((el) => getComputedStyle(el).color);
+  if (!/rgb\((30, 112, 72|180, 55, 42)\)/.test(col)) throw new Error("gain/loss color lost in cascade: " + col);
   await shot("05-holdings");
 });
 await step("home shows net worth from live cloud price", async () => {

@@ -48,8 +48,8 @@ input, select { font: inherit; }
 .card { background: var(--as-surface); border: 1px solid var(--as-rule); border-radius: var(--as-radius); }
 .net { font: 600 38px/1.1 var(--as-font-num); font-feature-settings: "tnum"; letter-spacing: -0.01em; }
 .day { font: 500 15px var(--as-font-num); }
-.gain { color: var(--as-gain); }
-.loss { color: var(--as-loss); }
+.gain, .row .sub.gain, .row .gain { color: var(--as-gain); }
+.loss, .row .sub.loss, .row .loss { color: var(--as-loss); }
 .mutedc { color: var(--as-muted); }
 
 .row { display: flex; justify-content: space-between; align-items: center; gap: 10px;

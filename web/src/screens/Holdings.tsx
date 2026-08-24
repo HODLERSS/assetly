@@ -18,7 +18,7 @@ export function Holdings({ rows, onOpen, onAdd }: {
       <div className="chips" role="group" aria-label="Filter by type">
         {kinds.map((k) => (
           <button key={k} className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>
-            {k === "all" ? "All" : k}
+            {k === "all" ? "All" : k === "etf" ? "ETF" : k.charAt(0).toUpperCase() + k.slice(1)}
           </button>
         ))}
       </div>

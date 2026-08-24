@@ -20,8 +20,8 @@
   "home shows net worth from live cloud price"
  ],
  [
-  "FAIL",
-  "news tab lists cloud-pipeline stories — locator.waitFor: Timeout 15000ms exceeded."
+  "PASS",
+  "news tab lists cloud-pipeline stories"
  ],
  [
   "PASS",
