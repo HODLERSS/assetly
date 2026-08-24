@@ -49,7 +49,21 @@ export function mapQuote(q: Record<string, unknown>): CatalogRow | null {
   };
 }
 
-async function yahooSearch(q: string): Promise<CatalogRow[]> {
+// Yahoo's search API rejects Hangul queries ("Invalid Search Query"), so common Korean
+// names are rewritten to their English search terms. English-first product; KR listings
+// stay fully searchable either way.
+const KR_ALIAS: [RegExp, string][] = [
+  [/삼성/, "Samsung"], [/하이닉스|에스케이/, "hynix"], [/현대/, "Hyundai"], [/기아/, "Kia"],
+  [/네이버/, "NAVER"], [/카카오/, "Kakao"], [/엘지|LG에너지/, "LG"], [/포스코/, "POSCO"],
+  [/셀트리온/, "Celltrion"], [/두산/, "Doosan"], [/한화/, "Hanwha"], [/롯데/, "Lotte"],
+];
+
+async function yahooSearch(qRaw: string): Promise<CatalogRow[]> {
+  let q = qRaw;
+  if (/[가-힣]/.test(q)) {
+    const hit = KR_ALIAS.find(([re]) => re.test(q));
+    if (hit) q = hit[1]; else return [];              // unmapped Hangul: Yahoo would 400
+  }
   const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=20&newsCount=0`;
   const r = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
   if (!r.ok) return [];
