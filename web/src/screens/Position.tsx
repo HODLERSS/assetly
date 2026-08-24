@@ -58,7 +58,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
           </button>
         ))}
         {lotsLoaded && lots.length === 0 && <p className="empty">No lots yet.</p>}
-        {!lotsLoaded && <p className="empty" aria-busy="true">&nbsp;</p>}
+        {!lotsLoaded && <div className="row" aria-busy="true" aria-label="Loading lots"><span className="sub">Loading lots…</span></div>}
       </div>
       <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 0 16px" }}>The average is derived from lots — never typed.</p>
 
