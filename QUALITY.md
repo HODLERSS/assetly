@@ -48,6 +48,11 @@ production project; **Judged** = scored against the stated criterion.
 7. **News limit applied before scoping** so busy catalog symbols crowded out the user's own
    (found by the iPhone e2e) → scope in the query.
 8. iPhone e2e race on derived-average assertion → wait-for.
+9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
+   Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10. (8/24) Universal coverage shipped: any US (NYSE/NASDAQ/AMEX/OTC) or KRX listing is
+   searchable and becomes a tracked symbol on first add (live price + 3mo history backfill,
+   then the 1-min cron). Verified: local 32/32, cloud 13/13, iPhone e2e 16/16.
 
 ## Honest limits
 - No physical iPhone / Xcode simulator on this Mac: "iPhone" runs use Playwright's iPhone 14

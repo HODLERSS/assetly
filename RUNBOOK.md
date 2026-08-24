@@ -3,7 +3,8 @@
 ## Production (LIVE)
 - App: **https://hodlerss.github.io/assetly/** (GitHub Pages, repo HODLERSS/assetly, branch gh-pages)
 - Supabase: project `assetly` in org Thunder Route, ref `hhdpthrfmsdmxdrfckxq` — schema, RLS, grants,
-  edge functions `price-sync` + `news-sync`, pg_cron (1-min prices / 15-min news via vault
+  edge functions `price-sync` + `news-sync` + `symbol-search` (universal US+KR ticker search
+  and on-demand register: live price + ~3mo daily history at add time), pg_cron (1-min prices / 15-min news via vault
   `project_url` + `edge_bearer` = publishable key), auth URL config. Deploy new code:
   `cd web && VITE_BASE=/assetly/ npm run build` → copy `dist/` to the gh-pages branch (see git log).
 - Morning items: `MORNING.md`. Verify anytime: `bash scripts/verify-oauth.sh`.
@@ -47,7 +48,9 @@ Manual pipeline laps: `curl -X POST http://127.0.0.1:54321/functions/v1/price-sy
 
 ## Where things live
 - `supabase/migrations/` — schema, RLS, grants, cron (idempotent; `db reset` replays clean)
-- `supabase/functions/price-sync|news-sync` — the two cloud pipelines (fixture mode for tests)
+- `supabase/functions/price-sync|news-sync|symbol-search` — the cloud pipelines (fixture modes for tests);
+  price-sync tracks held + recently-added symbols, news-sync tracks held only, symbol-search
+  proxies Yahoo search (any US listing incl. OTC, KRX .KS/.KQ, major crypto; Hangul aliases)
 - `web/src/lib/api.ts` — the entire data layer; screens never touch the client directly
 - `web/src/test/` — integration battery (real stack) + UI battery (stubbed)
 - `design/` — the synced canvas + the gap screens pushed back to Claude Design

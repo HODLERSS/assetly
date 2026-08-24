@@ -22,7 +22,7 @@ Registered through your browser with your approval; you pasted the two secrets.
 - Re-verify anytime: `bash app/scripts/verify-oauth.sh`.
 
 ## What's running in your Supabase (project `assetly`, org Thunder Route, ref hhdpthrfmsdmxdrfckxq)
-- Schema, RLS, grants, seed catalog (17 symbols) — verified via SQL
+- Schema, RLS, grants, catalog: seeds + ANY US/KR listing on demand via symbol-search — verified via SQL
 - Edge functions `price-sync`, `news-sync` — deployed, live-tested
 - pg_cron: prices every minute, news every 15 — proven in `cron.job_run_details`
 - Auth: email (passwordless links) + GitHub + Google OAuth, all enabled and round-trip tested
