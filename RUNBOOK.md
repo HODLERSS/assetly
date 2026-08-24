@@ -9,7 +9,8 @@
   `cd web && VITE_BASE=/assetly/ npm run build` → copy `dist/` to the gh-pages branch (see git log).
 - Morning items: `MORNING.md`. Verify anytime: `bash scripts/verify-oauth.sh`.
 - Cloud tests: `ASSETLY_CLOUD=1 npx vitest run src/test/cloud.test.ts` · iPhone e2e:
-  `node e2e/iphone.mjs` (`PW_ENGINE=webkit` for the Safari engine) → screenshots in `e2e-shots/`.
+  `node e2e/iphone.mjs` (`PW_ENGINE=webkit` for the Safari engine) · 10-stock scenario e2e:
+  `node e2e/scenario.mjs` (add/edit/remove/charts) → screenshots in `e2e-shots/`.
 
 
 ## Run everything locally (works today, no accounts needed)

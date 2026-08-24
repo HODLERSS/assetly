@@ -31,7 +31,7 @@ const shot = (n) => page.screenshot({ path: `${OUT}scenario-${n}.png` });
 const addViaUi = async (query, pickRe, qty, cost, first = false) => {
   if (first) await page.getByRole("button", { name: /add your first position/i }).tap();
   else { await page.getByRole("button", { name: /^holdings$/i }).tap();
-         await page.getByRole("button", { name: /\+ add/i }).tap(); }
+         await page.getByRole("button", { name: /^add position$/i }).tap(); }
   await page.getByLabel(/ticker or name/i).fill(query);
   await page.getByRole("button", { name: pickRe }).first().tap({ timeout: 25000 });
   await page.getByLabel(/^shares$/i).waitFor({ timeout: 30000 });
@@ -115,12 +115,24 @@ await step("edit: add + edit a lot on AAPL, derived average moves", async () => 
   await shot("06-aapl-lots");
 });
 
+const toHoldingsList = async () => {
+  // Land on the holdings LIST deterministically, wherever we are.
+  const addChip = page.getByRole("button", { name: /^add position$/i });
+  if (!(await addChip.isVisible().catch(() => false))) {
+    const back = page.getByRole("button", { name: /holdings/i }).first();
+    await back.tap();
+  }
+  await addChip.waitFor({ timeout: 15000 });
+};
+
 await step("remove 2 of 10 (MSTR, QQQM) — the other 8 stay", async () => {
   for (const re of [/^MSTR/, /Invesco/i]) {
-    await page.getByRole("button", { name: /holdings/i }).first().tap();
-    await page.getByRole("button", { name: re }).first().tap();
-    await page.getByRole("button", { name: /remove position/i }).tap();
-    await page.getByRole("dialog").getByRole("button", { name: /remove position/i }).tap();
+    await toHoldingsList();
+    await page.getByRole("button", { name: re }).first().tap({ timeout: 15000 });
+    await page.getByRole("button", { name: /remove position/i }).tap({ timeout: 15000 });
+    await page.getByRole("dialog").getByRole("button", { name: /remove position/i }).tap({ timeout: 15000 });
+    await page.waitForTimeout(1500);                           // let the post-remove refresh land
+    await toHoldingsList();                                    // app returns to the list after removal
     await page.getByRole("button", { name: re }).waitFor({ state: "detached", timeout: 15000 });
   }
   const rows = await page.locator(".card button.row").count();

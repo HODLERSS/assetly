@@ -50,6 +50,13 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10a. (8/24 pm) Price charts shipped: Position screen 1D/1W/1M/3M SVG chart backed by
+   price_history (ensure backfills ~3mo daily + 5d of 15m bars; nightly prune keeps ticks
+   7 days then last-per-day). Scenario e2e (10 stocks: add/edit/remove/charts) 11/11.
+   Bugs the loop caught: symbol-search had NO CORS headers (browser universal-search was
+   broken; masked earlier by a pre-seeded catalog); duplicate (symbol,ts) keys in one
+   upsert silently voided the whole history write; a Holdings selector matched aria-label
+   not text; post-remove navigation races the refresh.
 10. (8/24) Universal coverage shipped: any US (NYSE/NASDAQ/AMEX/OTC) or KRX listing is
    searchable and becomes a tracked symbol on first add (live price + 3mo history backfill,
    then the 1-min cron). Verified: local 32/32, cloud 13/13, iPhone e2e 16/16.
