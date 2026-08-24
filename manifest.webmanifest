@@ -1,0 +1,10 @@
+{
+  "name": "Assetly",
+  "short_name": "Assetly",
+  "description": "Your positions, priced every minute.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F4F5F7",
+  "theme_color": "#2A3F92",
+  "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
