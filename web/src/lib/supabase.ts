@@ -15,7 +15,7 @@ export type OAuthProvider = "github" | "google";
 export function signInWithOAuth(provider: OAuthProvider) {
   return supabase.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: window.location.origin },
+    options: { redirectTo: window.location.origin + window.location.pathname },
   });
 }
 

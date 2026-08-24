@@ -37,7 +37,7 @@ export function AuthScreen() {
           Link sent to <b>{email.trim()}</b>. Open it on this device to sign in.
         </p>
       ) : (
-        <form onSubmit={(ev) => { ev.preventDefault(); sendLink(); }}>
+        <form noValidate onSubmit={(ev) => { ev.preventDefault(); sendLink(); }}>
           <div className="field" style={{ marginBottom: 8 }}>
             <label htmlFor="auth-email">Email — we send a sign-in link</label>
             <input id="auth-email" type="email" inputMode="email" autoComplete="email" value={email}
