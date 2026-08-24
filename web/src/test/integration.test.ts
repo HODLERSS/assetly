@@ -229,3 +229,25 @@ describe("Universal symbol search + on-demand tracking", () => {
     expect(data!.currency).toBe("KRW");
   }, 45000);
 });
+
+describe("Price history API (chart backend)", () => {
+  it("getHistory returns range-filtered ascending points incl. backfill", async () => {
+    const a = makeApi(alice);
+    // TESTX was ensured above with 2 daily closes + live tick (fixture)
+    const all = await a.getHistory("TESTX", 24 * 30);
+    expect(all.length).toBeGreaterThanOrEqual(3);
+    for (let i = 1; i < all.length; i++) expect(all[i].ts >= all[i - 1].ts).toBe(true);
+    const day = await a.getHistory("TESTX", 24);
+    expect(day.length).toBeLessThan(all.length);          // window actually filters
+    expect(all.every((p) => p.price > 0)).toBe(true);
+  });
+  it("intraday backfill: a live-ensured symbol has 1W-density points", async () => {
+    const r = await fetch(`${URL_}/functions/v1/symbol-search`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` },
+      body: JSON.stringify({ ensure: { symbol: "005930.KS", name: "Samsung Electronics", exchange: "KRX", currency: "KRW", kind: "equity", yahoo: "005930.KS" } }),
+    });
+    expect((await r.json()).ok).toBe(true);
+    const wk = await makeApi(alice).getHistory("005930.KS", 24 * 7);
+    expect(wk.length).toBeGreaterThan(20);                // 15m bars, not just daily closes
+  }, 45000);
+});

@@ -81,21 +81,35 @@ type ChartData = {
   as_of: string; history: { ts: string; price: number }[];
 };
 
-async function yahooChart(yahoo: string): Promise<ChartData | null> {
-  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahoo)}?range=3mo&interval=1d`;
+function chartPoints(res: Record<string, any>): { ts: string; price: number }[] {
+  const stamps: number[] = res?.timestamp ?? [];
+  const closes: (number | null)[] = res?.indicators?.quote?.[0]?.close ?? [];
+  const out: { ts: string; price: number }[] = [];
+  for (let i = 0; i < stamps.length; i++) {
+    const c = closes[i];
+    if (c && c > 0) out.push({ ts: new Date(stamps[i] * 1000).toISOString(), price: c });
+  }
+  return out;
+}
+
+async function fetchChart(yahoo: string, range: string, interval: string): Promise<Record<string, any> | null> {
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahoo)}?range=${range}&interval=${interval}`;
   const r = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
   if (!r.ok) return null;
   const body = await r.json().catch(() => null);
-  const res = body?.chart?.result?.[0];
+  return body?.chart?.result?.[0] ?? null;
+}
+
+async function yahooChart(yahoo: string): Promise<ChartData | null> {
+  // Daily closes for 1M/3M ranges + 15-minute bars for 1D/1W — both backfilled at
+  // register time so the chart is meaningful the moment a ticker is added.
+  const res = await fetchChart(yahoo, "3mo", "1d");
   const meta = res?.meta;
   if (!meta || !(meta.regularMarketPrice > 0)) return null;
-  const stamps: number[] = res?.timestamp ?? [];
-  const closes: (number | null)[] = res?.indicators?.quote?.[0]?.close ?? [];
-  const history: { ts: string; price: number }[] = [];
-  for (let i = 0; i < stamps.length; i++) {
-    const c = closes[i];
-    if (c && c > 0) history.push({ ts: new Date(stamps[i] * 1000).toISOString(), price: c });
-  }
+  const history = chartPoints(res!);
+  const intra = await fetchChart(yahoo, "5d", "15m");
+  if (intra) history.push(...chartPoints(intra));
+  history.sort((a, b) => a.ts.localeCompare(b.ts));
   return {
     price: meta.regularMarketPrice,
     prev_close: meta.chartPreviousClose ?? meta.previousClose ?? null,
@@ -140,9 +154,15 @@ Deno.serve(async (req) => {
       currency, market_state: chart.market_state, as_of: chart.as_of, source: "yahoo-v8-chart",
     }, { onConflict: "symbol" });
     if (pErr) return Response.json({ ok: false, error: pErr.message }, { status: 500 });
-    const hist = [...chart.history, { ts: chart.as_of, price: chart.price }]
-      .map((h) => ({ symbol: row.symbol, ts: h.ts, price: h.price }));
-    if (hist.length) await admin.from("price_history").upsert(hist, { onConflict: "symbol,ts" });
+    // Dedupe by ts (a day's first 15m bar shares its timestamp with the daily bar —
+    // duplicate keys in one statement make Postgres reject the whole upsert).
+    const byTs = new Map<string, number>();
+    for (const h of [...chart.history, { ts: chart.as_of, price: chart.price }]) byTs.set(h.ts, h.price);
+    const hist = [...byTs.entries()].map(([ts, price]) => ({ symbol: row.symbol, ts, price }));
+    if (hist.length) {
+      const { error: hErr } = await admin.from("price_history").upsert(hist, { onConflict: "symbol,ts" });
+      if (hErr) return Response.json({ ok: false, error: hErr.message }, { status: 500 });
+    }
     return Response.json({ ok: true, symbol: row, price: chart.price, history: hist.length });
   }
 

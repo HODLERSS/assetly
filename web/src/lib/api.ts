@@ -15,6 +15,7 @@ export type PortfolioRow = {
   price: number | null; change_pct: number | null; as_of: string | null;
   value: number | null; total_gl: number | null;
 };
+export type HistoryPoint = { ts: string; price: number };
 export type NewsItem = { id: string; symbol: string; title: string; url: string; source: string; published_at: string | null };
 export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
 
@@ -113,6 +114,14 @@ export function makeApi(sb: SupabaseClient = supabase) {
     async removeHolding(holding_id: string) {
       const { error } = await sb.from("holdings").delete().eq("id", holding_id);
       if (error) throw error;
+    },
+    async getHistory(symbol: string, sinceHours: number): Promise<HistoryPoint[]> {
+      const since = new Date(Date.now() - sinceHours * 3600 * 1000).toISOString();
+      const { data, error } = await sb.from("price_history")
+        .select("ts,price").eq("symbol", symbol).gte("ts", since)
+        .order("ts", { ascending: true }).limit(2000);
+      if (error) throw error;
+      return (data ?? []).map((r: Record<string, unknown>) => ({ ts: String(r.ts), price: Number(r.price) }));
     },
     async getNews(scope?: string | string[]): Promise<NewsItem[]> {
       let q = sb.from("news").select("id,symbol,title,url,source,published_at")

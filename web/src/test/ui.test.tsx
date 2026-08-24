@@ -40,6 +40,10 @@ function stubApi(over: Partial<Api> = {}): Api {
     completeOnboarding: vi.fn().mockResolvedValue(undefined),
     searchSymbols: vi.fn().mockResolvedValue([{ symbol: "MARA", name: "MARA Holdings", exchange: "NASDAQ", currency: "USD", kind: "equity" }]),
     ensureSymbol: vi.fn().mockResolvedValue(undefined),
+    getHistory: vi.fn().mockResolvedValue([
+      { ts: "2026-08-24T14:00:00Z", price: 190 }, { ts: "2026-08-24T15:00:00Z", price: 195 },
+      { ts: "2026-08-24T16:00:00Z", price: 200 },
+    ]),
     getPortfolio: vi.fn().mockResolvedValue([row({})]),
     addPosition: vi.fn().mockResolvedValue("h-new"),
     getLots: vi.fn().mockResolvedValue([{ id: "l1", holding_id: "h1", qty: 10, cost_per_share: 166.55, acquired_on: "2026-07-22", note: null }]),
@@ -146,6 +150,40 @@ describe("U3 add position", () => {
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/positive/i);
     expect(api.addPosition).not.toHaveBeenCalled();
+  });
+});
+
+describe("U11 price chart on position", () => {
+  const openPosition = async () => {
+    render(<App api={apiRef} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await screen.findByRole("heading", { name: /^lots$/i });
+  };
+  let apiRef: Api;
+  it("renders the line, range change and low/high from history", async () => {
+    apiRef = stubApi();
+    await openPosition();
+    const svg = await screen.findByTestId("price-chart");
+    expect(svg.querySelector("path")?.getAttribute("d")).toMatch(/^M/);
+    expect((await screen.findByTestId("range-change")).textContent).toMatch(/[+-]\d/);
+    expect(screen.getByText(/L \$190\.00/)).toBeTruthy();
+    expect(screen.getByText(/H \$200\.00/)).toBeTruthy();
+  });
+  it("range chips request the right windows (1D=24h, 1W=168h)", async () => {
+    apiRef = stubApi();
+    await openPosition();
+    await screen.findByTestId("price-chart");
+    expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24);
+    await userEvent.click(screen.getByRole("tab", { name: "1W" }));
+    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 168));
+  });
+  it("shows the building-history empty state, not a broken chart", async () => {
+    apiRef = stubApi({ getHistory: vi.fn().mockResolvedValue([]) });
+    await openPosition();
+    await screen.findByText(/not enough history yet/i);
+    expect(screen.queryByTestId("price-chart")).toBeNull();
   });
 });
 

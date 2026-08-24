@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Api, Lot, PortfolioRow } from "../lib/api";
 import { glClass, money, moneyExact, priceAsOf, signedMoney, signedPct } from "../lib/format";
+import { PriceChart } from "../components/PriceChart";
 
 // Canvas 2c + 3i + the remove flow (gap screen g1): detail, every lot editable, delete with confirm.
 export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
@@ -38,6 +39,8 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
         <div className="net num" style={{ fontSize: 30 }}>{moneyExact(row.price, row.currency)}</div>
         <div className={`num ${glClass(row.change_pct)}`}>{signedPct(row.change_pct)} today · {priceAsOf(row.as_of)}</div>
       </div>
+
+      <PriceChart api={api} symbol={row.symbol} currency={row.currency} />
 
       <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div><span className="sub">Shares</span><br /><span className="num">{row.qty ?? 0}</span></div>
