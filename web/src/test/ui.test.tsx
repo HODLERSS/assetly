@@ -105,6 +105,7 @@ describe("U6 home + prices", () => {
     expect(net.textContent).toBe("$4,800");
     const gl = screen.getByTestId("total-gl");
     expect(gl.textContent).toContain("+$779");
+    expect(net.textContent).not.toMatch(/\.\d\d$/);        // values are whole dollars
     expect(gl.className).toContain("gain");
     expect(screen.getAllByText("+5.26%").length).toBeGreaterThan(0);
   });
@@ -182,6 +183,19 @@ describe("U5 remove with confirmation", () => {
 });
 
 describe("U7 news", () => {
+  it("scopes All holdings to held symbols and dedupes by url", async () => {
+    const api = stubApi({ getNews: vi.fn().mockResolvedValue([
+      { id: "n1", symbol: "RDDT", title: "Reddit posts strong quarter", url: "https://ex.test/1", source: "Yahoo Finance", published_at: new Date().toISOString() },
+      { id: "n2", symbol: "NVDA", title: "Nvidia story for a symbol not held", url: "https://ex.test/2", source: "Yahoo Finance", published_at: new Date().toISOString() },
+      { id: "n3", symbol: "RDDT", title: "Reddit posts strong quarter", url: "https://ex.test/1", source: "Google News", published_at: new Date().toISOString() },
+    ]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+    await screen.findByText(/reddit posts strong quarter/i);
+    expect(screen.queryByText(/nvidia story/i)).toBeNull();
+    expect(screen.getAllByText(/reddit posts strong quarter/i).length).toBe(1);
+  });
   it("lists stories and filters by holding chip", async () => {
     const api = stubApi();
     render(<App api={api} />);

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { PortfolioRow } from "../lib/api";
-import { glClass, money, signedPct } from "../lib/format";
+import { glClass, money, moneyExact, signedPct } from "../lib/format";
 
 // Canvas 2b: the table as a touch list with filter chips.
 export function Holdings({ rows, onOpen, onAdd }: {
@@ -27,7 +27,7 @@ export function Holdings({ rows, onOpen, onAdd }: {
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span>
               <span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span><br />
-              <span className="sub num">{r.qty ?? 0} sh · avg {money(r.avg_cost, r.currency)}</span>
+              <span className="sub num">{r.qty ?? 0} sh · avg {moneyExact(r.avg_cost, r.currency)}</span>
             </span>
             <span className="right">
               <span className="num">{money(r.value, r.currency)}</span><br />
@@ -35,7 +35,11 @@ export function Holdings({ rows, onOpen, onAdd }: {
             </span>
           </button>
         ))}
-        {shown.length === 0 && <p className="empty">Nothing in this filter.</p>}
+        {shown.length === 0 && rows.length === 0 && (
+          <div className="empty"><p style={{ marginBottom: 14 }}>No runners on the track.</p>
+            <button className="btn" onClick={onAdd}>Add your first position</button></div>
+        )}
+        {shown.length === 0 && rows.length > 0 && <p className="empty">Nothing in this filter.</p>}
       </div>
     </>
   );

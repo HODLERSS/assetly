@@ -11,11 +11,19 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
   useEffect(() => {
     let live = true;
     setState("loading");
+    const held = rows.map((r) => r.symbol);
     api.getNews(filter ?? undefined)
-      .then((n) => { if (live) { setItems(n); setState("ok"); } })
+      .then((n) => {
+        if (!live) return;
+        // "All holdings" = stories for symbols you hold, one row per story even if it tags several
+        const scoped = filter ? n : n.filter((x) => held.includes(x.symbol));
+        const seen = new Set<string>();
+        setItems(scoped.filter((x) => (seen.has(x.url) ? false : (seen.add(x.url), true))));
+        setState("ok");
+      })
       .catch(() => { if (live) setState("error"); });
     return () => { live = false; };
-  }, [api, filter]);
+  }, [api, filter, rows]);
 
   return (
     <>
@@ -30,7 +38,7 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
       </div>
       {state === "error" && <div className="error-note" role="alert">News missed the handoff — pull to retry.</div>}
       {state === "ok" && items.length === 0 && (
-        <p className="empty">No stories yet{filter ? ` for ${filter}` : ""}. The news lap runs every 15 minutes.</p>
+        <p className="empty">{rows.length === 0 ? "Add a position and its news follows." : `No stories yet${filter ? ` for ${filter}` : ""}. The news lap runs every 15 minutes.`}</p>
       )}
       <div className="card">
         {items.map((n) => (

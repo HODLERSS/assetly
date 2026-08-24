@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Api, Lot, PortfolioRow } from "../lib/api";
-import { glClass, money, signedMoney, signedPct, timeAgo } from "../lib/format";
+import { glClass, money, moneyExact, priceAsOf, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2c + 3i + the remove flow (gap screen g1): detail, every lot editable, delete with confirm.
 export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
@@ -29,14 +29,14 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
       <button className="chip" onClick={onBack}>&larr; Holdings</button>
       <div style={{ margin: "12px 0 6px" }}>
         <h2 className="h1">{row.symbol} <span className="mutedc" style={{ fontWeight: 400, fontSize: 15 }}>{row.name}</span></h2>
-        <div className="net num" style={{ fontSize: 30 }}>{money(row.price, row.currency)}</div>
-        <div className={`num ${glClass(row.change_pct)}`}>{signedPct(row.change_pct)} today · {timeAgo(row.as_of) || "no print yet"}</div>
+        <div className="net num" style={{ fontSize: 30 }}>{moneyExact(row.price, row.currency)}</div>
+        <div className={`num ${glClass(row.change_pct)}`}>{signedPct(row.change_pct)} today · {priceAsOf(row.as_of)}</div>
       </div>
 
       <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div><span className="sub">Shares</span><br /><span className="num">{row.qty ?? 0}</span></div>
         <div><span className="sub">Value</span><br /><span className="num">{money(row.value, row.currency)}</span></div>
-        <div><span className="sub">Avg cost</span><br /><span className="num">{money(row.avg_cost, row.currency)}</span></div>
+        <div><span className="sub">Avg cost</span><br /><span className="num">{moneyExact(row.avg_cost, row.currency)}</span></div>
         <div><span className="sub">Total G/L</span><br /><span className={`num ${glClass(row.total_gl)}`}>{signedMoney(row.total_gl, row.currency)}</span></div>
       </div>
 
@@ -47,7 +47,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
       <div className="card">
         {lots.map((l) => (
           <button key={l.id} className="row" onClick={() => setEditing(l)} aria-label={`Edit lot ${l.qty} shares`}>
-            <span className="num">{l.qty} sh @ {money(l.cost_per_share, row.currency)}</span>
+            <span className="num">{l.qty} sh @ {moneyExact(l.cost_per_share, row.currency)}</span>
             <span className="sub">{l.acquired_on ?? "no date"}</span>
           </button>
         ))}

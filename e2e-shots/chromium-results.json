@@ -1,0 +1,46 @@
+[
+ [
+  "PASS",
+  "signed-out auth screen renders (GitHub, Google, email link; no password)"
+ ],
+ [
+  "PASS",
+  "email link path validates + confirms"
+ ],
+ [
+  "PASS",
+  "session established → home empty state"
+ ],
+ [
+  "PASS",
+  "add first position (MARA 100 @ 15.67)"
+ ],
+ [
+  "PASS",
+  "home shows net worth from live cloud price"
+ ],
+ [
+  "FAIL",
+  "position detail + add lot → derived average — derived average $14.45 not shown"
+ ],
+ [
+  "PASS",
+  "edit lot qty then delete it"
+ ],
+ [
+  "PASS",
+  "remove: cancel keeps, confirm removes"
+ ],
+ [
+  "PASS",
+  "news tab lists cloud-pipeline stories"
+ ],
+ [
+  "PASS",
+  "settings + sign out returns to auth"
+ ],
+ [
+  "PASS",
+  "no console errors during the run"
+ ]
+]
