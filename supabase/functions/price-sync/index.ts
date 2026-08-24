@@ -61,8 +61,20 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+  // Track what matters: symbols someone holds, plus anything registered in the last 36h
+  // (a just-added ticker stays live while the user finishes setting it up).
+  const cutoff = new Date(Date.now() - 36 * 3600 * 1000).toISOString();
+  const [held, recent] = await Promise.all([
+    admin.from("holdings").select("symbol"),
+    admin.from("symbols").select("symbol").eq("active", true).gte("created_at", cutoff),
+  ]);
+  if (held.error) return Response.json({ ok: false, error: held.error.message }, { status: 500 });
+  const wanted = new Set([
+    ...(held.data ?? []).map((h) => h.symbol),
+    ...(recent.data ?? []).map((r) => r.symbol),
+  ]);
   const { data: symbols, error } = await admin
-    .from("symbols").select("symbol, yahoo").eq("active", true);
+    .from("symbols").select("symbol, yahoo").eq("active", true).in("symbol", [...wanted]);
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
   const pairs = (symbols ?? []).map((s) => ({ symbol: s.symbol, yahoo: s.yahoo ?? s.symbol }));
@@ -76,9 +88,15 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     quotes = new Map((body.quotes ?? []).map((q: Quote) => [q.symbol, q]));
   } else {
-    quotes = await yahooBatch(targets);
+    quotes = new Map();
+    for (let i = 0; i < targets.length; i += 40) {   // chunked so any catalog size stays in URL limits
+      const part = await yahooBatch(targets.slice(i, i + 40));
+      for (const [k, v] of part) quotes.set(k, v);
+    }
+    let fallbacks = 0;
     for (const p of targets) {                       // fallback for anything the batch missed
-      if (!quotes.has(p.symbol)) {
+      if (!quotes.has(p.symbol) && fallbacks < 25) {
+        fallbacks++;
         const q = await yahooChart(p.symbol, p.yahoo);
         if (q) quotes.set(p.symbol, q);
       }

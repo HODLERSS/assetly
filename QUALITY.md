@@ -19,7 +19,7 @@ production project; **Judged** = scored against the stated criterion.
 | 12 | News pipeline live in production (every 15 min) | machine (30 real stories; C7) | 100 |
 | 13 | Schedules as code + no privileged secret stored | machine (vault: project_url + publishable bearer only) | 100 |
 | 14 | Secrets hygiene (client=publishable; nothing sensitive in repo) | machine | 100 |
-| 15 | Auth: GitHub + Google wired end-to-end in app + Supabase config | machine (U1; provider settings) — keys pending your 4-min step | 98 |
+| 15 | Auth: GitHub + Google wired end-to-end in app + Supabase config | machine (live round-trips on deployed app 8/24: github + google sessions verified, auto-linked) | 100 |
 | 16 | Passwordless email sign-in (no password path anywhere) | machine (U1b, e2e step 2) | 100 |
 | 17 | Onboarding e2e (markets→search→first position; profile trigger) | machine (U2, T2, C1/C2) | 100 |
 | 18 | Add / edit lots / delete lot / remove (cancel+confirm) | machine (UI + cloud + iPhone e2e) | 100 |
@@ -53,6 +53,5 @@ production project; **Judged** = scored against the stated criterion.
 - No physical iPhone / Xcode simulator on this Mac: "iPhone" runs use Playwright's iPhone 14
   device profile on Chromium; the WebKit (Safari-engine) bundle failed to download three times tonight, so
   the Safari run is pending — install on your phone via Safari and it is the real test.
-- GitHub/Google live round-trips need the two OAuth app registrations (MORNING.md); everything
-  downstream of the provider handshake is exercised by the fixture-user flows.
+- (resolved 8/24) GitHub/Google OAuth registered and live round-trips verified on the deployed app.
 - Judged sub-points on metrics 15/21/22/27 are why they sit at 98, not 100.

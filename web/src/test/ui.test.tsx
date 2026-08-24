@@ -39,6 +39,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     getProfile: vi.fn().mockResolvedValue(profile),
     completeOnboarding: vi.fn().mockResolvedValue(undefined),
     searchSymbols: vi.fn().mockResolvedValue([{ symbol: "MARA", name: "MARA Holdings", exchange: "NASDAQ", currency: "USD", kind: "equity" }]),
+    ensureSymbol: vi.fn().mockResolvedValue(undefined),
     getPortfolio: vi.fn().mockResolvedValue([row({})]),
     addPosition: vi.fn().mockResolvedValue("h-new"),
     getLots: vi.fn().mockResolvedValue([{ id: "l1", holding_id: "h1", qty: 10, cost_per_share: 166.55, acquired_on: "2026-07-22", note: null }]),

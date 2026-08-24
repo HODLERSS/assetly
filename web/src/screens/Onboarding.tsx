@@ -58,15 +58,22 @@ export function Onboarding({ api, onDone }: { api: Api; onDone: () => Promise<vo
         <section aria-label="Find your first position">
           <div className="field">
             <label htmlFor="ob-q">Find your first position</label>
-            <input id="ob-q" value={q} onChange={(e) => search(e.target.value)} placeholder="Ticker or name — try MARA, 삼성" autoFocus />
+            <input id="ob-q" value={q} onChange={(e) => search(e.target.value)} placeholder="Ticker or name — try FIG or Samsung" autoFocus />
           </div>
           <div className="card">
             {results.map((r) => (
-              <button key={r.symbol} className="row" onClick={() => { setPicked(r); setStep(2); }}>
+              <button key={r.symbol} className="row" disabled={busy} onClick={async () => {
+                setErr(null); setBusy(true);
+                try { await api.ensureSymbol(r); setPicked(r); setStep(2); }
+                catch (e) { setErr(e instanceof Error ? e.message : "Could not add that ticker."); }
+                finally { setBusy(false); }
+              }}>
                 <span><span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span></span>
                 <span className="sub">{r.exchange}</span>
               </button>
             ))}
+            {busy && <p className="empty">Adding to Assetly…</p>}
+            {err && <div className="error-note" role="alert">{err}</div>}
             {q && results.length === 0 && <p className="empty">Nothing matched “{q}”.</p>}
           </div>
         </section>

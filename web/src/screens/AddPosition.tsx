@@ -28,16 +28,23 @@ export function AddPosition({ api, onDone, onCancel }: {
         <>
           <div className="field">
             <label htmlFor="add-q">Ticker or name</label>
-            <input id="add-q" value={q} onChange={(e) => search(e.target.value)} placeholder="MARA, Reddit, 삼성…" autoFocus />
+            <input id="add-q" value={q} onChange={(e) => search(e.target.value)} placeholder="FIG, Reddit, Samsung…" autoFocus />
           </div>
           <div className="card">
             {results.map((r) => (
-              <button key={r.symbol} className="row" onClick={() => setPicked(r)}>
+              <button key={r.symbol} className="row" disabled={busy} onClick={async () => {
+                setErr(null); setBusy(true);
+                try { await api.ensureSymbol(r); setPicked(r); }
+                catch (e) { setErr(e instanceof Error ? e.message : "Could not add that ticker."); }
+                finally { setBusy(false); }
+              }}>
                 <span><span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span></span>
                 <span className="sub">{r.exchange}</span>
               </button>
             ))}
-            {q && results.length === 0 && <p className="empty">Nothing matched “{q}”. The catalog grows — tell us what's missing.</p>}
+            {busy && <p className="empty">Adding to Assetly…</p>}
+            {err && <div className="error-note" role="alert">{err}</div>}
+            {q && results.length === 0 && <p className="empty">Nothing matched “{q}” — any US or Korean listing should appear as you type.</p>}
           </div>
         </>
       )}

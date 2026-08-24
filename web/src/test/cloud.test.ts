@@ -43,11 +43,12 @@ run("CLOUD e2e — production project", () => {
     expect(p?.markets).toEqual(["US", "KR", "Crypto"]);
   });
 
-  it("C3 symbol search hits the seeded catalog incl. Korean names", async () => {
+  it("C3 symbol search: catalog + English KR names + Korean query via universal search", async () => {
     const a = makeApi(alice);
     expect((await a.searchSymbols("MARA")).map((s) => s.symbol)).toContain("MARA");
-    expect((await a.searchSymbols("삼성")).map((s) => s.symbol)).toContain("005935.KS");
-  });
+    expect((await a.searchSymbols("Samsung")).map((s) => s.symbol)).toContain("005930.KS");
+    expect((await a.searchSymbols("삼성")).map((s) => s.symbol)).toContain("005930.KS");
+  }, 30000);
 
   it("C4 add position → live price from the 1-min pipeline → value math", async () => {
     const a = makeApi(alice);
@@ -101,6 +102,33 @@ run("CLOUD e2e — production project", () => {
     await a.removeHolding(r.holding_id);
     expect((await a.getPortfolio()).length).toBe(0);
   });
+
+  it("C11 universal search finds any US listing (FIG / Figma)", async () => {
+    const res = await makeApi(alice).searchSymbols("Figma");
+    const fig = res.find((r) => r.symbol === "FIG");
+    expect(fig?.name).toMatch(/Figma/);
+    expect(fig?.exchange).toBe("NYSE");
+  }, 30000);
+
+  it("C12 ensure registers a ticker with live price + history backfill", async () => {
+    const a = makeApi(alice);
+    await a.ensureSymbol({ symbol: "FIG", name: "Figma, Inc.", exchange: "NYSE",
+                           currency: "USD", kind: "equity", yahoo: "FIG", remote: true });
+    const { data: p } = await alice.from("prices").select("price,as_of").eq("symbol", "FIG").single();
+    expect(Number(p!.price)).toBeGreaterThan(0);
+    const { count } = await alice.from("price_history")
+      .select("ts", { count: "exact", head: true }).eq("symbol", "FIG");
+    expect(count!).toBeGreaterThan(20);                        // ~3 months of daily closes
+  }, 45000);
+
+  it("C13 a brand-new ticker is a first-class position immediately", async () => {
+    const a = makeApi(alice);
+    await a.addPosition("FIG", 5, 50);
+    const r = (await a.getPortfolio()).find((x) => x.symbol === "FIG")!;
+    expect(r.price).toBeGreaterThan(0);                        // priced at add time, no cron wait
+    expect(r.value).toBeCloseTo(5 * r.price!, 4);
+    await a.removeHolding(r.holding_id);
+  }, 30000);
 
   it("C10 signed-out client reads no user data", async () => {
     const anon = createClient(URL_, KEY, { auth: { persistSession: false } });

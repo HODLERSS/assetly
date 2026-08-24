@@ -3,7 +3,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
-export type SymbolRow = { symbol: string; name: string; exchange: string; currency: "USD" | "KRW"; kind: string };
+export type SymbolRow = {
+  symbol: string; name: string; exchange: string; currency: "USD" | "KRW"; kind: string;
+  yahoo?: string | null;
+  remote?: boolean;      // came from the universal search; must be ensured before first use
+};
 export type Lot = { id: string; holding_id: string; qty: number; cost_per_share: number; acquired_on: string | null; note: string | null };
 export type PortfolioRow = {
   holding_id: string; symbol: string; name: string; currency: "USD" | "KRW"; kind: string;
@@ -34,12 +38,33 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error) throw error;
     },
     async searchSymbols(q: string): Promise<SymbolRow[]> {
+      // Instant hits from the local catalog...
       const { data, error } = await sb.from("symbols")
-        .select("symbol,name,exchange,currency,kind")
+        .select("symbol,name,exchange,currency,kind,yahoo")
         .or(`symbol.ilike.%${q}%,name.ilike.%${q}%`)
         .eq("active", true).limit(12);
       if (error) throw error;
-      return (data ?? []) as SymbolRow[];
+      const local = (data ?? []) as SymbolRow[];
+      // ...merged with the universal search (every US + Korean listing, via Yahoo Finance).
+      let remote: SymbolRow[] = [];
+      try {
+        const { data: fx, error: fErr } = await sb.functions.invoke("symbol-search", { body: { q } });
+        if (!fErr && fx?.ok) {
+          remote = (fx.results as SymbolRow[]).map((r) => ({ ...r, remote: true }));
+        }
+      } catch { /* search still works from the catalog when the function is unreachable */ }
+      const seen = new Set(local.map((r) => r.symbol));
+      return [...local, ...remote.filter((r) => !seen.has(r.symbol))].slice(0, 12);
+    },
+    async ensureSymbol(row: SymbolRow): Promise<void> {
+      if (!row.remote) return;                        // already in the catalog
+      const { data, error } = await sb.functions.invoke("symbol-search", {
+        body: { ensure: { symbol: row.symbol, name: row.name, exchange: row.exchange,
+                          currency: row.currency, kind: row.kind, yahoo: row.yahoo ?? row.symbol } },
+      });
+      if (error || !data?.ok) {
+        throw new Error(data?.error ?? `Could not add ${row.symbol} right now. Try again.`);
+      }
     },
     async getPortfolio(): Promise<PortfolioRow[]> {
       const { data, error } = await sb.from("portfolio").select("*").order("value", { ascending: false, nullsFirst: false });

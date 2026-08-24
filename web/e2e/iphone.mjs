@@ -46,6 +46,38 @@ await step("session established → home empty state", async () => {
   await page.goto(URL_); await page.getByText(/no runners on the track/i).waitFor({ timeout: 15000 });
   await shot("03-home-empty");
 });
+await step("universal search: Samsung (KRX) findable in English", async () => {
+  await page.getByRole("button", { name: /add your first position/i }).tap();
+  await page.getByLabel(/ticker or name/i).fill("Samsung");
+  await page.getByRole("button", { name: /Samsung Electronics/i }).first().waitFor({ timeout: 20000 });
+  await shot("03b-samsung-search");
+});
+await step("universal search: add FIG (Figma) — brand-new ticker end to end", async () => {
+  await page.getByLabel(/ticker or name/i).fill("FIG");
+  await page.getByRole("button", { name: /Figma, Inc\./i }).first().tap({ timeout: 20000 });
+  await page.getByLabel(/^shares$/i).waitFor({ timeout: 30000 });   // ensure ran (register+price+history)
+  await page.getByLabel(/^shares$/i).fill("5");
+  await page.getByLabel(/cost per share/i).fill("50");
+  await shot("03c-fig-form");
+  await page.getByRole("button", { name: /^add position$/i }).tap();
+  await page.getByText(/5 sh/).waitFor({ timeout: 20000 });
+  await shot("03d-fig-holding");
+});
+await step("FIG priced + history backfilled in the cloud", async () => {
+  const { data: p } = await sb.from("prices").select("price").eq("symbol", "FIG").single();
+  if (!(Number(p?.price) > 0)) throw new Error("no live FIG price");
+  const { count } = await sb.from("price_history").select("ts", { count: "exact", head: true }).eq("symbol", "FIG");
+  if (!(count > 20)) throw new Error("history backfill missing: " + count);
+});
+await step("remove FIG to reset for the classic flow", async () => {
+  await page.getByRole("button", { name: /^holdings$/i }).tap();
+  await page.getByRole("button", { name: /Figma, Inc\./i }).tap();
+  await page.getByRole("button", { name: /remove position/i }).tap();
+  await page.getByRole("dialog").getByRole("button", { name: /remove position/i }).tap();
+  await page.getByText(/nothing in this filter|no runners/i).waitFor({ timeout: 15000 });
+  await page.getByRole("button", { name: /^home$/i }).tap();
+  await page.getByText(/no runners on the track/i).waitFor({ timeout: 15000 });
+});
 await step("add first position (MARA 100 @ 15.67)", async () => {
   await page.getByRole("button", { name: /add your first position/i }).tap();
   await page.getByLabel(/ticker or name/i).fill("MARA");

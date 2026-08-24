@@ -174,3 +174,58 @@ describe("Live smoke (network) — real Yahoo quote through the pipeline", () =>
     expect(Number(data!.price)).toBeGreaterThan(0);
   }, 45000);
 });
+
+describe("Universal symbol search + on-demand tracking", () => {
+  const H = { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` };
+  it("search maps venues and filters to US + KR + crypto", async () => {
+    const r = await fetch(`${URL_}/functions/v1/symbol-search?fixture=1`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ q: "fig", results: [
+        { symbol: "FIG", quoteType: "EQUITY", exchange: "NYQ", exchDisp: "NYSE", longname: "Figma, Inc." },
+        { symbol: "FIG.F", quoteType: "EQUITY", exchange: "FRA", exchDisp: "Frankfurt", longname: "Finlay Minerals Ltd." },
+        { symbol: "005930.KS", quoteType: "EQUITY", exchange: "KSC", longname: "Samsung Electronics Co., Ltd." },
+        { symbol: "BRK-B", quoteType: "EQUITY", exchange: "NYQ", longname: "Berkshire Hathaway Inc." },
+        { symbol: "FIGHT-USD", quoteType: "CRYPTOCURRENCY", exchange: "CCC", longname: "Crypto Fight Club USD" },
+      ] }),
+    });
+    const body = await r.json();
+    expect(body.ok).toBe(true);
+    const by = Object.fromEntries(body.results.map((x: { symbol: string }) => [x.symbol, x]));
+    expect(by["FIG"].exchange).toBe("NYSE");
+    expect(by["FIG.F"]).toBeUndefined();                       // non-US/KR venue filtered out
+    expect(by["005930.KS"].currency).toBe("KRW");
+    expect(by["BRK.B"].yahoo).toBe("BRK-B");                   // class-share dash normalized
+    expect(by["FIGHT"].kind).toBe("crypto");
+  });
+  it("ensure registers symbol + price + history, readable through RLS", async () => {
+    const r = await fetch(`${URL_}/functions/v1/symbol-search?fixture=1`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({
+        ensure: { symbol: "TESTX", name: "Test Fixture Inc", exchange: "NYSE", currency: "USD", kind: "equity", yahoo: "TESTX" },
+        chart: { price: 12.34, prev_close: 12, currency: "USD", market_state: "closed",
+                 as_of: "2026-08-21T20:00:00Z",
+                 history: [{ ts: "2026-08-19T20:00:00Z", price: 11.9 }, { ts: "2026-08-20T20:00:00Z", price: 12.1 }] },
+      }),
+    });
+    const body = await r.json();
+    expect(body.ok).toBe(true);
+    const a = makeApi(alice);
+    const hits = await a.searchSymbols("Test Fixture");
+    expect(hits.map((h) => h.symbol)).toContain("TESTX");      // instantly in the local catalog
+    const { data: p } = await alice.from("prices").select("price").eq("symbol", "TESTX").single();
+    expect(Number(p!.price)).toBe(12.34);
+    const { data: h } = await alice.from("price_history").select("ts").eq("symbol", "TESTX");
+    expect((h ?? []).length).toBe(3);                          // 2 daily closes + the live tick
+  });
+  it("live smoke: a real KR listing verifies KRW end to end", async () => {
+    const r = await fetch(`${URL_}/functions/v1/symbol-search`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ ensure: { symbol: "005930.KS", name: "Samsung Electronics", exchange: "KRX", currency: "KRW", kind: "equity", yahoo: "005930.KS" } }),
+    });
+    const body = await r.json();
+    expect(body.ok).toBe(true);
+    const { data } = await alice.from("prices").select("price,currency").eq("symbol", "005930.KS").single();
+    expect(Number(data!.price)).toBeGreaterThan(1000);         // won-denominated
+    expect(data!.currency).toBe("KRW");
+  }, 45000);
+});
