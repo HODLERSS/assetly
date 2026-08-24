@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Chivo+Mono:wght@400;500;600&family=Noto+Sans+KR:wght@400;500&display=swap"><style>
+body{margin:0;background:#DFE2E7;font-family:'Schibsted Grotesk','Noto Sans KR',system-ui,sans-serif;color:#16181D}
+a{color:#2A3F92;text-decoration:none}a:hover{color:#1E2E6D}
+.dv-turn{padding:40px 44px 34px;border-bottom:1px solid rgba(0,0,0,.09)}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 6px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#16181D;color:#fff;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.3 'Schibsted Grotesk',sans-serif}
+.dv-sub{margin:0 0 22px;font:400 12.5px/1.5 'Schibsted Grotesk',sans-serif;color:#5D636E;max-width:96ch}
+.dv-opts{display:flex;flex-wrap:wrap;gap:30px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(22,24,29,.09);color:#16181D;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11.5px/1.35 'Schibsted Grotesk',sans-serif;color:#5D636E;max-width:390px}
+.dv-opt:target .dv-oid{background:#2A3F92;color:#F4F5F7}
+.dv-next{margin:24px 0 0;font:12.5px/1.6 'Schibsted Grotesk',sans-serif;color:#5D636E}
+.n{font-family:'Chivo Mono',ui-monospace,monospace;font-feature-settings:"tnum";font-size:13px}
+.lbl{font:600 10.5px/1 'Schibsted Grotesk',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:#5D636E}
+.gain{color:#1E7048}.loss{color:#B4372A}.mut{color:#5D636E}
+.ios{width:390px;height:844px;background:#F4F5F7;border:10px solid #16181D;border-radius:54px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(22,24,29,.18)}
+.and{border-radius:26px}
+.sbar{display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 24px 0 30px;background:#fff;font:600 13.5px 'Chivo Mono',monospace;flex:none}
+.nav{background:#fff;padding:2px 16px 10px;flex:none}
+.navtitle{font:700 27px/1.2 'Schibsted Grotesk',sans-serif;letter-spacing:-.024em}
+.hair{height:2px;background:#E2E4E9;flex:none}
+.hair i{display:block;height:2px;background:#2A3F92}
+.body{flex:1;min-height:0;padding:13px 16px 10px;display:flex;flex-direction:column;gap:11px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.body::-webkit-scrollbar{width:0;height:0}
+.card{background:#fff;border:1px solid #E2E4E9;border-radius:10px}
+.cell{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:54px;padding:8px 14px}
+.cell+.cell{border-top:1px solid #E2E4E9}
+.seg{display:flex;background:#EDEFF3;border-radius:9px;padding:2px;gap:2px}
+.seg>span{flex:1;text-align:center;font-size:12.5px;padding:8px 0;border-radius:7px;color:#5D636E}
+.seg>span.on{background:#fff;color:#16181D;font-weight:600}
+.chip{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:34px;padding:0 12px;border:1px solid #E2E4E9;background:#fff;border-radius:8px;font-size:12.5px;color:#5D636E}
+.chip.on{background:#2A3F92;border-color:#2A3F92;color:#F4F5F7;font-weight:500}
+.krx{font-size:10px;color:#2A3F92;letter-spacing:.06em;font-family:'Chivo Mono',monospace}
+.tbar{display:flex;background:#fff;border-top:1px solid #E2E4E9;padding-top:8px;flex:none}
+.tbtn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font:500 10px 'Schibsted Grotesk',sans-serif;color:#5D636E}
+.tbtn.on{color:#2A3F92;font-weight:600}
+.hind{height:22px;display:flex;align-items:center;justify-content:center;background:#fff;flex:none}
+.hind i{width:126px;height:5px;border-radius:3px;background:#16181D;opacity:.85;display:block}
+.note{font:400 11px/1.45 'Schibsted Grotesk',sans-serif;color:#5D636E}
+.mark{display:inline-flex;align-items:center;gap:7px;font-weight:700;letter-spacing:-.02em}
+</style></helmet>
+
+<section class="dv-turn" id="t5">
+<div class="dv-thd"><a class="dv-tid" href="#t5">5</a><span class="dv-tname">News tab — per-holding news, recency by default, LLM importance as the second lens</span></div>
+<p class="dv-sub">Stories only for holdings you own, per-ticker chips, recency by default. “Important” is the LLM lens (<a href="#5c">5c</a>) and always shows its reasoning. Feeds moves out of the tab bar into “System status” (<a href="#5e">5e</a>). Headlines are placeholder copy.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="5a">
+<div class="dv-olabel"><a class="dv-oid" href="#5a">5a</a>News — all holdings, newest first</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16181D" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <span class="n mut" style="font-size:11px">38 stories today</span>
+    </div>
+    <div class="navtitle" style="margin-top:5px">News</div>
+    <div class="seg" style="margin-top:9px"><span class="on">Recent</span><span>Important</span><span>Unread</span></div>
+    <div style="display:flex;gap:7px;margin-top:9px;overflow:hidden"><span class="chip on">All 21</span><span class="chip">MARA</span><span class="chip">SK하이닉스</span><span class="chip">AMD</span><span class="chip">삼성</span></div>
+  </div>
+  <div class="hair"><i style="width:100%"></i></div>
+  <div class="body" style="gap:9px">
+    <div class="card">
+      <div style="padding:10px 14px;border-bottom:1px solid #E2E4E9;display:flex;justify-content:space-between"><span class="lbl">Last hour</span><span class="n mut" style="font-size:11px">4</span></div>
+      <div style="padding:11px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n" style="color:#2A3F92;font-size:11.5px">MARA · 38.5% of net</span><span class="n mut" style="font-size:11px">12m</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">Hashrate guidance raised for Q4 as second Texas site energizes</div>
+        <div class="n mut" style="font-size:11px;margin-top:3px">Reuters · 3 more sources</div>
+      </div>
+      <div style="padding:11px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n" style="color:#2A3F92;font-size:11.5px">SK하이닉스 <span class="krx">KRX</span></span><span class="n mut" style="font-size:11px">34m</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">HBM4 samples said to clear qualification at lead customer</div>
+        <div class="n mut" style="font-size:11px;margin-top:3px">한국경제 · translated</div>
+      </div>
+      <div style="padding:11px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n" style="color:#2A3F92;font-size:11.5px">BTC · 0.9% of net</span><span class="n mut" style="font-size:11px">41m</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">Spot ETF flows turn positive after three-week outflow streak</div>
+        <div class="n mut" style="font-size:11px;margin-top:3px">Bloomberg</div>
+      </div>
+      <div style="padding:11px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n" style="color:#2A3F92;font-size:11.5px">AMD · 5.1% of net</span><span class="n mut" style="font-size:11px">58m</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">MI400 launch window narrowed to first half at analyst day</div>
+        <div class="n mut" style="font-size:11px;margin-top:3px">CNBC · 2 more sources</div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Earlier today</span></div>
+      <div style="padding:11px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n" style="color:#2A3F92;font-size:11.5px">삼성전자우 <span class="krx">KRX</span></span><span class="n mut" style="font-size:11px">3h</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">Preferred shares lead the tape as dividend policy review reported</div>
+        <div class="n mut" style="font-size:11px;margin-top:3px">연합뉴스 · translated</div>
+      </div>
+      <div style="padding:11px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n" style="color:#2A3F92;font-size:11.5px">INTC · 1.7% of net</span><span class="n mut" style="font-size:11px">5h</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">Foundry books a second external customer for 14A</div>
+        <div class="n mut" style="font-size:11px;margin-top:3px">The Information</div>
+      </div>
+      <div style="padding:11px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n" style="color:#2A3F92;font-size:11.5px">RDDT · 4.7% of net</span><span class="n mut" style="font-size:11px">6h</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">Data-licensing renewal talks reported with a second model lab</div>
+        <div class="n mut" style="font-size:11px;margin-top:3px">WSJ</div>
+      </div>
+    </div>
+  </div>
+  <div class="tbar">
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 19V9l8-5 8 5v10"/></svg>Net worth</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Holdings</span>
+    <span class="tbtn on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.8"><path d="M4 5h16v14H4z"/><path d="M7 9h6M7 13h10M7 16h7"/></svg>News</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 11h16"/></svg>Vesting</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M5 19V9M12 19V5M19 19v-7"/></svg>Tax lots</span>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="5b">
+<div class="dv-olabel"><a class="dv-oid" href="#5b">5b</a>Filtered to one holding — chip toggled, position context on top</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16181D" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <span class="n mut" style="font-size:11px">Mute ticker</span>
+    </div>
+    <div class="navtitle" style="margin-top:5px">MARA news</div>
+    <div class="seg" style="margin-top:9px"><span class="on">Recent</span><span>Important</span><span>Unread</span></div>
+    <div style="display:flex;gap:7px;margin-top:9px;overflow:hidden"><span class="chip">All 21</span><span class="chip on">MARA ✕</span><span class="chip">SK하이닉스</span><span class="chip">AMD</span></div>
+  </div>
+  <div class="hair"><i style="width:100%"></i></div>
+  <div class="body" style="gap:9px">
+    <div class="card" style="padding:12px 14px;background:#EDEFF3;border-color:#D5DBF0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="lbl">Your exposure</span><span class="n" style="font-weight:600">$460,557 · 38.5%</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px"><span class="n mut" style="font-size:11.5px">40,902 sh · avg $15.67</span><span class="n gain" style="font-size:11.5px">+0.99% today</span></div>
+    </div>
+    <div class="card">
+      <div style="padding:11px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n mut" style="font-size:11px">Reuters</span><span class="n mut" style="font-size:11px">12m</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">Hashrate guidance raised for Q4 as second Texas site energizes</div>
+      </div>
+      <div style="padding:11px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n mut" style="font-size:11px">Barron's</span><span class="n mut" style="font-size:11px">2h</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">Miner treasury strategies diverge as two peers start selling production</div>
+      </div>
+      <div style="padding:11px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n mut" style="font-size:11px">SEC filing</span><span class="n mut" style="font-size:11px">yesterday</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">Form 4 · officer sells 42,000 shares under 10b5-1 plan</div>
+      </div>
+      <div style="padding:11px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n mut" style="font-size:11px">CoinDesk</span><span class="n mut" style="font-size:11px">2d</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">Post-halving economics squeeze high-cost operators, analysts say</div>
+      </div>
+      <div style="padding:11px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="n mut" style="font-size:11px">Company IR</span><span class="n mut" style="font-size:11px">4d</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.35;margin-top:3px">Monthly production update: 812 BTC mined, fleet efficiency improves</div>
+      </div>
+    </div>
+    <div class="card"><div class="cell" style="min-height:50px"><span class="mut">Notify me about MARA</span><span class="n" style="color:#2A3F92;font-size:11.5px">important only ›</span></div></div>
+  </div>
+  <div class="tbar">
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 19V9l8-5 8 5v10"/></svg>Net worth</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Holdings</span>
+    <span class="tbtn on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.8"><path d="M4 5h16v14H4z"/><path d="M7 9h6M7 13h10M7 16h7"/></svg>News</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 11h16"/></svg>Vesting</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M5 19V9M12 19V5M19 19v-7"/></svg>Tax lots</span>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="5c">
+<div class="dv-olabel"><a class="dv-oid" href="#5c">5c</a>Important — LLM-ranked, weighted by what you actually hold</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16181D" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <span class="n mut" style="font-size:11px">ranked 15:20 · beta</span>
+    </div>
+    <div class="navtitle" style="margin-top:5px">News</div>
+    <div class="seg" style="margin-top:9px"><span>Recent</span><span class="on">Important</span><span>Unread</span></div>
+    <div style="display:flex;gap:7px;margin-top:9px;overflow:hidden"><span class="chip on">All 21</span><span class="chip">MARA</span><span class="chip">SK하이닉스</span><span class="chip">AMD</span></div>
+  </div>
+  <div class="hair"><i style="width:100%"></i></div>
+  <div class="body" style="gap:9px">
+    <div class="card">
+      <div style="padding:12px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="display:flex;gap:7px;align-items:center"><span class="n" style="background:#2A3F92;color:#F4F5F7;border-radius:4px;padding:2px 6px;font-size:10.5px">HIGH</span><span class="n" style="color:#2A3F92;font-size:11.5px">SK하이닉스</span></span><span class="n mut" style="font-size:11px">34m</span></div>
+        <div style="font-size:15px;font-weight:600;line-height:1.3;margin-top:5px">HBM4 samples said to clear qualification at lead customer</div>
+        <p class="note" style="margin:5px 0 0"><b>Why it ranks:</b> touches 22.7% of your net worth, moves the revenue line the market prices this name on, and three independent outlets carry it.</p>
+        <div class="n mut" style="font-size:11px;margin-top:5px">한국경제 · 3 sources · KRX opens in 15h</div>
+      </div>
+      <div style="padding:12px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="display:flex;gap:7px;align-items:center"><span class="n" style="background:#2A3F92;color:#F4F5F7;border-radius:4px;padding:2px 6px;font-size:10.5px">HIGH</span><span class="n" style="color:#2A3F92;font-size:11.5px">MARA</span></span><span class="n mut" style="font-size:11px">12m</span></div>
+        <div style="font-size:15px;font-weight:600;line-height:1.3;margin-top:5px">Hashrate guidance raised for Q4 as second Texas site energizes</div>
+        <p class="note" style="margin:5px 0 0"><b>Why it ranks:</b> your largest position at 38.5%, and it revises company guidance rather than commentary.</p>
+        <div class="n mut" style="font-size:11px;margin-top:5px">Reuters · 4 sources</div>
+      </div>
+      <div style="padding:12px 14px;border-bottom:1px solid #E2E4E9">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="display:flex;gap:7px;align-items:center"><span class="n" style="background:#EDEFF3;color:#2A3F92;border-radius:4px;padding:2px 6px;font-size:10.5px">MEDIUM</span><span class="n" style="color:#2A3F92;font-size:11.5px">AMD</span></span><span class="n mut" style="font-size:11px">58m</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.32;margin-top:5px">MI400 launch window narrowed to first half at analyst day</div>
+        <p class="note" style="margin:4px 0 0"><b>Why it ranks:</b> schedule detail on 5.1% of your net worth; no change to guidance.</p>
+      </div>
+      <div style="padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="display:flex;gap:7px;align-items:center"><span class="n" style="background:#EDEFF3;color:#2A3F92;border-radius:4px;padding:2px 6px;font-size:10.5px">MEDIUM</span><span class="n" style="color:#2A3F92;font-size:11.5px">삼성전자우</span></span><span class="n mut" style="font-size:11px">3h</span></div>
+        <div style="font-size:14.5px;font-weight:500;line-height:1.32;margin-top:5px">Preferred shares lead the tape as dividend policy review reported</div>
+        <p class="note" style="margin:4px 0 0"><b>Why it ranks:</b> preferred-class specific — your holding is the preferred line.</p>
+      </div>
+    </div>
+    <div class="card" style="padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">Ranking inputs</span><span class="n" style="color:#2A3F92;font-size:11.5px">Adjust ›</span></div>
+      <p class="note" style="margin:6px 0 0">Position weight · guidance vs commentary · source agreement · recency. Refreshed every 20 min.</p>
+    </div>
+    <div class="card"><div class="cell" style="min-height:50px"><span class="mut">31 low-importance stories hidden</span><span class="n mut">show ›</span></div></div>
+  </div>
+  <div class="tbar">
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 19V9l8-5 8 5v10"/></svg>Net worth</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Holdings</span>
+    <span class="tbtn on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.8"><path d="M4 5h16v14H4z"/><path d="M7 9h6M7 13h10M7 16h7"/></svg>News</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 11h16"/></svg>Vesting</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M5 19V9M12 19V5M19 19v-7"/></svg>Tax lots</span>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="5d">
+<div class="dv-olabel"><a class="dv-oid" href="#5d">5d</a>Story detail — sources, your position, and the ticker's move side by side</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">‹ News</span><span style="display:flex;gap:14px"><span class="n" style="color:#2A3F92;font-size:11.5px">Save</span><span class="n" style="color:#2A3F92;font-size:11.5px">Share</span></span></div>
+    <div style="display:flex;gap:7px;align-items:center;margin-top:6px"><span class="n" style="background:#2A3F92;color:#F4F5F7;border-radius:4px;padding:2px 6px;font-size:10.5px">HIGH</span><span class="n mut" style="font-size:11px">SK하이닉스 · 34m ago</span></div>
+    <div style="font:700 20px/1.25 'Schibsted Grotesk',sans-serif;letter-spacing:-.02em;margin-top:6px">HBM4 samples said to clear qualification at lead customer</div>
+  </div>
+  <div class="hair"><i style="width:100%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card" style="padding:12px 14px;background:#EDEFF3;border-color:#D5DBF0">
+      <div style="display:flex;justify-content:space-between"><span class="lbl">Your position</span><span class="n" style="font-weight:600">$271,715 · 22.7%</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px"><span class="n mut" style="font-size:11.5px">218 sh · avg ₩99,366</span><span class="n gain" style="font-size:11.5px">+2.31% at close</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:7px;border-top:1px solid #D5DBF0"><span class="n mut" style="font-size:11.5px">KRX opens in</span><span class="n" style="font-size:11.5px">15h 03m</span></div>
+    </div>
+    <div class="card" style="padding:13px 14px">
+      <span class="lbl">Summary</span>
+      <p style="font-size:14px;line-height:1.5;margin:7px 0 0">Placeholder summary: neutral, present-tense reporting from the cited sources, figures in tabular numerals like <span class="n">₩1,730,000</span>.</p>
+      <p class="note" style="margin:8px 0 0">Machine summary of 3 sources · 한국어 original</p>
+    </div>
+    <div class="card">
+      <div style="padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Sources · 3</span></div>
+      <div class="cell" style="min-height:52px"><div><div style="font-size:13.5px">한국경제</div><div class="n mut" style="font-size:11px">34m · original</div></div><span class="n mut">open ›</span></div>
+      <div class="cell" style="min-height:52px"><div><div style="font-size:13.5px">Reuters</div><div class="n mut" style="font-size:11px">28m</div></div><span class="n mut">open ›</span></div>
+      <div class="cell" style="min-height:52px"><div><div style="font-size:13.5px">전자신문</div><div class="n mut" style="font-size:11px">1h</div></div><span class="n mut">open ›</span></div>
+    </div>
+    <div class="card"><div class="cell" style="min-height:52px"><span class="mut">More SK하이닉스 news</span><span class="n mut">14 stories ›</span></div></div>
+    <p class="note">Context, not advice.</p>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="5e">
+<div class="dv-olabel"><a class="dv-oid" href="#5e">5e</a>Hamburger menu — Feeds becomes “System status” here, out of the tab bar</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">Close</span><span class="n mut" style="font-size:11px">signed in with GitHub</span></div>
+    <div style="display:flex;align-items:center;gap:11px;margin-top:8px">
+      <span style="width:40px;height:40px;border-radius:50%;background:#2A3F92;color:#F4F5F7;display:flex;align-items:center;justify-content:center;font-weight:700">JK</span>
+      <div><div style="font-weight:600;font-size:16px">Jae Kim</div><div class="n mut" style="font-size:11px">21 positions · 94% complete</div></div>
+    </div>
+  </div>
+  <div class="hair"><i style="width:100%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card">
+      <div class="cell" style="min-height:56px"><div style="display:flex;gap:10px;align-items:center"><span class="n gain">●</span><div><div style="font-weight:500">System status</div><div class="n mut" style="font-size:11px">all feeds healthy · last handoff 15:27:20</div></div></div><span class="n mut">›</span></div>
+      <div class="cell" style="min-height:52px"><span>Quote sources</span><span class="n mut" style="font-size:11.5px">22 · 19 checks OK ›</span></div>
+      <div class="cell" style="min-height:52px"><span>Import history</span><span class="n mut" style="font-size:11.5px">2 batches ›</span></div>
+      <div class="cell" style="min-height:52px"><span>Refresh interval</span><span class="n mut" style="font-size:11.5px">60s ›</span></div>
+    </div>
+    <div class="card">
+      <div class="cell" style="min-height:52px"><span>Portfolio quality</span><span class="n" style="color:#2A3F92;font-size:11.5px">94% ›</span></div>
+      <div class="cell" style="min-height:52px"><span>Insight agent</span><span class="n gain" style="font-size:11.5px">on ›</span></div>
+      <div class="cell" style="min-height:52px"><span>News &amp; muted tickers</span><span class="n mut" style="font-size:11.5px">2 muted ›</span></div>
+      <div class="cell" style="min-height:52px"><span>Notifications</span><span class="n mut" style="font-size:11.5px">important only ›</span></div>
+    </div>
+    <div class="card">
+      <div class="cell" style="min-height:52px"><span>Currency &amp; markets</span><span class="n mut" style="font-size:11.5px">USD · KRX ›</span></div>
+      <div class="cell" style="min-height:52px"><span>Export my data</span><span class="n mut">›</span></div>
+      <div class="cell" style="min-height:52px"><span>Account &amp; sign out</span><span class="n mut">›</span></div>
+    </div>
+    <div class="card" style="padding:12px 14px">
+      <span class="lbl">Status detail</span>
+      <p class="note" style="margin:6px 0 0">Crypto live · US &amp; KRX closed since Friday · USD/KRW 1,388.00 · one retry at 15:26.</p>
+    </div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "add the insight-agent daily digest screen" · "show a news push notification + lock screen" · "design the muted-tickers &amp; ranking-weights settings"</p>
+</section>
+
+<section class="dv-turn" id="t4">
+<div class="dv-thd"><a class="dv-tid" href="#t4">4</a><span class="dv-tname">Import lots &amp; vesting from documents — extract, then confirm</span></div>
+<p class="dv-sub">File in, agent reads it, <b>nothing is written until confirmed</b>: bulk-accept clean rows (<a href="#4c">4c</a>), resolve the ambiguous ones (<a href="#4d">4d</a>), commit with a diff (<a href="#4f">4f</a>).</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="4a">
+<div class="dv-olabel"><a class="dv-oid" href="#4a">4a</a>Import — pick a file, export, or photo</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">‹ MARA</span><span class="n mut" style="font-size:11px">lots &amp; vesting</span></div>
+    <div class="navtitle" style="margin-top:5px">Import a document</div>
+    <p class="note" style="margin:6px 0 0">You approve every row. Files deleted after extraction.</p>
+  </div>
+  <div class="hair"><i style="width:20%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card" style="border-style:dashed;border-color:#2A3F92;background:#EDEFF3;padding:22px 14px;text-align:center">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.7" style="margin:0 auto"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 16v3h16v-3"/></svg>
+      <div style="font-weight:600;font-size:15px;margin-top:8px">Choose a file</div>
+      <div class="n mut" style="font-size:11.5px;margin-top:2px">PDF · CSV · XLSX · PNG/JPG · up to 25 MB</div>
+    </div>
+    <div class="card">
+      <div class="cell" style="min-height:58px"><div><div style="font-weight:500">Fidelity lot detail export</div><div class="n mut" style="font-size:11px">best accuracy</div></div><span class="n mut">›</span></div>
+      <div class="cell" style="min-height:58px"><div><div style="font-weight:500">Brokerage statement PDF</div><div class="n mut" style="font-size:11px">Fidelity · Schwab · 미래에셋 · 삼성증권</div></div><span class="n mut">›</span></div>
+      <div class="cell" style="min-height:58px"><div><div style="font-weight:500">Vesting / RSU schedule</div><div class="n mut" style="font-size:11px">PDF or grant letter</div></div><span class="n mut">›</span></div>
+      <div class="cell" style="min-height:58px"><div><div style="font-weight:500">Photo or screenshot</div><div class="n mut" style="font-size:11px">a lot table on screen</div></div><span class="n mut">›</span></div>
+      <div class="cell" style="min-height:58px"><div><div style="font-weight:500">Forward by email</div><div class="n mut" style="font-size:11px">import@assetly</div></div><span class="n mut">›</span></div>
+    </div>
+    <div class="card">
+      <div style="padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Recent imports</span></div>
+      <div class="cell" style="min-height:52px"><div><div class="n" style="font-size:12.5px">Fidelity_Lots_2026-07-01.csv</div><div class="n mut" style="font-size:11px">46 lots · confirmed Jul 2</div></div><span class="n gain" style="font-size:11.5px">applied</span></div>
+    </div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="4b">
+<div class="dv-olabel"><a class="dv-oid" href="#4b">4b</a>Extraction in flight — honest stages, no spinner</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="n mut" style="font-size:11px">Reading document</span><span style="color:#2A3F92;font-size:14px">Cancel</span></div>
+    <div class="navtitle" style="margin-top:5px;font-size:24px">Statement_Jul2026.pdf</div>
+    <div class="n mut" style="font-size:11.5px;margin-top:2px">6 pages · 1.8 MB · Fidelity</div>
+  </div>
+  <div class="hair"><i style="width:62%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card">
+      <div class="cell" style="min-height:52px"><span>Pages read</span><span class="n gain">6 of 6 ✓</span></div>
+      <div class="cell" style="min-height:52px"><span>Tables found</span><span class="n gain">3 ✓</span></div>
+      <div class="cell" style="min-height:52px"><span>Lots extracted</span><span class="n" style="color:#2A3F92">46 · matching symbols…</span></div>
+      <div class="cell" style="min-height:52px"><span class="mut">Vesting tranches</span><span class="n mut">queued</span></div>
+      <div class="cell" style="min-height:52px"><span class="mut">Duplicate check</span><span class="n mut">queued</span></div>
+    </div>
+    <div class="card" style="padding:13px 14px;background:#EDEFF3;border-color:#D5DBF0">
+      <span class="lbl">What the agent is doing</span>
+      <p class="note" style="margin:6px 0 0">Date, quantity and basis per lot; ₩ converted at the statement date's rate. Anything unclear becomes a question, never a guess.</p>
+    </div>
+    <div style="margin-top:auto;padding-top:6px"><span style="display:flex;align-items:center;justify-content:center;min-height:52px;background:#fff;border:1px solid #E2E4E9;border-radius:10px;font-weight:500;font-size:15px">Keep browsing</span></div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="4c">
+<div class="dv-olabel"><a class="dv-oid" href="#4c">4c</a>Confirm — everything on one screen, bulk-accept the clean rows</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">Discard</span><span class="n mut" style="font-size:11px">Statement_Jul2026.pdf</span></div>
+    <div class="navtitle" style="margin-top:4px;font-size:24px">Confirm 46 lots</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span class="n mut" style="font-size:11.5px">42 clear · 3 need you · 1 duplicate</span><span class="chip on" style="min-height:32px">Accept all clear</span></div>
+  </div>
+  <div class="hair"><i style="width:88%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card" style="padding:12px 14px;background:#EDEFF3;border-color:#D5DBF0">
+      <div style="display:flex;justify-content:space-between"><span class="lbl">MARA · after import</span><span class="n" style="font-weight:600">40,902 sh</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px"><span class="lbl">Cost basis</span><span class="n" style="font-weight:600">$640,933</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;padding-top:7px;border-top:1px solid #D5DBF0"><span class="lbl">Avg cost</span><span class="n" style="font-weight:600">$15.67 <span class="mut" style="font-size:11px">was $16.92</span></span></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Needs you · 3</span><span class="lbl">tap to resolve</span></div>
+      <div class="cell" style="min-height:60px"><div><div style="font-weight:500">Lot #43 · wash sale?</div><div class="n mut" style="font-size:11px">adjusted basis 16.845935</div></div><span class="chip on" style="min-height:34px">Resolve</span></div>
+      <div class="cell" style="min-height:60px"><div><div style="font-weight:500">"SKHYNIX" → 000660?</div><div class="n mut" style="font-size:11px">2 candidates</div></div><span class="chip on" style="min-height:34px">Match</span></div>
+      <div class="cell" style="min-height:60px"><div><div style="font-weight:500">Lot #22 has no date</div><div class="n mut" style="font-size:11px">column cut off, page 4</div></div><span class="chip" style="min-height:34px">Add date</span></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Clear · 42</span><span class="lbl">qty · basis · date</span></div>
+      <div class="cell" style="min-height:50px"><div><span class="n">#1</span> <span class="n mut" style="font-size:11px">2026-07-01</span></div><div style="display:flex;gap:9px;align-items:center"><span class="n" style="font-size:12px">2,880 · $13.37</span><span class="gain">✓</span></div></div>
+      <div class="cell" style="min-height:50px"><div><span class="n">#10</span> <span class="n mut" style="font-size:11px">2026-04-01</span></div><div style="display:flex;gap:9px;align-items:center"><span class="n" style="font-size:12px">2,768 · $8.04</span><span class="gain">✓</span></div></div>
+      <div class="cell" style="min-height:50px"><div><span class="n">#26</span> <span class="n mut" style="font-size:11px">2025-10-01</span></div><div style="display:flex;gap:9px;align-items:center"><span class="n" style="font-size:12px">2,970 · $18.61</span><span class="gain">✓</span></div></div>
+      <div class="cell" style="min-height:50px"><div><span class="n">#46</span> <span class="n mut" style="font-size:11px">2024-07-01</span></div><div style="display:flex;gap:9px;align-items:center"><span class="n" style="font-size:12px">7,997 · $22.56</span><span class="gain">✓</span></div></div>
+      <div class="cell" style="min-height:50px"><span class="mut">Show all 42</span><span class="n mut">›</span></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Duplicate · 1</span><span class="lbl">already in your account</span></div>
+      <div class="cell" style="min-height:56px"><div><div class="n" style="font-size:12.5px">#31 · 2025-07-01 · 2,970 sh</div><div class="n mut" style="font-size:11px">identical to an existing lot</div></div><span class="chip" style="min-height:34px">Skip</span></div>
+    </div>
+    <div style="padding-top:4px"><span style="display:flex;align-items:center;justify-content:center;min-height:52px;background:#2A3F92;color:#F4F5F7;border-radius:10px;font-weight:600;font-size:15px">Resolve 3, then import</span></div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="4d">
+<div class="dv-olabel"><a class="dv-oid" href="#4d">4d</a>Resolve sheet — the source snippet next to the question</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;background:rgba(22,24,29,.35)">
+    <div style="flex:1"></div>
+    <div style="background:#F4F5F7;border-radius:18px 18px 0 0;padding:8px 16px 14px;display:flex;flex-direction:column;gap:10px;max-height:86%;overflow:hidden">
+      <div style="width:38px;height:5px;border-radius:3px;background:#C7CBD2;margin:0 auto 4px"></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="lbl">Question 1 of 3</span><span class="n mut" style="font-size:11px">page 5, row 43</span></div>
+      <div style="font:700 21px/1.2 'Schibsted Grotesk',sans-serif;letter-spacing:-.02em">Is lot #43 a wash-sale adjusted basis?</div>
+      <div class="card" style="padding:11px 13px;background:#16181D">
+        <div class="n" style="color:#9AA2B1;font-size:10.5px">extracted from source</div>
+        <div class="n" style="color:#F4F5F7;font-size:11.5px;margin-top:5px;line-height:1.6">465&nbsp;&nbsp;10/31/2024&nbsp;&nbsp;16.845935*&nbsp;&nbsp;7,833.36<br><span style="color:#9AA2B1">* adjusted — disallowed loss added to basis</span></div>
+      </div>
+      <div class="card">
+        <div class="cell" style="min-height:56px;background:#EDEFF3"><div><div style="font-weight:500">Yes — adjusted basis</div><div class="n mut" style="font-size:11px">flags the lot WASH</div></div><span style="width:22px;height:22px;border-radius:50%;background:#2A3F92;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px">✓</span></div>
+        <div class="cell" style="min-height:56px"><div><div>No — plain purchase price</div></div><span style="width:22px;height:22px;border-radius:50%;border:1.5px solid #E2E4E9"></span></div>
+        <div class="cell" style="min-height:56px"><div><div class="mut">Not sure — ask me later</div><div class="n mut" style="font-size:11px">goes to the checklist</div></div><span style="width:22px;height:22px;border-radius:50%;border:1.5px solid #E2E4E9"></span></div>
+      </div>
+      <p class="note">Basis is stored exactly as read — never rounded.</p>
+      <div style="display:flex;gap:9px">
+        <span style="flex:1;display:flex;align-items:center;justify-content:center;min-height:50px;background:#fff;border:1px solid #E2E4E9;border-radius:10px;font-weight:500;font-size:15px">Skip</span>
+        <span style="flex:2;display:flex;align-items:center;justify-content:center;min-height:50px;background:#2A3F92;color:#F4F5F7;border-radius:10px;font-weight:600;font-size:15px">Next question</span>
+      </div>
+    </div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="4e">
+<div class="dv-olabel"><a class="dv-oid" href="#4e">4e</a>Vesting extraction — future tranches confirmed the same way</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">Discard</span><span class="n mut" style="font-size:11px">RSU_Grant_2024.pdf</span></div>
+    <div class="navtitle" style="margin-top:4px;font-size:24px">Confirm vesting</div>
+    <div class="n mut" style="font-size:11.5px;margin-top:2px">MARA · 24 tranches read · monthly, 4-year grant</div>
+  </div>
+  <div class="hair"><i style="width:88%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card" style="padding:12px 14px;background:#EDEFF3;border-color:#D5DBF0">
+      <div style="display:flex;justify-content:space-between"><span class="lbl">Grant total</span><span class="n" style="font-weight:600">28,480 sh</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px"><span class="lbl">Already vested</span><span class="n" style="font-weight:600">13,638 sh</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;padding-top:7px;border-top:1px solid #D5DBF0"><span class="lbl">Unvested</span><span class="n" style="font-weight:600">14,842 sh <span class="mut" style="font-size:11px">≈ $167,121</span></span></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Pattern detected</span><span class="chip on" style="min-height:32px">Accept all</span></div>
+      <div class="cell" style="min-height:54px"><div><div>Monthly on the 1st</div><div class="n mut" style="font-size:11px">1,240 sh · Sep 2026 → Jun 2028</div></div><span class="gain">✓</span></div>
+      <div class="cell" style="min-height:54px"><div><div>Annual cliff</div><div class="n mut" style="font-size:11px">2,970 sh · Jan 2, 2027</div></div><span class="gain">✓</span></div>
+      <div class="cell" style="min-height:54px"><div><div style="font-weight:500">Final tranche unclear</div><div class="n mut" style="font-size:11px">982 or 980 sh · page 3</div></div><span class="chip on" style="min-height:34px">Fix</span></div>
+    </div>
+    <div class="card">
+      <div style="padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">On each vest day, Assetly will</span></div>
+      <div class="cell" style="min-height:50px"><span>Create a lot at that day's price</span><span style="width:22px;height:22px;border-radius:50%;background:#2A3F92;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px">✓</span></div>
+      <div class="cell" style="min-height:50px"><span>Notify me the morning of</span><span style="width:22px;height:22px;border-radius:50%;background:#2A3F92;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px">✓</span></div>
+      <div class="cell" style="min-height:50px"><span class="mut">Sell to cover tax</span><span style="width:22px;height:22px;border-radius:50%;border:1.5px solid #E2E4E9"></span></div>
+    </div>
+    <div style="padding-top:4px"><span style="display:flex;align-items:center;justify-content:center;min-height:52px;background:#2A3F92;color:#F4F5F7;border-radius:10px;font-weight:600;font-size:15px">Fix 1, then save schedule</span></div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="4f">
+<div class="dv-olabel"><a class="dv-oid" href="#4f">4f</a>Commit — plain-language diff of what gets written, undoable</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">‹ Review</span><span class="n gain" style="font-size:11px">3 of 3 resolved</span></div>
+    <div class="navtitle" style="margin-top:4px;font-size:24px">Ready to import</div>
+    <p class="note" style="margin:6px 0 0">Exactly what changes in your account.</p>
+  </div>
+  <div class="hair"><i style="width:100%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card">
+      <div class="cell" style="min-height:54px"><span>New lots added</span><span class="n gain" style="font-weight:600">+45</span></div>
+      <div class="cell" style="min-height:54px"><span>Duplicates skipped</span><span class="n mut">1</span></div>
+      <div class="cell" style="min-height:54px"><span>Lots flagged WASH</span><span class="n" style="color:#B4372A">1</span></div>
+      <div class="cell" style="min-height:54px"><span>Vesting tranches</span><span class="n gain" style="font-weight:600">+24</span></div>
+      <div class="cell" style="min-height:54px"><span class="mut">Existing lots changed</span><span class="n mut">0</span></div>
+    </div>
+    <div class="card" style="padding:12px 14px;background:#EDEFF3;border-color:#D5DBF0">
+      <span class="lbl">MARA before → after</span>
+      <div style="display:flex;justify-content:space-between;margin-top:8px"><span style="font-size:13.5px">Shares</span><span class="n">35,254 → <b>40,902</b></span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px"><span style="font-size:13.5px">Avg cost</span><span class="n">$16.92 → <b>$15.67</b></span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px"><span style="font-size:13.5px">Total G/L</span><span class="n">-$199,600 → <b class="loss">-$180,376</b></span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;padding-top:7px;border-top:1px solid #D5DBF0"><span style="font-size:13.5px">Net worth</span><span class="n">$1,131,412 → <b>$1,194,933</b></span></div>
+    </div>
+    <div class="card">
+      <div class="cell" style="min-height:52px"><div><div style="font-size:13.5px">Portfolio quality</div><div class="n mut" style="font-size:11px">72% → 94% · insights unlock</div></div><span class="n gain" style="font-weight:600">+22</span></div>
+      <div class="cell" style="min-height:52px"><span class="mut" style="font-size:13.5px">Keep the source file</span><span class="n mut" style="font-size:11.5px">delete after import ›</span></div>
+    </div>
+    <p class="note">Stored as one batch — undoable for 30 days.</p>
+    <div style="margin-top:auto;padding-top:4px;display:flex;flex-direction:column;gap:9px">
+      <span style="display:flex;align-items:center;justify-content:center;min-height:52px;background:#2A3F92;color:#F4F5F7;border-radius:10px;font-weight:600;font-size:15px">Import 45 lots &amp; 24 tranches</span>
+      <span style="display:flex;align-items:center;justify-content:center;min-height:46px;background:#fff;border:1px solid #E2E4E9;border-radius:10px;font-weight:500;font-size:14.5px">Back to review</span>
+    </div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "add the failed/unreadable-file state" · "show the notification + undo banner after <a class="dv-oid" href="#4f">4f</a>" · "design the insight agent screen this unlocks"</p>
+</section>
+
+<section class="dv-turn" id="t3">
+<div class="dv-thd"><a class="dv-tid" href="#t3">3</a><span class="dv-tname">Onboarding — first run to first insight</span></div>
+<p class="dv-sub">OAuth-only sign-in. One rule: <b>show a real number fast</b> — shares + cost required, date optional, many lots per position. Accuracy is earned back through nudges (<a href="#3g">3g</a>); every field stays editable (<a href="#3i">3i</a>).</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="3a">
+<div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>Sign in — GitHub / Google OAuth (Supabase), no password path</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:28px 26px;background:#fff">
+    <svg width="52" height="52" viewBox="0 0 32 32"><rect x="4" y="13" width="11" height="6" rx="3" fill="#2A3F92"/><rect x="18" y="13" width="11" height="6" rx="3" fill="#2A3F92" opacity=".45"/></svg>
+    <div style="font:700 34px/1.1 'Schibsted Grotesk',sans-serif;letter-spacing:-.03em;margin-top:20px">Assetly</div>
+    <p style="font-size:15.5px;color:#5D636E;margin:10px 0 0;max-width:24ch">Every position, in dollars and won, every minute.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:34px">
+      <span style="display:flex;align-items:center;justify-content:center;gap:9px;min-height:52px;background:#16181D;color:#F4F5F7;border-radius:10px;font-weight:600;font-size:15px"><svg width="19" height="19" viewBox="0 0 16 16" fill="#F4F5F7"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.23 1.87.87 2.33.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 014 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Continue with GitHub</span>
+      <span style="display:flex;align-items:center;justify-content:center;gap:9px;min-height:52px;background:#fff;border:1px solid #E2E4E9;border-radius:10px;font-weight:600;font-size:15px"><svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.6 9.2c0-.6-.05-1.18-.16-1.74H9v3.29h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.91c1.7-1.57 2.65-3.88 2.65-6.53z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.95-2.18l-2.91-2.26c-.8.54-1.83.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.34A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 010-3.44V4.94H.96a9 9 0 000 8.12l3.01-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A8.98 8.98 0 00.96 4.94l3.01 2.34C4.68 5.16 6.66 3.58 9 3.58z"/></svg>Continue with Google</span>
+    </div>
+    <p class="note" style="margin-top:22px">No brokerage credentials — you enter positions or import a file.</p>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="3b">
+<div class="dv-olabel"><a class="dv-oid" href="#3b">3b</a>Step 1 — pick the markets you hold in; sets currency &amp; feeds</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="n mut" style="font-size:11px">Step 1 of 3</span><span class="n mut" style="font-size:11px">Skip</span></div>
+    <div class="navtitle" style="margin-top:5px">Where do you hold?</div>
+  </div>
+  <div class="hair"><i style="width:33%"></i></div>
+  <div class="body">
+    <div class="card">
+      <div class="cell" style="min-height:60px;background:#EDEFF3"><div><div style="font-weight:500">US equities &amp; ETFs</div><div class="n mut" style="font-size:11px">NASDAQ · NYSE</div></div><span style="width:22px;height:22px;border-radius:50%;background:#2A3F92;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px">✓</span></div>
+      <div class="cell" style="min-height:60px;background:#EDEFF3"><div><div style="font-weight:500">Korea · KRX</div><div class="n mut" style="font-size:11px">KOSPI · KOSDAQ · ₩ prices</div></div><span style="width:22px;height:22px;border-radius:50%;background:#2A3F92;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px">✓</span></div>
+      <div class="cell" style="min-height:60px"><div><div style="font-weight:500">Retirement accounts</div><div class="n mut" style="font-size:11px">401k · Roth · mutual funds</div></div><span style="width:22px;height:22px;border-radius:50%;border:1.5px solid #E2E4E9"></span></div>
+      <div class="cell" style="min-height:60px;background:#EDEFF3"><div><div style="font-weight:500">Crypto</div><div class="n mut" style="font-size:11px">BTC · ETH · 24/7 feed</div></div><span style="width:22px;height:22px;border-radius:50%;background:#2A3F92;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px">✓</span></div>
+      <div class="cell" style="min-height:60px"><div><div style="font-weight:500">Cash &amp; debts</div><div class="n mut" style="font-size:11px">manual entries, no feed</div></div><span style="width:22px;height:22px;border-radius:50%;border:1.5px solid #E2E4E9"></span></div>
+    </div>
+    <div class="card" style="padding:12px 14px">
+      <span class="lbl">Report totals in</span>
+      <div class="seg" style="margin-top:8px"><span class="on">USD $</span><span>KRW ₩</span><span>Both</span></div>
+    </div>
+    <div style="margin-top:auto;padding-top:6px"><span style="display:flex;align-items:center;justify-content:center;min-height:52px;background:#2A3F92;color:#F4F5F7;border-radius:10px;font-weight:600;font-size:15px">Continue</span></div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="3c">
+<div class="dv-olabel"><a class="dv-oid" href="#3c">3c</a>Step 2 — find the first position (search, recents, or paste/CSV)</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="n mut" style="font-size:11px">Step 2 of 3</span><span class="n mut" style="font-size:11px">1 added</span></div>
+    <div class="navtitle" style="margin-top:5px">Add a position</div>
+    <div style="display:flex;align-items:center;gap:9px;min-height:44px;background:#EDEFF3;border-radius:10px;padding:0 12px;margin-top:10px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M16 16l4 4"/></svg><span class="n" style="font-size:14px">SK하이<span style="opacity:.4">|</span></span></div>
+  </div>
+  <div class="hair"><i style="width:66%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card">
+      <div class="cell" style="min-height:56px"><div><div style="font-weight:500">SK하이닉스 <span class="krx">KRX 000660</span></div><div class="n mut" style="font-size:11px">₩1,730,000 · KOSPI</div></div><span class="n" style="color:#2A3F92;font-size:20px">+</span></div>
+      <div class="cell" style="min-height:56px"><div><div style="font-weight:500">SK스퀘어 <span class="krx">KRX 402340</span></div><div class="n mut" style="font-size:11px">₩248,500 · KOSPI</div></div><span class="n" style="color:#2A3F92;font-size:20px">+</span></div>
+      <div class="cell" style="min-height:56px"><div><div style="font-weight:500">SKYW <span class="krx">NASDAQ</span></div><div class="n mut" style="font-size:11px">$121.40</div></div><span class="n" style="color:#2A3F92;font-size:20px">+</span></div>
+    </div>
+    <div class="card">
+      <div style="padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Already added</span></div>
+      <div class="cell" style="min-height:50px"><div><div>MARA <span class="krx">NASDAQ</span></div><div class="n mut" style="font-size:11px">40,902 sh · avg $15.67 · 3 lots</div></div><span class="n mut">edit ›</span></div>
+    </div>
+    <div class="card">
+      <div class="cell" style="min-height:54px"><div><div>Paste from a broker</div><div class="n mut" style="font-size:11px">we parse the rows</div></div><span class="n mut">›</span></div>
+      <div class="cell" style="min-height:54px"><div><div>Import CSV</div><div class="n mut" style="font-size:11px">ticker, shares, cost, date</div></div><span class="n mut">›</span></div>
+      <div class="cell" style="min-height:54px"><div><div>Cash, debt, or private asset</div><div class="n mut" style="font-size:11px">manual value</div></div><span class="n mut">›</span></div>
+    </div>
+    <div style="margin-top:auto;padding-top:6px"><span style="display:flex;align-items:center;justify-content:center;min-height:52px;background:#2A3F92;color:#F4F5F7;border-radius:10px;font-weight:600;font-size:15px">Done · see my net worth</span></div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="3d">
+<div class="dv-olabel"><a class="dv-oid" href="#3d">3d</a>Step 3 — the only required fields: shares + cost. Date is optional and clearly so</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">Cancel</span><span class="n mut" style="font-size:11px">SK하이닉스 · ₩1,730,000</span><span style="color:#5D636E;font-size:14px">Save</span></div>
+    <div class="navtitle" style="margin-top:6px;font-size:24px">Lot 1</div>
+  </div>
+  <div class="hair"><i style="width:100%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card">
+      <div class="cell" style="min-height:58px"><div><div style="font-weight:500">Shares</div><div class="n mut" style="font-size:11px">required</div></div><span class="n" style="font-size:19px;font-weight:600">218<span style="opacity:.4">|</span></span></div>
+      <div class="cell" style="min-height:58px"><div><div style="font-weight:500">Cost per share</div><div class="n mut" style="font-size:11px">required</div></div><span class="n" style="font-size:19px;font-weight:600;color:#5D636E">₩99,366</span></div>
+      <div class="cell" style="min-height:58px"><div><div>Purchase date</div><div class="n mut" style="font-size:11px">optional</div></div><span class="n mut" style="font-size:14px">Add date ›</span></div>
+    </div>
+    <div class="card" style="padding:12px 14px;background:#EDEFF3;border-color:#D5DBF0">
+      <div style="display:flex;justify-content:space-between"><span class="lbl">Cost basis</span><span class="n" style="font-weight:600">₩21,661,788</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px"><span class="lbl">Market value</span><span class="n" style="font-weight:600">₩377,140,000</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;padding-top:7px;border-top:1px solid #D5DBF0"><span class="lbl">Unrealized</span><span class="n gain" style="font-weight:600">+₩355,478,212 (+1,641%)</span></div>
+    </div>
+    <div class="card"><div class="cell" style="min-height:52px"><span style="color:#2A3F92;font-weight:500">+ Add another lot</span><span class="n mut" style="font-size:11px">bought more than once</span></div></div>
+    <div style="margin-top:auto;background:#D8DBE1;border-top:1px solid #C7CBD2;margin-left:-16px;margin-right:-16px;margin-bottom:-10px;padding:7px 5px 9px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+      <span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">1</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">2</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">3</span>
+      <span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">4</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">5</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">6</span>
+      <span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">7</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">8</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">9</span>
+      <span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">.</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">0</span><span class="n" style="background:#C0C4CC;border-radius:6px;text-align:center;padding:11px 0;font-size:16px">⌫</span>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="dv-opt" id="3e">
+<div class="dv-olabel"><a class="dv-oid" href="#3e">3e</a>Multiple lots in one position — the average is derived, never typed</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">‹ Back</span><span style="color:#2A3F92;font-size:14px">Save position</span></div>
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:4px"><div><div class="navtitle">MARA</div><div class="n mut" style="font-size:11.5px">NASDAQ · $11.26</div></div><div style="text-align:right"><div class="n" style="font-size:17px;font-weight:600">40,902 sh</div><div class="n mut" style="font-size:11.5px">avg $15.67</div></div></div>
+  </div>
+  <div class="hair"><i style="width:100%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card" style="padding:12px 14px;background:#EDEFF3;border-color:#D5DBF0">
+      <div style="display:flex;justify-content:space-between"><span class="lbl">Cost basis · 3 lots</span><span class="n" style="font-weight:600">$640,933</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;padding-top:7px;border-top:1px solid #D5DBF0"><span class="lbl">Unrealized</span><span class="n loss" style="font-weight:600">-$180,376 (-28.14%)</span></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Lots</span><span class="lbl">Shares · cost</span></div>
+      <div class="cell" style="min-height:56px"><div><div>Jul 1, 2026</div><div class="n mut" style="font-size:11px">vest · LT Jul 2027</div></div><div style="text-align:right"><div class="n">2,880</div><div class="n mut" style="font-size:11px">$13.37</div></div></div>
+      <div class="cell" style="min-height:56px"><div><div>Apr 1, 2026</div><div class="n mut" style="font-size:11px">purchase</div></div><div style="text-align:right"><div class="n">2,768</div><div class="n mut" style="font-size:11px">$8.04</div></div></div>
+      <div class="cell" style="min-height:56px"><div><div class="mut">No date</div><div class="n mut" style="font-size:11px;color:#B4372A">date missing</div></div><div style="text-align:right"><div class="n">35,254</div><div class="n mut" style="font-size:11px">$16.92</div></div></div>
+      <div class="cell" style="min-height:52px"><span style="color:#2A3F92;font-weight:500">+ Add lot</span></div>
+    </div>
+    <p class="note">Each lot keeps its own date and cost. An undated lot is fine — only history is affected.</p>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="3f">
+<div class="dv-olabel"><a class="dv-oid" href="#3f">3f</a>The payoff — first real number, seconds after two positions</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div style="flex:1;display:flex;flex-direction:column;padding:0;background:#F4F5F7;overflow:hidden">
+    <div style="background:#2A3F92;color:#F4F5F7;padding:26px 22px 22px">
+      <svg width="22" height="22" viewBox="0 0 32 32"><rect x="4" y="13" width="11" height="6" rx="3" fill="#F4F5F7"/><rect x="18" y="13" width="11" height="6" rx="3" fill="#F4F5F7" opacity=".45"/></svg>
+      <div style="font:600 12px 'Schibsted Grotesk',sans-serif;letter-spacing:.15em;text-transform:uppercase;opacity:.75;margin-top:16px">You're on the track</div>
+      <div class="n" style="font-size:36px;font-weight:600;letter-spacing:-.02em;margin-top:6px">$732,272</div>
+      <div class="n" style="font-size:14px;opacity:.9">+9,924 (+1.37%) today · ₩1,016,393,536</div>
+      <div class="n" style="font-size:11.5px;opacity:.7;margin-top:8px">2 positions · 4 lots · next handoff in 60s</div>
+    </div>
+    <div style="padding:14px 16px;display:flex;flex-direction:column;gap:11px;flex:1">
+      <div class="card">
+        <div class="cell" style="min-height:52px"><div>MARA</div><div style="text-align:right"><div class="n">460,557</div><div class="n gain" style="font-size:11.5px">+0.99%</div></div></div>
+        <div class="cell" style="min-height:52px"><div>SK하이닉스 <span class="krx">KRX</span></div><div style="text-align:right"><div class="n">271,715</div><div class="n gain" style="font-size:11.5px">+2.31%</div></div></div>
+      </div>
+      <div class="card" style="padding:13px 14px">
+        <span class="lbl">What's next</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:9px"><span style="font-size:14px">Add your remaining positions</span><span class="n mut" style="font-size:11.5px">+19 est.</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:9px"><span style="font-size:14px">Fill 1 missing purchase date</span><span class="n mut" style="font-size:11.5px">unlocks history</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:9px"><span style="font-size:14px">Turn on daily insights</span><span class="n mut" style="font-size:11.5px">needs 3 positions</span></div>
+      </div>
+      <div style="margin-top:auto;display:flex;flex-direction:column;gap:9px">
+        <span style="display:flex;align-items:center;justify-content:center;min-height:52px;background:#2A3F92;color:#F4F5F7;border-radius:10px;font-weight:600;font-size:15px">Add another position</span>
+        <span style="display:flex;align-items:center;justify-content:center;min-height:48px;background:#fff;border:1px solid #E2E4E9;border-radius:10px;font-weight:500;font-size:15px">Go to my net worth</span>
+      </div>
+    </div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="3g">
+<div class="dv-olabel"><a class="dv-oid" href="#3g">3g</a>Accuracy nudges — a running checklist that gates the insight &amp; news agents</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="n mut" style="font-size:11px">Portfolio quality</span><span class="n" style="font-size:11px;color:#2A3F92">Later</span></div>
+    <div class="navtitle" style="margin-top:4px">72% complete</div>
+    <div style="height:6px;background:#E2E4E9;border-radius:3px;margin-top:9px"><div style="width:72%;height:6px;background:#2A3F92;border-radius:3px"></div></div>
+  </div>
+  <div class="hair"><i style="width:82%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card">
+      <div class="cell" style="min-height:64px"><div><div style="font-weight:500">4 positions missing cost basis</div><div class="n mut" style="font-size:11px">blocks G/L on 18% of value</div></div><span class="chip on" style="min-height:36px">Fix</span></div>
+      <div class="cell" style="min-height:64px"><div><div style="font-weight:500">7 lots missing purchase date</div><div class="n mut" style="font-size:11px">blocks term &amp; history</div></div><span class="chip on" style="min-height:36px">Fix</span></div>
+      <div class="cell" style="min-height:64px"><div><div style="font-weight:500">2 debts have no balance date</div><div class="n mut" style="font-size:11px">manual entries drift</div></div><span class="chip" style="min-height:36px">Review</span></div>
+      <div class="cell" style="min-height:64px"><div><div class="mut" style="font-weight:500">Retirement accounts not added</div><div class="n mut" style="font-size:11px">selected in step 1</div></div><span class="chip" style="min-height:36px">Add</span></div>
+    </div>
+    <div class="card" style="padding:13px 14px">
+      <span class="lbl">Unlocks at 80%</span>
+      <div style="display:flex;gap:10px;align-items:flex-start;margin-top:9px"><span class="n" style="color:#2A3F92">◗</span><div><div style="font-size:14px;font-weight:500">Daily insight agent</div><div class="n mut" style="font-size:11px">concentration · term windows · drift</div></div></div>
+      <div style="display:flex;gap:10px;align-items:flex-start;margin-top:10px"><span class="n" style="color:#2A3F92">◗</span><div><div style="font-size:14px;font-weight:500">News for your positions</div><div class="n mut" style="font-size:11px">per ticker · US + KRX</div></div></div>
+    </div>
+    <div style="margin-top:auto;padding-top:6px"><span style="display:flex;align-items:center;justify-content:center;min-height:52px;background:#2A3F92;color:#F4F5F7;border-radius:10px;font-weight:600;font-size:15px">Fix the next one · 2 min</span></div>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="3h">
+<div class="dv-olabel"><a class="dv-oid" href="#3h">3h</a>Batch fill — one field, every position that's missing it, keypad open</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">‹ Quality</span><span class="n mut" style="font-size:11px">3 of 7</span><span style="color:#2A3F92;font-size:14px">Skip</span></div>
+    <div class="navtitle" style="margin-top:5px;font-size:24px">When did you buy AMD?</div>
+    <p class="note" style="margin:5px 0 0">130 sh at $160.59 · month is enough.</p>
+  </div>
+  <div class="hair"><i style="width:43%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card">
+      <div class="cell" style="min-height:58px"><div style="font-weight:500">Purchase date</div><span class="n" style="font-size:19px;font-weight:600">2024-08<span style="opacity:.4">|</span></span></div>
+      <div class="cell" style="min-height:52px"><span class="mut">I don't remember</span><span class="n mut">skip ›</span></div>
+    </div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap"><span class="chip">This month</span><span class="chip">2026</span><span class="chip">2025</span><span class="chip on">2024</span><span class="chip">Before 2022</span></div>
+    <div class="card" style="padding:12px 14px;background:#EDEFF3;border-color:#D5DBF0">
+      <div style="display:flex;justify-content:space-between"><span class="lbl">Now computable</span><span class="n gain" style="font-size:12px">long-term ✓</span></div>
+      <p class="note" style="margin:6px 0 0">Term, tax-lot period, and history for this position.</p>
+    </div>
+    <div style="margin-top:auto;background:#D8DBE1;border-top:1px solid #C7CBD2;margin-left:-16px;margin-right:-16px;margin-bottom:-10px;padding:7px 5px 9px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+      <span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">1</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">2</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">3</span>
+      <span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">4</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">5</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">6</span>
+      <span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">7</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">8</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">9</span>
+      <span class="n" style="background:#C0C4CC;border-radius:6px;text-align:center;padding:11px 0;font-size:15px">-</span><span class="n" style="background:#fff;border-radius:6px;text-align:center;padding:11px 0;font-size:20px">0</span><span class="n" style="background:#2A3F92;color:#F4F5F7;border-radius:6px;text-align:center;padding:11px 0;font-size:15px">Next</span>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="dv-opt" id="3i">
+<div class="dv-olabel"><a class="dv-oid" href="#3i">3i</a>Edit a holding — every field, every lot, from the holdings page</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">Cancel</span><span class="n mut" style="font-size:11px">saved to your account</span><span style="color:#2A3F92;font-size:14px;font-weight:600">Save</span></div>
+    <div class="navtitle" style="margin-top:5px;font-size:24px">Edit SK하이닉스</div>
+  </div>
+  <div class="hair"><i style="width:100%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card">
+      <div class="cell" style="min-height:52px"><span class="mut">Display name</span><span class="n">SK하이닉스</span></div>
+      <div class="cell" style="min-height:52px"><span class="mut">Symbol · market</span><span class="n">000660 · KRX</span></div>
+      <div class="cell" style="min-height:52px"><span class="mut">Category</span><span class="n">KRX ›</span></div>
+      <div class="cell" style="min-height:52px"><span class="mut">Account</span><span class="n">연화 증권 ›</span></div>
+      <div class="cell" style="min-height:52px"><span class="mut">Quote source</span><span class="n" style="font-size:11.5px">Naver + Yahoo check ›</span></div>
+      <div class="cell" style="min-height:52px"><span class="mut">Price override</span><span class="n mut">off ›</span></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Lots · 2</span><span class="lbl">218 sh · avg ₩99,366</span></div>
+      <div class="cell" style="min-height:56px"><div><div class="n">2021-03-15</div><div class="n mut" style="font-size:11px">118 sh · ₩96,400</div></div><span class="n mut">edit ›</span></div>
+      <div class="cell" style="min-height:56px"><div><div class="n">2023-11-02</div><div class="n mut" style="font-size:11px">100 sh · ₩102,860</div></div><span class="n mut">edit ›</span></div>
+      <div class="cell" style="min-height:50px"><span style="color:#2A3F92;font-weight:500">+ Add lot</span></div>
+    </div>
+    <div class="card">
+      <div class="cell" style="min-height:50px"><span class="mut">Record a sale</span><span class="n mut">›</span></div>
+      <div class="cell" style="min-height:50px"><span style="color:#B4372A">Delete holding</span><span class="n mut">›</span></div>
+    </div>
+    <p class="note">Edits recompute basis, G/L and %-of-net immediately.</p>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "add the paste-from-broker parsing screen" · "show the insight-agent screen once <a class="dv-oid" href="#3g">3g</a> hits 80%" · "make <a class="dv-oid" href="#3a">3a</a>–<a class="dv-oid" href="#3f">3f</a> a tappable prototype"</p>
+</section>
+
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Assetly · Relay — iPhone app</span></div>
+<p class="dv-sub">Relay tokens, native iOS: 390×844, 56px rows, Chivo Mono figures, gain/loss always sign + color. The hairline under the nav is the baton — it fills toward the next handoff. <a href="#2g">2g</a> is the Android adaptation.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="2a">
+<div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Home — net worth, allocation, movers, market status</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="sig" style="display:flex;gap:5px;align-items:center"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="7" width="3" height="4" rx="1" fill="#16181D"/><rect x="4.5" y="5" width="3" height="6" rx="1" fill="#16181D"/><rect x="9" y="2.5" width="3" height="8.5" rx="1" fill="#16181D"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16181D" opacity=".3"/></svg><svg width="25" height="12" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3" fill="none" stroke="#16181D" opacity=".4"/><rect x="2" y="2" width="14" height="8" rx="2" fill="#16181D"/><rect x="23" y="4" width="2" height="4" rx="1" fill="#16181D" opacity=".4"/></svg></span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span class="mark" style="font-size:15px"><svg width="17" height="17" viewBox="0 0 32 32"><rect x="4" y="13" width="11" height="6" rx="3" fill="#2A3F92"/><rect x="18" y="13" width="11" height="6" rx="3" fill="#2A3F92" opacity=".45"/></svg>Assetly</span>
+      <span class="n mut" style="font-size:11px">next handoff 42s</span>
+    </div>
+    <div class="navtitle" style="margin-top:6px">Net worth</div>
+  </div>
+  <div class="hair"><i style="width:30%"></i></div>
+  <div class="body">
+    <div class="card" style="padding:14px">
+      <div class="n" style="font-size:33px;font-weight:600;letter-spacing:-.02em">$1,194,933</div>
+      <div class="n gain" style="font-size:14px">+14,229 (+1.26%) today</div>
+      <div class="n mut" style="font-size:11.5px;margin-top:2px">₩1,658,566,600 · 16.59억 @ ₩1,388.00</div>
+      <svg width="100%" height="92" viewBox="0 0 320 92" preserveAspectRatio="none" style="margin-top:10px"><line x1="0" y1="46" x2="320" y2="46" stroke="#E2E4E9" stroke-dasharray="4 4"/><polyline points="0,78 40,68 80,73 120,46 160,54 200,30 240,40 280,20 320,12" fill="none" stroke="#2A3F92" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>
+      <div style="display:flex;justify-content:space-between;margin-top:2px"><span class="n mut" style="font-size:10.5px">Mar '24</span><span class="n mut" style="font-size:10.5px">now</span></div>
+      <div class="seg" style="margin-top:10px"><span>1M</span><span>6M</span><span class="on">1Y</span><span>ALL</span></div>
+      <p class="note" style="margin:8px 0 0">Hypothetical — today's holdings valued back through time.</p>
+    </div>
+    <div class="card" style="padding:12px 14px">
+      <span class="lbl">Allocation</span>
+      <div style="display:flex;height:13px;border-radius:3px;overflow:hidden;margin-top:9px"><div style="flex:54;background:#2A3F92"></div><div style="flex:38;background:#2A3F92;opacity:.62"></div><div style="flex:8;background:#2A3F92;opacity:.34"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:7px"><span class="n mut" style="font-size:11.5px">US 54.4%</span><span class="n mut" style="font-size:11.5px">KRX 37.5%</span><span class="n mut" style="font-size:11.5px">RET 8.1%</span></div>
+      <div style="display:flex;justify-content:space-between;border-top:1px solid #E2E4E9;margin-top:9px;padding-top:8px"><span style="font-size:13px">Debts</span><span class="n loss">-118,876</span></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Movers today</span><span class="n mut" style="font-size:11px">21 positions</span></div>
+      <div class="cell" style="min-height:44px"><span>삼성전자우 <span class="krx">KRX</span></span><span class="n gain">+8.26% · +3,802</span></div>
+      <div class="cell" style="min-height:44px"><span>MSTR</span><span class="n gain">+6.10% · +192</span></div>
+      <div class="cell" style="min-height:44px"><span>ARM</span><span class="n loss">-2.95% · -777</span></div>
+    </div>
+    <div class="card" style="padding:11px 14px;display:flex;justify-content:space-between;align-items:center">
+      <span style="display:flex;gap:14px;align-items:center"><span class="n mut" style="font-size:11.5px">US closed</span><span class="n mut" style="font-size:11.5px">KRX closed</span><span class="n gain" style="font-size:11.5px">● Crypto</span></span>
+      <span class="n mut" style="font-size:11px">KOSPI -0.67%</span>
+    </div>
+  </div>
+  <div class="tbar">
+    <span class="tbtn on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.8"><path d="M4 19V9l8-5 8 5v10"/><path d="M9 19v-6h6v6"/></svg>Net worth</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Holdings</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 11h16"/></svg>Vesting</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M5 19V9M12 19V5M19 19v-7"/></svg>Tax lots</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Feeds</span>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="2b">
+<div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>Holdings — the asset table as a touch list; filter chips + sort sheet trigger</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="n mut" style="font-size:11px">refreshed just now</span><span class="n" style="font-size:11px;color:#2A3F92">Edit</span></div>
+    <div class="navtitle" style="margin-top:4px">Holdings</div>
+    <div style="display:flex;gap:7px;margin-top:9px;overflow:hidden"><span class="chip on">All 21</span><span class="chip">US 8</span><span class="chip">KRX 8</span><span class="chip">RET 4</span></div>
+  </div>
+  <div class="hair"><i style="width:64%"></i></div>
+  <div class="body" style="gap:9px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">Sorted by value</span><span class="chip" style="min-height:30px">Value ▾</span></div>
+    <div class="card">
+      <div class="cell"><div><div style="font-weight:500">MARA</div><div class="n mut" style="font-size:11px">40,902 sh · $11.26 · 38.5% net</div></div><div style="text-align:right"><div class="n" style="font-weight:500">460,557</div><div class="n gain" style="font-size:11.5px">+0.99% · +4,499</div></div></div>
+      <div class="cell"><div><div style="font-weight:500">SK하이닉스 <span class="krx">KRX</span></div><div class="n mut" style="font-size:11px">218 sh · ₩1,730,000</div></div><div style="text-align:right"><div class="n" style="font-weight:500">271,715</div><div class="n gain" style="font-size:11.5px">+2.31% · +6,125</div></div></div>
+      <div class="cell"><div><div style="font-weight:500">연화 현금 <span class="krx">CASH</span></div><div class="n mut" style="font-size:11px">₩235,000,000</div></div><div style="text-align:right"><div class="n" style="font-weight:500">169,308</div><div class="n mut" style="font-size:11.5px">—</div></div></div>
+      <div class="cell"><div><div style="font-weight:500">AMD</div><div class="n mut" style="font-size:11px">130 sh · $473.25</div></div><div style="text-align:right"><div class="n" style="font-weight:500">61,523</div><div class="n gain" style="font-size:11.5px">+0.81% · +493</div></div></div>
+      <div class="cell"><div><div style="font-weight:500">RDDT</div><div class="n mut" style="font-size:11px">370 sh · $153.29</div></div><div style="text-align:right"><div class="n" style="font-weight:500">56,717</div><div class="n gain" style="font-size:11.5px">+1.98% · +1,103</div></div></div>
+      <div class="cell"><div><div style="font-weight:500">삼성전자우 <span class="krx">KRX</span></div><div class="n mut" style="font-size:11px">334 sh · ₩207,000</div></div><div style="text-align:right"><div class="n" style="font-weight:500">49,811</div><div class="n gain" style="font-size:11.5px">+8.26% · +3,802</div></div></div>
+      <div class="cell"><div><div style="font-weight:500">FXAIX <span class="krx">401K</span></div><div class="n mut" style="font-size:11px">279.717 sh · $265.83</div></div><div style="text-align:right"><div class="n" style="font-weight:500">74,357</div><div class="n loss" style="font-size:11.5px">-0.86% · -643</div></div></div>
+      <div class="cell"><div><div style="font-weight:500">아버지 채무 <span class="krx">DEBT</span></div><div class="n mut" style="font-size:11px">manual entry</div></div><div class="n loss" style="font-weight:500">-79,251</div></div>
+    </div>
+    <div class="card" style="padding:11px 14px;display:flex;justify-content:space-between"><span style="font-weight:600">Net</span><span class="n" style="font-weight:600">$1,194,933 <span class="gain">+1.26%</span></span></div>
+  </div>
+  <div class="tbar">
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 19V9l8-5 8 5v10"/></svg>Net worth</span>
+    <span class="tbtn on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Holdings</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 11h16"/></svg>Vesting</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M5 19V9M12 19V5M19 19v-7"/></svg>Tax lots</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Feeds</span>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="2c">
+<div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a>Position — price move windows, every table column, source &amp; sanity inline</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">‹ Holdings</span><span class="n mut" style="font-size:11px">at close</span></div>
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:4px">
+      <div><div class="navtitle">MARA</div><div class="n mut" style="font-size:11.5px">Marathon Digital · US · NASDAQ</div></div>
+      <div style="text-align:right"><div class="n" style="font-size:20px;font-weight:600">$11.26</div><div class="n gain" style="font-size:12.5px">+0.99%</div></div>
+    </div>
+  </div>
+  <div class="hair"><i style="width:12%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card" style="padding:12px 14px">
+      <svg width="100%" height="104" viewBox="0 0 320 104" preserveAspectRatio="none"><polyline points="0,20 40,38 80,58 120,50 160,68 200,54 240,72 280,62 320,78" fill="none" stroke="#B4372A" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>
+      <div style="display:flex;gap:5px;margin-top:10px;flex-wrap:wrap"><span class="chip on">1D +0.99%</span><span class="chip">1W</span><span class="chip">1M</span><span class="chip">3M</span><span class="chip">6M</span><span class="chip">1Y</span><span class="chip">5Y</span></div>
+    </div>
+    <div class="card">
+      <div class="cell" style="min-height:44px"><span class="mut">Value</span><span class="n">$460,557 · ₩639,252,450</span></div>
+      <div class="cell" style="min-height:44px"><span class="mut">% of net</span><span class="n">38.54%</span></div>
+      <div class="cell" style="min-height:44px"><span class="mut">Quantity</span><span class="n">40,902</span></div>
+      <div class="cell" style="min-height:44px"><span class="mut">Avg cost</span><span class="n">$15.67</span></div>
+      <div class="cell" style="min-height:44px"><span class="mut">Cost basis</span><span class="n">$640,933</span></div>
+      <div class="cell" style="min-height:44px"><span class="mut">Today</span><span class="n gain">+$4,499 (+0.99%)</span></div>
+      <div class="cell" style="min-height:44px"><span class="mut">Total G/L</span><span class="n loss">-$180,376 (-28.14%)</span></div>
+    </div>
+    <div class="card">
+      <div class="cell" style="min-height:48px"><span>Tax lots · sell simulator</span><span class="n mut">46 lots ›</span></div>
+      <div class="cell" style="min-height:48px"><span>Vesting schedule</span><span class="n mut">monthly ›</span></div>
+      <div class="cell" style="min-height:48px"><span>Quote source</span><span class="n mut" style="font-size:11.5px">Yahoo 1d/1m · OK ›</span></div>
+    </div>
+    <p class="note">Concentration flag: MARA is 38.5% of net worth.</p>
+  </div>
+  <div class="tbar">
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 19V9l8-5 8 5v10"/></svg>Net worth</span>
+    <span class="tbtn on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Holdings</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 11h16"/></svg>Vesting</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M5 19V9M12 19V5M19 19v-7"/></svg>Tax lots</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Feeds</span>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="2d">
+<div class="dv-olabel"><a class="dv-oid" href="#2d">2d</a>Tax lots — sell simulator with the price slider as the primary control</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#2A3F92;font-size:14px">‹ MARA</span><span class="n mut" style="font-size:11px">46 lots · Fidelity</span></div>
+    <div class="navtitle" style="margin-top:4px">Sell simulator</div>
+    <div class="seg" style="margin-top:9px"><span class="on">All</span><span>Long-term</span><span>Short-term</span></div>
+  </div>
+  <div class="hair"><i style="width:12%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card" style="padding:13px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="lbl">Sell price</span><span class="n" style="font-size:20px;font-weight:600">$13.00</span></div>
+      <div style="position:relative;height:34px;margin-top:6px">
+        <div style="position:absolute;top:15px;left:0;right:0;height:4px;border-radius:2px;background:#E2E4E9"></div>
+        <div style="position:absolute;top:15px;left:0;width:35%;height:4px;border-radius:2px;background:#2A3F92"></div>
+        <div style="position:absolute;top:5px;left:calc(35% - 12px);width:24px;height:24px;border-radius:50%;background:#fff;border:2px solid #2A3F92"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between"><span class="n mut" style="font-size:11px">$4.00</span><span class="chip" style="min-height:30px">Live $11.26</span><span class="n mut" style="font-size:11px">$30.00</span></div>
+    </div>
+    <div style="display:flex;gap:9px">
+      <div class="card" style="flex:1;padding:10px 12px"><div class="lbl">Shares</div><div class="n" style="font-size:16px;font-weight:600">40,902</div><div class="n mut" style="font-size:10.5px">46 of 46 lots</div></div>
+      <div class="card" style="flex:1;padding:10px 12px"><div class="lbl">Proceeds</div><div class="n" style="font-size:16px;font-weight:600">531,726</div></div>
+    </div>
+    <div style="display:flex;gap:9px">
+      <div class="card" style="flex:1;padding:10px 12px"><div class="lbl">Realized G/L</div><div class="n loss" style="font-size:16px;font-weight:600">-109,207</div></div>
+      <div class="card" style="flex:1;padding:10px 12px"><div class="lbl">Gains / losses</div><div class="n" style="font-size:14px"><span class="gain">+21,340</span> / <span class="loss">-130,547</span></div></div>
+    </div>
+    <div class="card" style="flex:1;min-height:0;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;padding:9px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl" style="flex:1.2">Lot</span><span class="lbl" style="flex:1;text-align:right">Qty</span><span class="lbl" style="flex:1;text-align:right">Basis</span><span class="lbl" style="flex:1.2;text-align:right">Lot G/L</span></div>
+      <div style="display:flex;align-items:center;min-height:46px;padding:0 14px"><span style="flex:1.2"><span class="n">#1</span> <span class="krx">SHORT</span><div class="n mut" style="font-size:10.5px">2026-07-01</div></span><span class="n" style="flex:1;text-align:right">2,880</span><span class="n" style="flex:1;text-align:right">13.37</span><span class="n loss" style="flex:1.2;text-align:right">-1,066</span></div>
+      <div style="display:flex;align-items:center;min-height:46px;padding:0 14px;border-top:1px solid #E2E4E9"><span style="flex:1.2"><span class="n">#10</span> <span class="krx">SHORT</span><div class="n mut" style="font-size:10.5px">2026-04-01</div></span><span class="n" style="flex:1;text-align:right">2,768</span><span class="n" style="flex:1;text-align:right">8.04</span><span class="n gain" style="flex:1.2;text-align:right">+13,725</span></div>
+      <div style="display:flex;align-items:center;min-height:46px;padding:0 14px;border-top:1px solid #E2E4E9;background:#EDEFF3"><span style="flex:1.2"><span class="n">#43</span> <span class="krx" style="color:#B4372A">WASH</span><div class="n mut" style="font-size:10.5px">2024-10-31 · LONG</div></span><span class="n" style="flex:1;text-align:right">465</span><span class="n" style="flex:1;text-align:right">16.85</span><span class="n loss" style="flex:1.2;text-align:right">-1,788</span></div>
+      <div style="display:flex;align-items:center;min-height:46px;padding:0 14px;border-top:1px solid #E2E4E9"><span style="flex:1.2"><span class="n">#46</span> <span class="krx">LONG</span><div class="n mut" style="font-size:10.5px">2024-07-01</div></span><span class="n" style="flex:1;text-align:right">7,997</span><span class="n" style="flex:1;text-align:right">22.56</span><span class="n loss" style="flex:1.2;text-align:right">-76,451</span></div>
+    </div>
+    <p class="note">Tap a lot to exclude it. Educational only — not tax advice.</p>
+  </div>
+  <div class="tbar">
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 19V9l8-5 8 5v10"/></svg>Net worth</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Holdings</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 11h16"/></svg>Vesting</span>
+    <span class="tbtn on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.8"><path d="M5 19V9M12 19V5M19 19v-7"/></svg>Tax lots</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Feeds</span>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="2e">
+<div class="dv-olabel"><a class="dv-oid" href="#2e">2e</a>Vesting — the iframe tab becomes a native schedule</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="n mut" style="font-size:11px">MARA · monthly vest</span><span class="n" style="font-size:11px;color:#2A3F92">Export</span></div>
+    <div class="navtitle" style="margin-top:4px">Vesting</div>
+    <div class="seg" style="margin-top:9px"><span class="on">Upcoming</span><span>Vested</span><span>By year</span></div>
+  </div>
+  <div class="hair"><i style="width:12%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card" style="padding:13px 14px">
+      <span class="lbl">Unvested remaining</span>
+      <div class="n" style="font-size:27px;font-weight:600">14,842 sh</div>
+      <div class="n mut" style="font-size:12px">≈ $167,121 at $11.26 · through Jul 2028</div>
+      <div style="display:flex;align-items:flex-end;gap:5px;height:70px;margin-top:12px">
+        <div style="flex:1;height:38%;background:#2A3F92;opacity:.34;border-radius:2px"></div>
+        <div style="flex:1;height:52%;background:#2A3F92;opacity:.34;border-radius:2px"></div>
+        <div style="flex:1;height:46%;background:#2A3F92;border-radius:2px"></div>
+        <div style="flex:1;height:70%;background:#2A3F92;border-radius:2px"></div>
+        <div style="flex:1;height:58%;background:#2A3F92;border-radius:2px"></div>
+        <div style="flex:1;height:44%;background:#2A3F92;border-radius:2px"></div>
+        <div style="flex:1;height:80%;background:#2A3F92;border-radius:2px"></div>
+        <div style="flex:1;height:36%;background:#2A3F92;border-radius:2px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px"><span class="n mut" style="font-size:10.5px">2026 H2</span><span class="n mut" style="font-size:10.5px">2028</span></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Next tranches</span><span class="lbl">Shares / value</span></div>
+      <div class="cell" style="min-height:50px"><div><div>Sep 1, 2026</div><div class="n mut" style="font-size:11px">RSU · in 9 days</div></div><div style="text-align:right"><div class="n">1,240</div><div class="n mut" style="font-size:11px">$13,962</div></div></div>
+      <div class="cell" style="min-height:50px"><div><div>Oct 1, 2026</div><div class="n mut" style="font-size:11px">RSU</div></div><div style="text-align:right"><div class="n">1,240</div><div class="n mut" style="font-size:11px">$13,962</div></div></div>
+      <div class="cell" style="min-height:50px"><div><div>Nov 1, 2026</div><div class="n mut" style="font-size:11px">RSU</div></div><div style="text-align:right"><div class="n">980</div><div class="n mut" style="font-size:11px">$11,035</div></div></div>
+      <div class="cell" style="min-height:50px"><div><div>Jan 2, 2027</div><div class="n mut" style="font-size:11px">RSU · annual cliff</div></div><div style="text-align:right"><div class="n">2,970</div><div class="n mut" style="font-size:11px">$33,442</div></div></div>
+    </div>
+  </div>
+  <div class="tbar">
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 19V9l8-5 8 5v10"/></svg>Net worth</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Holdings</span>
+    <span class="tbtn on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 11h16"/></svg>Vesting</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M5 19V9M12 19V5M19 19v-7"/></svg>Tax lots</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Feeds</span>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="2f">
+<div class="dv-olabel"><a class="dv-oid" href="#2f">2f</a>Feeds — quote sources + sanity checks, the handoff log</div>
+<div class="ios">
+  <div class="sbar"><span>15:27</span><span class="n" style="font-size:12px">◗ ▮</span></div>
+  <div class="nav">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="n mut" style="font-size:11px">22 feeds · 19 checks</span><span class="n" style="font-size:11px;color:#2A3F92">Refresh</span></div>
+    <div class="navtitle" style="margin-top:4px">Feeds</div>
+  </div>
+  <div class="hair"><i style="width:82%"></i></div>
+  <div class="body" style="gap:10px">
+    <div class="card" style="padding:13px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="lbl">Last handoff</span><span class="n gain" style="font-size:11.5px">all checks OK</span></div>
+      <div class="n" style="font-size:19px;font-weight:600;margin-top:2px">15:27:20 CT</div>
+      <div class="n mut" style="font-size:11.5px">next in 42s · 3 quotes carried from Friday</div>
+      <div style="display:flex;gap:9px;margin-top:11px">
+        <div style="flex:1"><div class="n mut" style="font-size:10.5px">US</div><div class="n" style="font-size:12px">closed</div></div>
+        <div style="flex:1"><div class="n mut" style="font-size:10.5px">KRX</div><div class="n" style="font-size:12px">closed</div></div>
+        <div style="flex:1"><div class="n mut" style="font-size:10.5px">Crypto</div><div class="n gain" style="font-size:12px">live</div></div>
+        <div style="flex:1"><div class="n mut" style="font-size:10.5px">USD/KRW</div><div class="n" style="font-size:12px">1,388.00</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Source</span><span class="lbl">As of</span></div>
+      <div class="cell" style="min-height:50px"><div><div>BTC · ETH</div><div class="n mut" style="font-size:11px">Coinbase exchange ticker</div></div><div style="text-align:right"><div class="n gain" style="font-size:11.5px">live</div><div class="n mut" style="font-size:10.5px">15:27:18</div></div></div>
+      <div class="cell" style="min-height:50px"><div><div>US equities · 9</div><div class="n mut" style="font-size:11px">Yahoo chart 1d/1m</div></div><div style="text-align:right"><div class="n mut" style="font-size:11.5px">at close</div><div class="n mut" style="font-size:10.5px">Fri 15:00</div></div></div>
+      <div class="cell" style="min-height:50px"><div><div>KRX · 4</div><div class="n mut" style="font-size:11px">Naver mobile + Yahoo cross-check</div></div><div style="text-align:right"><div class="n mut" style="font-size:11.5px">at close</div><div class="n mut" style="font-size:10.5px">Fri 02:10</div></div></div>
+      <div class="cell" style="min-height:50px"><div><div>Funds · 3</div><div class="n mut" style="font-size:11px">Fidelity fundresearch</div></div><div style="text-align:right"><div class="n mut" style="font-size:11.5px">NAV</div><div class="n mut" style="font-size:10.5px">08/20</div></div></div>
+      <div class="cell" style="min-height:50px"><div><div>Manual · 3</div><div class="n mut" style="font-size:11px">cash &amp; debts</div></div><div class="n mut" style="font-size:11.5px">edited by you ›</div></div>
+    </div>
+    <div class="card" style="padding:12px 14px">
+      <span class="lbl">Sanity checks</span>
+      <p class="note" style="margin:6px 0 0">Largest divergence this cycle 0.66% on FFLDX. AMD missed the 15:26 handoff — carrying the last value one lap.</p>
+    </div>
+  </div>
+  <div class="tbar">
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 19V9l8-5 8 5v10"/></svg>Net worth</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Holdings</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 11h16"/></svg>Vesting</span>
+    <span class="tbtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M5 19V9M12 19V5M19 19v-7"/></svg>Tax lots</span>
+    <span class="tbtn on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Feeds</span>
+  </div>
+  <div class="hind"><i></i></div>
+</div>
+</div>
+
+<div class="dv-opt" id="2g">
+<div class="dv-olabel"><a class="dv-oid" href="#2g">2g</a>Android adaptation of <a class="dv-oid" href="#2a">2a</a> — Material nav bar, left-aligned large title, FAB-free</div>
+<div class="ios and">
+  <div class="sbar" style="height:34px;font-size:12.5px;padding:0 16px"><span>15:27</span><span class="n" style="font-size:11.5px">▲ ▮ 82%</span></div>
+  <div class="nav" style="padding:8px 16px 12px">
+    <div style="display:flex;align-items:center;gap:12px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16181D" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <span class="mark" style="font-size:15px"><svg width="17" height="17" viewBox="0 0 32 32"><rect x="4" y="13" width="11" height="6" rx="3" fill="#2A3F92"/><rect x="18" y="13" width="11" height="6" rx="3" fill="#2A3F92" opacity=".45"/></svg>Assetly</span>
+      <span class="n mut" style="font-size:11px;margin-left:auto">42s</span>
+    </div>
+    <div class="navtitle" style="margin-top:10px;font-size:24px">Net worth</div>
+  </div>
+  <div class="hair"><i style="width:30%"></i></div>
+  <div class="body">
+    <div class="card" style="border-radius:16px;padding:14px">
+      <div class="n" style="font-size:31px;font-weight:600">$1,194,933</div>
+      <div class="n gain" style="font-size:14px">+14,229 (+1.26%) today</div>
+      <div class="n mut" style="font-size:11.5px">₩1,658,566,600 @ ₩1,388.00</div>
+      <svg width="100%" height="88" viewBox="0 0 320 88" preserveAspectRatio="none" style="margin-top:10px"><polyline points="0,74 40,64 80,69 120,44 160,52 200,28 240,38 280,18 320,10" fill="none" stroke="#2A3F92" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>
+      <div style="display:flex;gap:7px;margin-top:10px"><span class="chip on" style="border-radius:20px">1Y</span><span class="chip" style="border-radius:20px">1M</span><span class="chip" style="border-radius:20px">ALL</span></div>
+    </div>
+    <div class="card" style="border-radius:16px;padding:12px 14px">
+      <span class="lbl">Allocation</span>
+      <div style="display:flex;height:13px;border-radius:7px;overflow:hidden;margin-top:9px;gap:2px"><div style="flex:54;background:#2A3F92"></div><div style="flex:38;background:#2A3F92;opacity:.62"></div><div style="flex:8;background:#2A3F92;opacity:.34"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:7px"><span class="n mut" style="font-size:11.5px">US 54.4%</span><span class="n mut" style="font-size:11.5px">KRX 37.5%</span><span class="n mut" style="font-size:11.5px">RET 8.1%</span></div>
+    </div>
+    <div class="card" style="border-radius:16px">
+      <div style="padding:10px 14px;border-bottom:1px solid #E2E4E9"><span class="lbl">Movers today</span></div>
+      <div class="cell" style="min-height:48px"><span>삼성전자우 <span class="krx">KRX</span></span><span class="n gain">+8.26%</span></div>
+      <div class="cell" style="min-height:48px"><span>MSTR</span><span class="n gain">+6.10%</span></div>
+      <div class="cell" style="min-height:48px"><span>ARM</span><span class="n loss">-2.95%</span></div>
+    </div>
+  </div>
+  <div class="tbar" style="padding:6px 0 4px;background:#EDEFF3">
+    <span class="tbtn on"><span style="background:#D5DBF0;border-radius:16px;padding:4px 18px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2A3F92" stroke-width="1.8"><path d="M4 19V9l8-5 8 5v10"/></svg></span>Net worth</span>
+    <span class="tbtn"><span style="padding:4px 18px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>Holdings</span>
+    <span class="tbtn"><span style="padding:4px 18px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 11h16"/></svg></span>Vesting</span>
+    <span class="tbtn"><span style="padding:4px 18px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><path d="M5 19V9M12 19V5M19 19v-7"/></svg></span>Lots</span>
+    <span class="tbtn"><span style="padding:4px 18px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5D636E" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>Feeds</span>
+  </div>
+  <div class="hind" style="height:16px;background:#EDEFF3"><i style="width:90px;height:3px"></i></div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "make <a class="dv-oid" href="#2a">2a</a> the ₩-first version" · "add a widget + lock-screen screen" · "wire <a class="dv-oid" href="#2b">2b</a>→<a class="dv-oid" href="#2c">2c</a>→<a class="dv-oid" href="#2d">2d</a> as a tappable prototype"</p>
+</section>
+</x-dc>
+</body>
+</html>
