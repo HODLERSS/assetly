@@ -60,7 +60,7 @@ await step("add 7 more through the data layer (what the screens call)", async ()
                  ["MSTR", 3, 390], ["QQQM", 15, 233], ["005930.KS", 10, 71000]];
   for (const [sym, qty, cost] of seven) {
     const { data: h, error: hErr } = await sb.from("holdings")
-      .upsert({ user_id: auth.session.user.id, symbol: sym, account: "brokerage" }, { onConflict: "user_id,symbol,account" }).select("id").single();
+      .upsert({ user_id: auth.session.user.id, symbol: sym, account: "brokerage", nickname: "" }, { onConflict: "user_id,symbol,account,nickname" }).select("id").single();
     if (hErr) throw new Error(sym + ": " + hErr.message);
     const { error: lErr } = await sb.from("lots").insert({ holding_id: h.id, qty, cost_per_share: cost });
     if (lErr) throw new Error(sym + " lot: " + lErr.message);
