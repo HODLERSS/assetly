@@ -50,6 +50,14 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10e. (8/25) Iteration 2 — validation fleet (4 affected personas re-ran 30 days + PM verdict):
+   all 6 headline fixes CONFIRMED by direct assertion (FX caption, won charts, coin units,
+   avg-cost overlay with exact 11-lot math, FIG all-range charts, partial captions).
+   Closed its findings: Holdings-list rows now show coin units (missed render path),
+   partial caption moved off the L/H line (390px collision), and a REAL data bug —
+   Yahoo v7 handed BTC prev_close 110k vs price 80.6k (-26.8% fake day change) — both
+   pipelines now null implausible (>50%) prev closes. "Backfill gaps" (BRK.B/ETH/MSTR)
+   verified as sweep-timing artifacts; add-lot timeout not reproducible outside sim load.
 10d. (8/25) 10-persona / 30-day simulation fleet ran (10 sim agents + PM synthesis agent).
    REAL bugs found and fixed: mixed USD/KRW books were summed RAW (now converted via a
    cron-fresh USDKRW rate from Yahoo KRW=X, with a visible FX caption; unconvertible rows
