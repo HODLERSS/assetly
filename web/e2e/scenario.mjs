@@ -177,8 +177,13 @@ await step("consolidated view: 401k account, cash, debt, and a Fidelity fund", a
   await page.getByText(/100 sh · IRA/).waitFor({ timeout: 20000 });
   await shot("09-consolidated");
   // net worth subtracts debt: compare against the sum of visible facts server-side
-  const { data: rows } = await sb.from("portfolio").select("symbol,kind,value");
-  const expected = Math.round(rows.reduce((a, r) => a + (r.kind === "debt" ? -1 : 1) * Number(r.value ?? 0), 0));
+  const { data: rows } = await sb.from("portfolio").select("symbol,kind,currency,value");
+  const { data: fxRow } = await sb.from("prices").select("price").eq("symbol", "USDKRW").single();
+  const fx = Number(fxRow.price);
+  const expected = Math.round(rows.reduce((a, r) => {
+    const v = r.currency === "KRW" ? Number(r.value ?? 0) / fx : Number(r.value ?? 0);
+    return a + (r.kind === "debt" ? -1 : 1) * v;
+  }, 0));
   await page.getByRole("button", { name: /^home$/i }).tap();
   const nw = await page.getByTestId("net-worth").textContent();
   const shown = Number((nw ?? "").replace(/[^0-9]/g, ""));
