@@ -51,7 +51,7 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
         {rows.map((r) => (
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{r.symbol}</span><br />
-              <span className="sub">{r.qty ?? 0} {r.kind === "crypto" ? r.symbol : "sh"}</span>
+              <span className="sub">{r.kind === "cash" ? "cash" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{r.account !== "brokerage" ? ` · ${r.account === "401k" ? "401k" : "IRA"}` : ""}</span>
               {r.change_pct !== null && <span className={`sub num ${glClass(r.change_pct)}`}> · {signedPct(r.change_pct)}</span>}</span>
             <span className="right">
               <span className="num">{money(r.value, r.currency)}</span><br />

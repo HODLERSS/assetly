@@ -42,7 +42,8 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
         </div>
       </div>
 
-      <PriceChart api={api} symbol={row.symbol} currency={row.currency} livePrice={row.price} liveAsOf={row.as_of} avgCost={row.avg_cost} />
+      {row.account !== "brokerage" && <p className="sub" style={{ margin: "2px 0 0" }}>{row.account === "401k" ? "401k" : "IRA"} account</p>}
+      {row.kind !== "cash" && <PriceChart api={api} symbol={row.symbol} currency={row.currency} livePrice={row.price} liveAsOf={row.as_of} avgCost={row.avg_cost} />}
 
       <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div><span className="sub">{row.kind === "crypto" ? "Quantity" : "Shares"}</span><br /><span className="num">{row.qty ?? 0}</span></div>

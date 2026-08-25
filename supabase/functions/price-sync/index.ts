@@ -84,7 +84,8 @@ Deno.serve(async (req) => {
     "USDKRW",                                       // FX rate for cross-currency totals: always fresh
   ]);
   const { data: symbols, error } = await admin
-    .from("symbols").select("symbol, yahoo").eq("active", true).in("symbol", [...wanted]);
+    .from("symbols").select("symbol, yahoo, kind").eq("active", true)
+    .neq("kind", "cash").in("symbol", [...wanted]);
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
   const pairs = (symbols ?? []).map((s) => ({ symbol: s.symbol, yahoo: s.yahoo ?? s.symbol }));

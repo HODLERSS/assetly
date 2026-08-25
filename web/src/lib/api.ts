@@ -9,8 +9,9 @@ export type SymbolRow = {
   remote?: boolean;      // came from the universal search; must be ensured before first use
 };
 export type Lot = { id: string; holding_id: string; qty: number; cost_per_share: number; acquired_on: string | null; note: string | null };
+export type Account = "brokerage" | "401k" | "ira";
 export type PortfolioRow = {
-  holding_id: string; symbol: string; name: string; currency: "USD" | "KRW"; kind: string;
+  holding_id: string; symbol: string; account: Account; name: string; currency: "USD" | "KRW"; kind: string;
   qty: number | null; cost_basis: number | null; avg_cost: number | null;
   price: number | null; change_pct: number | null; as_of: string | null;
   value: number | null; total_gl: number | null;
@@ -77,11 +78,11 @@ export function makeApi(sb: SupabaseClient = supabase) {
         price: nm(r.price), change_pct: nm(r.change_pct), value: nm(r.value), total_gl: nm(r.total_gl),
       })) as PortfolioRow[];
     },
-    async addPosition(symbol: string, qty: number, cost_per_share: number, acquired_on?: string) {
+    async addPosition(symbol: string, qty: number, cost_per_share: number, acquired_on?: string, account: Account = "brokerage") {
       const { data: u } = await sb.auth.getUser();
       if (!u.user) throw new Error("not signed in");
       const { data: h, error: hErr } = await sb.from("holdings")
-        .upsert({ user_id: u.user.id, symbol }, { onConflict: "user_id,symbol" })
+        .upsert({ user_id: u.user.id, symbol, account }, { onConflict: "user_id,symbol,account" })
         .select("id").single();
       if (hErr) throw hErr;
       const { error: lErr } = await sb.from("lots")

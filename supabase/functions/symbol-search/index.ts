@@ -8,7 +8,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
 // Yahoo exchange codes we serve: all major US venues + OTC, Korea (KOSPI/KOSDAQ), crypto.
-const US_EXCH = new Set(["NYQ", "NMS", "NGM", "NGS", "NCM", "ASE", "PCX", "BTS", "PNK", "CXI"]);
+const US_EXCH = new Set(["NYQ", "NMS", "NGM", "NGS", "NCM", "ASE", "PCX", "BTS", "PNK", "CXI", "NAS"]);   // NAS = mutual funds (FXAIX etc.)
 const KR_EXCH = new Set(["KSC", "KOE"]);
 const KINDS: Record<string, string> = { EQUITY: "equity", ETF: "etf", MUTUALFUND: "fund", CRYPTOCURRENCY: "crypto" };
 

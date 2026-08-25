@@ -27,7 +27,7 @@ export function Holdings({ rows, onOpen, onAdd }: {
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span>
               <span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span><br />
-              <span className="sub num">{r.qty ?? 0} {r.kind === "crypto" ? r.symbol : "sh"} · avg {moneyExact(r.avg_cost, r.currency)}</span>
+              <span className="sub num">{r.kind === "cash" ? "cash balance" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{r.account !== "brokerage" ? ` · ${r.account === "401k" ? "401k" : "IRA"}` : ""} · avg {moneyExact(r.avg_cost, r.currency)}</span>
             </span>
             <span className="right">
               <span className="num">{money(r.value, r.currency)}</span><br />

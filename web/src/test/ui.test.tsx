@@ -29,7 +29,7 @@ import type { Api, PortfolioRow, Profile } from "../lib/api";
 
 const profile: Profile = { id: "u-test", display_name: "Minjae", base_currency: "USD", markets: ["US", "KR"], onboarded_at: "2026-08-23T00:00:00Z" };
 const row = (over: Partial<PortfolioRow>): PortfolioRow => ({
-  holding_id: "h1", symbol: "RDDT", name: "Reddit", currency: "USD", kind: "equity",
+  holding_id: "h1", symbol: "RDDT", account: "brokerage", name: "Reddit", currency: "USD", kind: "equity",
   qty: 24, cost_basis: 4021.0, avg_cost: 167.54, price: 200, change_pct: 5.26,
   as_of: new Date().toISOString(), value: 4800, total_gl: 779, ...over,
 });
@@ -137,7 +137,7 @@ describe("U3 add position", () => {
     await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "brokerage"));
   });
   it("rejects invalid shares with a visible error", async () => {
     const api = stubApi();
@@ -152,6 +152,50 @@ describe("U3 add position", () => {
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/positive/i);
     expect(api.addPosition).not.toHaveBeenCalled();
+  });
+});
+
+describe("U14 accounts + cash", () => {
+  it("account chips appear after pick; 401k selection reaches addPosition", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
+    await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
+    await userEvent.click(screen.getByRole("button", { name: "401k" }));
+    await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
+    await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "401k"));
+  });
+  it("cash fast path: one amount field, no cost/date, cost pinned at 1", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /add a cash balance/i }));
+    expect(screen.queryByLabelText(/cost per share/i)).toBeNull();
+    expect(screen.queryByLabelText(/purchase date/i)).toBeNull();
+    await userEvent.type(screen.getByLabelText(/amount/i), "5000");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("CASH", 5000, 1, undefined, "brokerage"));
+  });
+  it("non-brokerage rows carry a quiet account tag; brokerage stays untagged; cash rows read as cash", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({}),
+      row({ holding_id: "h2", symbol: "QQQM", name: "Invesco Nasdaq 100", kind: "etf", account: "401k", qty: 40 }),
+      row({ holding_id: "h3", symbol: "CASH", name: "Cash (USD)", kind: "cash", qty: 5000, price: 1, value: 5000, cost_basis: 5000, total_gl: 0, change_pct: 0 }),
+    ]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await screen.findByText(/· 401k/);
+    expect(screen.getByText(/cash balance/)).toBeTruthy();
+    expect(screen.getAllByText(/^24 sh$/).length).toBeGreaterThan(0);   // brokerage row untagged
+    expect(screen.queryByText(/24 sh ·/)).toBeNull();
   });
 });
 

@@ -318,3 +318,46 @@ describe("Previous-close derivation (the META -26% bug)", () => {
     expect(Number(data!.prev_close)).toBeGreaterThan(Number(data!.price) * 0.85);
   }, 60000);
 });
+
+describe("Accounts + cash positions", () => {
+  it("same ticker in brokerage and 401k are separate positions", async () => {
+    const a = makeApi(alice);
+    const h1 = await a.addPosition("QQQM", 10, 220);
+    const h2 = await a.addPosition("QQQM", 40, 205, undefined, "401k");
+    expect(h1).not.toBe(h2);
+    const rows = (await a.getPortfolio()).filter((r) => r.symbol === "QQQM");
+    expect(rows.length).toBe(2);
+    const b = rows.find((r) => r.account === "brokerage")!;
+    const k = rows.find((r) => r.account === "401k")!;
+    expect(b.qty).toBe(10);
+    expect(k.qty).toBe(40);
+    for (const r of rows) await a.removeHolding(r.holding_id);
+  });
+  it("cash: $1-pinned position, value = amount, pipeline leaves it alone", async () => {
+    const a = makeApi(alice);
+    await a.addPosition("CASH", 5000, 1);
+    const r = (await a.getPortfolio()).find((x) => x.symbol === "CASH")!;
+    expect(Number(r.price)).toBe(1);
+    expect(r.value).toBe(5000);
+    expect(r.total_gl).toBe(0);
+    const sync = await fetch(`${URL_}/functions/v1/price-sync`, {
+      method: "POST", headers: { Authorization: `Bearer ${SERVICE}` } });
+    expect((await sync.json()).ok).toBe(true);
+    const { data } = await alice.from("prices").select("price,source").eq("symbol", "CASH").single();
+    expect(Number(data!.price)).toBe(1);
+    expect(data!.source).toBe("pinned");                 // untouched by the market pipeline
+    await a.removeHolding(r.holding_id);
+  }, 60000);
+  it("retirement index funds (FXAIX-style NAV) resolve and price", async () => {
+    const hits = await makeApi(alice).searchSymbols("FFLDX");
+    expect(hits.map((h) => h.symbol)).toContain("FFLDX");
+    const H = { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` };
+    const r = await fetch(`${URL_}/functions/v1/symbol-search`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ ensure: { symbol: "FFLDX", name: "Fidelity Freedom 2050", exchange: "NASDAQ", currency: "USD", kind: "fund", yahoo: "FFLDX" } }),
+    });
+    expect((await r.json()).ok).toBe(true);
+    const { data } = await alice.from("prices").select("price").eq("symbol", "FFLDX").single();
+    expect(Number(data!.price)).toBeGreaterThan(0);
+  }, 60000);
+});
