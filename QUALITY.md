@@ -50,6 +50,15 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10g. (8/25) Consolidated assets: holdings.account (brokerage default / 401k / IRA —
+   same ticker per account is a separate position, chips only appear at add time),
+   $CASH and $DEBT pinned $1 positions (one-field add; debt subtracts from net worth,
+   shown as -$; pipelines skip pinned kinds; no charts on them). CRITICAL catch before
+   ship: CASH is Pathward's real NYSE ticker (already held in prod) and DEBT is a real
+   ETF — pinned symbols use $-prefixed names immune to collisions. Also fixed: mutual
+   funds (venue NAS: FXAIX, FFLDX) were filtered out of universal search; DROP VIEW
+   loses grants (regranted in-migration). Tests: 5 UI, 4 integration, consolidated
+   scenario step live on prod (401k + cash + debt + FXAIX + net-worth math).
 10f. (8/25) META -25.9% root cause (user report): ensure wrote meta.chartPreviousClose
    from a 1y-range chart — Yahoo defines that as the close before the RANGE START, i.e.
    the close from a YEAR ago (753.30 vs 559 price). The Aug-24 catalog sweep spread it to

@@ -60,7 +60,7 @@ await step("add 7 more through the data layer (what the screens call)", async ()
                  ["MSTR", 3, 390], ["QQQM", 15, 233], ["005930.KS", 10, 71000]];
   for (const [sym, qty, cost] of seven) {
     const { data: h, error: hErr } = await sb.from("holdings")
-      .upsert({ user_id: auth.session.user.id, symbol: sym }, { onConflict: "user_id,symbol" }).select("id").single();
+      .upsert({ user_id: auth.session.user.id, symbol: sym, account: "brokerage" }, { onConflict: "user_id,symbol,account" }).select("id").single();
     if (hErr) throw new Error(sym + ": " + hErr.message);
     const { error: lErr } = await sb.from("lots").insert({ holding_id: h.id, qty, cost_per_share: cost });
     if (lErr) throw new Error(sym + " lot: " + lErr.message);
@@ -139,6 +139,50 @@ await step("remove 2 of 10 (MSTR, QQQM) — the other 8 stay", async () => {
   const rows = await page.locator(".card button.row").count();
   if (rows < 8) throw new Error("expected 8 rows, saw " + rows);
   await shot("07-eight-left");
+});
+
+await step("consolidated view: 401k account, cash, debt, and a Fidelity fund", async () => {
+  // QQQM into a 401k (already held in brokerage from the bulk add)
+  await toHoldingsList();
+  await page.getByRole("button", { name: /^add position$/i }).tap();
+  await page.getByLabel(/ticker or name/i).fill("QQQM");
+  await page.getByRole("button", { name: /Invesco/i }).first().tap({ timeout: 25000 });
+  await page.getByLabel(/^shares$/i).waitFor({ timeout: 30000 });
+  await page.getByRole("button", { name: "401k" }).tap();
+  await page.getByLabel(/^shares$/i).fill("40");
+  await page.getByLabel(/cost per share/i).fill("205");
+  await page.getByRole("button", { name: /^add position$/i }).tap();
+  await page.getByText(/40 sh · 401k/).waitFor({ timeout: 20000 });
+  // cash via the quick row
+  await page.getByRole("button", { name: /^add position$/i }).tap();
+  await page.getByRole("button", { name: /add a cash balance/i }).tap();
+  await page.getByLabel(/amount \(\$\)/i).fill("5000");
+  await page.getByRole("button", { name: /^add position$/i }).tap();
+  await page.getByText(/cash balance/).waitFor({ timeout: 20000 });
+  // debt via the quick row
+  await page.getByRole("button", { name: /^add position$/i }).tap();
+  await page.getByRole("button", { name: /add a loan or debt/i }).tap();
+  await page.getByLabel(/amount owed/i).fill("1800");
+  await page.getByRole("button", { name: /^add position$/i }).tap();
+  await page.getByText("-$1,800").waitFor({ timeout: 20000 });
+  // a retirement index fund via universal search (NAS venue)
+  await page.getByRole("button", { name: /^add position$/i }).tap();
+  await page.getByLabel(/ticker or name/i).fill("FXAIX");
+  await page.getByRole("button", { name: /Fidelity 500/i }).first().tap({ timeout: 25000 });
+  await page.getByLabel(/^shares$/i).waitFor({ timeout: 30000 });
+  await page.getByRole("button", { name: "IRA" }).tap();
+  await page.getByLabel(/^shares$/i).fill("100");
+  await page.getByLabel(/cost per share/i).fill("205");
+  await page.getByRole("button", { name: /^add position$/i }).tap();
+  await page.getByText(/100 sh · IRA/).waitFor({ timeout: 20000 });
+  await shot("09-consolidated");
+  // net worth subtracts debt: compare against the sum of visible facts server-side
+  const { data: rows } = await sb.from("portfolio").select("symbol,kind,value");
+  const expected = Math.round(rows.reduce((a, r) => a + (r.kind === "debt" ? -1 : 1) * Number(r.value ?? 0), 0));
+  await page.getByRole("button", { name: /^home$/i }).tap();
+  const nw = await page.getByTestId("net-worth").textContent();
+  const shown = Number((nw ?? "").replace(/[^0-9]/g, ""));
+  if (Math.abs(shown - expected) > expected * 0.02) throw new Error(`net worth ${nw} vs expected ~${expected}`);
 });
 
 await step("home totals + news scoped to what's held", async () => {
