@@ -50,6 +50,17 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10d. (8/25) 10-persona / 30-day simulation fleet ran (10 sim agents + PM synthesis agent).
+   REAL bugs found and fixed: mixed USD/KRW books were summed RAW (now converted via a
+   cron-fresh USDKRW rate from Yahoo KRW=X, with a visible FX caption; unconvertible rows
+   excluded, never mislabeled); catalog-hit adds skipped backfill (ensure now always runs).
+   Shipped improvements from persona demand: today's $ move + per-row day % on Home,
+   dashed avg-cost overlay on charts, crypto units ("0.5 BTC"), "since last close" label
+   for stale prints, "showing Nd of data" partial-range captions. Triage notes: several
+   fleet reports (empty charts, onboarding showing 1-of-N, add-lot dead button) traced to
+   sim-environment artifacts (local DB lacked the prod backfill sweep; harness races) —
+   verified not product bugs. PM's not-worth list (dividends, BTC-denominated view,
+   localization workstream, 15s polling, watchlist, realized P/L) recorded in answers/.
 10c. (8/25) Chart redraw per user feedback: daily closes only (one point per day, live
    price = today's point while trading); 1D chip dropped. Instant news: news-sync gained
    CORS + on-demand {symbols} pulls, add-flows fire an immediate pull, News screen
