@@ -102,11 +102,13 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
           )}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
             <span className="sub num">L {moneyExact(view.lo, currency)}</span>
-            {view.spanDays < 0.7 * (RANGES.find((r) => r.key === range)!.hours / 24) && (
-              <span className="sub" data-testid="partial-note">showing {Math.max(1, Math.round(view.spanDays))}d of data</span>
-            )}
             <span className="sub num">H {moneyExact(view.hi, currency)}</span>
           </div>
+          {view.spanDays < 0.7 * (RANGES.find((r) => r.key === range)!.hours / 24) && (
+            <div className="sub" data-testid="partial-note" style={{ textAlign: "center", marginTop: 1 }}>
+              showing {Math.max(1, Math.round(view.spanDays))}d of data
+            </div>
+          )}
         </>
       )}
 

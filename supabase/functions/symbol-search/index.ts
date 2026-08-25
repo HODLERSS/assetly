@@ -158,7 +158,8 @@ Deno.serve(async (req) => {
     };
     const { error: sErr } = await admin.from("symbols").upsert(row, { onConflict: "symbol" });
     if (sErr) return json({ ok: false, error: sErr.message }, 500);
-    const prev = chart.prev_close;
+    const rawPrev = chart.prev_close;
+    const prev = rawPrev !== null && rawPrev > 0 && Math.abs(chart.price / rawPrev - 1) <= 0.5 ? rawPrev : null;
     const { error: pErr } = await admin.from("prices").upsert({
       symbol: row.symbol, price: chart.price, prev_close: prev,
       change_pct: prev ? ((chart.price / prev) - 1) * 100 : null,

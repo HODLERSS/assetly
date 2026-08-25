@@ -5,6 +5,14 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
+// Yahoo occasionally returns a garbage previous close (seen: BTC prev 110k vs price 80k
+// => -26.8% "today"). A >50% implied single-day move on a tracked major is far more likely
+// bad data than reality — show no change rather than a wrong one.
+function plausiblePrev(price: number, prev: number | null): number | null {
+  if (prev === null || !(prev > 0)) return null;
+  return Math.abs(price / prev - 1) > 0.5 ? null : prev;
+}
+
 type Quote = {
   symbol: string; price: number; prev_close: number | null; change_pct: number | null;
   currency: string; market_state: string; as_of: string; source: string;
@@ -22,11 +30,12 @@ async function yahooBatch(pairs: { symbol: string; yahoo: string }[]): Promise<M
   for (const q of results) {
     const symbol = byYahoo.get(q.symbol);
     if (!symbol || !(q.regularMarketPrice > 0)) continue;
+    const prev = plausiblePrev(q.regularMarketPrice, q.regularMarketPreviousClose ?? null);
     out.set(symbol, {
       symbol,
       price: q.regularMarketPrice,
-      prev_close: q.regularMarketPreviousClose ?? null,
-      change_pct: q.regularMarketChangePercent ?? null,
+      prev_close: prev,
+      change_pct: prev !== null ? ((q.regularMarketPrice / prev) - 1) * 100 : null,
       currency: q.currency ?? "USD",
       market_state: (q.marketState ?? "unknown").toLowerCase(),
       as_of: new Date((q.regularMarketTime ?? Date.now() / 1000) * 1000).toISOString(),
@@ -43,7 +52,7 @@ async function yahooChart(symbol: string, yahoo: string): Promise<Quote | null> 
   const body = await r.json().catch(() => null);
   const meta = body?.chart?.result?.[0]?.meta;
   if (!meta || !(meta.regularMarketPrice > 0)) return null;
-  const prev = meta.chartPreviousClose ?? meta.previousClose ?? null;
+  const prev = plausiblePrev(meta.regularMarketPrice, meta.chartPreviousClose ?? meta.previousClose ?? null);
   return {
     symbol,
     price: meta.regularMarketPrice,

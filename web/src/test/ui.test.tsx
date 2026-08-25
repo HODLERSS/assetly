@@ -175,12 +175,15 @@ describe("U13 persona-fleet fixes", () => {
     expect(day.className).toContain("gain");
     expect((await screen.findAllByText(/\+5\.26%/)).length).toBeGreaterThan(1);  // movers + row
   });
-  it("crypto positions show units, not shares", async () => {
+  it("crypto positions show units, not shares — on Home AND the Holdings list", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
       row({ symbol: "BTC", name: "Bitcoin", kind: "crypto", qty: 0.5 })]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     expect(screen.getByText(/0\.5 BTC/)).toBeTruthy();
+    expect(screen.queryByText(/0\.5 sh/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    expect((await screen.findAllByText(/0\.5 BTC/)).length).toBeGreaterThan(0);
     expect(screen.queryByText(/0\.5 sh/)).toBeNull();
   });
   it("chart draws the avg-cost dashed line when it is inside the window", async () => {
