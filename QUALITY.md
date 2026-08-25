@@ -50,6 +50,10 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10i. (8/25) Named balances + bank accounts: optional labels on cash/debt ("Cash
+   (Yeonhwa)") — nickname joined the uniqueness so several labeled balances coexist per
+   account while market adds keep merging; 'bank' account type, preselected for
+   cash/debt; labels replace generic names on rows/position. View recreated (+regrant).
 10h. (8/25) KRW view + won balances: Settings gains a USD/KRW view toggle (only when
    the book holds KRW; USD stays default) with the live rate + freshness shown; the
    USDKRW rate refreshes EVERY MINUTE via the price cron (C14 asserts staleness in prod).
