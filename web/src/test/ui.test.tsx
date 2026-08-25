@@ -194,8 +194,9 @@ describe("U14 accounts + cash", () => {
     await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
     await screen.findByText(/· 401k/);
     expect(screen.getByText(/cash balance/)).toBeTruthy();
-    expect(screen.getAllByText(/^24 sh$/).length).toBeGreaterThan(0);   // brokerage row untagged
-    expect(screen.queryByText(/24 sh ·/)).toBeNull();
+    const subs = Array.from(document.querySelectorAll("span.sub")).map((e) => (e.textContent ?? "").trim());
+    expect(subs).toContain("24 sh");                     // brokerage row untagged
+    expect(subs.some((t) => /^24 sh ·/.test(t))).toBe(false);
   });
 });
 
