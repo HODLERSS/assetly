@@ -50,6 +50,10 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10h. (8/25) KRW view + won balances: Settings gains a USD/KRW view toggle (only when
+   the book holds KRW; USD stays default) with the live rate + freshness shown; the
+   USDKRW rate refreshes EVERY MINUTE via the price cron (C14 asserts staleness in prod).
+   Cash/debt adds get a $/₩ chip pair ($CASH.KRW / $DEBT.KRW pinned at ₩1).
 10g. (8/25) Consolidated assets: holdings.account (brokerage default / 401k / IRA —
    same ticker per account is a separate position, chips only appear at add time),
    $CASH and $DEBT pinned $1 positions (one-field add; debt subtracts from net worth,

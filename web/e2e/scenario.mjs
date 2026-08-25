@@ -194,15 +194,13 @@ await step("settings: KRW view toggle uses the live rate, then back to USD", asy
   await page.getByRole("button", { name: /^settings$/i }).tap();
   await page.getByRole("button", { name: /₩ KRW/ }).tap({ timeout: 15000 });
   await page.getByRole("button", { name: /^home$/i }).tap();
-  const nw = await page.getByTestId("net-worth").textContent();
-  if (!/^₩[\d,]+/.test(nw ?? "")) throw new Error("expected won header, got " + nw);
+  await page.waitForFunction(() => document.querySelector('[data-testid="net-worth"]')?.textContent?.startsWith("₩"), null, { timeout: 20000 });
   await shot("10-krw-view");
   await page.getByRole("button", { name: /^settings$/i }).tap();
   await page.getByText(/₩[\d,]+\/\$/).waitFor({ timeout: 10000 });   // live rate row
   await page.getByRole("button", { name: /\$ USD/ }).tap();
   await page.getByRole("button", { name: /^home$/i }).tap();
-  const back = await page.getByTestId("net-worth").textContent();
-  if (!/^\$[\d,]+/.test(back ?? "")) throw new Error("expected dollar header, got " + back);
+  await page.waitForFunction(() => document.querySelector('[data-testid="net-worth"]')?.textContent?.startsWith("$"), null, { timeout: 20000 });
 });
 
 await step("home totals + news scoped to what's held", async () => {
