@@ -3,7 +3,8 @@ import { glClass, money, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2a: net worth, movers, market pulse.
 export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
-  rows: PortfolioRow[]; totals: { value: number; gl: number; cost: number };
+  rows: PortfolioRow[];
+  totals: { value: number; gl: number; cost: number; day: number; mixed: boolean; fx: number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
 }) {
   if (rows.length === 0) {
@@ -20,9 +21,20 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
     <>
       <section aria-label="Net worth" style={{ margin: "8px 0 18px" }}>
         <div className="net num" data-testid="net-worth">{money(totals.value, baseCurrency)}</div>
-        <div className={`day num ${glClass(totals.gl)}`} data-testid="total-gl">
+        <div className={`day num ${glClass(totals.day)}`} data-testid="total-day">
+          {signedMoney(totals.day, baseCurrency)} today
+        </div>
+        <div className={`day num ${glClass(totals.gl)}`} data-testid="total-gl" style={{ fontSize: 13.5 }}>
           {signedMoney(totals.gl, baseCurrency)} all time
         </div>
+        {totals.mixed && totals.fx && (
+          <div className="status-line" data-testid="fx-note" style={{ marginTop: 3 }}>
+            {baseCurrency === "USD" ? `KRW converted at ₩${Math.round(totals.fx).toLocaleString("en-US")}/$` : `USD converted at ₩${Math.round(totals.fx).toLocaleString("en-US")}/$`}
+          </div>
+        )}
+        {totals.unconverted > 0 && (
+          <div className="status-line" role="note">{totals.unconverted} position{totals.unconverted > 1 ? "s" : ""} awaiting FX rate — excluded from the total</div>
+        )}
         <div className="countdown" aria-hidden="true"><div style={{ width: "38%" }} /></div>
       </section>
       <h2 className="h1" style={{ fontSize: 16 }}>Movers</h2>
@@ -38,7 +50,9 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
       <div className="card">
         {rows.map((r) => (
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
-            <span><span className="sym">{r.symbol}</span><br /><span className="sub">{r.qty ?? 0} sh</span></span>
+            <span><span className="sym">{r.symbol}</span><br />
+              <span className="sub">{r.qty ?? 0} {r.kind === "crypto" ? r.symbol : "sh"}</span>
+              {r.change_pct !== null && <span className={`sub num ${glClass(r.change_pct)}`}> · {signedPct(r.change_pct)}</span>}</span>
             <span className="right">
               <span className="num">{money(r.value, r.currency)}</span><br />
               <span className={`num sub ${glClass(r.total_gl)}`}>{signedMoney(r.total_gl, r.currency)}</span>

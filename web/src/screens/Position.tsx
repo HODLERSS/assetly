@@ -37,13 +37,15 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
       <div style={{ margin: "12px 0 6px" }}>
         <h2 className="h1">{row.symbol} <span className="mutedc" style={{ fontWeight: 400, fontSize: 15 }}>{row.name}</span></h2>
         <div className="net num" style={{ fontSize: 30 }}>{moneyExact(row.price, row.currency)}</div>
-        <div className={`num ${glClass(row.change_pct)}`}>{signedPct(row.change_pct)} today · {priceAsOf(row.as_of)}</div>
+        <div className={`num ${glClass(row.change_pct)}`}>
+          {signedPct(row.change_pct)} {row.as_of && Date.now() - +new Date(row.as_of) > 20 * 3600 * 1000 ? "since last close" : "today"} · {priceAsOf(row.as_of)}
+        </div>
       </div>
 
-      <PriceChart api={api} symbol={row.symbol} currency={row.currency} livePrice={row.price} liveAsOf={row.as_of} />
+      <PriceChart api={api} symbol={row.symbol} currency={row.currency} livePrice={row.price} liveAsOf={row.as_of} avgCost={row.avg_cost} />
 
       <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <div><span className="sub">Shares</span><br /><span className="num">{row.qty ?? 0}</span></div>
+        <div><span className="sub">{row.kind === "crypto" ? "Quantity" : "Shares"}</span><br /><span className="num">{row.qty ?? 0}</span></div>
         <div><span className="sub">Value</span><br /><span className="num">{money(row.value, row.currency)}</span></div>
         <div><span className="sub">Avg cost</span><br /><span className="num">{moneyExact(row.avg_cost, row.currency)}</span></div>
         <div><span className="sub">Total G/L</span><br /><span className={`num ${glClass(row.total_gl)}`}>{signedMoney(row.total_gl, row.currency)}</span></div>

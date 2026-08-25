@@ -51,3 +51,18 @@ export function timeAgo(iso: string | null): string {
   if (s < 86400) return `${Math.round(s / 3600)}h ago`;
   return `${Math.round(s / 86400)}d ago`;
 }
+
+/** Convert v between USD and KRW using the won-per-dollar rate; null rate = no conversion possible. */
+export function convertCcy(v: number, from_: "USD" | "KRW", base: "USD" | "KRW", krwPerUsd: number | null): number | null {
+  if (from_ === base) return v;
+  if (!krwPerUsd || krwPerUsd <= 0) return null;
+  return from_ === "KRW" ? v / krwPerUsd : v * krwPerUsd;
+}
+
+/** Dollar (or won) change implied by today's percent move on the current value. */
+export function dayChangeAmount(value: number | null, changePct: number | null): number | null {
+  if (value === null || changePct === null) return null;
+  const f = 1 + changePct / 100;
+  if (f <= 0) return null;
+  return value - value / f;
+}

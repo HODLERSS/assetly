@@ -41,6 +41,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     searchSymbols: vi.fn().mockResolvedValue([{ symbol: "MARA", name: "MARA Holdings", exchange: "NASDAQ", currency: "USD", kind: "equity" }]),
     ensureSymbol: vi.fn().mockResolvedValue(undefined),
     refreshNews: vi.fn().mockResolvedValue(true),
+    getFxRate: vi.fn().mockResolvedValue(1380),
     getHistory: vi.fn().mockResolvedValue([
       { ts: "2026-08-20T20:00:00Z", price: 190 }, { ts: "2026-08-21T14:00:00Z", price: 188 },
       { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
@@ -151,6 +152,55 @@ describe("U3 add position", () => {
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/positive/i);
     expect(api.addPosition).not.toHaveBeenCalled();
+  });
+});
+
+describe("U13 persona-fleet fixes", () => {
+  it("mixed USD+KRW book: header converts KRW at the FX rate with a visible caption", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({}),                                                                   // $4,800 USD
+      row({ holding_id: "h2", symbol: "005930.KS", name: "Samsung Electronics", currency: "KRW",
+            price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 }),
+    ]) });
+    render(<App api={api} />);
+    const net = await screen.findByTestId("net-worth");
+    // 13,800,000 KRW / 1380 = $10,000  ->  $4,800 + $10,000 = $14,800
+    await waitFor(() => expect(net.textContent).toBe("$14,800"));
+    expect((await screen.findByTestId("fx-note")).textContent).toMatch(/KRW converted at ₩1,380\/\$/);
+  });
+  it("home shows today's move in dollars and per-row day %", async () => {
+    render(<App api={stubApi()} />);
+    const day = await screen.findByTestId("total-day");
+    expect(day.textContent).toMatch(/\+\$240 today/);        // 4800 - 4800/1.0526
+    expect(day.className).toContain("gain");
+    expect((await screen.findAllByText(/\+5\.26%/)).length).toBeGreaterThan(1);  // movers + row
+  });
+  it("crypto positions show units, not shares", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({ symbol: "BTC", name: "Bitcoin", kind: "crypto", qty: 0.5 })]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    expect(screen.getByText(/0\.5 BTC/)).toBeTruthy();
+    expect(screen.queryByText(/0\.5 sh/)).toBeNull();
+  });
+  it("chart draws the avg-cost dashed line when it is inside the window", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([row({ avg_cost: 195 })]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await screen.findByTestId("price-chart");
+    expect(await screen.findByTestId("avg-cost-line")).toBeTruthy();
+    expect(screen.getByText(/avg \$195\.00/)).toBeTruthy();
+  });
+  it("short history under a long range gets a partial-data caption", async () => {
+    const api = stubApi();   // stub history spans ~2 days; default range = 1M
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await screen.findByTestId("price-chart");
+    expect((await screen.findByTestId("partial-note")).textContent).toMatch(/showing \d+d of data/);
   });
 });
 

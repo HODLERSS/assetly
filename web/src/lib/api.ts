@@ -58,7 +58,8 @@ export function makeApi(sb: SupabaseClient = supabase) {
       return [...local, ...remote.filter((r) => !seen.has(r.symbol))].slice(0, 12);
     },
     async ensureSymbol(row: SymbolRow): Promise<void> {
-      if (!row.remote) return;                        // already in the catalog
+      // Always ensure — also for catalog hits: it verifies the ticker, refreshes the price,
+      // and guarantees the 5Y daily-close backfill exists before the user lands on the chart.
       const { data, error } = await sb.functions.invoke("symbol-search", {
         body: { ensure: { symbol: row.symbol, name: row.name, exchange: row.exchange,
                           currency: row.currency, kind: row.kind, yahoo: row.yahoo ?? row.symbol } },
@@ -122,6 +123,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
         .order("ts", { ascending: true }).limit(2000);
       if (error) throw error;
       return (data ?? []).map((r: Record<string, unknown>) => ({ ts: String(r.ts), price: Number(r.price) }));
+    },
+    /** Won-per-dollar rate maintained by the price pipeline (symbol USDKRW). */
+    async getFxRate(): Promise<number | null> {
+      const { data } = await sb.from("prices").select("price").eq("symbol", "USDKRW").maybeSingle();
+      const v = data ? Number(data.price) : NaN;
+      return Number.isFinite(v) && v > 0 ? v : null;
     },
     /** Instant news pull for just-added symbols; fire-and-forget from the UI. */
     async refreshNews(symbols: string[]): Promise<boolean> {

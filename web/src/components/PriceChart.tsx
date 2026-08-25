@@ -34,8 +34,9 @@ function thin(pts: HistoryPoint[], n = 180): HistoryPoint[] {
   return out;
 }
 
-export function PriceChart({ api, symbol, currency, livePrice, liveAsOf }: {
+export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost }: {
   api: Api; symbol: string; currency: "USD" | "KRW"; livePrice: number | null; liveAsOf: string | null;
+  avgCost?: number | null;
 }) {
   const [range, setRange] = useState<RangeKey>("1M");
   const [pts, setPts] = useState<HistoryPoint[] | null>(null);   // null = loading
@@ -61,8 +62,10 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf }: {
     const y = (v: number) => H - PAD - ((v - lo) / span) * (H - 2 * PAD);
     const d = pts.map((p, i) => `${i ? "L" : "M"}${x(p.ts).toFixed(1)} ${y(p.price).toFixed(1)}`).join(" ");
     const chg = ((pts[pts.length - 1].price / pts[0].price) - 1) * 100;
-    return { d, lo, hi, chg, W, H };
-  }, [pts]);
+    const spanDays = (t1 - t0) / 86400000;
+    const avgY = avgCost != null && avgCost >= lo && avgCost <= hi ? y(avgCost) : null;
+    return { d, lo, hi, chg, W, H, spanDays, avgY };
+  }, [pts, avgCost]);
 
   const up = (view?.chg ?? 0) >= 0;
 
@@ -89,9 +92,19 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf }: {
                aria-label={`${symbol} ${range} price line`} style={{ width: "100%", height: "auto", display: "block" }}>
             <path d={view.d} fill="none" stroke={up ? "var(--as-gain)" : "var(--as-loss)"} strokeWidth={1.8}
                   strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+            {view.avgY !== null && (
+              <line data-testid="avg-cost-line" x1={4} x2={view.W - 4} y1={view.avgY} y2={view.avgY}
+                    stroke="var(--as-muted)" strokeWidth={1} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+            )}
           </svg>
+          {view.avgY !== null && avgCost != null && (
+            <div className="sub num" style={{ textAlign: "right", marginTop: 1 }}>avg {moneyExact(avgCost, currency)}</div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
             <span className="sub num">L {moneyExact(view.lo, currency)}</span>
+            {view.spanDays < 0.7 * (RANGES.find((r) => r.key === range)!.hours / 24) && (
+              <span className="sub" data-testid="partial-note">showing {Math.max(1, Math.round(view.spanDays))}d of data</span>
+            )}
             <span className="sub num">H {moneyExact(view.hi, currency)}</span>
           </div>
         </>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { convertCcy, dayChangeAmount } from "./lib/format";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import { api as defaultApi, type Api, type PortfolioRow, type Profile } from "./lib/api";
@@ -24,6 +25,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [authReady, setAuthReady] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [rows, setRows] = useState<PortfolioRow[]>([]);
+  const [fx, setFx] = useState<number | null>(null);
   const [view, setView] = useState<View>({ kind: "tab", tab: "home" });
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
@@ -41,6 +43,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setRows(r);
       setError(null);
       setLastSync(new Date());
+      api.getFxRate().then((v) => setFx(v)).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "The feed missed a handoff. Pull to retry.");
     }
@@ -53,11 +56,19 @@ export function App({ api = defaultApi }: { api?: Api }) {
     return () => clearInterval(t);
   }, [session, load]);
 
+  const base = profile?.base_currency ?? "USD";
   const totals = useMemo(() => {
-    let value = 0, cost = 0;
-    for (const r of rows) { value += r.value ?? 0; cost += r.cost_basis ?? 0; }
-    return { value, gl: value - cost, cost };
-  }, [rows]);
+    let value = 0, cost = 0, day = 0, unconverted = 0, mixed = false;
+    for (const r of rows) {
+      if (r.currency !== base) mixed = true;
+      const v = convertCcy(r.value ?? 0, r.currency, base, fx);
+      const c = convertCcy(r.cost_basis ?? 0, r.currency, base, fx);
+      const d = convertCcy(dayChangeAmount(r.value, r.change_pct) ?? 0, r.currency, base, fx);
+      if (v === null || c === null) { unconverted += 1; continue; }   // no FX rate yet: exclude, never mislabel
+      value += v; cost += c; day += d ?? 0;
+    }
+    return { value, gl: value - cost, cost, day, mixed, fx, unconverted };
+  }, [rows, fx, base]);
 
   if (!authReady) return <div className="screen" aria-busy="true" />;
   if (!session) return <AuthScreen />;
