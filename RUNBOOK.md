@@ -6,7 +6,9 @@
   edge functions `price-sync` + `news-sync` + `symbol-search` (universal US+KR ticker search
   and on-demand register: live price + ~3mo daily history at add time), pg_cron (1-min prices / 15-min news via vault
   `project_url` + `edge_bearer` = publishable key), auth URL config. Deploy new code:
-  `cd web && VITE_BASE=/assetly/ npm run build` → copy `dist/` to the gh-pages branch (see git log).
+  `cd web && VITE_BASE=/assetly/ npm run build` → rsync **with `-c` (checksum)** `dist/` to the
+  gh-pages worktree (hash-only index.html diffs are size-identical and rsync's quick check
+  skips them), commit, push; force a build with `gh api -X POST repos/HODLERSS/assetly/pages/builds`.
 - Morning items: `MORNING.md`. Verify anytime: `bash scripts/verify-oauth.sh`.
 - Cloud tests: `ASSETLY_CLOUD=1 npx vitest run src/test/cloud.test.ts` · iPhone e2e:
   `node e2e/iphone.mjs` (`PW_ENGINE=webkit` for the Safari engine) · 10-stock scenario e2e:

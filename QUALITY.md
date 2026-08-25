@@ -50,6 +50,10 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10b. (8/25) 5Y depth: ensure now backfills 5y weekly + 1y daily + 5d 15m per ticker; 1Y/5Y
+   chips added; one-time sweep backfilled all 18 cloud symbols (MARA spans to Aug 2021).
+   Deploy bug found: old/new index.html are size-identical (hash-only diff) so rsync's
+   quick check skipped it, shipping stale HTML with a purged asset — deploys now rsync -c.
 10a. (8/24 pm) Price charts shipped: Position screen 1D/1W/1M/3M SVG chart backed by
    price_history (ensure backfills ~3mo daily + 5d of 15m bars; nightly prune keeps ticks
    7 days then last-per-day). Scenario e2e (10 stocks: add/edit/remove/charts) 11/11.
