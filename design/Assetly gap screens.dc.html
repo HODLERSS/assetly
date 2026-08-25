@@ -85,7 +85,7 @@ body{margin:0;background:#DFE2E7;font-family:'Schibsted Grotesk','Noto Sans KR',
   <div class="dv-thd"><a class="dv-tid" href="#t7">t7</a><span class="dv-tname">Price chart on Position — 1D/1W/1M/3M (synced from Claude Code, implemented in app/web)</span></div>
   <p class="dv-sub">Every held ticker carries 5 years of history (weekly + daily closes) backfilled the moment it is added.
   The chart draws <b>daily closes only</b> — one point per day, no intraday jitter — and while the market trades, today's
-  point is the live price. Ranges 1W · 1M · 3M · 1Y · 5Y (1D dropped: a one-point range is noise). Loss ranges draw red, gains green.</p>
+  point is the live price. Ranges 1D · 1W · 1M · 3M · 6M · YTD · 1Y · 2Y · 5Y (Stocks-app parity; 1D is the intraday line, all others daily closes). Loss ranges draw red, gains green.</p>
   <div class="dv-opts">
 
     <div class="dv-opt" id="7a">
@@ -99,11 +99,15 @@ body{margin:0;background:#DFE2E7;font-family:'Schibsted Grotesk','Noto Sans KR',
           <svg viewBox="0 0 320 96" style="width:100%;display:block"><path d="M4 76 L43 70 L82 74 L121 62 L160 56 L199 58 L238 44 L277 34 L316 20" fill="none" stroke="#1E7048" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <div style="display:flex;justify-content:space-between;margin-top:2px"><span class="sub n">L $26.85</span><span class="sub n">H $27.51</span></div>
           <div style="display:flex;gap:7px;margin-top:10px">
-            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">1W</span>
-            <span style="border:1px solid #2A3F92;background:#2A3F92;color:#F4F5F7;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">1M</span>
-            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">3M</span>
-            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">1Y</span>
-            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">5Y</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:5px 9px;font:600 11px 'Schibsted Grotesk'">1D</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:5px 9px;font:600 11px 'Schibsted Grotesk'">1W</span>
+            <span style="border:1px solid #2A3F92;background:#2A3F92;color:#F4F5F7;border-radius:999px;padding:5px 9px;font:600 11px 'Schibsted Grotesk'">1M</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:5px 9px;font:600 11px 'Schibsted Grotesk'">3M</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:5px 9px;font:600 11px 'Schibsted Grotesk'">6M</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:5px 9px;font:600 11px 'Schibsted Grotesk'">YTD</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:5px 9px;font:600 11px 'Schibsted Grotesk'">1Y</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:5px 9px;font:600 11px 'Schibsted Grotesk'">2Y</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:5px 9px;font:600 11px 'Schibsted Grotesk'">5Y</span>
           </div>
         </div>
         <div class="card"><div class="row"><span class="sub">Shares</span><span class="n">5</span></div><div class="row"><span class="sub">Avg cost</span><span class="n">$50.00</span></div></div>

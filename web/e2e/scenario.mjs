@@ -82,7 +82,7 @@ await step("chart: FIG daily-close line across all ranges", async () => {
   await page.getByTestId("price-chart").waitFor({ timeout: 20000 });
   if (await page.getByRole("tab", { name: "1D" }).count()) throw new Error("1D chip should be gone");
   await shot("03-fig-chart-default");
-  for (const r of ["1W", "3M", "1Y", "5Y"]) {
+  for (const r of ["1D", "1W", "3M", "6M", "YTD", "1Y", "2Y", "5Y"]) {
     await page.getByRole("tab", { name: r }).tap();
     await page.getByTestId("price-chart").waitFor({ timeout: 20000 });
   }
