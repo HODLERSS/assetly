@@ -41,8 +41,8 @@ function stubApi(over: Partial<Api> = {}): Api {
     searchSymbols: vi.fn().mockResolvedValue([{ symbol: "MARA", name: "MARA Holdings", exchange: "NASDAQ", currency: "USD", kind: "equity" }]),
     ensureSymbol: vi.fn().mockResolvedValue(undefined),
     getHistory: vi.fn().mockResolvedValue([
-      { ts: "2026-08-24T14:00:00Z", price: 190 }, { ts: "2026-08-24T15:00:00Z", price: 195 },
-      { ts: "2026-08-24T16:00:00Z", price: 200 },
+      { ts: "2026-08-20T20:00:00Z", price: 190 }, { ts: "2026-08-21T14:00:00Z", price: 188 },
+      { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
     ]),
     getPortfolio: vi.fn().mockResolvedValue([row({})]),
     addPosition: vi.fn().mockResolvedValue("h-new"),
@@ -162,22 +162,26 @@ describe("U11 price chart on position", () => {
     await screen.findByRole("heading", { name: /^lots$/i });
   };
   let apiRef: Api;
-  it("renders the line, range change and low/high from history", async () => {
+  it("daily closes only: one point per day, live price is today's point", async () => {
     apiRef = stubApi();
     await openPosition();
     const svg = await screen.findByTestId("price-chart");
-    expect(svg.querySelector("path")?.getAttribute("d")).toMatch(/^M/);
+    const d = svg.querySelector("path")?.getAttribute("d") ?? "";
+    expect(d).toMatch(/^M/);
+    // 3 calendar days in history (intraday print collapsed) + live today = 4 points
+    expect(d.split("L").length).toBe(4);
     expect((await screen.findByTestId("range-change")).textContent).toMatch(/[+-]\d/);
-    expect(screen.getByText(/L \$190\.00/)).toBeTruthy();
-    expect(screen.getByText(/H \$200\.00/)).toBeTruthy();
+    expect(screen.getByText(/L \$190\.00/)).toBeTruthy();   // 8/21 close 195, not the 188 intraday
+    expect(screen.getByText(/H \$200\.00/)).toBeTruthy();   // live price today (row.price = 200)
   });
-  it("range chips request the right windows (1D=24h, 1W=168h)", async () => {
+  it("range chips request the right windows (default 1M, 1W, 5Y); no 1D chip", async () => {
     apiRef = stubApi();
     await openPosition();
     await screen.findByTestId("price-chart");
-    expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24);
+    expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 31);
+    expect(screen.queryByRole("tab", { name: "1D" })).toBeNull();
     await userEvent.click(screen.getByRole("tab", { name: "1W" }));
-    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 168));
+    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 8));
     await userEvent.click(screen.getByRole("tab", { name: "5Y" }));
     await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 366 * 5));
   });

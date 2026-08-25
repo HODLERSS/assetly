@@ -5,14 +5,25 @@ import { moneyExact, signedPct } from "../lib/format";
 // Minimal price chart: pure SVG, no library. Ranges map to hours of history;
 // 1D/1W ride the 1-min cron + 15m backfill, 1M/3M ride daily closes.
 const RANGES = [
-  { key: "1D", hours: 24 },
-  { key: "1W", hours: 24 * 7 },
-  { key: "1M", hours: 24 * 30 },
+  { key: "1W", hours: 24 * 8 },
+  { key: "1M", hours: 24 * 31 },
   { key: "3M", hours: 24 * 92 },
   { key: "1Y", hours: 24 * 366 },
   { key: "5Y", hours: 24 * 366 * 5 },
 ] as const;
 export type RangeKey = (typeof RANGES)[number]["key"];
+
+/** One point per calendar day: the last stored print of each past day is its close;
+ *  today's point is the LIVE price while the market is trading. */
+function dailyCloses(pts: HistoryPoint[], livePrice: number | null, liveAsOf: string | null): HistoryPoint[] {
+  const byDay = new Map<string, HistoryPoint>();
+  for (const p of pts) byDay.set(p.ts.slice(0, 10), p);        // ascending input: last print wins
+  if (livePrice !== null && liveAsOf) {
+    const day = liveAsOf.slice(0, 10);
+    byDay.set(day, { ts: liveAsOf, price: livePrice });
+  }
+  return [...byDay.values()].sort((a, b) => a.ts.localeCompare(b.ts));
+}
 
 /** Downsample to at most n points, always keeping the last. */
 function thin(pts: HistoryPoint[], n = 180): HistoryPoint[] {
@@ -23,10 +34,10 @@ function thin(pts: HistoryPoint[], n = 180): HistoryPoint[] {
   return out;
 }
 
-export function PriceChart({ api, symbol, currency }: {
-  api: Api; symbol: string; currency: "USD" | "KRW";
+export function PriceChart({ api, symbol, currency, livePrice, liveAsOf }: {
+  api: Api; symbol: string; currency: "USD" | "KRW"; livePrice: number | null; liveAsOf: string | null;
 }) {
-  const [range, setRange] = useState<RangeKey>("1D");
+  const [range, setRange] = useState<RangeKey>("1M");
   const [pts, setPts] = useState<HistoryPoint[] | null>(null);   // null = loading
 
   useEffect(() => {
@@ -34,10 +45,10 @@ export function PriceChart({ api, symbol, currency }: {
     setPts(null);
     const hours = RANGES.find((r) => r.key === range)!.hours;
     api.getHistory(symbol, hours)
-      .then((p) => { if (live) setPts(thin(p)); })
+      .then((p) => { if (live) setPts(thin(dailyCloses(p, livePrice, liveAsOf))); })
       .catch(() => { if (live) setPts([]); });
     return () => { live = false; };
-  }, [api, symbol, range]);
+  }, [api, symbol, range, livePrice, liveAsOf]);
 
   const view = useMemo(() => {
     if (!pts || pts.length < 2) return null;

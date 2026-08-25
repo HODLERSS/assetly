@@ -77,11 +77,12 @@ await step("holdings shows all 10 with prices", async () => {
   await shot("02-ten-holdings");
 });
 
-await step("chart: FIG renders with data on 1D..3M and switches ranges", async () => {
+await step("chart: FIG daily-close line across all ranges", async () => {
   await page.getByRole("button", { name: /Figma/i }).first().tap();
   await page.getByTestId("price-chart").waitFor({ timeout: 20000 });
-  await shot("03-fig-chart-1d");
-  for (const r of ["1W", "1M", "3M", "1Y", "5Y"]) {
+  if (await page.getByRole("tab", { name: "1D" }).count()) throw new Error("1D chip should be gone");
+  await shot("03-fig-chart-default");
+  for (const r of ["1W", "3M", "1Y", "5Y"]) {
     await page.getByRole("tab", { name: r }).tap();
     await page.getByTestId("price-chart").waitFor({ timeout: 20000 });
   }

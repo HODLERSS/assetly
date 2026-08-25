@@ -40,7 +40,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
         <div className={`num ${glClass(row.change_pct)}`}>{signedPct(row.change_pct)} today · {priceAsOf(row.as_of)}</div>
       </div>
 
-      <PriceChart api={api} symbol={row.symbol} currency={row.currency} />
+      <PriceChart api={api} symbol={row.symbol} currency={row.currency} livePrice={row.price} liveAsOf={row.as_of} />
 
       <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div><span className="sub">Shares</span><br /><span className="num">{row.qty ?? 0}</span></div>
