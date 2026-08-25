@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { PortfolioRow } from "../lib/api";
-import { glClass, money, moneyExact, signedPct } from "../lib/format";
+import { glClass, money, moneyExact, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2b: the table as a touch list with filter chips.
 export function Holdings({ rows, onOpen, onAdd }: {
@@ -27,10 +27,10 @@ export function Holdings({ rows, onOpen, onAdd }: {
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span>
               <span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span><br />
-              <span className="sub num">{r.kind === "cash" ? "cash balance" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{r.account !== "brokerage" ? ` · ${r.account === "401k" ? "401k" : "IRA"}` : ""} · avg {moneyExact(r.avg_cost, r.currency)}</span>
+              <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{r.account !== "brokerage" ? ` · ${r.account === "401k" ? "401k" : "IRA"}` : ""}{r.kind === "cash" || r.kind === "debt" ? "" : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
             </span>
             <span className="right">
-              <span className="num">{money(r.value, r.currency)}</span><br />
+              <span className="num">{r.kind === "debt" ? signedMoney(-(r.value ?? 0), r.currency) : money(r.value, r.currency)}</span><br />
               <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)} today</span>
             </span>
           </button>

@@ -155,6 +155,32 @@ describe("U3 add position", () => {
   });
 });
 
+describe("U15 debt", () => {
+  it("debt subtracts from net worth and reads as a negative balance", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({}),                                                        // $4,800 asset
+      row({ holding_id: "h9", symbol: "$DEBT", name: "Debt (USD)", kind: "debt", qty: 1800, price: 1, value: 1800, cost_basis: 1800, total_gl: 0, change_pct: 0 }),
+    ]) });
+    render(<App api={api} />);
+    const net = await screen.findByTestId("net-worth");
+    await waitFor(() => expect(net.textContent).toBe("$3,000"));      // 4,800 - 1,800
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await screen.findByText(/debt balance/);
+    expect(screen.getByText("-$1,800")).toBeTruthy();
+  });
+  it("debt quick add: amount-owed field, cost pinned at 1", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /add a loan or debt/i }));
+    await userEvent.type(screen.getByLabelText(/amount owed/i), "1800");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$DEBT", 1800, 1, undefined, "brokerage"));
+  });
+});
+
 describe("U14 accounts + cash", () => {
   it("account chips appear after pick; 401k selection reaches addPosition", async () => {
     const api = stubApi();
@@ -181,22 +207,23 @@ describe("U14 accounts + cash", () => {
     expect(screen.queryByLabelText(/purchase date/i)).toBeNull();
     await userEvent.type(screen.getByLabelText(/amount/i), "5000");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("CASH", 5000, 1, undefined, "brokerage"));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 5000, 1, undefined, "brokerage"));
   });
   it("non-brokerage rows carry a quiet account tag; brokerage stays untagged; cash rows read as cash", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
       row({}),
       row({ holding_id: "h2", symbol: "QQQM", name: "Invesco Nasdaq 100", kind: "etf", account: "401k", qty: 40 }),
-      row({ holding_id: "h3", symbol: "CASH", name: "Cash (USD)", kind: "cash", qty: 5000, price: 1, value: 5000, cost_basis: 5000, total_gl: 0, change_pct: 0 }),
+      row({ holding_id: "h3", symbol: "$CASH", name: "Cash (USD)", kind: "cash", qty: 5000, price: 1, value: 5000, cost_basis: 5000, total_gl: 0, change_pct: 0 }),
     ]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await screen.findByText(/· 401k/);
-    expect(screen.getByText(/cash balance/)).toBeTruthy();
+    await screen.findByText(/Invesco Nasdaq 100/);
     const subs = Array.from(document.querySelectorAll("span.sub")).map((e) => (e.textContent ?? "").trim());
-    expect(subs).toContain("24 sh");                     // brokerage row untagged
-    expect(subs.some((t) => /^24 sh ·/.test(t))).toBe(false);
+    expect(subs.some((t) => t.startsWith("24 sh · avg"))).toBe(true);     // brokerage row untagged
+    expect(subs.some((t) => /24 sh · (401k|IRA)/.test(t))).toBe(false);
+    expect(subs.some((t) => /40 sh · 401k/.test(t))).toBe(true);          // 401k row tagged
+    expect(subs).toContain("cash balance");                               // no noisy avg on cash
   });
 });
 

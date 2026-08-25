@@ -10,10 +10,10 @@ alter table public.symbols drop constraint if exists symbols_kind_check;
 alter table public.symbols add constraint symbols_kind_check
   check (kind in ('equity','etf','fund','crypto','cash'));
 insert into public.symbols (symbol, name, exchange, currency, kind, yahoo)
-  values ('CASH','Cash (USD)','CASH','USD','cash',null)
+  values ('$CASH','Cash (USD)','CASH','USD','cash',null)
   on conflict (symbol) do nothing;
 insert into public.prices (symbol, price, prev_close, change_pct, currency, market_state, as_of, source)
-  values ('CASH', 1, 1, 0, 'USD', 'regular', now(), 'pinned')
+  values ('$CASH', 1, 1, 0, 'USD', 'regular', now(), 'pinned')
   on conflict (symbol) do nothing;
 
 -- portfolio view carries the account through (drop first: column order changes)

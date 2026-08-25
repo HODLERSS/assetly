@@ -61,11 +61,12 @@ export function App({ api = defaultApi }: { api?: Api }) {
     let value = 0, cost = 0, day = 0, unconverted = 0, mixed = false;
     for (const r of rows) {
       if (r.currency !== base) mixed = true;
+      const sign = r.kind === "debt" ? -1 : 1;           // consolidated view: debt subtracts
       const v = convertCcy(r.value ?? 0, r.currency, base, fx);
       const c = convertCcy(r.cost_basis ?? 0, r.currency, base, fx);
       const d = convertCcy(dayChangeAmount(r.value, r.change_pct) ?? 0, r.currency, base, fx);
       if (v === null || c === null) { unconverted += 1; continue; }   // no FX rate yet: exclude, never mislabel
-      value += v; cost += c; day += d ?? 0;
+      value += sign * v; cost += sign * c; day += sign * (d ?? 0);
     }
     return { value, gl: value - cost, cost, day, mixed, fx, unconverted };
   }, [rows, fx, base]);

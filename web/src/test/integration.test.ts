@@ -335,19 +335,29 @@ describe("Accounts + cash positions", () => {
   });
   it("cash: $1-pinned position, value = amount, pipeline leaves it alone", async () => {
     const a = makeApi(alice);
-    await a.addPosition("CASH", 5000, 1);
-    const r = (await a.getPortfolio()).find((x) => x.symbol === "CASH")!;
+    await a.addPosition("$CASH", 5000, 1);
+    const r = (await a.getPortfolio()).find((x) => x.symbol === "$CASH")!;
     expect(Number(r.price)).toBe(1);
     expect(r.value).toBe(5000);
     expect(r.total_gl).toBe(0);
     const sync = await fetch(`${URL_}/functions/v1/price-sync`, {
       method: "POST", headers: { Authorization: `Bearer ${SERVICE}` } });
     expect((await sync.json()).ok).toBe(true);
-    const { data } = await alice.from("prices").select("price,source").eq("symbol", "CASH").single();
+    const { data } = await alice.from("prices").select("price,source").eq("symbol", "$CASH").single();
     expect(Number(data!.price)).toBe(1);
     expect(data!.source).toBe("pinned");                 // untouched by the market pipeline
     await a.removeHolding(r.holding_id);
   }, 60000);
+  it("debt: pinned position the pipeline skips; client subtracts it", async () => {
+    const a = makeApi(alice);
+    await a.addPosition("$DEBT", 1800, 1);
+    const r = (await a.getPortfolio()).find((x) => x.symbol === "$DEBT")!;
+    expect(r.kind).toBe("debt");
+    expect(Number(r.price)).toBe(1);
+    expect(r.value).toBe(1800);
+    await a.removeHolding(r.holding_id);
+  });
+
   it("retirement index funds (FXAIX-style NAV) resolve and price", async () => {
     const hits = await makeApi(alice).searchSymbols("FFLDX");
     expect(hits.map((h) => h.symbol)).toContain("FFLDX");

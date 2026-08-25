@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
   ]);
   const { data: symbols, error } = await admin
     .from("symbols").select("symbol, yahoo, kind").eq("active", true)
-    .neq("kind", "cash").in("symbol", [...wanted]);
+    .not("kind", "in", "(cash,debt)").in("symbol", [...wanted]);
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
   const pairs = (symbols ?? []).map((s) => ({ symbol: s.symbol, yahoo: s.yahoo ?? s.symbol }));

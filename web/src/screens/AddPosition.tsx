@@ -32,12 +32,16 @@ export function AddPosition({ api, onDone, onCancel }: {
             <input id="add-q" value={q} onChange={(e) => search(e.target.value)} placeholder="FIG, Reddit, Samsung…" autoFocus />
           </div>
           <div className="card">
-            {!q.trim() && (
-              <button className="row" disabled={busy} onClick={() => setPicked({ symbol: "CASH", name: "Cash (USD)", exchange: "CASH", currency: "USD", kind: "cash" })}>
+            {!q.trim() && (<>
+              <button className="row" disabled={busy} onClick={() => setPicked({ symbol: "$CASH", name: "Cash (USD)", exchange: "CASH", currency: "USD", kind: "cash" })}>
                 <span><span className="sym">CASH</span> <span className="sub">Add a cash balance</span></span>
                 <span className="sub">$</span>
               </button>
-            )}
+              <button className="row" disabled={busy} onClick={() => setPicked({ symbol: "$DEBT", name: "Debt (USD)", exchange: "DEBT", currency: "USD", kind: "debt" })}>
+                <span><span className="sym">DEBT</span> <span className="sub">Add a loan or debt balance</span></span>
+                <span className="sub">−$</span>
+              </button>
+            </>)}
             {results.map((r) => (
               <button key={r.symbol} className="row" disabled={busy} onClick={async () => {
                 setErr(null); setBusy(true);
@@ -69,8 +73,8 @@ export function AddPosition({ api, onDone, onCancel }: {
               ))}
             </div>
           </div>
-          {picked.kind === "cash" ? (
-            <div className="field"><label htmlFor="add-qty">Amount ($)</label>
+          {picked.kind === "cash" || picked.kind === "debt" ? (
+            <div className="field"><label htmlFor="add-qty">{picked.kind === "debt" ? "Amount owed ($)" : "Amount ($)"}</label>
               <input id="add-qty" className="num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus /></div>
           ) : (<>
           <div className="field"><label htmlFor="add-qty">Shares</label>
@@ -82,7 +86,7 @@ export function AddPosition({ api, onDone, onCancel }: {
           </>)}
           {err && <div className="error-note" role="alert">{err}</div>}
           <button className="btn" disabled={busy} onClick={async () => {
-            const isCash = picked.kind === "cash";
+            const isCash = picked.kind === "cash" || picked.kind === "debt";
             const nq = parseFloat(qty), nc = isCash ? 1 : parseFloat(cost);
             if (!(nq > 0)) { setErr(isCash ? "Amount must be positive." : "Shares must be positive."); return; }
             if (!(nc >= 0)) { setErr("Cost can't be negative."); return; }
