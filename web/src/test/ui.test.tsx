@@ -29,7 +29,7 @@ import type { Api, PortfolioRow, Profile } from "../lib/api";
 
 const profile: Profile = { id: "u-test", display_name: "Minjae", base_currency: "USD", markets: ["US", "KR"], onboarded_at: "2026-08-23T00:00:00Z" };
 const row = (over: Partial<PortfolioRow>): PortfolioRow => ({
-  holding_id: "h1", symbol: "RDDT", account: "brokerage", name: "Reddit", currency: "USD", kind: "equity",
+  holding_id: "h1", symbol: "RDDT", account: "brokerage", nickname: "", name: "Reddit", currency: "USD", kind: "equity",
   qty: 24, cost_basis: 4021.0, avg_cost: 167.54, price: 200, change_pct: 5.26,
   as_of: new Date().toISOString(), value: 4800, total_gl: 779, ...over,
 });
@@ -139,7 +139,7 @@ describe("U3 add position", () => {
     await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "brokerage"));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "brokerage", ""));
   });
   it("rejects invalid shares with a visible error", async () => {
     const api = stubApi();
@@ -157,6 +157,34 @@ describe("U3 add position", () => {
   });
 });
 
+describe("U18 labels + bank accounts", () => {
+  it("named cash reaches addPosition with the label and Bank preselected", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /add a cash balance/i }));
+    expect(screen.getByRole("button", { name: "Bank" }).getAttribute("aria-pressed")).toBe("true");
+    await userEvent.type(screen.getByLabelText(/amount \(\$\)/i), "2500");
+    await userEvent.type(screen.getByLabelText(/label \(optional\)/i), "Cash (Yeonhwa)");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 2500, 1, undefined, "bank", "Cash (Yeonhwa)"));
+  });
+  it("rows show the label instead of the generic name, with a Bank tag", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({ holding_id: "c1", symbol: "$CASH", name: "Cash (USD)", nickname: "Cash (Yeonhwa)", kind: "cash", account: "bank", qty: 2500, price: 1, value: 2500, cost_basis: 2500, total_gl: 0, change_pct: 0 }),
+      row({ holding_id: "c2", symbol: "$CASH", name: "Cash (USD)", nickname: "Cash (Minjae)", kind: "cash", account: "bank", qty: 4000, price: 1, value: 4000, cost_basis: 4000, total_gl: 0, change_pct: 0 }),
+    ]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await screen.findByText("Cash (Yeonhwa)");
+    await screen.findByText("Cash (Minjae)");
+    expect(screen.getAllByText(/cash balance · Bank/).length).toBe(2);
+  });
+});
+
 describe("U17 KRW cash and debt", () => {
   it("cash in won: currency chip flips the symbol to $CASH.KRW", async () => {
     const api = stubApi();
@@ -168,7 +196,7 @@ describe("U17 KRW cash and debt", () => {
     await userEvent.click(screen.getByRole("button", { name: /₩ KRW/ }));
     await userEvent.type(screen.getByLabelText(/amount \(₩\)/i), "3000000");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH.KRW", 3000000, 1, undefined, "brokerage"));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH.KRW", 3000000, 1, undefined, "bank", ""));
   });
   it("debt in won reaches the totals at the FX rate", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
@@ -240,7 +268,7 @@ describe("U15 debt", () => {
     await userEvent.click(await screen.findByRole("button", { name: /add a loan or debt/i }));
     await userEvent.type(screen.getByLabelText(/amount owed/i), "1800");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$DEBT", 1800, 1, undefined, "brokerage"));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$DEBT", 1800, 1, undefined, "bank", ""));
   });
 });
 
@@ -257,7 +285,7 @@ describe("U14 accounts + cash", () => {
     await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "401k"));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "401k", ""));
   });
   it("cash fast path: one amount field, no cost/date, cost pinned at 1", async () => {
     const api = stubApi();
@@ -270,7 +298,7 @@ describe("U14 accounts + cash", () => {
     expect(screen.queryByLabelText(/purchase date/i)).toBeNull();
     await userEvent.type(screen.getByLabelText(/amount/i), "5000");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 5000, 1, undefined, "brokerage"));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 5000, 1, undefined, "bank", ""));
   });
   it("non-brokerage rows carry a quiet account tag; brokerage stays untagged; cash rows read as cash", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([

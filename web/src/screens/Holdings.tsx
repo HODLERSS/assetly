@@ -3,6 +3,8 @@ import type { PortfolioRow } from "../lib/api";
 import { glClass, money, moneyExact, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2b: the table as a touch list with filter chips.
+const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA" };
+
 export function Holdings({ rows, onOpen, onAdd }: {
   rows: PortfolioRow[]; onOpen: (id: string) => void; onAdd: () => void;
 }) {
@@ -26,8 +28,8 @@ export function Holdings({ rows, onOpen, onAdd }: {
         {shown.map((r) => (
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span>
-              <span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span><br />
-              <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{r.account !== "brokerage" ? ` · ${r.account === "401k" ? "401k" : "IRA"}` : ""}{r.kind === "cash" || r.kind === "debt" ? "" : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
+              <span className="sym">{r.symbol}</span> <span className="sub">{r.nickname || r.name}</span><br />
+              <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{ACCT[r.account] ? ` · ${ACCT[r.account]}` : ""}{r.kind === "cash" || r.kind === "debt" ? "" : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
             </span>
             <span className="right">
               <span className="num">{r.kind === "debt" ? signedMoney(-(r.value ?? 0), r.currency) : money(r.value, r.currency)}</span><br />

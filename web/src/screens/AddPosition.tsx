@@ -13,6 +13,7 @@ export function AddPosition({ api, onDone, onCancel }: {
   const [date, setDate] = useState("");
   const [account, setAccount] = useState<Account>("brokerage");
   const [ccy, setCcy] = useState<"USD" | "KRW">("USD");
+  const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -34,11 +35,11 @@ export function AddPosition({ api, onDone, onCancel }: {
           </div>
           <div className="card">
             {!q.trim() && (<>
-              <button className="row" disabled={busy} onClick={() => setPicked({ symbol: "$CASH", name: "Cash (USD)", exchange: "CASH", currency: "USD", kind: "cash" })}>
+              <button className="row" disabled={busy} onClick={() => { setAccount("bank"); setPicked({ symbol: "$CASH", name: "Cash (USD)", exchange: "CASH", currency: "USD", kind: "cash" }); }}>
                 <span><span className="sym">CASH</span> <span className="sub">Add a cash balance</span></span>
                 <span className="sub">$</span>
               </button>
-              <button className="row" disabled={busy} onClick={() => setPicked({ symbol: "$DEBT", name: "Debt (USD)", exchange: "DEBT", currency: "USD", kind: "debt" })}>
+              <button className="row" disabled={busy} onClick={() => { setAccount("bank"); setPicked({ symbol: "$DEBT", name: "Debt (USD)", exchange: "DEBT", currency: "USD", kind: "debt" }); }}>
                 <span><span className="sym">DEBT</span> <span className="sub">Add a loan or debt balance</span></span>
                 <span className="sub">−$</span>
               </button>
@@ -67,9 +68,9 @@ export function AddPosition({ api, onDone, onCancel }: {
           <div className="field">
             <label>Account</label>
             <div className="chips" style={{ padding: 0 }} role="group" aria-label="Account">
-              {(["brokerage", "401k", "ira"] as Account[]).map((a) => (
+              {(["brokerage", "bank", "401k", "ira"] as Account[]).map((a) => (
                 <button key={a} className="chip" aria-pressed={account === a} onClick={() => setAccount(a)}>
-                  {a === "brokerage" ? "Brokerage" : a === "401k" ? "401k" : "IRA"}
+                  {a === "brokerage" ? "Brokerage" : a === "bank" ? "Bank" : a === "401k" ? "401k" : "IRA"}
                 </button>
               ))}
             </div>
@@ -87,6 +88,9 @@ export function AddPosition({ api, onDone, onCancel }: {
             </div>
             <div className="field"><label htmlFor="add-qty">{picked.kind === "debt" ? `Amount owed (${ccy === "KRW" ? "₩" : "$"})` : `Amount (${ccy === "KRW" ? "₩" : "$"})`}</label>
               <input id="add-qty" className="num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus /></div>
+            <div className="field"><label htmlFor="add-label">Label (optional)</label>
+              <input id="add-label" value={label} onChange={(e) => setLabel(e.target.value)}
+                     placeholder={picked.kind === "debt" ? "e.g. Car loan" : "e.g. Cash (Yeonhwa)"} /></div>
           </>) : (<>
           <div className="field"><label htmlFor="add-qty">Shares</label>
             <input id="add-qty" className="num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus /></div>
@@ -104,7 +108,7 @@ export function AddPosition({ api, onDone, onCancel }: {
             setBusy(true); setErr(null);
             const sym = isCash && ccy === "KRW" ? `${picked.symbol}.KRW` : picked.symbol;
             try {
-              await api.addPosition(sym, nq, nc, date || undefined, account);
+              await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "");
               if (!isCash) void api.refreshNews([picked.symbol]);        // stories land while the user looks around
               await onDone();
             }

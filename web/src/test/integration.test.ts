@@ -358,6 +358,20 @@ describe("Accounts + cash positions", () => {
     await a.removeHolding(r.holding_id);
   });
 
+  it("two labeled cash balances coexist in one bank account; equity adds still merge", async () => {
+    const a = makeApi(alice);
+    const h1 = await a.addPosition("$CASH", 2500, 1, undefined, "bank", "Cash (Yeonhwa)");
+    const h2 = await a.addPosition("$CASH", 4000, 1, undefined, "bank", "Cash (Minjae)");
+    expect(h1).not.toBe(h2);
+    const rows = (await a.getPortfolio()).filter((r) => r.symbol === "$CASH");
+    expect(rows.length).toBe(2);
+    expect(rows.map((r) => r.nickname).sort()).toEqual(["Cash (Minjae)", "Cash (Yeonhwa)"]);
+    const m1 = await a.addPosition("AAPL", 1, 100);
+    const m2 = await a.addPosition("AAPL", 1, 100);            // unlabeled market adds merge
+    expect(m1).toBe(m2);
+    for (const r of (await a.getPortfolio()).filter((x) => ["$CASH", "AAPL"].includes(x.symbol))) await a.removeHolding(r.holding_id);
+  });
+
   it("KRW cash and debt: pinned won positions", async () => {
     const a = makeApi(alice);
     await a.addPosition("$CASH.KRW", 3000000, 1);

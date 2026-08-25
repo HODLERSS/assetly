@@ -2,6 +2,8 @@ import type { PortfolioRow } from "../lib/api";
 import { glClass, money, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2a: net worth, movers, market pulse.
+const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA" };
+
 export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
   rows: PortfolioRow[];
   totals: { value: number; gl: number; cost: number; day: number; mixed: boolean; fx: number | null; unconverted: number };
@@ -51,7 +53,7 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
         {rows.map((r) => (
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{r.symbol}</span><br />
-              <span className="sub">{r.kind === "cash" ? "cash" : r.kind === "debt" ? "debt" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{r.account !== "brokerage" ? ` · ${r.account === "401k" ? "401k" : "IRA"}` : ""}</span>
+              <span className="sub">{r.kind === "cash" ? "cash" : r.kind === "debt" ? "debt" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{ACCT[r.account] ? ` · ${ACCT[r.account]}` : ""}</span>
               {r.change_pct !== null && <span className={`sub num ${glClass(r.change_pct)}`}> · {signedPct(r.change_pct)}</span>}</span>
             <span className="right">
               <span className="num">{r.kind === "debt" ? signedMoney(-(r.value ?? 0), r.currency) : money(r.value, r.currency)}</span><br />
