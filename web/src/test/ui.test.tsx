@@ -157,6 +157,20 @@ describe("U3 add position", () => {
   });
 });
 
+describe("U19 no-KRW hygiene", () => {
+  it("USD-only book: no FX caption anywhere, no rate row, no toggle", async () => {
+    const api = stubApi();   // default book is USD-only
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    expect(screen.queryByTestId("fx-note")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    await screen.findByText(/signed in as/i);
+    expect(screen.queryByTestId("fx-rate-row")).toBeNull();
+    expect(screen.queryByRole("button", { name: /₩ KRW/ })).toBeNull();
+    expect(screen.queryByText(/KRW converted/)).toBeNull();
+  });
+});
+
 describe("U18 labels + bank accounts", () => {
   it("named cash reaches addPosition with the label and Bank preselected", async () => {
     const api = stubApi();
