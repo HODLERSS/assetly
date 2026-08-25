@@ -50,6 +50,11 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10c. (8/25) Chart redraw per user feedback: daily closes only (one point per day, live
+   price = today's point while trading); 1D chip dropped. Instant news: news-sync gained
+   CORS + on-demand {symbols} pulls, add-flows fire an immediate pull, News screen
+   self-heals empty scopes ("Pulling the latest stories…") — the 15-minute wait message
+   is gone. 10-persona 30-day simulation fleet added (e2e/persona-sim.mjs + personas.json).
 10b. (8/25) 5Y depth: ensure now backfills 5y weekly + 1y daily + 5d 15m per ticker; 1Y/5Y
    chips added; one-time sweep backfilled all 18 cloud symbols (MARA spans to Aug 2021).
    Deploy bug found: old/new index.html are size-identical (hash-only diff) so rsync's
