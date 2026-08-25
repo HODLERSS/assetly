@@ -241,6 +241,18 @@ describe("Price history API (chart backend)", () => {
     expect(day.length).toBeLessThan(all.length);          // window actually filters
     expect(all.every((p) => p.price > 0)).toBe(true);
   });
+  it("5Y backfill: a live-ensured symbol has years of weekly closes", async () => {
+    const r = await fetch(`${URL_}/functions/v1/symbol-search`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` },
+      body: JSON.stringify({ ensure: { symbol: "MARA", name: "MARA Holdings", exchange: "NASDAQ", currency: "USD", kind: "equity", yahoo: "MARA" } }),
+    });
+    expect((await r.json()).ok).toBe(true);
+    const fiveY = await makeApi(alice).getHistory("MARA", 24 * 366 * 5);
+    expect(fiveY.length).toBeGreaterThan(200);            // weekly spine + daily year + intraday
+    const spanDays = (+new Date(fiveY[fiveY.length - 1].ts) - +new Date(fiveY[0].ts)) / 86400000;
+    expect(spanDays).toBeGreaterThan(365 * 3);            // genuinely multi-year
+  }, 60000);
+
   it("intraday backfill: a live-ensured symbol has 1W-density points", async () => {
     const r = await fetch(`${URL_}/functions/v1/symbol-search`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` },

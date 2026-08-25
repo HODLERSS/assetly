@@ -9,6 +9,8 @@ const RANGES = [
   { key: "1W", hours: 24 * 7 },
   { key: "1M", hours: 24 * 30 },
   { key: "3M", hours: 24 * 92 },
+  { key: "1Y", hours: 24 * 366 },
+  { key: "5Y", hours: 24 * 366 * 5 },
 ] as const;
 export type RangeKey = (typeof RANGES)[number]["key"];
 

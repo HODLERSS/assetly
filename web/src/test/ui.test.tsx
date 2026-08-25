@@ -178,6 +178,8 @@ describe("U11 price chart on position", () => {
     expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24);
     await userEvent.click(screen.getByRole("tab", { name: "1W" }));
     await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 168));
+    await userEvent.click(screen.getByRole("tab", { name: "5Y" }));
+    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 366 * 5));
   });
   it("shows the building-history empty state, not a broken chart", async () => {
     apiRef = stubApi({ getHistory: vi.fn().mockResolvedValue([]) });

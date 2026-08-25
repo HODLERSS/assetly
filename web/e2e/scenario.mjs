@@ -81,12 +81,12 @@ await step("chart: FIG renders with data on 1D..3M and switches ranges", async (
   await page.getByRole("button", { name: /Figma/i }).first().tap();
   await page.getByTestId("price-chart").waitFor({ timeout: 20000 });
   await shot("03-fig-chart-1d");
-  for (const r of ["1W", "1M", "3M"]) {
+  for (const r of ["1W", "1M", "3M", "1Y", "5Y"]) {
     await page.getByRole("tab", { name: r }).tap();
     await page.getByTestId("price-chart").waitFor({ timeout: 20000 });
   }
   const d = await page.getByTestId("price-chart").locator("path").getAttribute("d");
-  if (!d || d.split("L").length < 10) throw new Error("3M path too thin: " + (d ?? "").slice(0, 40));
+  if (!d || d.split("L").length < 50) throw new Error("5Y path too thin: " + (d ?? "").slice(0, 40));
   const chg = await page.getByTestId("range-change").textContent();
   if (!/[+-]?\d+\.\d+%/.test(chg ?? "")) throw new Error("no range change: " + chg);
   await shot("04-fig-chart-3m");

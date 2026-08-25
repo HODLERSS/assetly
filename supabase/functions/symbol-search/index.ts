@@ -101,13 +101,14 @@ async function fetchChart(yahoo: string, range: string, interval: string): Promi
 }
 
 async function yahooChart(yahoo: string): Promise<ChartData | null> {
-  // Daily closes for 1M/3M ranges + 15-minute bars for 1D/1W — both backfilled at
-  // register time so the chart is meaningful the moment a ticker is added.
-  const res = await fetchChart(yahoo, "3mo", "1d");
+  // Backfilled at register time so every range is meaningful the moment a ticker is added:
+  // 5y weekly (5Y/1Y context) + 1y daily (1Y/3M/1M) + 5d 15-minute bars (1W/1D).
+  const res = await fetchChart(yahoo, "1y", "1d");
   const meta = res?.meta;
   if (!meta || !(meta.regularMarketPrice > 0)) return null;
   const history = chartPoints(res!);
-  const intra = await fetchChart(yahoo, "5d", "15m");
+  const [weekly, intra] = await Promise.all([fetchChart(yahoo, "5y", "1wk"), fetchChart(yahoo, "5d", "15m")]);
+  if (weekly) history.push(...chartPoints(weekly));
   if (intra) history.push(...chartPoints(intra));
   history.sort((a, b) => a.ts.localeCompare(b.ts));
   return {
