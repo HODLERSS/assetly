@@ -106,14 +106,25 @@ async function yahooChart(yahoo: string): Promise<ChartData | null> {
   const res = await fetchChart(yahoo, "1y", "1d");
   const meta = res?.meta;
   if (!meta || !(meta.regularMarketPrice > 0)) return null;
-  const history = chartPoints(res!);
+  const daily = chartPoints(res!);
+  // Previous close = the last daily close of the session BEFORE the latest one in the
+  // series. meta.chartPreviousClose is the close before the RANGE START (a year ago
+  // here) — using it produced fake -26% day changes. Derive from the data instead.
+  let prevClose: number | null = null;
+  if (daily.length >= 2) {
+    const lastDay = daily[daily.length - 1].ts.slice(0, 10);
+    for (let i = daily.length - 1; i >= 0; i--) {
+      if (daily[i].ts.slice(0, 10) !== lastDay) { prevClose = daily[i].price; break; }
+    }
+  }
+  const history = [...daily];
   const [weekly, intra] = await Promise.all([fetchChart(yahoo, "5y", "1wk"), fetchChart(yahoo, "5d", "15m")]);
   if (weekly) history.push(...chartPoints(weekly));
   if (intra) history.push(...chartPoints(intra));
   history.sort((a, b) => a.ts.localeCompare(b.ts));
   return {
     price: meta.regularMarketPrice,
-    prev_close: meta.chartPreviousClose ?? meta.previousClose ?? null,
+    prev_close: prevClose,
     currency: meta.currency ?? "USD",
     market_state: "unknown",
     as_of: new Date((meta.regularMarketTime ?? Date.now() / 1000) * 1000).toISOString(),

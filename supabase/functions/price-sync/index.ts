@@ -113,6 +113,29 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Own-data previous close: when the session date (UTC) rolls over, yesterday's final
+  // stored price IS the previous close; within a session, keep the stored prev. Yahoo's
+  // prev/changePercent fields have repeatedly shipped garbage (BTC 110k, META year-ago
+  // close) — our own tick history is the source of truth the charts already use.
+  const { data: stored } = await admin.from("prices")
+    .select("symbol, price, prev_close, as_of").in("symbol", [...quotes.keys()]);
+  const byStored = new Map((stored ?? []).map((s) => [s.symbol, s]));
+  for (const q of quotes.values()) {
+    const st = byStored.get(q.symbol);
+    if (st && st.as_of) {
+      const rolled = q.as_of.slice(0, 10) > String(st.as_of).slice(0, 10);
+      const derived = rolled ? Number(st.price) : (st.prev_close !== null ? Number(st.prev_close) : null);
+      if (derived !== null && derived > 0) {
+        q.prev_close = derived;
+        q.change_pct = ((q.price / derived) - 1) * 100;
+        continue;
+      }
+    }
+    const prev = plausiblePrev(q.price, q.prev_close);   // first insert: best-effort Yahoo prev
+    q.prev_close = prev;
+    q.change_pct = prev !== null ? ((q.price / prev) - 1) * 100 : null;
+  }
+
   const rows = [...quotes.values()];
   let wrote = 0;
   if (rows.length) {

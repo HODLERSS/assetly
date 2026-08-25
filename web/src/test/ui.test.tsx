@@ -255,16 +255,37 @@ describe("U11 price chart on position", () => {
     expect(screen.getByText(/L \$190\.00/)).toBeTruthy();   // 8/21 close 195, not the 188 intraday
     expect(screen.getByText(/H \$200\.00/)).toBeTruthy();   // live price today (row.price = 200)
   });
-  it("range chips request the right windows (default 1M, 1W, 5Y); no 1D chip", async () => {
+  it("Apple-style ranges: full chip set, 1D intraday hours, YTD dynamic; default 1M", async () => {
     apiRef = stubApi();
     await openPosition();
     await screen.findByTestId("price-chart");
     expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 31);
-    expect(screen.queryByRole("tab", { name: "1D" })).toBeNull();
-    await userEvent.click(screen.getByRole("tab", { name: "1W" }));
-    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 8));
-    await userEvent.click(screen.getByRole("tab", { name: "5Y" }));
-    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 366 * 5));
+    for (const k of ["1D", "1W", "3M", "6M", "YTD", "1Y", "2Y", "5Y"]) {
+      expect(screen.getByRole("tab", { name: k })).toBeTruthy();
+    }
+    await userEvent.click(screen.getByRole("tab", { name: "1D" }));
+    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24));
+    await userEvent.click(screen.getByRole("tab", { name: "YTD" }));
+    await waitFor(() => {
+      const hours = (apiRef.getHistory as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1] as number;
+      expect(hours).toBeGreaterThan(48);
+      expect(hours).toBeLessThanOrEqual(24 * 366);
+    });
+    await userEvent.click(screen.getByRole("tab", { name: "2Y" }));
+    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 366 * 2));
+  });
+  it("1D draws the intraday prints, not one collapsed daily point", async () => {
+    apiRef = stubApi({ getHistory: vi.fn().mockResolvedValue([
+      { ts: "2026-08-24T14:00:00Z", price: 190 }, { ts: "2026-08-24T15:00:00Z", price: 195 },
+      { ts: "2026-08-24T16:00:00Z", price: 193 },
+    ]) });
+    await openPosition();
+    await screen.findByTestId("price-chart");
+    await userEvent.click(screen.getByRole("tab", { name: "1D" }));
+    await waitFor(() => {
+      const d = screen.getByTestId("price-chart").querySelector("path")?.getAttribute("d") ?? "";
+      expect(d.split("L").length).toBe(4);               // 3 prints + live tick, not collapsed
+    });
   });
   it("shows the building-history empty state, not a broken chart", async () => {
     apiRef = stubApi({ getHistory: vi.fn().mockResolvedValue([]) });

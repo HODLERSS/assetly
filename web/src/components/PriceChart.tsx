@@ -4,14 +4,26 @@ import { moneyExact, signedPct } from "../lib/format";
 
 // Minimal price chart: pure SVG, no library. Ranges map to hours of history;
 // 1D/1W ride the 1-min cron + 15m backfill, 1M/3M ride daily closes.
+function ytdHours(): number {
+  const now = new Date();
+  return Math.max(48, (now.getTime() - Date.UTC(now.getUTCFullYear(), 0, 1)) / 3600e3);
+}
 const RANGES = [
+  { key: "1D", hours: 24 },
   { key: "1W", hours: 24 * 8 },
   { key: "1M", hours: 24 * 31 },
   { key: "3M", hours: 24 * 92 },
+  { key: "6M", hours: 24 * 183 },
+  { key: "YTD", hours: 0 },                    // dynamic: see ytdHours()
   { key: "1Y", hours: 24 * 366 },
+  { key: "2Y", hours: 24 * 366 * 2 },
   { key: "5Y", hours: 24 * 366 * 5 },
 ] as const;
 export type RangeKey = (typeof RANGES)[number]["key"];
+const rangeHours = (key: RangeKey): number => {
+  const r = RANGES.find((x) => x.key === key)!;
+  return r.key === "YTD" ? ytdHours() : r.hours;
+};
 
 /** One point per calendar day: the last stored print of each past day is its close;
  *  today's point is the LIVE price while the market is trading. */
@@ -23,6 +35,15 @@ function dailyCloses(pts: HistoryPoint[], livePrice: number | null, liveAsOf: st
     byDay.set(day, { ts: liveAsOf, price: livePrice });
   }
   return [...byDay.values()].sort((a, b) => a.ts.localeCompare(b.ts));
+}
+
+/** Intraday series for 1D: keep every print, append the live price as the newest point. */
+function withLiveTick(pts: HistoryPoint[], livePrice: number | null, liveAsOf: string | null): HistoryPoint[] {
+  const out = [...pts];
+  if (livePrice !== null && liveAsOf && (!out.length || liveAsOf > out[out.length - 1].ts)) {
+    out.push({ ts: liveAsOf, price: livePrice });
+  }
+  return out;
 }
 
 /** Downsample to at most n points, always keeping the last. */
@@ -44,9 +65,9 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
   useEffect(() => {
     let live = true;
     setPts(null);
-    const hours = RANGES.find((r) => r.key === range)!.hours;
-    api.getHistory(symbol, hours)
-      .then((p) => { if (live) setPts(thin(dailyCloses(p, livePrice, liveAsOf))); })
+    const intraday = range === "1D";
+    api.getHistory(symbol, rangeHours(range))
+      .then((p) => { if (live) setPts(thin(intraday ? withLiveTick(p, livePrice, liveAsOf) : dailyCloses(p, livePrice, liveAsOf))); })
       .catch(() => { if (live) setPts([]); });
     return () => { live = false; };
   }, [api, symbol, range, livePrice, liveAsOf]);
@@ -104,7 +125,7 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
             <span className="sub num">L {moneyExact(view.lo, currency)}</span>
             <span className="sub num">H {moneyExact(view.hi, currency)}</span>
           </div>
-          {view.spanDays < 0.7 * (RANGES.find((r) => r.key === range)!.hours / 24) && (
+          {range !== "1D" && view.spanDays < 0.7 * (rangeHours(range) / 24) && (
             <div className="sub" data-testid="partial-note" style={{ textAlign: "center", marginTop: 1 }}>
               showing {Math.max(1, Math.round(view.spanDays))}d of data
             </div>

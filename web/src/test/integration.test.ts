@@ -198,6 +198,8 @@ describe("Universal symbol search + on-demand tracking", () => {
     expect(by["FIGHT"].kind).toBe("crypto");
   });
   it("ensure registers symbol + price + history, readable through RLS", async () => {
+    await admin.from("price_history").delete().eq("symbol", "TESTX");   // isolate reruns
+    await admin.from("prices").delete().eq("symbol", "TESTX");
     const r = await fetch(`${URL_}/functions/v1/symbol-search?fixture=1`, {
       method: "POST", headers: H,
       body: JSON.stringify({
@@ -276,4 +278,43 @@ describe("Instant news pull (on-demand symbols)", () => {
     const { data } = await alice.from("news").select("symbol").eq("symbol", "AAPL").limit(5);
     expect((data ?? []).length).toBeGreaterThan(0);
   }, 45000);
+});
+
+describe("Previous-close derivation (the META -26% bug)", () => {
+  it("session rollover: yesterday's stored price becomes prev_close; garbage Yahoo prev ignored", async () => {
+    const H = { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` };
+    await admin.from("prices").delete().eq("symbol", "TESTX");   // clean first-insert state
+    // day 1: implausible Yahoo prev (900 vs 100) must be dropped on first insert
+    let r = await fetch(`${URL_}/functions/v1/price-sync?fixture=1&symbols=TESTX`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ quotes: [{ symbol: "TESTX", price: 100, prev_close: 900, change_pct: -88,
+        currency: "USD", market_state: "closed", as_of: "2026-08-24T20:00:00Z", source: "fixture" }] }),
+    });
+    expect((await r.json()).ok).toBe(true);
+    let { data } = await alice.from("prices").select("prev_close,change_pct").eq("symbol", "TESTX").single();
+    expect(data!.prev_close).toBeNull();
+    expect(data!.change_pct).toBeNull();
+    // day 2: UTC date rolled -> our stored 100 IS the previous close, whatever Yahoo says
+    r = await fetch(`${URL_}/functions/v1/price-sync?fixture=1&symbols=TESTX`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ quotes: [{ symbol: "TESTX", price: 105, prev_close: 753.3, change_pct: -86,
+        currency: "USD", market_state: "regular", as_of: "2026-08-25T14:00:00Z", source: "fixture" }] }),
+    });
+    expect((await r.json()).ok).toBe(true);
+    ({ data } = await alice.from("prices").select("prev_close,change_pct").eq("symbol", "TESTX").single());
+    expect(Number(data!.prev_close)).toBe(100);
+    expect(Number(data!.change_pct)).toBeCloseTo(5, 4);
+  });
+  it("ensure derives prev from its own daily series, not the range-start close", async () => {
+    const H = { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` };
+    const r = await fetch(`${URL_}/functions/v1/symbol-search`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ ensure: { symbol: "META", name: "Meta Platforms", exchange: "NASDAQ", currency: "USD", kind: "equity", yahoo: "META" } }),
+    });
+    expect((await r.json()).ok).toBe(true);
+    const { data } = await alice.from("prices").select("price,prev_close,change_pct").eq("symbol", "META").single();
+    // sane single-day move, not the year-ago-close artifact (-26%)
+    expect(Math.abs(Number(data!.change_pct))).toBeLessThan(15);
+    expect(Number(data!.prev_close)).toBeGreaterThan(Number(data!.price) * 0.85);
+  }, 60000);
 });
