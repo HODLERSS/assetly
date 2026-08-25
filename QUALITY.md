@@ -50,6 +50,15 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10f. (8/25) META -25.9% root cause (user report): ensure wrote meta.chartPreviousClose
+   from a 1y-range chart — Yahoo defines that as the close before the RANGE START, i.e.
+   the close from a YEAR ago (753.30 vs 559 price). The Aug-24 catalog sweep spread it to
+   every symbol. Fix: prev_close now derives from OUR OWN data everywhere — ensure takes
+   the second-to-last session close from its daily series; the 1-min cron carries
+   yesterday's stored price forward as prev at UTC session rollover and ignores Yahoo's
+   prev/changePercent entirely (guarded first-insert fallback only). Both failure modes
+   reproduced in integration tests. Chart ranges now Stocks-app parity: 1D (intraday
+   line) 1W 1M 3M 6M YTD 1Y 2Y 5Y with dynamic YTD.
 10e. (8/25) Iteration 2 — validation fleet (4 affected personas re-ran 30 days + PM verdict):
    all 6 headline fixes CONFIRMED by direct assertion (FX caption, won charts, coin units,
    avg-cost overlay with exact 11-lot math, FIG all-range charts, partial captions).
