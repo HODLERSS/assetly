@@ -130,6 +130,13 @@ run("CLOUD e2e — production project", () => {
     await a.removeHolding(r.holding_id);
   }, 30000);
 
+  it("C14 FX rate is fresh (1-min cron keeps USDKRW current)", async () => {
+    const { data } = await alice.from("prices").select("price,updated_at").eq("symbol", "USDKRW").single();
+    expect(Number(data!.price)).toBeGreaterThan(500);
+    const ageMin = (Date.now() - +new Date(data!.updated_at)) / 60000;
+    expect(ageMin).toBeLessThan(5);
+  });
+
   it("C10 signed-out client reads no user data", async () => {
     const anon = createClient(URL_, KEY, { auth: { persistSession: false } });
     const { data } = await anon.from("holdings").select("*");

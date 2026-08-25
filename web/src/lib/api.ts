@@ -125,6 +125,18 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error) throw error;
       return (data ?? []).map((r: Record<string, unknown>) => ({ ts: String(r.ts), price: Number(r.price) }));
     },
+    async updateBaseCurrency(base_currency: "USD" | "KRW") {
+      const { data: u } = await sb.auth.getUser();
+      if (!u.user) throw new Error("not signed in");
+      const { error } = await sb.from("profiles").update({ base_currency }).eq("id", u.user.id);
+      if (error) throw error;
+    },
+    /** Rate + freshness for the Settings surface. */
+    async getFxInfo(): Promise<{ rate: number; asOf: string } | null> {
+      const { data } = await sb.from("prices").select("price,updated_at").eq("symbol", "USDKRW").maybeSingle();
+      const rate = data ? Number(data.price) : NaN;
+      return Number.isFinite(rate) && rate > 0 ? { rate, asOf: String(data!.updated_at) } : null;
+    },
     /** Won-per-dollar rate maintained by the price pipeline (symbol USDKRW). */
     async getFxRate(): Promise<number | null> {
       const { data } = await sb.from("prices").select("price").eq("symbol", "USDKRW").maybeSingle();

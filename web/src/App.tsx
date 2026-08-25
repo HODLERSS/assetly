@@ -120,7 +120,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         )}
         {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} />}
         {view.kind === "tab" && view.tab === "settings" && (
-          <SettingsScreen api={api} profile={profile} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
+          <SettingsScreen api={api} profile={profile} rows={rows} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
         )}
       </main>
 

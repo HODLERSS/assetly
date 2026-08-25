@@ -42,6 +42,8 @@ function stubApi(over: Partial<Api> = {}): Api {
     ensureSymbol: vi.fn().mockResolvedValue(undefined),
     refreshNews: vi.fn().mockResolvedValue(true),
     getFxRate: vi.fn().mockResolvedValue(1380),
+    getFxInfo: vi.fn().mockResolvedValue({ rate: 1381, asOf: new Date(Date.now() - 60000).toISOString() }),
+    updateBaseCurrency: vi.fn().mockResolvedValue(undefined),
     getHistory: vi.fn().mockResolvedValue([
       { ts: "2026-08-20T20:00:00Z", price: 190 }, { ts: "2026-08-21T14:00:00Z", price: 188 },
       { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
@@ -152,6 +154,67 @@ describe("U3 add position", () => {
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/positive/i);
     expect(api.addPosition).not.toHaveBeenCalled();
+  });
+});
+
+describe("U17 KRW cash and debt", () => {
+  it("cash in won: currency chip flips the symbol to $CASH.KRW", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /add a cash balance/i }));
+    await userEvent.click(screen.getByRole("button", { name: /₩ KRW/ }));
+    await userEvent.type(screen.getByLabelText(/amount \(₩\)/i), "3000000");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH.KRW", 3000000, 1, undefined, "brokerage"));
+  });
+  it("debt in won reaches the totals at the FX rate", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({}),
+      row({ holding_id: "hd", symbol: "$DEBT.KRW", name: "Debt (KRW)", kind: "debt", currency: "KRW",
+            qty: 1380000, price: 1, value: 1380000, cost_basis: 1380000, total_gl: 0, change_pct: 0 }),
+    ]) });
+    render(<App api={api} />);
+    const net = await screen.findByTestId("net-worth");
+    await waitFor(() => expect(net.textContent).toBe("$3,800"));   // 4,800 - 1,380,000/1,380
+  });
+});
+
+describe("U16 currency view toggle", () => {
+  const krwRow = () => row({ holding_id: "hk", symbol: "005930.KS", name: "Samsung Electronics",
+    currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 });
+  it("with KRW holdings: toggle + live rate with freshness appear in Settings", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([row({}), krwRow()]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    expect(await screen.findByRole("button", { name: /₩ KRW/ })).toBeTruthy();
+    expect((await screen.findByTestId("fx-rate-row")).textContent).toMatch(/₩1,381\/\$/);
+  });
+  it("switching to KRW persists and re-renders the whole app in won", async () => {
+    let base: "USD" | "KRW" = "USD";
+    const api = stubApi({
+      getPortfolio: vi.fn().mockResolvedValue([row({}), krwRow()]),
+      getProfile: vi.fn().mockImplementation(async () => ({ ...profile, base_currency: base })),
+      updateBaseCurrency: vi.fn().mockImplementation(async (c: "USD" | "KRW") => { base = c; }),
+    });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /₩ KRW/ }));
+    await waitFor(() => expect(api.updateBaseCurrency).toHaveBeenCalledWith("KRW"));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    // $4,800 * 1380 + ₩13,800,000 = ₩20,424,000
+    await waitFor(() => expect(screen.getByTestId("net-worth").textContent).toBe("₩20,424,000"));
+  });
+  it("without KRW anywhere the toggle stays hidden", async () => {
+    render(<App api={stubApi()} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    await screen.findByText(/signed in as/i);
+    expect(screen.queryByRole("button", { name: /₩ KRW/ })).toBeNull();
   });
 });
 

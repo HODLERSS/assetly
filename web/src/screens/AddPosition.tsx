@@ -12,6 +12,7 @@ export function AddPosition({ api, onDone, onCancel }: {
   const [cost, setCost] = useState("");
   const [date, setDate] = useState("");
   const [account, setAccount] = useState<Account>("brokerage");
+  const [ccy, setCcy] = useState<"USD" | "KRW">("USD");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -73,10 +74,20 @@ export function AddPosition({ api, onDone, onCancel }: {
               ))}
             </div>
           </div>
-          {picked.kind === "cash" || picked.kind === "debt" ? (
-            <div className="field"><label htmlFor="add-qty">{picked.kind === "debt" ? "Amount owed ($)" : "Amount ($)"}</label>
+          {picked.kind === "cash" || picked.kind === "debt" ? (<>
+            <div className="field">
+              <label>Currency</label>
+              <div className="chips" style={{ padding: 0 }} role="group" aria-label="Currency">
+                {(["USD", "KRW"] as const).map((c) => (
+                  <button key={c} className="chip" aria-pressed={ccy === c} onClick={() => setCcy(c)}>
+                    {c === "USD" ? "$ USD" : "₩ KRW"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="field"><label htmlFor="add-qty">{picked.kind === "debt" ? `Amount owed (${ccy === "KRW" ? "₩" : "$"})` : `Amount (${ccy === "KRW" ? "₩" : "$"})`}</label>
               <input id="add-qty" className="num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus /></div>
-          ) : (<>
+          </>) : (<>
           <div className="field"><label htmlFor="add-qty">Shares</label>
             <input id="add-qty" className="num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus /></div>
           <div className="field"><label htmlFor="add-cost">Cost per share ({picked.currency === "KRW" ? "₩" : "$"})</label>
@@ -91,9 +102,10 @@ export function AddPosition({ api, onDone, onCancel }: {
             if (!(nq > 0)) { setErr(isCash ? "Amount must be positive." : "Shares must be positive."); return; }
             if (!(nc >= 0)) { setErr("Cost can't be negative."); return; }
             setBusy(true); setErr(null);
+            const sym = isCash && ccy === "KRW" ? `${picked.symbol}.KRW` : picked.symbol;
             try {
-              await api.addPosition(picked.symbol, nq, nc, date || undefined, account);
-              void api.refreshNews([picked.symbol]);        // stories land while the user looks around
+              await api.addPosition(sym, nq, nc, date || undefined, account);
+              if (!isCash) void api.refreshNews([picked.symbol]);        // stories land while the user looks around
               await onDone();
             }
             catch (e) { setErr(e instanceof Error ? e.message : "Could not add position."); }

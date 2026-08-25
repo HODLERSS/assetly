@@ -358,6 +358,20 @@ describe("Accounts + cash positions", () => {
     await a.removeHolding(r.holding_id);
   });
 
+  it("KRW cash and debt: pinned won positions", async () => {
+    const a = makeApi(alice);
+    await a.addPosition("$CASH.KRW", 3000000, 1);
+    await a.addPosition("$DEBT.KRW", 1000000, 1, undefined, "ira");
+    const rows = await a.getPortfolio();
+    const c = rows.find((r) => r.symbol === "$CASH.KRW")!;
+    const d = rows.find((r) => r.symbol === "$DEBT.KRW")!;
+    expect(c.currency).toBe("KRW");
+    expect(c.value).toBe(3000000);
+    expect(d.kind).toBe("debt");
+    expect(d.account).toBe("ira");
+    for (const r of [c, d]) await a.removeHolding(r.holding_id);
+  });
+
   it("retirement index funds (FXAIX-style NAV) resolve and price", async () => {
     const hits = await makeApi(alice).searchSymbols("FFLDX");
     expect(hits.map((h) => h.symbol)).toContain("FFLDX");
