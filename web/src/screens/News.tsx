@@ -6,18 +6,30 @@ import { timeAgo } from "../lib/format";
 export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
   const [filter, setFilter] = useState<string | null>(null);
   const [items, setItems] = useState<NewsItem[]>([]);
-  const [state, setState] = useState<"loading" | "ok" | "error">("loading");
+  const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">("loading");
+  const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
 
   useEffect(() => {
     let live = true;
     setState("loading");
     const held = rows.map((r) => r.symbol);
-    // "All holdings" = stories for the symbols you hold (scoped in the query), one row per story
-    api.getNews(filter ?? held)
-      .then((n) => {
+    const scope = filter ?? held;
+    const load = () => api.getNews(scope).then((n) => {
+      const seen = new Set<string>();
+      return n.filter((x) => (seen.has(x.url) ? false : (seen.add(x.url), true)));
+    });
+    load()
+      .then(async (n) => {
         if (!live) return;
-        const seen = new Set<string>();
-        setItems(n.filter((x) => (seen.has(x.url) ? false : (seen.add(x.url), true))));
+        const key = filter ?? "__all__";
+        if (n.length === 0 && rows.length > 0 && !pulled.has(key)) {
+          pulled.add(key);
+          setState("pulling");                          // pull the first stories right now
+          await api.refreshNews(filter ? [filter] : held.slice(0, 5));
+          n = await load();
+          if (!live) return;
+        }
+        setItems(n);
         setState("ok");
       })
       .catch(() => { if (live) setState("error"); });
@@ -36,8 +48,11 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
         ))}
       </div>
       {state === "error" && <div className="error-note" role="alert">News missed the handoff — pull to retry.</div>}
+      {state === "pulling" && (
+        <p className="empty" aria-busy="true">Pulling the latest stories{filter ? ` for ${filter}` : ""}…</p>
+      )}
       {state === "ok" && items.length === 0 && (
-        <p className="empty">{rows.length === 0 ? "Add a position and its news follows." : `No stories yet${filter ? ` for ${filter}` : ""}. The news lap runs every 15 minutes.`}</p>
+        <p className="empty">{rows.length === 0 ? "Add a position and its news follows." : `Nothing fresh${filter ? ` for ${filter}` : ""} right now — we'll keep watching.`}</p>
       )}
       <div className="card">
         {items.map((n) => (

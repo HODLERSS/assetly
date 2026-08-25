@@ -40,6 +40,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     completeOnboarding: vi.fn().mockResolvedValue(undefined),
     searchSymbols: vi.fn().mockResolvedValue([{ symbol: "MARA", name: "MARA Holdings", exchange: "NASDAQ", currency: "USD", kind: "equity" }]),
     ensureSymbol: vi.fn().mockResolvedValue(undefined),
+    refreshNews: vi.fn().mockResolvedValue(true),
     getHistory: vi.fn().mockResolvedValue([
       { ts: "2026-08-20T20:00:00Z", price: 190 }, { ts: "2026-08-21T14:00:00Z", price: 188 },
       { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
@@ -150,6 +151,33 @@ describe("U3 add position", () => {
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/positive/i);
     expect(api.addPosition).not.toHaveBeenCalled();
+  });
+});
+
+describe("U12 instant news", () => {
+  it("empty scope pulls immediately, then shows what landed", async () => {
+    const stories = [{ id: "n9", symbol: "RDDT", title: "Fresh story", url: "https://ex.test/9", source: "Yahoo Finance", published_at: new Date().toISOString() }];
+    const getNews = vi.fn().mockResolvedValueOnce([]).mockResolvedValue(stories);
+    const api = stubApi({ getNews, refreshNews: vi.fn().mockResolvedValue(true) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+    await screen.findByText(/fresh story/i);
+    expect(api.refreshNews).toHaveBeenCalledWith(["RDDT"]);
+    expect(screen.queryByText(/news lap runs/i)).toBeNull();
+  });
+  it("adding a position fires an instant news pull for that symbol", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
+    await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
+    await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
+    await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.refreshNews).toHaveBeenCalledWith(["MARA"]));
   });
 });
 

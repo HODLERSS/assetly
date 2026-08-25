@@ -64,7 +64,11 @@ export function AddPosition({ api, onDone, onCancel }: {
             if (!(nq > 0)) { setErr("Shares must be positive."); return; }
             if (!(nc >= 0)) { setErr("Cost can't be negative."); return; }
             setBusy(true); setErr(null);
-            try { await api.addPosition(picked.symbol, nq, nc, date || undefined); await onDone(); }
+            try {
+              await api.addPosition(picked.symbol, nq, nc, date || undefined);
+              void api.refreshNews([picked.symbol]);        // stories land while the user looks around
+              await onDone();
+            }
             catch (e) { setErr(e instanceof Error ? e.message : "Could not add position."); }
             finally { setBusy(false); }
           }}>{busy ? "Adding…" : "Add position"}</button>

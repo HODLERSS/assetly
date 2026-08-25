@@ -83,9 +83,9 @@ body{margin:0;background:#DFE2E7;font-family:'Schibsted Grotesk','Noto Sans KR',
 
 <turn class="dv-turn" id="t7">
   <div class="dv-thd"><a class="dv-tid" href="#t7">t7</a><span class="dv-tname">Price chart on Position — 1D/1W/1M/3M (synced from Claude Code, implemented in app/web)</span></div>
-  <p class="dv-sub">Every held ticker now carries history: ~3 months of daily closes + 5 days of 15-minute bars backfilled the moment
-  it is added, then the 1-minute tracker appends live ticks. The Position screen gains one card: a pure-SVG line, range change %,
-  low/high for the window, and four range chips. Loss ranges draw in the loss red; gains in green. No library, no axes — glanceable.</p>
+  <p class="dv-sub">Every held ticker carries 5 years of history (weekly + daily closes) backfilled the moment it is added.
+  The chart draws <b>daily closes only</b> — one point per day, no intraday jitter — and while the market trades, today's
+  point is the live price. Ranges 1W · 1M · 3M · 1Y · 5Y (1D dropped: a one-point range is noise). Loss ranges draw red, gains green.</p>
   <div class="dv-opts">
 
     <div class="dv-opt" id="7a">
@@ -95,19 +95,20 @@ body{margin:0;background:#DFE2E7;font-family:'Schibsted Grotesk','Noto Sans KR',
         <div style="padding:0 16px 8px"><span style="font:700 20px 'Schibsted Grotesk'">FIG <span class="sub" style="font-weight:400">Figma, Inc.</span></span><br>
         <span class="n" style="font-size:26px">$27.44</span> <span class="n" style="color:#1E7048">+1.82% today</span></div>
         <div class="card" style="padding:12px 14px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span class="sub">Price · 1D</span><span class="n" style="color:#1E7048;font-size:13px">+1.82%</span></div>
-          <svg viewBox="0 0 320 96" style="width:100%;display:block"><path d="M4 78 L36 74 L68 80 L100 66 L132 60 L164 64 L196 50 L228 44 L260 30 L292 26 L316 18" fill="none" stroke="#1E7048" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span class="sub">Price · 1M</span><span class="n" style="color:#1E7048;font-size:13px">+1.82%</span></div>
+          <svg viewBox="0 0 320 96" style="width:100%;display:block"><path d="M4 76 L43 70 L82 74 L121 62 L160 56 L199 58 L238 44 L277 34 L316 20" fill="none" stroke="#1E7048" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <div style="display:flex;justify-content:space-between;margin-top:2px"><span class="sub n">L $26.85</span><span class="sub n">H $27.51</span></div>
-          <div style="display:flex;gap:8px;margin-top:10px">
-            <span style="border:1px solid #2A3F92;background:#2A3F92;color:#F4F5F7;border-radius:999px;padding:6px 14px;font:600 12px 'Schibsted Grotesk'">1D</span>
-            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 14px;font:600 12px 'Schibsted Grotesk'">1W</span>
-            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 14px;font:600 12px 'Schibsted Grotesk'">1M</span>
-            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 14px;font:600 12px 'Schibsted Grotesk'">3M</span>
+          <div style="display:flex;gap:7px;margin-top:10px">
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">1W</span>
+            <span style="border:1px solid #2A3F92;background:#2A3F92;color:#F4F5F7;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">1M</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">3M</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">1Y</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">5Y</span>
           </div>
         </div>
         <div class="card"><div class="row"><span class="sub">Shares</span><span class="n">5</span></div><div class="row"><span class="sub">Avg cost</span><span class="n">$50.00</span></div></div>
       </div>
-      <div class="dv-olabel"><b>7a</b> 1D gain state — chart card sits between the live price header and the position facts; chips echo the search chips</div>
+      <div class="dv-olabel"><b>7a</b> 1M gain state — daily-close points only; today's point is the live print while the market trades</div>
     </div>
 
     <div class="dv-opt" id="7b">
@@ -120,11 +121,12 @@ body{margin:0;background:#DFE2E7;font-family:'Schibsted Grotesk','Noto Sans KR',
           <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span class="sub">Price · 3M</span><span class="n" style="color:#B4372A;font-size:13px">-8.44%</span></div>
           <svg viewBox="0 0 320 96" style="width:100%;display:block"><path d="M4 30 L40 36 L76 28 L112 44 L148 40 L184 56 L220 50 L256 66 L292 72 L316 78" fill="none" stroke="#B4372A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <div style="display:flex;justify-content:space-between;margin-top:2px"><span class="sub n">L $14.61</span><span class="sub n">H $17.09</span></div>
-          <div style="display:flex;gap:8px;margin-top:10px">
-            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 14px;font:600 12px 'Schibsted Grotesk'">1D</span>
-            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 14px;font:600 12px 'Schibsted Grotesk'">1W</span>
-            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 14px;font:600 12px 'Schibsted Grotesk'">1M</span>
-            <span style="border:1px solid #2A3F92;background:#2A3F92;color:#F4F5F7;border-radius:999px;padding:6px 14px;font:600 12px 'Schibsted Grotesk'">3M</span>
+          <div style="display:flex;gap:7px;margin-top:10px">
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">1W</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">1M</span>
+            <span style="border:1px solid #2A3F92;background:#2A3F92;color:#F4F5F7;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">3M</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">1Y</span>
+            <span style="border:1px solid #E2E4E9;background:#fff;border-radius:999px;padding:6px 12px;font:600 12px 'Schibsted Grotesk'">5Y</span>
           </div>
         </div>
         <div class="card"><div class="row"><span class="sub">Not enough history yet?</span><span class="sub">"builds as we track" empty state</span></div></div>

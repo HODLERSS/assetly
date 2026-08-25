@@ -123,6 +123,14 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error) throw error;
       return (data ?? []).map((r: Record<string, unknown>) => ({ ts: String(r.ts), price: Number(r.price) }));
     },
+    /** Instant news pull for just-added symbols; fire-and-forget from the UI. */
+    async refreshNews(symbols: string[]): Promise<boolean> {
+      if (!symbols.length) return false;
+      try {
+        const { data, error } = await sb.functions.invoke("news-sync", { body: { symbols } });
+        return !error && !!data?.ok;
+      } catch { return false; }
+    },
     async getNews(scope?: string | string[]): Promise<NewsItem[]> {
       let q = sb.from("news").select("id,symbol,title,url,source,published_at")
         .order("published_at", { ascending: false, nullsFirst: false }).limit(50);

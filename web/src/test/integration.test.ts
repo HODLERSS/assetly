@@ -263,3 +263,17 @@ describe("Price history API (chart backend)", () => {
     expect(wk.length).toBeGreaterThan(20);                // 15m bars, not just daily closes
   }, 45000);
 });
+
+describe("Instant news pull (on-demand symbols)", () => {
+  it("news-sync accepts body symbols and fetches just those, live", async () => {
+    const r = await fetch(`${URL_}/functions/v1/news-sync`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` },
+      body: JSON.stringify({ symbols: ["AAPL"] }),
+    });
+    const body = await r.json();
+    expect(body.ok).toBe(true);
+    expect(body.symbols).toBe(1);                        // scoped to the one requested symbol
+    const { data } = await alice.from("news").select("symbol").eq("symbol", "AAPL").limit(5);
+    expect((data ?? []).length).toBeGreaterThan(0);
+  }, 45000);
+});

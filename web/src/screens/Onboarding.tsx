@@ -28,6 +28,7 @@ export function Onboarding({ api, onDone }: { api: Api; onDone: () => Promise<vo
       const nQty = parseFloat(qty), nCost = parseFloat(cost);
       if (!picked || !(nQty > 0) || !(nCost >= 0)) throw new Error("Shares must be positive and cost can't be negative.");
       await api.addPosition(picked.symbol, nQty, nCost);
+      void api.refreshNews([picked.symbol]);                // stories land while the user looks around
       await api.completeOnboarding(markets, markets.includes("KR") && !markets.includes("US") ? "KRW" : "USD");
       await onDone();
     } catch (e) {
