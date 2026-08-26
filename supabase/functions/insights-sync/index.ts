@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
   const invested = new Map<string, number>();
   for (const r of pv ?? []) invested.set(r.symbol, (invested.get(r.symbol) ?? 0) + Number(r.value ?? 0));
   targets = targets.sort((a, b) =>
-    (age.get(a) ?? 0) - (age.get(b) ?? 0) || (invested.get(b) ?? 0) - (invested.get(a) ?? 0)).slice(0, 10);
+    (age.get(a) ?? 0) - (age.get(b) ?? 0) || (invested.get(b) ?? 0) - (invested.get(a) ?? 0)).slice(0, 20);
 
   let wrote = 0;
   const errors: string[] = [];
@@ -148,7 +148,7 @@ windows: one crisp line each (<= 12 words) on what that horizon's move means.`;
   }
   const { data: fxRow } = await admin.from("prices").select("price").eq("symbol", "USDKRW").maybeSingle();
   const fx = fxRow ? Number(fxRow.price) : 1380;
-  const userIds = [...byUser.keys()].slice(0, 10);
+  const userIds = fixture ? [...byUser.keys()] : [...byUser.keys()].slice(0, 25);
   for (const uid of userIds) {
     try {
       const rows = byUser.get(uid)!;

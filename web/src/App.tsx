@@ -91,7 +91,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
           Assetly
         </span>
         <span className="status-line" data-testid="status-line">
-          {lastSync ? `synced ${lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · next in 60s` : "syncing…"}
+          {lastSync ? `synced ${lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "syncing…"}
         </span>
       </header>
 
@@ -116,7 +116,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
         {view.kind === "tab" && view.tab === "holdings" && (
-          <Holdings rows={rows} api={api} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
+          <Holdings rows={rows} api={api} fxRate={fx} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
         {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} />}
         {view.kind === "tab" && view.tab === "settings" && (

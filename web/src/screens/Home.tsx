@@ -1,6 +1,6 @@
 import type { PortfolioRow } from "../lib/api";
-import { moverEligible, sessionLabel } from "../lib/markets";
-import { glClass, money, signedMoney, signedPct } from "../lib/format";
+import { marketOf, moverEligible, sessionLabel, isMarketOpen } from "../lib/markets";
+import { dayChangeAmount, glClass, money, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2a: net worth, movers, market pulse.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA" };
@@ -27,14 +27,18 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
         <div className={`day num ${glClass(totals.day)}`} data-testid="total-day">
           {signedMoney(totals.day, baseCurrency)} today
         </div>
+        {(() => {
+          const has = (m: "US" | "KR") => rows.some((r) => marketOf(r) === m);
+          if (!(has("US") && has("KR"))) return null;
+          return (
+            <div className="status-line" data-testid="today-markets">
+              across US ({isMarketOpen("US") ? "open" : "closed"}) + KRX ({isMarketOpen("KR") ? "open" : "closed"})
+            </div>
+          );
+        })()}
         <div className={`day num ${glClass(totals.gl)}`} data-testid="total-gl" style={{ fontSize: 13.5 }}>
           {signedMoney(totals.gl, baseCurrency)} all time
         </div>
-        {totals.mixed && totals.fx && (
-          <div className="status-line" data-testid="fx-note" style={{ marginTop: 3 }}>
-            {baseCurrency === "USD" ? `KRW converted at ₩${Math.round(totals.fx).toLocaleString("en-US")}/$` : `USD converted at ₩${Math.round(totals.fx).toLocaleString("en-US")}/$`}
-          </div>
-        )}
         {totals.unconverted > 0 && (
           <div className="status-line" role="note">{totals.unconverted} position{totals.unconverted > 1 ? "s" : ""} awaiting FX rate — excluded from the total</div>
         )}
@@ -45,7 +49,10 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
         {movers.map((r) => (
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span></span>
-            <span className={`num right ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)}</span>
+            <span className={`right ${glClass(r.change_pct)}`}>
+              <span className="num">{signedMoney(dayChangeAmount(r.value, r.change_pct), r.currency)}</span>
+              <span className="num sub"> · {signedPct(r.change_pct)}</span>
+            </span>
           </button>
         ))}
       </div>

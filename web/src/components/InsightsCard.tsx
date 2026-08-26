@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+
+const insightCache = new Map<string, Insight | null>();
 import type { Api, Insight } from "../lib/api";
 import { timeAgo } from "../lib/format";
 
@@ -11,13 +13,21 @@ export function InsightsCard({ api, symbol }: { api: Api; symbol: string }) {
 
   useEffect(() => {
     let live = true;
-    setIns(undefined);
-    api.getInsights(symbol).then((v) => { if (live) setIns(v); }).catch(() => { if (live) setIns(null); });
+    if (insightCache.has(symbol)) setIns(insightCache.get(symbol));   // instant on revisit
+    else setIns(undefined);
+    api.getInsights(symbol).then((v) => { insightCache.set(symbol, v); if (live) setIns(v); })
+      .catch(() => { if (live) setIns(null); });
     return () => { live = false; };
   }, [api, symbol]);
 
   if (ins === undefined) return null;                     // quiet while loading
-  if (ins === null) return null;                          // no insight yet: take no space
+  if (ins === null) {
+    return (
+      <p className="status-line" data-testid="insights-pending" style={{ margin: "4px 2px 8px" }}>
+        Intelligence for {symbol} lands on the next hourly lap.
+      </p>
+    );
+  }
 
   return (
     <section className="card insights" data-testid="insights-card" aria-label={`AI insights for ${symbol}`}>

@@ -413,14 +413,15 @@ describe("U13 persona-fleet fixes", () => {
     const net = await screen.findByTestId("net-worth");
     // 13,800,000 KRW / 1380 = $10,000  ->  $4,800 + $10,000 = $14,800
     await waitFor(() => expect(net.textContent).toBe("$14,800"));
-    expect((await screen.findByTestId("fx-note")).textContent).toMatch(/KRW converted at ₩1,380\/\$/);
+    expect(screen.queryByTestId("fx-note")).toBeNull();          // rate lives in Settings, not Home
   });
   it("home shows today's move in dollars and per-row day %", async () => {
     render(<App api={stubApi()} />);
     const day = await screen.findByTestId("total-day");
     expect(day.textContent).toMatch(/\+\$240 today/);        // 4800 - 4800/1.0526
     expect(day.className).toContain("gain");
-    expect((await screen.findAllByText(/\+5\.26%/)).length).toBeGreaterThan(1);  // movers + row
+    expect((document.body.textContent ?? "").match(/\+5\.26%/g)!.length).toBeGreaterThan(0);
+    expect((document.body.textContent ?? "").match(/\+\$240/g)!.length).toBeGreaterThan(1);   // header + mover $
   });
   it("crypto positions show units, not shares — on Home AND the Holdings list", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([

@@ -35,6 +35,11 @@ async function fetchText(url: string): Promise<string | null> {
 
 async function newsFor(symbol: string, yahoo: string, name: string): Promise<Item[]> {
   const out: Item[] = [];
+  // Korean listings: pull the Korean press (Naver News and friends) via Google News KR.
+  if (symbol.endsWith(".KS") || symbol.endsWith(".KQ")) {
+    const kr = await fetchText(`https://news.google.com/rss/search?q=${encodeURIComponent(`"${name}" 주가 OR 실적`)}&hl=ko&gl=KR&ceid=KR:ko`);
+    if (kr) out.push(...parseRss(kr, symbol, "K-News").slice(0, 15));
+  }
   const [y, g, sa] = await Promise.all([
     fetchText(`https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(yahoo)}&region=US&lang=en-US`),
     fetchText(`https://news.google.com/rss/search?q=${encodeURIComponent(`"${name}" OR ${yahoo} stock`)}&hl=en-US&gl=US&ceid=US:en`),

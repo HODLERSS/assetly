@@ -9,10 +9,13 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
   const [items, setItems] = useState<NewsItem[]>([]);
   const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">("loading");
   const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
+  const [cache] = useState(() => new Map<string, NewsItem[]>());   // instant chip flips
 
   useEffect(() => {
     let live = true;
-    setState("loading");
+    const key = filter ?? "__all__";
+    if (cache.has(key)) { setItems(cache.get(key)!); setState("ok"); }   // show instantly, refresh behind
+    else setState("loading");
     const held = rows.map((r) => r.symbol);
     const scope = filter ?? held;
     const load = () => api.getNews(scope).then((n) => {
@@ -30,6 +33,7 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
           n = await load();
           if (!live) return;
         }
+        cache.set(key, n);
         setItems(n);
         setState("ok");
       })

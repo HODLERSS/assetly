@@ -1,16 +1,13 @@
-import { useState } from "react";
-import type { PortfolioRow } from "../lib/api";
-import { marketOf } from "../lib/markets";
 import { useEffect, useState } from "react";
-import type { Insight } from "../lib/api";
-import { timeAgo } from "../lib/format";
-import { glClass, money, moneyExact, signedMoney, signedPct } from "../lib/format";
+import type { Api, Insight, PortfolioRow } from "../lib/api";
+import { convertCcy, dayChangeAmount, glClass, money, moneyExact, signedMoney, signedPct, timeAgo } from "../lib/format";
+import { marketOf } from "../lib/markets";
 
 // Canvas 2b: the table as a touch list with filter chips.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA" };
 
-export function Holdings({ rows, onOpen, onAdd, api }: {
-  rows: PortfolioRow[]; onOpen: (id: string) => void; onAdd: () => void; api: import("../lib/api").Api;
+export function Holdings({ rows, onOpen, onAdd, api, fxRate }: {
+  rows: PortfolioRow[]; onOpen: (id: string) => void; onAdd: () => void; api: Api; fxRate: number | null;
 }) {
   const [pins, setPins] = useState<Insight | null>(null);
   useEffect(() => {
@@ -50,6 +47,23 @@ export function Holdings({ rows, onOpen, onAdd, api }: {
           </button>
         ))}
       </div>
+      {filter !== "all" && shown.length > 0 && (() => {
+        let value = 0, day = 0, gl = 0;
+        for (const r of shown) {
+          const sign = r.kind === "debt" ? -1 : 1;
+          const v = convertCcy(r.value ?? 0, r.currency, "USD", fxRate) ?? 0;
+          const d = convertCcy(dayChangeAmount(r.value, r.change_pct) ?? 0, r.currency, "USD", fxRate) ?? 0;
+          const g = convertCcy(r.total_gl ?? 0, r.currency, "USD", fxRate) ?? 0;
+          value += sign * v; day += sign * d; gl += sign * g;
+        }
+        const dayPct = value - day !== 0 ? (day / (value - day)) * 100 : 0;
+        const glPct = value - gl !== 0 ? (gl / (value - gl)) * 100 : 0;
+        return (
+          <div className="status-line num" data-testid="filter-totals" style={{ margin: "0 2px 8px" }}>
+            {money(value, "USD")} · today <span className={glClass(day)}>{signedMoney(day, "USD")} ({signedPct(dayPct)})</span> · total <span className={glClass(gl)}>{signedMoney(gl, "USD")} ({signedPct(glPct)})</span>
+          </div>
+        );
+      })()}
       <div className="card">
         {shown.map((r) => (
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
