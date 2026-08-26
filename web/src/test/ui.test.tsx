@@ -174,6 +174,24 @@ describe("U3 add position", () => {
   });
 });
 
+describe("U34 KR names over codes", () => {
+  it("KR rows lead with the company name; the code drops to the sub line", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({}),
+      row({ holding_id: "hk", symbol: "000660.KS", name: "SK hynix Inc.",
+        currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 }),
+    ]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    const sym = await screen.findByText("SK hynix");
+    expect(sym.className).toContain("sym");
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+    expect(await screen.findByRole("button", { name: "SK hynix" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "000660.KS" })).toBeNull();
+  });
+});
+
 describe("U33 news top-5 intelligence", () => {
   it("All holdings shows the ranked top-5 card; a ticker chip swaps to the symbol card", async () => {
     const api = stubApi({ getPortfolioInsights: vi.fn().mockResolvedValue({

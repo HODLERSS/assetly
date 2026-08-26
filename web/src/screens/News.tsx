@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
-import { timeAgo } from "../lib/format";
+import { labelParts, timeAgo } from "../lib/format";
 import { InsightsCard } from "../components/InsightsCard";
 
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
@@ -58,7 +58,7 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
         <button className="chip" aria-pressed={filter === null} onClick={() => setFilter(null)}>All holdings</button>
         {newsRows.map((r) => (
           <button key={r.symbol} className="chip" aria-pressed={filter === r.symbol} onClick={() => setFilter(r.symbol)}>
-            {r.symbol}
+            {labelParts(r).main}
           </button>
         ))}
       </div>
@@ -87,7 +87,7 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
           <a key={n.id} className="row" href={n.url} target="_blank" rel="noreferrer noopener" style={{ textDecoration: "none", display: "flex" }}>
             <span>
               <span style={{ fontWeight: 500 }}>{n.title}</span><br />
-              <span className="sub">{n.symbol} · {n.source} · {timeAgo(n.published_at)}</span>
+              <span className="sub">{(() => { const rr = rows.find((x) => x.symbol === n.symbol); return rr ? labelParts(rr).main : n.symbol; })()} · {n.source} · {timeAgo(n.published_at)}</span>
             </span>
           </a>
         ))}
