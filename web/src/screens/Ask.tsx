@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Api } from "../lib/api";
 
-// ASK — grounded Q&A about the user's own portfolio. Direct, analytical, concise.
+// ASK — grounded Q&A about the user's own portfolio, presented as a chat.
 const SUGGESTIONS = [
   "What was my 1W movement in $ and %?",
   "What should I watch this week?",
@@ -10,11 +10,34 @@ const SUGGESTIONS = [
 
 type Turn = { q: string; a: string | null; error?: string };
 
+// Minimal markdown for what the model actually emits: **bold**, bullet lines, light headers.
+function inline(text: string): ReactNode[] {
+  const parts = text.split(/\*\*([^*]+)\*\*/g);
+  return parts.map((p, i) => (i % 2 ? <strong key={i}>{p}</strong> : <span key={i}>{p}</span>));
+}
+function Md({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("\n").map((ln, i) => {
+        const t = ln.trim();
+        if (!t) return <div key={i} style={{ height: 6 }} />;
+        const li = t.match(/^(?:[••\-\*]|\d+\.)\s+(.*)$/);
+        if (li) return <div key={i} className="md-li">{inline(li[1])}</div>;
+        const h = t.match(/^#{1,4}\s+(.*)$/);
+        if (h) return <div key={i} style={{ fontWeight: 700, margin: "4px 0 2px" }}>{inline(h[1])}</div>;
+        return <div key={i}>{inline(t)}</div>;
+      })}
+    </>
+  );
+}
+
 export function AskScreen({ api }: { api: Api }) {
   const [q, setQ] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
-  const listRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { endRef.current?.scrollIntoView?.({ block: "end", behavior: "smooth" }); }, [turns, busy]);
 
   const submit = async (question: string) => {
     const text = question.trim();
@@ -43,27 +66,30 @@ export function AskScreen({ api }: { api: Api }) {
           ))}
         </div>
       )}
-      <div ref={listRef} style={{ display: "grid", gap: 10, marginBottom: 84 }}>
+      <div className="chat">
         {turns.map((t, i) => (
-          <div key={i}>
-            <p className="sub" style={{ margin: "0 0 4px", fontWeight: 600 }}>{t.q}</p>
-            {t.a === null && <div className="chart-skeleton" style={{ height: 44 }} aria-busy="true" aria-label="Thinking" />}
+          <div key={i} style={{ display: "grid", gap: 10 }}>
+            <div className="bubble user">{t.q}</div>
+            {t.a === null && (
+              <div className="bubble ai typing" aria-busy="true" aria-label="Thinking"><i /><i /><i /></div>
+            )}
             {t.a !== null && !t.error && (
-              <div className="card insights" data-testid="ask-answer" style={{ whiteSpace: "pre-wrap", fontSize: 13.5, lineHeight: 1.5, padding: "12px 14px" }}>
-                {t.a}
-                <p className="insights-foot">Not financial advice</p>
+              <div className="bubble ai" data-testid="ask-answer">
+                <Md text={t.a} />
+                <p className="bubble-foot">Not financial advice</p>
               </div>
             )}
             {t.error && <div className="error-note" role="alert">{t.error}</div>}
           </div>
         ))}
+        <div ref={endRef} />
       </div>
       <form
         style={{ position: "fixed", left: 0, right: 0, bottom: "calc(52px + env(safe-area-inset-bottom))", maxWidth: 480, margin: "0 auto", padding: "8px 16px", background: "var(--as-bg)", display: "flex", gap: 8 }}
         onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
         <input aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
-               placeholder="Ask about your portfolio…" style={{ flex: 1, padding: 12, border: "1px solid var(--as-rule)", borderRadius: 6, background: "var(--as-surface)", minHeight: 44 }} />
-        <button className="btn" style={{ width: "auto", padding: "0 18px" }} disabled={busy || !q.trim()}>{busy ? "…" : "Send"}</button>
+               placeholder="Ask about your portfolio…" style={{ flex: 1, padding: 12, border: "1px solid var(--as-rule)", borderRadius: 22, background: "var(--as-surface)", minHeight: 44 }} />
+        <button className="btn" style={{ width: "auto", padding: "0 18px", borderRadius: 22 }} disabled={busy || !q.trim()}>{busy ? "…" : "Send"}</button>
       </form>
     </>
   );

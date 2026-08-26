@@ -289,6 +289,26 @@ describe("U25 notes", () => {
   });
 });
 
+describe("U29 ASK chat", () => {
+  it("renders markdown bold and bullets inside a chat bubble", async () => {
+    const api = stubApi({ ask: vi.fn().mockResolvedValue("**Bottom line**: solid week.\n\u2022 MARA led with **+5.8%**\n- Watch concentration") });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
+    await userEvent.type(screen.getByLabelText(/ask about your portfolio/i), "How was my week?");
+    await userEvent.click(screen.getByRole("button", { name: /^send$/i }));
+    const bubble = await screen.findByTestId("ask-answer");
+    const strongs = [...bubble.querySelectorAll("strong")].map((el) => el.textContent);
+    expect(strongs).toContain("Bottom line");
+    expect(strongs).toContain("+5.8%");
+    expect(bubble.textContent).not.toContain("**");
+    expect(bubble.querySelectorAll(".md-li").length).toBe(2);
+    expect(bubble.textContent).toContain("Not financial advice");
+    // the user's message shows as its own bubble
+    expect(document.querySelector(".bubble.user")?.textContent).toBe("How was my week?");
+  });
+});
+
 describe("U24 ASK", () => {
   it("asks a question and renders the grounded answer with the advice line", async () => {
     const api = stubApi();
