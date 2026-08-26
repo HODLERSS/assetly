@@ -31,7 +31,9 @@ function extractText(html: string): string {
 function isRealTranscript(c: string): boolean {
   // strict: nav boilerplate contains greetings ("Welcome to Seeking Alpha") but never
   // the actual call structure
-  return c.length >= 3000 && /prepared remarks|question-and-answer session|q&a session/i.test(c);
+  // >=12k chars: Seeking Alpha's pre-paywall fragment (~4.7k) includes the "Prepared
+  // Remarks" heading but not the call; full transcripts run 20k-80k.
+  return c.length >= 12000 && /prepared remarks|question-and-answer session|q&a session/i.test(c);
 }
 
 /** Motley Fool publishes full transcript text server-side; find it via DuckDuckGo's
