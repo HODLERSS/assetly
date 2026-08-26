@@ -179,7 +179,8 @@ describe("U20 Assetly Intelligence", () => {
     const card = await screen.findByTestId("insights-card");
     expect(card.textContent).toContain("Assetly Intelligence");
     expect(card.textContent).toContain("Take one about margins");
-    expect(card.textContent).toContain("not financial advice");
+    expect(card.textContent).toContain("Not financial advice");
+    expect(card.textContent).not.toMatch(/MiniMax|MARA Cloud|AI-generated/);
     await userEvent.click(screen.getByRole("button", { name: /^horizons$/i }));
     expect(screen.getByText("hot week")).toBeTruthy();
   });

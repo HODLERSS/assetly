@@ -41,7 +41,7 @@ export function InsightsCard({ api, symbol }: { api: Api; symbol: string }) {
           ))}
         </dl>
       )}
-      <p className="insights-foot">MiniMax M2.7 via MARA Cloud · AI-generated, not financial advice</p>
+      <p className="insights-foot">Not financial advice</p>
     </section>
   );
 }
