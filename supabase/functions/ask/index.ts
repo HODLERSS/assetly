@@ -65,6 +65,23 @@ function parseAnswer(raw: string): { answer: string; followups: string[] } | nul
   } catch { return null; }
 }
 
+/** Keep the hard 20-second-read guarantee even when the model overruns: cut at
+ *  line boundaries down to ~95 words (whole first line survives regardless). */
+function trimAnswer(a: string): string {
+  const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
+  if (words(a) <= 100) return a;
+  const lines = a.split("\n");
+  let out: string[] = [], n = 0;
+  for (const ln of lines) {
+    const w = words(ln);
+    if (out.length && n + w > 95) break;
+    out.push(ln); n += w;
+  }
+  let joined = out.join("\n");
+  if (words(joined) > 100) joined = joined.split(/\s+/).slice(0, 95).join(" ") + " …";
+  return joined;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const auth = req.headers.get("Authorization") ?? "";
@@ -175,6 +192,8 @@ Answer as their analyst: direct, specific, tight. Ground qualitative answers in 
   let key = Deno.env.get("MARA_API_KEY") ?? "";
   if (!key) { const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" }); key = data ?? ""; }
   if (!key) return json({ ok: false, error: "not configured" }, 500);
+  let parsedA: { answer: string; followups: string[] } | null = null;
+  for (let attempt = 0; attempt < 2 && !parsedA; attempt++) {
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -183,15 +202,16 @@ Answer as their analyst: direct, specific, tight. Ground qualitative answers in 
         { role: "system", content: 'You are a direct, analytical portfolio assistant. Respond ONLY with strict JSON: {"answer": "...", "followups": ["...", "..."]}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, 80 words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no disclaimers. The followups value: AFTER writing the answer, reread it and offer 2-3 natural next questions this user would ask, each under 12 words, ending with ?, answerable from their portfolio stats, news, SEC filings, or earnings-call data, and never repeating the question just answered.' },
         { role: "user", content: prompt },
       ],
-      temperature: 0.2, max_tokens: 6000,
+      temperature: attempt === 0 ? 0.2 : 0.4, max_tokens: 6000,
       response_format: { type: "json_object" },
     }),
   });
-  if (!r.ok) return json({ ok: false, error: "model " + r.status }, 502);
+  if (!r.ok) { if (attempt === 1) return json({ ok: false, error: "model " + r.status }, 502); continue; }
   const out = await r.json().catch(() => null);
-  const parsedA = parseAnswer(out?.choices?.[0]?.message?.content ?? "");
+  parsedA = parseAnswer(out?.choices?.[0]?.message?.content ?? "");
+  }
   const deDash = (v: string) => v.trim().replace(/\s*\u2014\s*/g, ": ").replace(/\s*\u2013\s*/g, ": ");
-  const answer = deDash(parsedA?.answer ?? "");
+  const answer = trimAnswer(deDash(parsedA?.answer ?? ""));
   if (!answer) return json({ ok: false, error: "The analyst lost the thread mid-answer. Ask again." }, 502);
   return json({ ok: true, answer, followups: (parsedA?.followups ?? []).map(deDash), mentioned });
 });
