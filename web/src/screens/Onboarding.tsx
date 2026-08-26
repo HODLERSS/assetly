@@ -1,10 +1,10 @@
 import { useState } from "react";
 import type { Api, SymbolRow } from "../lib/api";
+import { marketOf } from "../lib/markets";
 
 // Canvas 3b→3f: markets → first position → shares + cost → first real number.
 export function Onboarding({ api, onDone }: { api: Api; onDone: () => Promise<void> | void }) {
-  const [step, setStep] = useState(0);
-  const [markets, setMarkets] = useState<string[]>(["US"]);
+  const [step, setStep] = useState(1);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SymbolRow[]>([]);
   const [picked, setPicked] = useState<SymbolRow | null>(null);
@@ -12,9 +12,6 @@ export function Onboarding({ api, onDone }: { api: Api; onDone: () => Promise<vo
   const [cost, setCost] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  const toggle = (m: string) =>
-    setMarkets((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]));
 
   const search = async (text: string) => {
     setQ(text);
@@ -29,7 +26,8 @@ export function Onboarding({ api, onDone }: { api: Api; onDone: () => Promise<vo
       if (!picked || !(nQty > 0) || !(nCost >= 0)) throw new Error("Shares must be positive and cost can't be negative.");
       await api.addPosition(picked.symbol, nQty, nCost);
       void api.refreshNews([picked.symbol]);                // stories land while the user looks around
-      await api.completeOnboarding(markets, markets.includes("KR") && !markets.includes("US") ? "KRW" : "USD");
+      const m = marketOf({ symbol: picked.symbol, kind: picked.kind });   // inferred, never asked
+      await api.completeOnboarding([m === "KR" ? "KR" : m === "CRYPTO" ? "Crypto" : "US"], "USD");
       await onDone();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save. Try again.");
@@ -39,21 +37,7 @@ export function Onboarding({ api, onDone }: { api: Api; onDone: () => Promise<vo
   return (
     <main className="screen" style={{ paddingTop: 28 }}>
       <h1 className="h1">Set up Assetly</h1>
-      <p className="mutedc" style={{ marginBottom: 18 }}>Step {step + 1} of 3</p>
-
-      {step === 0 && (
-        <section aria-label="Pick your markets">
-          <p style={{ marginBottom: 12 }}>Where do you hold? This sets currency and feeds.</p>
-          <div className="chips">
-            {["US", "KR", "Crypto"].map((m) => (
-              <button key={m} className="chip" aria-pressed={markets.includes(m)} onClick={() => toggle(m)}>
-                {m === "US" ? "US markets" : m === "KR" ? "Korea (KRX)" : "Crypto"}
-              </button>
-            ))}
-          </div>
-          <button className="btn" disabled={markets.length === 0} onClick={() => setStep(1)} style={{ marginTop: 16 }}>Next</button>
-        </section>
-      )}
+      <p className="mutedc" style={{ marginBottom: 18 }}>Step {step} of 2</p>
 
       {step === 1 && (
         <section aria-label="Find your first position">

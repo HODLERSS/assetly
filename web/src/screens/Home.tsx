@@ -1,4 +1,5 @@
 import type { PortfolioRow } from "../lib/api";
+import { moverEligible, sessionLabel } from "../lib/markets";
 import { glClass, money, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2a: net worth, movers, market pulse.
@@ -17,7 +18,7 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
       </div>
     );
   }
-  const movers = [...rows].filter((r) => r.change_pct !== null)
+  const movers = [...rows].filter((r) => r.change_pct !== null && moverEligible(r))
     .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0)).slice(0, 3);
   return (
     <>
@@ -39,7 +40,7 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
         )}
         <div className="countdown" aria-hidden="true"><div style={{ width: "38%" }} /></div>
       </section>
-      <h2 className="h1" style={{ fontSize: 16 }}>Movers</h2>
+      <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {sessionLabel()}</span></h2>
       <div className="card" style={{ marginBottom: 16 }}>
         {movers.map((r) => (
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>

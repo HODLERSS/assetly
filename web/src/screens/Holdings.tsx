@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { PortfolioRow } from "../lib/api";
+import { marketOf } from "../lib/markets";
 import { glClass, money, moneyExact, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2b: the table as a touch list with filter chips.
@@ -9,8 +10,12 @@ export function Holdings({ rows, onOpen, onAdd }: {
   rows: PortfolioRow[]; onOpen: (id: string) => void; onAdd: () => void;
 }) {
   const [filter, setFilter] = useState<string>("all");
-  const kinds = ["all", ...new Set(rows.map((r) => r.kind))];
-  const shown = rows.filter((r) => filter === "all" || r.kind === filter);
+  const marketsHeld = [...new Set(rows.map((r) => marketOf(r)).filter((m): m is "US" | "KR" => m === "US" || m === "KR"))];
+  const kinds = ["all", ...(marketsHeld.length > 1 ? marketsHeld : []), ...new Set(rows.map((r) => r.kind))];
+  const shown = rows.filter((r) =>
+    filter === "all" ? true :
+    filter === "US" || filter === "KR" ? marketOf(r) === filter :
+    r.kind === filter);
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -20,7 +25,7 @@ export function Holdings({ rows, onOpen, onAdd }: {
       <div className="chips" role="group" aria-label="Filter by type">
         {kinds.map((k) => (
           <button key={k} className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>
-            {k === "all" ? "All" : k === "etf" ? "ETF" : k.charAt(0).toUpperCase() + k.slice(1)}
+            {k === "all" ? "All" : k === "US" ? "US" : k === "KR" ? "KR" : k === "etf" ? "ETF" : k.charAt(0).toUpperCase() + k.slice(1)}
           </button>
         ))}
       </div>

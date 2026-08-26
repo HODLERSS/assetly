@@ -23,6 +23,17 @@ vi.mock("../lib/supabase", () => {
   };
 });
 
+// Market sessions are wall-clock dependent; pin them for deterministic UI tests.
+// (The real session/holiday logic is covered by markets.test.ts with fixed instants.)
+vi.mock("../lib/markets", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../lib/markets")>();
+  return { ...real, isMarketOpen: (m: string) => m === "US" || m === "CRYPTO",
+           sessionLabel: () => "US open",
+           moverEligible: (row: { symbol: string; kind: string }) => {
+             const m = real.marketOf(row); return m === "US" || m === "CRYPTO";
+           } };
+});
+
 import { App } from "../App";
 import { AuthScreen } from "../screens/Auth";
 import type { Api, PortfolioRow, Profile } from "../lib/api";
@@ -96,8 +107,6 @@ describe("U2 onboarding", () => {
       .mockResolvedValue(profile) });
     render(<App api={api} />);
     await screen.findByText(/set up assetly/i);
-    await userEvent.click(screen.getByRole("button", { name: /korea/i }));
-    await userEvent.click(screen.getByRole("button", { name: /^next$/i }));
     await userEvent.type(screen.getByRole("textbox", { name: /find your first position/i }), "MARA");
     await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
     await userEvent.type(screen.getByLabelText(/^shares$/i), "100");

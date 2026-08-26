@@ -63,8 +63,6 @@ try {
   await page.evaluate((s) => localStorage.setItem("sb-127-auth-token", JSON.stringify(s)), auth.session);
   await page.goto(URL_);
   await page.getByText(/set up assetly/i).waitFor();
-  for (const m of persona.markets) if (m !== "US") await page.getByRole("button", { name: m === "KR" ? /Korea/ : new RegExp(m, "i") }).tap();
-  await page.getByRole("button", { name: /^next$/i }).tap();
   const [sym, qty, cost] = persona.portfolio[0];
   await page.locator("#ob-q").fill(sym.replace(".KS", ""));
   await timed("onboarding search+pick", async () => {
