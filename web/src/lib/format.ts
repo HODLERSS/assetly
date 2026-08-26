@@ -69,10 +69,12 @@ export function dayChangeAmount(value: number | null, changePct: number | null):
 
 /** KR tickers are opaque numbers (000660.KS); people know the company name.
  *  main = what to show big, sub = the secondary line. US keeps ticker-first. */
-export function labelParts(r: { symbol: string; name?: string | null; nickname?: string | null }): { main: string; sub: string } {
+export function labelParts(r: { symbol: string; name?: string | null; name_kr?: string | null; nickname?: string | null }, korean = false): { main: string; sub: string } {
   const kr = r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ");
   if (!kr) return { main: r.symbol, sub: r.nickname || r.name || "" };
-  const nm = (r.nickname || r.name || r.symbol)
+  if (r.nickname) return { main: r.nickname, sub: r.symbol };
+  if (korean && r.name_kr) return { main: r.name_kr, sub: r.symbol };
+  const nm = (r.name || r.symbol)
     .replace(/\s*(Co\.?,?\s*Ltd\.?|Inc\.?|Corp(?:oration)?\.?|Company|Ltd\.?)\s*$/i, "").trim();
   return { main: nm || r.symbol, sub: r.symbol };
 }

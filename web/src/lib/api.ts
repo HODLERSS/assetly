@@ -11,7 +11,7 @@ export type SymbolRow = {
 export type Lot = { id: string; holding_id: string; qty: number; cost_per_share: number; acquired_on: string | null; note: string | null };
 export type Account = "brokerage" | "bank" | "401k" | "ira" | "crypto";
 export type PortfolioRow = {
-  holding_id: string; symbol: string; account: Account; nickname: string; name: string; currency: "USD" | "KRW"; kind: string;
+  holding_id: string; symbol: string; account: Account; nickname: string; name: string; name_kr?: string | null; currency: "USD" | "KRW"; kind: string;
   qty: number | null; cost_basis: number | null; avg_cost: number | null;
   price: number | null; change_pct: number | null; as_of: string | null;
   value: number | null; total_gl: number | null;

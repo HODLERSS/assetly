@@ -108,7 +108,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
           <AddPosition api={api} onDone={async () => { await load(); go({ kind: "tab", tab: "holdings" }); }} onCancel={() => go({ kind: "tab", tab: "holdings" })} />
         )}
         {view.kind === "position" && (
-          <PositionScreen api={api} row={rows.find((r) => r.holding_id === view.holdingId) ?? null}
+          <PositionScreen api={api} dispKr={profile?.display_kr ?? "KRW"} row={rows.find((r) => r.holding_id === view.holdingId) ?? null}
             onChanged={load} onRemoved={async () => { await load(); go({ kind: "tab", tab: "holdings" }); }}
             onBack={() => go({ kind: "tab", tab: "holdings" })} />
         )}
@@ -120,7 +120,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         {view.kind === "tab" && view.tab === "holdings" && (
           <Holdings rows={rows} api={api} fxRate={fx} totalsCcy={base} dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
-        {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} />}
+        {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"} />}
         {view.kind === "tab" && view.tab === "ask" && (
           <AskScreen api={api} />
         )}

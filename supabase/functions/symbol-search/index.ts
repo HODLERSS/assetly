@@ -206,6 +206,7 @@ Deno.serve(async (req) => {
       exchange: (e.exchange ?? "NASDAQ").slice(0, 40), currency,
       kind: ["equity", "etf", "fund", "crypto"].includes(e.kind) ? e.kind : "equity",
       yahoo: e.yahoo, active: true,
+      name_kr: KR_NAMES.find(([c]) => c === e.symbol)?.[1] ?? null,
     };
     const { error: sErr } = await admin.from("symbols").upsert(row, { onConflict: "symbol" });
     if (sErr) return json({ ok: false, error: sErr.message }, 500);

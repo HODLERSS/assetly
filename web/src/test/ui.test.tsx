@@ -175,20 +175,32 @@ describe("U3 add position", () => {
 });
 
 describe("U34 KR names over codes", () => {
-  it("KR rows lead with the company name; the code drops to the sub line", async () => {
-    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
-      row({}),
-      row({ holding_id: "hk", symbol: "000660.KS", name: "SK hynix Inc.",
-        currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 }),
-    ]) });
+  const krRows = () => [
+    row({}),
+    row({ holding_id: "hk", symbol: "000660.KS", name: "SK hynix Inc.", name_kr: "SK하이닉스",
+      currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 }),
+  ];
+  it("KRW view: the Korean name leads; the code drops to the sub line", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(krRows()) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    const sym = await screen.findByText("SK hynix");
+    const sym = await screen.findByText("SK하이닉스");
     expect(sym.className).toContain("sym");
     await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
-    expect(await screen.findByRole("button", { name: "SK hynix" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "SK하이닉스" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "000660.KS" })).toBeNull();
+  });
+  it("KR assets toggled to USD: the English name leads instead", async () => {
+    const api = stubApi({
+      getPortfolio: vi.fn().mockResolvedValue(krRows()),
+      getProfile: vi.fn().mockResolvedValue({ ...profile, display_kr: "USD" as const }),
+    });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    expect(await screen.findByText("SK hynix")).toBeTruthy();
+    expect(screen.queryByText("SK하이닉스")).toBeNull();
   });
 });
 

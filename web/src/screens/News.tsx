@@ -4,7 +4,7 @@ import { labelParts, timeAgo } from "../lib/format";
 import { InsightsCard } from "../components/InsightsCard";
 
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
-export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
+export function NewsScreen({ api, rows, dispKr = "KRW" }: { api: Api; rows: PortfolioRow[]; dispKr?: "USD" | "KRW" }) {
   const [filter, setFilter] = useState<string | null>(null);
   const [items, setItems] = useState<NewsItem[]>([]);
   const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">("loading");
@@ -58,7 +58,7 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
         <button className="chip" aria-pressed={filter === null} onClick={() => setFilter(null)}>All holdings</button>
         {newsRows.map((r) => (
           <button key={r.symbol} className="chip" aria-pressed={filter === r.symbol} onClick={() => setFilter(r.symbol)}>
-            {labelParts(r).main}
+            {labelParts(r, dispKr === "KRW").main}
           </button>
         ))}
       </div>
@@ -87,7 +87,7 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
           <a key={n.id} className="row" href={n.url} target="_blank" rel="noreferrer noopener" style={{ textDecoration: "none", display: "flex" }}>
             <span>
               <span style={{ fontWeight: 500 }}>{n.title}</span><br />
-              <span className="sub">{(() => { const rr = rows.find((x) => x.symbol === n.symbol); return rr ? labelParts(rr).main : n.symbol; })()} · {n.source} · {timeAgo(n.published_at)}</span>
+              <span className="sub">{(() => { const rr = rows.find((x) => x.symbol === n.symbol); return rr ? labelParts(rr, dispKr === "KRW").main : n.symbol; })()} · {n.source} · {timeAgo(n.published_at)}</span>
             </span>
           </a>
         ))}

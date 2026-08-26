@@ -5,8 +5,8 @@ import { PriceChart } from "../components/PriceChart";
 import { InsightsCard } from "../components/InsightsCard";
 
 // Canvas 2c + 3i + the remove flow (gap screen g1): detail, every lot editable, delete with confirm.
-export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
-  api: Api; row: PortfolioRow | null;
+export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr = "KRW" }: {
+  api: Api; row: PortfolioRow | null; dispKr?: "USD" | "KRW";
   onChanged: () => Promise<void> | void; onRemoved: () => Promise<void> | void; onBack: () => void;
 }) {
   const [lots, setLots] = useState<Lot[]>([]);
@@ -37,7 +37,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
     <>
       <button className="chip" onClick={onBack}>&larr; Holdings</button>
       <div style={{ margin: "12px 0 6px" }}>
-        <h2 className="h1">{labelParts(row).main} <span className="mutedc" style={{ fontWeight: 400, fontSize: 15 }}>{labelParts(row).sub}</span></h2>
+        <h2 className="h1">{labelParts(row, dispKr === "KRW").main} <span className="mutedc" style={{ fontWeight: 400, fontSize: 15 }}>{labelParts(row, dispKr === "KRW").sub}</span></h2>
         <div className="net num" style={{ fontSize: 30 }}>{moneyExact(row.price, row.currency)}</div>
         <div className={`num ${glClass(row.change_pct)}`}>
           {signedPct(row.change_pct)} {row.as_of && Date.now() - +new Date(row.as_of) > 20 * 3600 * 1000 ? "since last close" : "today"} · {priceAsOf(row.as_of)}
