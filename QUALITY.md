@@ -50,6 +50,12 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10k. (8/25) Market-session awareness: US/KR session + holiday calendars (assets.html
+   parity) in lib/markets.ts; Home movers follow the OPEN market with a live session
+   label (fixed: US names shown as movers while only KRX traded); Holdings gained
+   US/KR filter chips; every asset derives a market (KS/KQ->KR, crypto->24/7,
+   cash/debt->none); onboarding's markets quiz removed — inferred from the first
+   position. Fixed-instant unit tests incl. Thanksgiving + KR holiday closures.
 10j. (8/25) Assetly Intelligence shipped: hourly insights-sync (MARA Cloud MiniMax
    M2.7; key in Vault via security-definer get_secret; response_format json_object —
    M2.7 otherwise burns budget on visible reasoning, needed 6k tokens) turns 7d
