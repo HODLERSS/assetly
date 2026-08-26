@@ -75,7 +75,7 @@ function sessNote(mkt: "US" | "KR", now = new Date()): string {
   return `${name} finished today's session. Day changes are today's final moves.`;
 }
 
-function parseInsight(raw: string): { bullets: string[]; windows: Record<string, string> } | null {
+function parseInsight(raw: string): { bullets: string[]; windows: Record<string, string>; news5: string[] | null } | null {
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   const start = cleaned.indexOf('{"bullets"') >= 0 ? cleaned.indexOf('{"bullets"') : cleaned.indexOf("{");
   if (start < 0) return null;
@@ -93,7 +93,8 @@ function parseInsight(raw: string): { bullets: string[]; windows: Record<string,
     o.bullets = o.bullets.map(deDash);
     if (o.trend) o.trend = deDash(o.trend);
     const windows = o.trend ? { trend: String(o.trend) } : (o.windows ?? {});
-    return { bullets: o.bullets.slice(0, 5).map(String), windows };
+    const news5 = Array.isArray(o.news5) ? o.news5.map(deDash).filter((x: string) => x.trim()).slice(0, 5) : null;
+    return { bullets: o.bullets.slice(0, 5).map(String), windows, news5 };
   } catch { return null; }
 }
 
@@ -103,6 +104,7 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const fixture = url.searchParams.get("fixture") === "1";
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+  const force = url.searchParams.get("force") === "1" || body.force === true;
 
   let key = Deno.env.get("MARA_API_KEY") ?? "";
   if (!key && !fixture) {
@@ -132,7 +134,8 @@ Deno.serve(async (req) => {
   const kindOf = new Map((kindRows ?? []).map((k) => [k.symbol, String(k.kind)]));
   const mktOf = (sy: string): "US" | "KR" | null =>
     kindOf.get(sy) === "crypto" ? null : (sy.endsWith(".KS") || sy.endsWith(".KQ") ? "KR" : "US");
-  if (!only) targets = targets.filter((sy) => staleInsight(age.get(sy) ?? 0, mktOf(sy)));
+  if (!only && !force) targets = targets.filter((sy) => staleInsight(age.get(sy) ?? 0, mktOf(sy)));
+  if (force) targets = [];                                    // force = refresh the portfolio layer only
   targets = targets.sort((a, b) =>
     (age.get(a) ?? 0) - (age.get(b) ?? 0) || (invested.get(b) ?? 0) - (invested.get(a) ?? 0)).slice(0, 16);
 
@@ -206,7 +209,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
         .filter((r) => r.kind !== "cash" && r.kind !== "debt" && r.kind !== "crypto")
         .map((r) => (r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ") ? "KR" as const : "US" as const)))];
       // Same session-aware staleness as symbols: skip only while genuinely current.
-      if (!fixture && !userMkts.some((mk) => staleInsight(lastPi.get(uid) ?? 0, mk))
+      if (!fixture && !force && !userMkts.some((mk) => staleInsight(lastPi.get(uid) ?? 0, mk))
           && Date.now() - (lastPi.get(uid) ?? 0) <= 50 * 60000) continue;
       const usd = (r: (typeof rows)[number]) => (r.currency === "KRW" ? Number(r.value ?? 0) / fx : Number(r.value ?? 0));
       const assets = rows.filter((r) => r.kind !== "debt");
@@ -230,7 +233,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const newsLines = sigSyms.map((sy) => (nws ?? []).filter((x) => x.symbol === sy).slice(0, 2).map((x) => `- ${sy} [${x.source}]: ${String(x.title).slice(0, 90)}`).join("\n")).filter(Boolean).join("\n");
       let content: string | null;
       if (fixture) {
-        content = JSON.stringify(body.cannedPortfolio ?? { bullets: ["portfolio fixture one", "portfolio fixture two", "portfolio fixture three"] });
+        content = JSON.stringify(body.cannedPortfolio ?? { bullets: ["portfolio fixture one", "portfolio fixture two", "portfolio fixture three"], news5: ["fixture signal one", "fixture signal two", "fixture signal three", "fixture signal four", "fixture signal five"] });
       } else {
         const prompt = `A retail investor's portfolio (total assets $${Math.round(total)}, debt $${Math.round(debt)}):
 Market sessions right now: ${userMkts.map((mk) => sessNote(mk)).join(" ")}
@@ -242,16 +245,18 @@ ${newsLines || "- (none)"}
 Sharpest current takes per holding:
 ${[...latestBySym.entries()].map(([sym, b]) => `- ${sym}: ${b}`).join("\n") || "- (none yet)"}
 
-Return STRICT JSON: {"bullets": [exactly 3 strings]}. You are their portfolio strategist writing 3 bullets.
+Return STRICT JSON: {"bullets": [exactly 3 strings], "news5": [exactly 5 strings]}. You are their portfolio strategist.
 Bullet 1: the ONLY price bullet. Recent moves that mattered, with numbers.
 Bullet 2: the most decision-relevant company signal right now: an earnings call (state its date), interview, filing, or news. Any holding qualifies, not just the largest position.
 Bullet 3: a mid-term signal a value investor should note: valuation, fundamentals trend, or upcoming catalyst.
-Each bullet 15 words MAX. Spread coverage across different holdings when the signals warrant it. Respect the session notes: never present the last session's move as happening today. Plain punchy language. Never use em dashes or semicolons. No generic advice.`;
+Each bullet 15 words MAX. Spread coverage across different holdings when the signals warrant it.
+news5: the top 5 signals from this week across their holdings, RANKED by importance to THIS portfolio (weight by position size and decision impact). Each 10 words MAX, names its ticker, no two about the same story.
+Respect the session notes: never present the last session's move as happening today. Plain punchy language. Never use em dashes or semicolons. No generic advice.`;
         content = await askMara(key, model, prompt);
       }
       const parsed = content ? parseInsight(content) : null;
       if (!parsed) { errors.push("user " + uid.slice(0, 8) + ": unparseable"); continue; }
-      const { error: piErr } = await admin.from("portfolio_insights").insert({ user_id: uid, bullets: parsed.bullets.slice(0, 3), model });
+      const { error: piErr } = await admin.from("portfolio_insights").insert({ user_id: uid, bullets: parsed.bullets.slice(0, 3), news5: parsed.news5, model });
       if (piErr) errors.push("user " + uid.slice(0, 8) + ": " + piErr.message); else pWrote++;
     } catch (e) { errors.push("user: " + (e instanceof Error ? e.message : String(e))); }
   }

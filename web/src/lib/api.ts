@@ -18,7 +18,7 @@ export type PortfolioRow = {
 };
 export type HistoryPoint = { ts: string; price: number };
 export type Insight = {
-  bullets: string[]; windows: Record<string, string> | null; model: string; generated_at: string;
+  bullets: string[]; windows: Record<string, string> | null; news5?: string[] | null; model: string; generated_at: string;
 };
 export type NewsItem = { id: string; symbol: string; title: string; url: string; source: string; published_at: string | null };
 export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
@@ -180,10 +180,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
     },
     /** Latest portfolio-level insight for the signed-in user. */
     async getPortfolioInsights(): Promise<Insight | null> {
-      const { data } = await sb.from("portfolio_insights").select("bullets,model,generated_at")
+      const { data } = await sb.from("portfolio_insights").select("bullets,news5,model,generated_at")
         .order("generated_at", { ascending: false }).limit(1).maybeSingle();
       if (!data) return null;
-      return { bullets: (data.bullets as string[]) ?? [], windows: null, model: data.model, generated_at: String(data.generated_at) };
+      return { bullets: (data.bullets as string[]) ?? [], windows: null,
+               news5: Array.isArray(data.news5) ? (data.news5 as string[]) : null,
+               model: data.model, generated_at: String(data.generated_at) };
     },
     async getNews(scope?: string | string[]): Promise<NewsItem[]> {
       let q = sb.from("news").select("id,symbol,title,url,source,published_at")

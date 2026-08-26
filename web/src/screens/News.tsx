@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Api, NewsItem, PortfolioRow } from "../lib/api";
+import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
 import { timeAgo } from "../lib/format";
 import { InsightsCard } from "../components/InsightsCard";
 
@@ -10,9 +10,16 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
   const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">("loading");
   const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
   const [cache] = useState(() => new Map<string, NewsItem[]>());   // instant chip flips
+  const [top5, setTop5] = useState<Insight | null>(null);          // Assetly Intelligence, portfolio-wide
   // cash and debt have no news; one chip per symbol even when held in several accounts
   const newsRows = rows.filter((r, i) => r.kind !== "cash" && r.kind !== "debt"
     && rows.findIndex((x) => x.symbol === r.symbol) === i);
+
+  useEffect(() => {
+    let live = true;
+    if (rows.length > 0) api.getPortfolioInsights().then((v) => { if (live) setTop5(v); }).catch(() => {});
+    return () => { live = false; };
+  }, [api, rows.length]);
 
   useEffect(() => {
     let live = true;
@@ -56,6 +63,18 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
         ))}
       </div>
       {filter && <InsightsCard api={api} symbol={filter} />}
+      {!filter && (top5?.news5?.length ?? 0) > 0 && (
+        <section className="card insights" data-testid="news-top5-card" aria-label="Top portfolio signals">
+          <div className="insights-head">
+            <span className="insights-brand">Assetly Intelligence</span>
+            <span className="sub num">{timeAgo(top5!.generated_at)}</span>
+          </div>
+          <ul className="insights-list">
+            {top5!.news5!.map((b, i) => <li key={i}>{b}</li>)}
+          </ul>
+          <p className="insights-foot">Not financial advice</p>
+        </section>
+      )}
       {state === "error" && <div className="error-note" role="alert">News missed the handoff — pull to retry.</div>}
       {state === "pulling" && (
         <p className="empty" aria-busy="true">Pulling the latest stories{filter ? ` for ${filter}` : ""}…</p>

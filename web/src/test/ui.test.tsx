@@ -174,6 +174,24 @@ describe("U3 add position", () => {
   });
 });
 
+describe("U33 news top-5 intelligence", () => {
+  it("All holdings shows the ranked top-5 card; a ticker chip swaps to the symbol card", async () => {
+    const api = stubApi({ getPortfolioInsights: vi.fn().mockResolvedValue({
+      bullets: ["a", "b", "c"],
+      news5: ["MARA Q2 miss overshadowed by AI pivot momentum", "RDDT ad growth beats, insiders selling", "Samsung payout fails to lift shares", "INTC dilution overhang from 424B5", "BTC $80K driving miner correlation"],
+      windows: null, model: "MiniMax-M2.7", generated_at: new Date().toISOString() }) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+    const card = await screen.findByTestId("news-top5-card");
+    expect(card.textContent).toContain("Assetly Intelligence");
+    expect(card.querySelectorAll("li").length).toBe(5);
+    expect(card.textContent).toContain("Not financial advice");
+    await userEvent.click(screen.getByRole("button", { name: "RDDT" }));
+    await waitFor(() => expect(screen.queryByTestId("news-top5-card")).toBeNull());
+  });
+});
+
 describe("U30 news chips", () => {
   it("cash and debt never get news chips", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
