@@ -443,6 +443,17 @@ describe("U24 ASK", () => {
     expect(card.textContent).toContain("Not financial advice");
     expect(api.ask).toHaveBeenCalledWith("my 1W move?");
   });
+  it("the first suggestion is the portfolio assessment", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
+    const chips = screen.getAllByRole("button", { name: /assess my portfolio|1W movement|watch this week|concentrated/i });
+    expect(chips[0].textContent).toBe("Assess my portfolio and provide insights");
+    await userEvent.click(chips[0]);
+    await screen.findByTestId("ask-answer");
+    expect(api.ask).toHaveBeenCalledWith("Assess my portfolio and provide insights");
+  });
   it("suggestion chips fire a question directly", async () => {
     const api = stubApi();
     render(<App api={api} />);

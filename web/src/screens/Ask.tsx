@@ -3,6 +3,7 @@ import type { Api } from "../lib/api";
 
 // ASK — grounded Q&A about the user's own portfolio, presented as a chat.
 const SUGGESTIONS = [
+  "Assess my portfolio and provide insights",
   "What was my 1W movement in $ and %?",
   "What should I watch this week?",
   "Am I too concentrated?",
