@@ -447,3 +447,37 @@ describe("AI insights + transcripts pipeline (fixture)", () => {
     expect(body.results[0].name).toMatch(/삼성전자/);
   });
 });
+
+describe("ASK + filings (fixture)", () => {
+  const H = { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` };
+  it("filings-sync stores the filing and floats it into news", async () => {
+    const r = await fetch(`${URL_}/functions/v1/filings-sync?fixture=1`, {
+      method: "POST", headers: H, body: JSON.stringify({ symbols: ["RDDT"] }) });
+    expect((await r.json()).ok).toBe(true);
+    const { data: f } = await alice.from("filings").select("form").eq("symbol", "RDDT");
+    expect(f!.length).toBeGreaterThan(0);
+    const { data: n } = await alice.from("news").select("source").eq("symbol", "RDDT").eq("source", "SEC Filing");
+    expect(n!.length).toBeGreaterThan(0);
+  });
+  it("ask answers with deterministic portfolio math for the signed-in user", async () => {
+    const a = makeApi(alice);
+    await a.addPosition("AAPL", 2, 100);
+    const { data: s } = await alice.auth.getSession();
+    const r = await fetch(`${URL_}/functions/v1/ask?fixture=1`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${s.session!.access_token}` },
+      body: JSON.stringify({ question: "what is my total?" }),
+    });
+    const body = await r.json();
+    expect(body.ok).toBe(true);
+    expect(body.answer).toContain("TOTAL:");                 // computed server-side, not modeled
+    const { data: rows } = await alice.from("portfolio").select("holding_id,symbol");
+    for (const x of rows ?? []) if (x.symbol === "AAPL") await a.removeHolding(x.holding_id);
+  });
+  it("ask rejects anonymous callers", async () => {
+    const r = await fetch(`${URL_}/functions/v1/ask?fixture=1`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: "hi" }) });
+    expect(r.status).toBe(401);
+  });
+});

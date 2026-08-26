@@ -112,6 +112,8 @@ Deno.serve(async (req) => {
       const history = (hist ?? []).map((h) => ({ ts: String(h.ts), price: Number(h.price) }));
       const perf = Object.fromEntries(WINDOWS.map(([k, d]) => [k, pctOver(history, d)]));
       const price = history.length ? history[history.length - 1].price : null;
+      const { data: fils } = await admin.from("filings").select("form,title,filed_at")
+        .eq("symbol", symbol).order("filed_at", { ascending: false }).limit(10);
       const { data: tr } = await admin.from("transcripts").select("title,content,published_at")
         .eq("symbol", symbol).order("published_at", { ascending: false, nullsFirst: false }).limit(4);
       const latestTr = tr?.[0];
@@ -123,7 +125,7 @@ Deno.serve(async (req) => {
         const prompt = `Company: ${srow?.name ?? symbol} (${symbol}). Current price ${price}. Price change by window: ${JSON.stringify(perf)}.
 Headlines from the last 7 days (${n30 ?? 0} stories in 30d):
 ${(news7 ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (no fresh headlines)"}
-${latestTr ? `\nLatest earnings call ("${latestTr.title}", ${latestTr.published_at}):\n${String(latestTr.content).slice(0, 7000)}\n${(tr ?? []).slice(1).length ? "Older calls on file: " + (tr ?? []).slice(1).map((t) => t.title).join(" | ") : ""}` : "\n(no earnings transcript on file yet)"}
+${(fils ?? []).length ? `\nSEC filings (last 9 months): ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}${latestTr ? `\nLatest earnings call ("${latestTr.title}", ${latestTr.published_at}):\n${String(latestTr.content).slice(0, 7000)}\n${(tr ?? []).slice(1).length ? "Older calls on file: " + (tr ?? []).slice(1).map((t) => t.title).join(" | ") : ""}` : "\n(no earnings transcript on file yet)"}
 
 Return STRICT JSON: {"bullets": [3-5 strings], "windows": {"d7": str, "d30": str, "d60": str, "y1": str, "y2": str}}.
 bullets: your sharpest takes on what actually matters for this company RIGHT NOW — synthesize the recent news, the earnings call substance, and the price action; each <= 20 words; specific, opinionated, useful. Do not restate headlines; interpret them.

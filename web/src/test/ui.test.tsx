@@ -57,6 +57,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     updateBaseCurrency: vi.fn().mockResolvedValue(undefined),
     getInsights: vi.fn().mockResolvedValue(null),
     getPortfolioInsights: vi.fn().mockResolvedValue(null),
+    ask: vi.fn().mockResolvedValue("• 1W: +$824 (+14.2%)\n• Watch MARA margins"),
     getHistory: vi.fn().mockResolvedValue([
       { ts: "2026-08-20T20:00:00Z", price: 190 }, { ts: "2026-08-21T14:00:00Z", price: 188 },
       { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
@@ -165,6 +166,30 @@ describe("U3 add position", () => {
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/positive/i);
     expect(api.addPosition).not.toHaveBeenCalled();
+  });
+});
+
+describe("U24 ASK", () => {
+  it("asks a question and renders the grounded answer with the advice line", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
+    await userEvent.type(screen.getByLabelText(/ask about your portfolio/i), "my 1W move?");
+    await userEvent.click(screen.getByRole("button", { name: /^ask$/i, hidden: false }));
+    const card = await screen.findByTestId("ask-answer");
+    expect(card.textContent).toContain("+$824");
+    expect(card.textContent).toContain("Not financial advice");
+    expect(api.ask).toHaveBeenCalledWith("my 1W move?");
+  });
+  it("suggestion chips fire a question directly", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /1W movement/i }));
+    await screen.findByTestId("ask-answer");
+    expect(api.ask).toHaveBeenCalledWith("What was my 1W movement in $ and %?");
   });
 });
 

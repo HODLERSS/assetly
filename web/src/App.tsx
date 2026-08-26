@@ -11,8 +11,9 @@ import { PositionScreen } from "./screens/Position";
 import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
 import { SettingsScreen } from "./screens/Settings";
+import { AskScreen } from "./screens/Ask";
 
-export type Tab = "home" | "holdings" | "news" | "settings";
+export type Tab = "home" | "holdings" | "news" | "ask" | "settings";
 export type View =
   | { kind: "tab"; tab: Tab }
   | { kind: "add" }
@@ -119,6 +120,9 @@ export function App({ api = defaultApi }: { api?: Api }) {
           <Holdings rows={rows} api={api} fxRate={fx} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
         {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} />}
+        {view.kind === "tab" && view.tab === "ask" && (
+          <AskScreen api={api} />
+        )}
         {view.kind === "tab" && view.tab === "settings" && (
           <SettingsScreen api={api} profile={profile} rows={rows} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
         )}
@@ -128,7 +132,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         {(["home", "holdings", "news", "settings"] as Tab[]).map((t) => (
           <button key={t} aria-current={tab === t ? "page" : undefined} onClick={() => go({ kind: "tab", tab: t })}>
             <span className="dot" aria-hidden="true" />
-            {t === "home" ? "Home" : t === "holdings" ? "Holdings" : t === "news" ? "News" : "Settings"}
+            {t === "home" ? "Home" : t === "holdings" ? "Holdings" : t === "news" ? "News" : t === "ask" ? "Ask" : "Settings"}
           </button>
         ))}
       </nav>
