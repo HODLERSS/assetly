@@ -17,11 +17,17 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
     return () => { live = false; };
   }, [api, rows.length]);
   const [filter, setFilter] = useState<"all" | "US" | "KR" | "ret">("all");
-  const marketsHeld = [...new Set(rows.map((r) => marketOf(r)).filter((m): m is "US" | "KR" => m === "US" || m === "KR"))];
+  // Crypto files under the market of its pricing currency ($ -> US, \u20a9 -> KR).
+  const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
+    const m = marketOf(r);
+    if (m === "CRYPTO") return r.currency === "KRW" ? "KR" : "US";
+    return m;
+  };
+  const marketsHeld = [...new Set(rows.map(mktFor).filter((m): m is "US" | "KR" => m === "US" || m === "KR"))];
   const hasRet = rows.some((r) => r.account === "401k" || r.account === "ira");
   const chips: ("US" | "KR" | "ret")[] = [...(marketsHeld.length > 1 ? marketsHeld : []), ...(hasRet ? ["ret" as const] : [])];
   const isRet = (r: PortfolioRow) => r.account === "401k" || r.account === "ira";
-  const shown = rows.filter((r) => (filter === "all" ? true : filter === "ret" ? isRet(r) : marketOf(r) === filter));
+  const shown = rows.filter((r) => (filter === "all" ? true : filter === "ret" ? isRet(r) : mktFor(r) === filter));
   // Per-market display currency (Settings matrix): KRW rows follow dispKr, everything else dispUs.
   const show = (v: number | null, r: PortfolioRow): [number | null, "USD" | "KRW"] => {
     const target = r.currency === "KRW" ? dispKr : dispUs;

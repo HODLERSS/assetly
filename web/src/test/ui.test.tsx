@@ -233,6 +233,19 @@ describe("U27 holdings filters", () => {
     row({ holding_id: "hk", symbol: "005930.KS", name: "Samsung Electronics",
       currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 }),
   ];
+  it("USD crypto files under the US filter", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      ...three(),
+      row({ holding_id: "hb", symbol: "BTC-USD", name: "Bitcoin", kind: "crypto", account: "crypto", price: 80000, value: 160000, cost_basis: 100000, total_gl: 60000, change_pct: 1.2 }),
+    ]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await screen.findByText("BTC-USD");
+    await userEvent.click(screen.getByRole("button", { name: /^US$/ }));
+    await waitFor(() => expect(screen.queryByText("005930.KS")).toBeNull());
+    expect(screen.getByText("BTC-USD")).toBeTruthy();
+  });
   it("chips are All, KR, US, Ret only and single-select", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(three()) });
     render(<App api={api} />);
