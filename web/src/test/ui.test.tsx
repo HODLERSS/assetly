@@ -38,7 +38,7 @@ import { App } from "../App";
 import { AuthScreen } from "../screens/Auth";
 import type { Api, PortfolioRow, Profile } from "../lib/api";
 
-const profile: Profile = { id: "u-test", display_name: "Minjae", base_currency: "USD", markets: ["US", "KR"], onboarded_at: "2026-08-23T00:00:00Z" };
+const profile: Profile = { id: "u-test", display_name: "Minjae", base_currency: "USD", display_us: "USD", display_kr: "KRW", markets: ["US", "KR"], onboarded_at: "2026-08-23T00:00:00Z" };
 const row = (over: Partial<PortfolioRow>): PortfolioRow => ({
   holding_id: "h1", symbol: "RDDT", account: "brokerage", nickname: "", name: "Reddit", currency: "USD", kind: "equity",
   qty: 24, cost_basis: 4021.0, avg_cost: 167.54, price: 200, change_pct: 5.26,
@@ -55,6 +55,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     getFxRate: vi.fn().mockResolvedValue(1380),
     getFxInfo: vi.fn().mockResolvedValue({ rate: 1381, asOf: new Date(Date.now() - 60000).toISOString() }),
     updateBaseCurrency: vi.fn().mockResolvedValue(undefined),
+    updateDisplayCcy: vi.fn().mockResolvedValue(undefined),
     getInsights: vi.fn().mockResolvedValue(null),
     getPortfolioInsights: vi.fn().mockResolvedValue(null),
     ask: vi.fn().mockResolvedValue("• 1W: +$824 (+14.2%)\n• Watch MARA margins"),
@@ -151,7 +152,7 @@ describe("U3 add position", () => {
     await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "brokerage", ""));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "brokerage", "", ""));
   });
   it("rejects invalid shares with a visible error", async () => {
     const api = stubApi();
@@ -166,6 +167,98 @@ describe("U3 add position", () => {
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/positive/i);
     expect(api.addPosition).not.toHaveBeenCalled();
+  });
+});
+
+describe("U26 currency matrix", () => {
+  const krwRow = () => row({ holding_id: "hk", symbol: "005930.KS", name: "Samsung Electronics",
+    currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 });
+  it("US assets flip to KRW via updateDisplayCcy", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([row({}), krwRow()]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /US assets in ₩ KRW/i }));
+    await waitFor(() => expect(api.updateDisplayCcy).toHaveBeenCalledWith({ display_us: "KRW" }));
+  });
+  it("KR assets default to KRW and flip to USD", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([row({}), krwRow()]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    const krUsd = await screen.findByRole("button", { name: /KR assets in \$ USD/i });
+    const krKrw = screen.getByRole("button", { name: /KR assets in ₩ KRW/i });
+    expect(krKrw.getAttribute("aria-pressed")).toBe("true");
+    await userEvent.click(krUsd);
+    await waitFor(() => expect(api.updateDisplayCcy).toHaveBeenCalledWith({ display_kr: "USD" }));
+  });
+  it("US rows render in won when display_us is KRW", async () => {
+    const api = stubApi({
+      getPortfolio: vi.fn().mockResolvedValue([row({}), krwRow()]),
+      getProfile: vi.fn().mockResolvedValue({ ...profile, display_us: "KRW" as const }),
+    });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    // RDDT $4,800 * 1380 = ₩6,624,000
+    await waitFor(() => expect(document.body.textContent).toContain("₩6,624,000"));
+  });
+});
+
+describe("U27 multi-select filters", () => {
+  const three = () => [
+    row({}),
+    row({ holding_id: "h2", symbol: "QQQM", name: "Invesco NASDAQ 100", account: "401k" }),
+    row({ holding_id: "hk", symbol: "005930.KS", name: "Samsung Electronics",
+      currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 }),
+  ];
+  it("US and Ret chips combine as an intersection and both stay pressed", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(three()) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^US$/ }));
+    await waitFor(() => expect(screen.queryByText("005930.KS")).toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: /^Ret$/ }));
+    expect(screen.getByText("QQQM")).toBeTruthy();
+    expect(screen.queryByText("RDDT")).toBeNull();
+    expect(screen.getByRole("button", { name: /^US$/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Ret$/ }).getAttribute("aria-pressed")).toBe("true");
+    await userEvent.click(screen.getByRole("button", { name: /^All$/ }));
+    await waitFor(() => expect(screen.getByText("005930.KS")).toBeTruthy());
+  });
+});
+
+describe("U25 notes", () => {
+  it("a note travels from the add form into addPosition", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
+    await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
+    await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
+    await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
+    await userEvent.type(screen.getByLabelText(/note \(optional\)/i), "Earnings dip buy");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "brokerage", "", "Earnings dip buy"));
+  });
+  it("lot notes render and are editable in the sheet", async () => {
+    const api = stubApi({ getLots: vi.fn().mockResolvedValue([
+      { id: "l1", holding_id: "h1", qty: 10, cost_per_share: 166.55, acquired_on: "2026-07-22", note: "DCA week 1" }]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await screen.findByText("DCA week 1");
+    await userEvent.click(screen.getByRole("button", { name: /edit lot 10 shares/i }));
+    const noteInput = screen.getByLabelText(/note \(optional\)/i);
+    expect((noteInput as HTMLInputElement).value).toBe("DCA week 1");
+    await userEvent.clear(noteInput);
+    await userEvent.type(noteInput, "trimmed");
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(api.updateLot).toHaveBeenCalledWith("l1", { qty: 10, cost_per_share: 166.55, acquired_on: "2026-07-22", note: "trimmed" }));
   });
 });
 
@@ -278,7 +371,7 @@ describe("U18 labels + bank accounts", () => {
     await userEvent.type(screen.getByLabelText(/amount \(\$\)/i), "2500");
     await userEvent.type(screen.getByLabelText(/label \(optional\)/i), "Cash (Yeonhwa)");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 2500, 1, undefined, "bank", "Cash (Yeonhwa)"));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 2500, 1, undefined, "bank", "Cash (Yeonhwa)", ""));
   });
   it("rows show the label instead of the generic name, with a Bank tag", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
@@ -305,7 +398,7 @@ describe("U17 KRW cash and debt", () => {
     await userEvent.click(screen.getByRole("button", { name: /₩ KRW/ }));
     await userEvent.type(screen.getByLabelText(/amount \(₩\)/i), "3000000");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH.KRW", 3000000, 1, undefined, "bank", ""));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH.KRW", 3000000, 1, undefined, "bank", "", ""));
   });
   it("debt in won reaches the totals at the FX rate", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
@@ -327,7 +420,7 @@ describe("U16 currency view toggle", () => {
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^settings$/i }));
-    expect(await screen.findByRole("button", { name: /₩ KRW/ })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /view totals in ₩ KRW/i })).toBeTruthy();
     expect((await screen.findByTestId("fx-rate-row")).textContent).toMatch(/₩1,381\/\$/);
   });
   it("switching to KRW persists and re-renders the whole app in won", async () => {
@@ -340,7 +433,7 @@ describe("U16 currency view toggle", () => {
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^settings$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /₩ KRW/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /view totals in ₩ KRW/i }));
     await waitFor(() => expect(api.updateBaseCurrency).toHaveBeenCalledWith("KRW"));
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     // $4,800 * 1380 + ₩13,800,000 = ₩20,424,000
@@ -377,7 +470,7 @@ describe("U15 debt", () => {
     await userEvent.click(await screen.findByRole("button", { name: /add a loan or debt/i }));
     await userEvent.type(screen.getByLabelText(/amount owed/i), "1800");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$DEBT", 1800, 1, undefined, "bank", ""));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$DEBT", 1800, 1, undefined, "bank", "", ""));
   });
 });
 
@@ -394,7 +487,7 @@ describe("U14 accounts + cash", () => {
     await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "401k", ""));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 5, 15.5, undefined, "401k", "", ""));
   });
   it("cash fast path: one amount field, no cost/date, cost pinned at 1", async () => {
     const api = stubApi();
@@ -407,7 +500,7 @@ describe("U14 accounts + cash", () => {
     expect(screen.queryByLabelText(/purchase date/i)).toBeNull();
     await userEvent.type(screen.getByLabelText(/amount/i), "5000");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 5000, 1, undefined, "bank", ""));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 5000, 1, undefined, "bank", "", ""));
   });
   it("non-brokerage rows carry a quiet account tag; brokerage stays untagged; cash rows read as cash", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
@@ -443,7 +536,7 @@ describe("U13 persona-fleet fixes", () => {
   it("home shows today's move in dollars and per-row day %", async () => {
     render(<App api={stubApi()} />);
     const day = await screen.findByTestId("total-day");
-    expect(day.textContent).toMatch(/\+\$240 today/);        // 4800 - 4800/1.0526
+    expect(day.textContent).toMatch(/\+\$240 \(\+5\.26%\) today/);        // 4800 - 4800/1.0526
     expect(day.className).toContain("gain");
     expect((document.body.textContent ?? "").match(/\+5\.26%/g)!.length).toBeGreaterThan(0);
     expect((document.body.textContent ?? "").match(/\+\$240/g)!.length).toBeGreaterThan(1);   // header + mover $

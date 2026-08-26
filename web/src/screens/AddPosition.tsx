@@ -14,6 +14,7 @@ export function AddPosition({ api, onDone, onCancel }: {
   const [account, setAccount] = useState<Account>("brokerage");
   const [ccy, setCcy] = useState<"USD" | "KRW">("USD");
   const [label, setLabel] = useState("");
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -68,9 +69,9 @@ export function AddPosition({ api, onDone, onCancel }: {
           <div className="field">
             <label>Account</label>
             <div className="chips" style={{ padding: 0 }} role="group" aria-label="Account">
-              {(["brokerage", "bank", "401k", "ira"] as Account[]).map((a) => (
+              {(["brokerage", "bank", "401k", "ira", "crypto"] as Account[]).map((a) => (
                 <button key={a} className="chip" aria-pressed={account === a} onClick={() => setAccount(a)}>
-                  {a === "brokerage" ? "Brokerage" : a === "bank" ? "Bank" : a === "401k" ? "401k" : "IRA"}
+                  {a === "brokerage" ? "Brokerage" : a === "bank" ? "Bank" : a === "401k" ? "401k" : a === "ira" ? "IRA" : "Crypto"}
                 </button>
               ))}
             </div>
@@ -99,6 +100,8 @@ export function AddPosition({ api, onDone, onCancel }: {
           <div className="field"><label htmlFor="add-date">Purchase date (optional)</label>
             <input id="add-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           </>)}
+          <div className="field"><label htmlFor="add-note">Note (optional)</label>
+            <input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Earnings dip buy" /></div>
           {err && <div className="error-note" role="alert">{err}</div>}
           <button className="btn" disabled={busy} onClick={async () => {
             const isCash = picked.kind === "cash" || picked.kind === "debt";
@@ -108,7 +111,7 @@ export function AddPosition({ api, onDone, onCancel }: {
             setBusy(true); setErr(null);
             const sym = isCash && ccy === "KRW" ? `${picked.symbol}.KRW` : picked.symbol;
             try {
-              await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "");
+              await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "", note.trim());
               if (!isCash) void api.refreshNews([picked.symbol]);        // stories land while the user looks around
               await onDone();
             }

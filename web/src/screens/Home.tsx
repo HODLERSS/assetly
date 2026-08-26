@@ -1,15 +1,23 @@
 import type { PortfolioRow } from "../lib/api";
-import { marketOf, moverEligible, sessionLabel, isMarketOpen } from "../lib/markets";
-import { dayChangeAmount, glClass, money, signedMoney, signedPct } from "../lib/format";
+import { marketOf, moverEligible, sessionLabel } from "../lib/markets";
+import { convertCcy, dayChangeAmount, glClass, money, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2a: net worth, movers, market pulse.
-const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA" };
+const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
 
-export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
+export function Home({ rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" }: {
   rows: PortfolioRow[];
   totals: { value: number; gl: number; cost: number; day: number; mixed: boolean; fx: number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
+  dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
 }) {
+  // Per-market display currency (Settings matrix).
+  const show = (v: number | null, r: PortfolioRow): [number | null, "USD" | "KRW"] => {
+    const target = r.currency === "KRW" ? dispKr : dispUs;
+    if (target === r.currency || v === null) return [v, r.currency];
+    const c = convertCcy(v, r.currency, target, totals.fx);
+    return c === null ? [v, r.currency] : [c, target];
+  };
   if (rows.length === 0) {
     return (
       <div className="empty">
@@ -25,20 +33,28 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
       <section aria-label="Net worth" style={{ margin: "8px 0 18px" }}>
         <div className="net num" data-testid="net-worth">{money(totals.value, baseCurrency)}</div>
         <div className={`day num ${glClass(totals.day)}`} data-testid="total-day">
-          {signedMoney(totals.day, baseCurrency)} today
+          {signedMoney(totals.day, baseCurrency)} ({signedPct(totals.value - totals.day !== 0 ? (totals.day / (totals.value - totals.day)) * 100 : 0)}) today
+        </div>
+        <div className={`day num ${glClass(totals.gl)}`} data-testid="total-gl" style={{ fontSize: 13.5 }}>
+          {signedMoney(totals.gl, baseCurrency)} ({signedPct(totals.cost !== 0 ? (totals.gl / totals.cost) * 100 : 0)}) all time
         </div>
         {(() => {
-          const has = (m: "US" | "KR") => rows.some((r) => marketOf(r) === m);
-          if (!(has("US") && has("KR"))) return null;
+          const buckets: ["US" | "KR" | "CRYPTO", string][] = [["US", "US"], ["KR", "KRX"], ["CRYPTO", "Crypto"]];
+          const held = buckets.filter(([m]) => rows.some((r) => marketOf(r) === m));
+          if (held.length < 2 || !totals.fx) return null;
+          const agg = (m: string, f: (r: PortfolioRow) => number) => rows.filter((r) => marketOf(r) === m)
+            .reduce((a, r) => a + (convertCcy(f(r), r.currency, baseCurrency, totals.fx) ?? 0), 0);
+          const line = (f: (r: PortfolioRow) => number, base: (r: PortfolioRow) => number) => held.map(([m, label]) => {
+            const d = agg(m, f), b = agg(m, base);
+            return `${label} ${signedMoney(d, baseCurrency)} (${signedPct(b !== 0 ? (d / b) * 100 : 0)})`;
+          }).join(" · ");
           return (
-            <div className="status-line" data-testid="today-markets">
-              across US ({isMarketOpen("US") ? "open" : "closed"}) + KRX ({isMarketOpen("KR") ? "open" : "closed"})
+            <div data-testid="market-breakdown">
+              <div className="status-line num">today: {line((r) => dayChangeAmount(r.value, r.change_pct) ?? 0, (r) => (r.value ?? 0) - (dayChangeAmount(r.value, r.change_pct) ?? 0))}</div>
+              <div className="status-line num">all time: {line((r) => r.total_gl ?? 0, (r) => r.cost_basis ?? 0)}</div>
             </div>
           );
         })()}
-        <div className={`day num ${glClass(totals.gl)}`} data-testid="total-gl" style={{ fontSize: 13.5 }}>
-          {signedMoney(totals.gl, baseCurrency)} all time
-        </div>
         {totals.unconverted > 0 && (
           <div className="status-line" role="note">{totals.unconverted} position{totals.unconverted > 1 ? "s" : ""} awaiting FX rate — excluded from the total</div>
         )}
@@ -50,7 +66,7 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span></span>
             <span className={`right ${glClass(r.change_pct)}`}>
-              <span className="num">{signedMoney(dayChangeAmount(r.value, r.change_pct), r.currency)}</span>
+              {(() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <span className="num">{signedMoney(dv, dc)}</span>; })()}
               <span className="num sub"> · {signedPct(r.change_pct)}</span>
             </span>
           </button>
@@ -64,8 +80,8 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd }: {
               <span className="sub">{r.kind === "cash" ? "cash" : r.kind === "debt" ? "debt" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{ACCT[r.account] ? ` · ${ACCT[r.account]}` : ""}</span>
               {r.change_pct !== null && <span className={`sub num ${glClass(r.change_pct)}`}> · {signedPct(r.change_pct)}</span>}</span>
             <span className="right">
-              <span className="num">{r.kind === "debt" ? signedMoney(-(r.value ?? 0), r.currency) : money(r.value, r.currency)}</span><br />
-              <span className={`num sub ${glClass(r.total_gl)}`}>{signedMoney(r.total_gl, r.currency)}</span>
+              {(() => { const [v, c] = show(r.value, r); return <span className="num">{r.kind === "debt" ? signedMoney(-(v ?? 0), c) : money(v, c)}</span>; })()}<br />
+              {(() => { const [g, c] = show(r.total_gl, r); return <span className={`num sub ${glClass(r.total_gl)}`}>{signedMoney(g, c)}</span>; })()}
             </span>
           </button>
         ))}

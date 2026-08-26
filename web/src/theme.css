@@ -33,15 +33,15 @@ input, select { font: inherit; }
 
 /* app shell */
 #root { max-width: 480px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
-.screen { flex: 1; padding: 16px 16px calc(76px + env(safe-area-inset-bottom)); }
+.screen { flex: 1; padding: 16px 16px calc(88px + env(safe-area-inset-bottom)); }
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; letter-spacing: -0.02em; color: var(--as-primary); }
 .status-line { font: 11.5px var(--as-font-num); color: var(--as-muted); }
 
 .tabbar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--as-surface);
-  border-top: 1px solid var(--as-rule); padding-bottom: env(safe-area-inset-bottom); max-width: 480px; margin: 0 auto; }
-.tabbar button { flex: 1; background: none; border: 0; padding: 10px 0 8px; color: var(--as-muted);
-  font-size: 11.5px; font-weight: 600; display: flex; flex-direction: column; gap: 3px; align-items: center; }
+  border-top: 1px solid var(--as-rule); padding-bottom: max(env(safe-area-inset-bottom), 6px); max-width: 480px; margin: 0 auto; z-index: 20; }
+.tabbar button { flex: 1; background: none; border: 0; padding: 10px 0 10px; color: var(--as-muted);
+  font-size: 11px; font-weight: 600; display: flex; flex-direction: column; gap: 3px; align-items: center; min-height: 50px; }
 .tabbar button[aria-current="page"] { color: var(--as-primary); }
 .tabbar .dot { width: 22px; height: 5px; border-radius: 3px; background: currentColor; opacity: .85; }
 

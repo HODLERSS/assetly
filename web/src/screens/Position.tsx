@@ -62,7 +62,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
       <div className="card">
         {lots.map((l) => (
           <button key={l.id} className="row" onClick={() => setEditing(l)} aria-label={`Edit lot ${l.qty} shares`}>
-            <span className="num">{l.qty} sh @ {moneyExact(l.cost_per_share, row.currency)}</span>
+            <span><span className="num">{l.qty} sh @ {moneyExact(l.cost_per_share, row.currency)}</span>{l.note ? <><br /><span className="sub">{l.note}</span></> : null}</span>
             <span className="sub">{l.acquired_on ?? "no date"}</span>
           </button>
         ))}
@@ -95,10 +95,10 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
           currency={row.currency}
           lot={editing}
           onClose={() => { setEditing(null); setAdding(false); }}
-          onSave={async (qty, cost, date) => {
+          onSave={async (qty, cost, date, note) => {
             try {
-              if (editing) await api.updateLot(editing.id, { qty, cost_per_share: cost, acquired_on: date || null });
-              else await api.addLot(row.holding_id, qty, cost, date || undefined);
+              if (editing) await api.updateLot(editing.id, { qty, cost_per_share: cost, acquired_on: date || null, note: note || null });
+              else await api.addLot(row.holding_id, qty, cost, date || undefined, note);
               setEditing(null); setAdding(false); await reload();
             } catch (e) { setErr(e instanceof Error ? e.message : "Could not save lot."); }
           }}
@@ -114,11 +114,12 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
 
 function LotSheet({ currency, lot, onClose, onSave, onDelete }: {
   currency: "USD" | "KRW"; lot: Lot | null; onClose: () => void;
-  onSave: (qty: number, cost: number, date: string) => void; onDelete?: () => void;
+  onSave: (qty: number, cost: number, date: string, note: string) => void; onDelete?: () => void;
 }) {
   const [qty, setQty] = useState(lot ? String(lot.qty) : "");
   const [cost, setCost] = useState(lot ? String(lot.cost_per_share) : "");
   const [date, setDate] = useState(lot?.acquired_on ?? "");
+  const [note, setNote] = useState(lot?.note ?? "");
   const [msg, setMsg] = useState<string | null>(null);
   return (
     <div className="sheet-back" role="dialog" aria-modal="true" aria-label={lot ? "Edit lot" : "Add lot"}>
@@ -130,12 +131,14 @@ function LotSheet({ currency, lot, onClose, onSave, onDelete }: {
           <input id="lot-cost" className="num" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} /></div>
         <div className="field"><label htmlFor="lot-date">Acquired (optional)</label>
           <input id="lot-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <div className="field"><label htmlFor="lot-note">Note (optional)</label>
+          <input id="lot-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. DCA week 3" /></div>
         {msg && <div className="error-note" role="alert">{msg}</div>}
         <button className="btn" onClick={() => {
           const nq = parseFloat(qty), nc = parseFloat(cost);
           if (!(nq > 0)) { setMsg("Shares must be positive."); return; }
           if (!(nc >= 0)) { setMsg("Cost can't be negative."); return; }
-          onSave(nq, nc, date);
+          onSave(nq, nc, date, note);
         }}>{lot ? "Save changes" : "Add lot"}</button>
         {onDelete && <button className="btn danger" style={{ marginTop: 8 }} onClick={onDelete}>Delete this lot</button>}
         <button className="btn secondary" style={{ marginTop: 8 }} onClick={onClose}>Cancel</button>

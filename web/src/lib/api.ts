@@ -9,7 +9,7 @@ export type SymbolRow = {
   remote?: boolean;      // came from the universal search; must be ensured before first use
 };
 export type Lot = { id: string; holding_id: string; qty: number; cost_per_share: number; acquired_on: string | null; note: string | null };
-export type Account = "brokerage" | "bank" | "401k" | "ira";
+export type Account = "brokerage" | "bank" | "401k" | "ira" | "crypto";
 export type PortfolioRow = {
   holding_id: string; symbol: string; account: Account; nickname: string; name: string; currency: "USD" | "KRW"; kind: string;
   qty: number | null; cost_basis: number | null; avg_cost: number | null;
@@ -21,7 +21,7 @@ export type Insight = {
   bullets: string[]; windows: Record<string, string> | null; model: string; generated_at: string;
 };
 export type NewsItem = { id: string; symbol: string; title: string; url: string; source: string; published_at: string | null };
-export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
+export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
 
 const nm = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
@@ -81,7 +81,7 @@ export function makeApi(sb: SupabaseClient = supabase) {
         price: nm(r.price), change_pct: nm(r.change_pct), value: nm(r.value), total_gl: nm(r.total_gl),
       })) as PortfolioRow[];
     },
-    async addPosition(symbol: string, qty: number, cost_per_share: number, acquired_on?: string, account: Account = "brokerage", nickname = "") {
+    async addPosition(symbol: string, qty: number, cost_per_share: number, acquired_on?: string, account: Account = "brokerage", nickname = "", note = "") {
       const { data: u } = await sb.auth.getUser();
       if (!u.user) throw new Error("not signed in");
       const { data: h, error: hErr } = await sb.from("holdings")
@@ -89,7 +89,7 @@ export function makeApi(sb: SupabaseClient = supabase) {
         .select("id").single();
       if (hErr) throw hErr;
       const { error: lErr } = await sb.from("lots")
-        .insert({ holding_id: h.id, qty, cost_per_share, acquired_on: acquired_on ?? null });
+        .insert({ holding_id: h.id, qty, cost_per_share, acquired_on: acquired_on ?? null, note: note || null });
       if (lErr) {
         // never leave an empty holding behind when the lot is rejected (qty<=0, cost<0)
         const { count } = await sb.from("lots").select("id", { count: "exact", head: true }).eq("holding_id", h.id);
@@ -104,8 +104,8 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error) throw error;
       return (data ?? []).map((l: Record<string, unknown>) => ({ ...l, qty: Number(l.qty), cost_per_share: Number(l.cost_per_share) })) as Lot[];
     },
-    async addLot(holding_id: string, qty: number, cost_per_share: number, acquired_on?: string) {
-      const { error } = await sb.from("lots").insert({ holding_id, qty, cost_per_share, acquired_on: acquired_on ?? null });
+    async addLot(holding_id: string, qty: number, cost_per_share: number, acquired_on?: string, note = "") {
+      const { error } = await sb.from("lots").insert({ holding_id, qty, cost_per_share, acquired_on: acquired_on ?? null, note: note || null });
       if (error) throw error;
     },
     async updateLot(id: string, patch: Partial<Pick<Lot, "qty" | "cost_per_share" | "acquired_on" | "note">>) {
@@ -132,6 +132,13 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { data: u } = await sb.auth.getUser();
       if (!u.user) throw new Error("not signed in");
       const { error } = await sb.from("profiles").update({ base_currency }).eq("id", u.user.id);
+      if (error) throw error;
+    },
+    /** Per-market display currency (US assets / KR assets), each USD or KRW. */
+    async updateDisplayCcy(patch: Partial<{ display_us: "USD" | "KRW"; display_kr: "USD" | "KRW" }>) {
+      const { data: u } = await sb.auth.getUser();
+      if (!u.user) throw new Error("not signed in");
+      const { error } = await sb.from("profiles").update(patch).eq("id", u.user.id);
       if (error) throw error;
     },
     /** Rate + freshness for the Settings surface. */

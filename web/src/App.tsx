@@ -114,10 +114,11 @@ export function App({ api = defaultApi }: { api?: Api }) {
         )}
         {view.kind === "tab" && view.tab === "home" && (
           <Home rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"}
+            dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"}
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
         {view.kind === "tab" && view.tab === "holdings" && (
-          <Holdings rows={rows} api={api} fxRate={fx} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
+          <Holdings rows={rows} api={api} fxRate={fx} totalsCcy={base} dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
         {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} />}
         {view.kind === "tab" && view.tab === "ask" && (
@@ -129,7 +130,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       </main>
 
       <nav className="tabbar" aria-label="Tabs">
-        {(["home", "holdings", "news", "settings"] as Tab[]).map((t) => (
+        {(["home", "holdings", "news", "ask", "settings"] as Tab[]).map((t) => (
           <button key={t} aria-current={tab === t ? "page" : undefined} onClick={() => go({ kind: "tab", tab: t })}>
             <span className="dot" aria-hidden="true" />
             {t === "home" ? "Home" : t === "holdings" ? "Holdings" : t === "news" ? "News" : t === "ask" ? "Ask" : "Settings"}

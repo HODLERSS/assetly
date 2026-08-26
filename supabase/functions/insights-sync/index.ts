@@ -175,12 +175,12 @@ ${desc}
 Sharpest current takes per holding:
 ${[...latestBySym.entries()].map(([sym, b]) => `- ${sym}: ${b}`).join("\n") || "- (none yet)"}
 
-Return STRICT JSON: {"bullets": [3-5 strings]}. You are their portfolio strategist: assess concentration, what actually moved their money today, cross-holding themes, and one thing they should watch or consider. Each bullet <= 22 words, specific to THIS portfolio (use the numbers), opinionated, useful. No generic advice.`;
+Return STRICT JSON: {"bullets": [exactly 3 strings]}. You are their portfolio strategist. Bullet 1: what actually moved their money today, with numbers. Bullet 2: the biggest news right now among the companies they hold. Bullet 3: the concentration or risk to watch. Each bullet 15 words MAX. Plain punchy language, specific to THIS portfolio. Never use em dashes or semicolons. No generic advice.`;
         content = await askMara(key, model, prompt);
       }
       const parsed = content ? parseInsight(content) : null;
       if (!parsed) { errors.push("user " + uid.slice(0, 8) + ": unparseable"); continue; }
-      const { error: piErr } = await admin.from("portfolio_insights").insert({ user_id: uid, bullets: parsed.bullets, model });
+      const { error: piErr } = await admin.from("portfolio_insights").insert({ user_id: uid, bullets: parsed.bullets.slice(0, 3), model });
       if (piErr) errors.push("user " + uid.slice(0, 8) + ": " + piErr.message); else pWrote++;
     } catch (e) { errors.push("user: " + (e instanceof Error ? e.message : String(e))); }
   }
