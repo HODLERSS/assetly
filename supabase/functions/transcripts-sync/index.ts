@@ -51,19 +51,19 @@ Deno.serve(async (req) => {
         await admin.from("news").upsert({ symbol, title: t.title, url: t.url, source: "Earnings Call", published_at: t.pub }, { onConflict: "symbol,url", ignoreDuplicates: true });
         wrote++; continue;
       }
-      const { data: srow } = await admin.from("symbols").select("name").eq("symbol", symbol).single();
-      const q = encodeURIComponent(`"${srow?.name ?? symbol}" earnings call transcript site:fool.com`);
-      const r = await fetch(`https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`, { headers: { "User-Agent": UA } });
+      // Seeking Alpha's per-symbol feed carries DIRECT links to the latest quarterly
+      // transcripts (Google News now encrypts its article URLs — unusable server-side).
+      const yahooSym = symbol.replace(".", "-");
+      const r = await fetch(`https://seekingalpha.com/api/sa/combined/${encodeURIComponent(yahooSym)}.xml`, { headers: { "User-Agent": UA } });
       if (!r.ok) { errors.push(symbol + ": rss " + r.status); continue; }
-      const items = parseItems(await r.text()).filter((i) => /transcript/i.test(i.title)).slice(0, 4);
+      const items = parseItems(await r.text()).filter((i) => /earnings call transcript/i.test(i.title)).slice(0, 4);
       const { data: have } = await admin.from("transcripts").select("url").eq("symbol", symbol);
       const known = new Set((have ?? []).map((x) => x.url));
       for (const it of items) {
         if (known.has(it.url)) continue;
         const page = await fetch(it.url, { headers: { "User-Agent": UA }, redirect: "follow" }).catch(() => null);
-        if (!page?.ok) continue;
-        const content = extractText(await page.text());
-        if (content.length < 2000) continue;                     // not a real transcript page
+        let content = page && page.ok ? extractText(await page.text()) : "";
+        if (content.length < 600) content = it.title;            // article body blocked: title + link still float and date the quarter
         await admin.from("transcripts").upsert({ symbol, url: it.url, title: it.title.slice(0, 400), content, published_at: it.pub }, { onConflict: "symbol,url" });
         await admin.from("news").upsert({ symbol, title: it.title.slice(0, 500), url: it.url.slice(0, 1000), source: "Earnings Call", published_at: it.pub }, { onConflict: "symbol,url", ignoreDuplicates: true });
         wrote++;
