@@ -174,6 +174,23 @@ describe("U3 add position", () => {
   });
 });
 
+describe("U30 news chips", () => {
+  it("cash and debt never get news chips", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({}),
+      row({ holding_id: "hc", symbol: "$CASH.KRW", name: "Cash (KRW)", kind: "cash", currency: "KRW", account: "bank", price: 1, change_pct: 0, value: 235000000 }),
+      row({ holding_id: "hd", symbol: "$DEBT.KRW", name: "Debt (KRW)", kind: "debt", currency: "KRW", account: "bank", price: 1, change_pct: 0, value: 165000000 }),
+    ]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+    await screen.findByRole("button", { name: /all holdings/i });
+    expect(screen.getByRole("button", { name: "RDDT" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "$CASH.KRW" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "$DEBT.KRW" })).toBeNull();
+  });
+});
+
 describe("U26 currency matrix", () => {
   const krwRow = () => row({ holding_id: "hk", symbol: "005930.KS", name: "Samsung Electronics",
     currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 });

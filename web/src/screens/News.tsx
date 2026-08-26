@@ -10,13 +10,16 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
   const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">("loading");
   const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
   const [cache] = useState(() => new Map<string, NewsItem[]>());   // instant chip flips
+  // cash and debt have no news; one chip per symbol even when held in several accounts
+  const newsRows = rows.filter((r, i) => r.kind !== "cash" && r.kind !== "debt"
+    && rows.findIndex((x) => x.symbol === r.symbol) === i);
 
   useEffect(() => {
     let live = true;
     const key = filter ?? "__all__";
     if (cache.has(key)) { setItems(cache.get(key)!); setState("ok"); }   // show instantly, refresh behind
     else setState("loading");
-    const held = rows.map((r) => r.symbol);
+    const held = newsRows.map((r) => r.symbol);
     const scope = filter ?? held;
     const load = () => api.getNews(scope).then((n) => {
       const seen = new Set<string>();
@@ -46,7 +49,7 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
       <h2 className="h1">News</h2>
       <div className="chips" role="group" aria-label="Filter news by holding">
         <button className="chip" aria-pressed={filter === null} onClick={() => setFilter(null)}>All holdings</button>
-        {rows.map((r) => (
+        {newsRows.map((r) => (
           <button key={r.symbol} className="chip" aria-pressed={filter === r.symbol} onClick={() => setFilter(r.symbol)}>
             {r.symbol}
           </button>
