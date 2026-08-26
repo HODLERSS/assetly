@@ -49,9 +49,41 @@ export function mapQuote(q: Record<string, unknown>): CatalogRow | null {
   };
 }
 
-// Yahoo's search API rejects Hangul queries ("Invalid Search Query"), so common Korean
-// names are rewritten to their English search terms. English-first product; KR listings
-// stay fully searchable either way.
+// Korean-language search: Yahoo rejects Hangul outright, so KRX majors are matched from
+// this curated map (code, Korean name, English name) — typing 삼성전자 just works, and the
+// stored name stays Korean per product rule (Korean is welcome on KR listings).
+const KR_NAMES: [string, string, string][] = [
+  ["005930.KS", "삼성전자", "Samsung Electronics"], ["005935.KS", "삼성전자우", "Samsung Electronics (Pref)"],
+  ["000660.KS", "SK하이닉스", "SK Hynix"], ["373220.KS", "LG에너지솔루션", "LG Energy Solution"],
+  ["207940.KS", "삼성바이오로직스", "Samsung Biologics"], ["005380.KS", "현대차", "Hyundai Motor"],
+  ["000270.KS", "기아", "Kia"], ["068270.KS", "셀트리온", "Celltrion"],
+  ["035420.KS", "네이버", "NAVER"], ["035720.KS", "카카오", "Kakao"],
+  ["051910.KS", "LG화학", "LG Chem"], ["006400.KS", "삼성SDI", "Samsung SDI"],
+  ["005490.KS", "포스코홀딩스", "POSCO Holdings"], ["105560.KS", "KB금융", "KB Financial"],
+  ["055550.KS", "신한지주", "Shinhan Financial"], ["086790.KS", "하나금융지주", "Hana Financial"],
+  ["316140.KS", "우리금융지주", "Woori Financial"], ["032830.KS", "삼성생명", "Samsung Life"],
+  ["000810.KS", "삼성화재", "Samsung Fire & Marine"], ["012330.KS", "현대모비스", "Hyundai Mobis"],
+  ["028260.KS", "삼성물산", "Samsung C&T"], ["066570.KS", "LG전자", "LG Electronics"],
+  ["034730.KS", "SK", "SK Inc"], ["003550.KS", "LG", "LG Corp"],
+  ["017670.KS", "SK텔레콤", "SK Telecom"], ["030200.KS", "KT", "KT Corp"],
+  ["036570.KS", "엔씨소프트", "NCSOFT"], ["251270.KS", "넷마블", "Netmarble"],
+  ["259960.KS", "크래프톤", "Krafton"], ["352820.KS", "하이브", "HYBE"],
+  ["090430.KS", "아모레퍼시픽", "Amorepacific"], ["011200.KS", "HMM", "HMM"],
+  ["042660.KS", "한화오션", "Hanwha Ocean"], ["012450.KS", "한화에어로스페이스", "Hanwha Aerospace"],
+  ["047810.KS", "한국항공우주", "Korea Aerospace Industries"], ["010130.KS", "고려아연", "Korea Zinc"],
+  ["010950.KS", "에스오일", "S-Oil"], ["096770.KS", "SK이노베이션", "SK Innovation"],
+  ["267250.KS", "HD현대", "HD Hyundai"], ["329180.KS", "HD현대중공업", "HD Hyundai Heavy"],
+  ["034020.KS", "두산에너빌리티", "Doosan Enerbility"], ["247540.KQ", "에코프로비엠", "EcoPro BM"],
+  ["086520.KQ", "에코프로", "EcoPro"], ["293490.KQ", "카카오게임즈", "Kakao Games"],
+  ["263750.KQ", "펄어비스", "Pearl Abyss"], ["041510.KQ", "에스엠", "SM Entertainment"],
+  ["035900.KQ", "JYP엔터테인먼트", "JYP Entertainment"], ["122870.KQ", "와이지엔터테인먼트", "YG Entertainment"],
+  ["024110.KS", "기업은행", "Industrial Bank of Korea"], ["003690.KS", "코리안리", "Korean Re"],
+  ["139480.KS", "이마트", "E-mart"], ["004370.KS", "농심", "Nongshim"],
+  ["097950.KS", "CJ제일제당", "CJ CheilJedang"], ["051900.KS", "LG생활건강", "LG H&H"],
+  ["005940.KS", "NH투자증권", "NH Investment & Securities"], ["000150.KS", "두산", "Doosan"],
+];
+
+// Fallback rewrites for Hangul queries that miss the map (Yahoo needs English).
 const KR_ALIAS: [RegExp, string][] = [
   [/삼성/, "Samsung"], [/하이닉스|에스케이/, "hynix"], [/현대/, "Hyundai"], [/기아/, "Kia"],
   [/네이버/, "NAVER"], [/카카오/, "Kakao"], [/엘지|LG에너지/, "LG"], [/포스코/, "POSCO"],
@@ -61,6 +93,14 @@ const KR_ALIAS: [RegExp, string][] = [
 async function yahooSearch(qRaw: string): Promise<CatalogRow[]> {
   let q = qRaw;
   if (/[가-힣]/.test(q)) {
+    // Curated KRX map first: exact Korean-name search, Korean display names.
+    const hits = KR_NAMES.filter(([, ko, en]) => ko.includes(q) || en.toLowerCase().includes(q.toLowerCase()));
+    if (hits.length) {
+      return hits.slice(0, 12).map(([code, ko]) => ({
+        symbol: code, name: ko, yahoo: code, kind: "equity",
+        exchange: "KRX", currency: "KRW" as const,
+      }));
+    }
     const hit = KR_ALIAS.find(([re]) => re.test(q));
     if (hit) q = hit[1]; else return [];              // unmapped Hangul: Yahoo would 400
   }

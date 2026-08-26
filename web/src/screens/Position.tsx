@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Api, Lot, PortfolioRow } from "../lib/api";
 import { glClass, money, moneyExact, priceAsOf, signedMoney, signedPct } from "../lib/format";
 import { PriceChart } from "../components/PriceChart";
+import { InsightsCard } from "../components/InsightsCard";
 
 // Canvas 2c + 3i + the remove flow (gap screen g1): detail, every lot editable, delete with confirm.
 export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
@@ -44,6 +45,8 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
 
       {row.account !== "brokerage" && <p className="sub" style={{ margin: "2px 0 0" }}>{row.account === "bank" ? "Bank" : row.account === "401k" ? "401k" : "IRA"} account</p>}
       {row.kind !== "cash" && row.kind !== "debt" && <PriceChart api={api} symbol={row.symbol} currency={row.currency} livePrice={row.price} liveAsOf={row.as_of} avgCost={row.avg_cost} />}
+
+      {row.kind !== "cash" && row.kind !== "debt" && <InsightsCard api={api} symbol={row.symbol} />}
 
       <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div><span className="sub">{row.kind === "crypto" ? "Quantity" : "Shares"}</span><br /><span className="num">{row.qty ?? 0}</span></div>

@@ -96,3 +96,16 @@ input, select { font: inherit; }
   linear-gradient(90deg, var(--as-hover) 25%, var(--as-rule) 50%, var(--as-hover) 75%);
   background-size: 200% 100%; animation: as-shimmer 1.2s infinite linear; }
 @keyframes as-shimmer { to { background-position: -200% 0; } }
+
+/* Assetly Intelligence — distinct from news rows */
+.card.insights { border-left: 3px solid var(--as-primary); padding: 12px 14px; margin: 12px 0; }
+.insights-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.insights-brand { font: 700 12px/1 var(--as-font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--as-primary); }
+.insights-list { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.insights-list li { font-size: 13.5px; line-height: 1.45; }
+.insights-toggle { background: none; border: 0; color: var(--as-primary); font: 600 12px var(--as-font-ui); padding: 8px 0 0; min-height: 32px; }
+.insights-horizons { margin: 4px 0 0; display: grid; gap: 3px; }
+.insights-horizons div { display: flex; gap: 10px; font-size: 12.5px; }
+.insights-horizons dt { color: var(--as-muted); min-width: 30px; font-weight: 600; }
+.insights-horizons dd { margin: 0; }
+.insights-foot { margin: 8px 0 0; font-size: 10.5px; color: var(--as-muted); }

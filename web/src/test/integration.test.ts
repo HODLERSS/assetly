@@ -399,3 +399,36 @@ describe("Accounts + cash positions", () => {
     expect(Number(data!.price)).toBeGreaterThan(0);
   }, 60000);
 });
+
+describe("AI insights + transcripts pipeline (fixture)", () => {
+  const H = { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` };
+  it("transcripts-sync stores the call and floats it into news", async () => {
+    const r = await fetch(`${URL_}/functions/v1/transcripts-sync?fixture=1`, {
+      method: "POST", headers: H, body: JSON.stringify({ symbols: ["RDDT"] }) });
+    expect((await r.json()).ok).toBe(true);
+    const { data: t } = await alice.from("transcripts").select("title").eq("symbol", "RDDT");
+    expect(t!.length).toBeGreaterThan(0);
+    const { data: n } = await alice.from("news").select("source").eq("symbol", "RDDT").eq("source", "Earnings Call");
+    expect(n!.length).toBeGreaterThan(0);
+  });
+  it("insights-sync appends history rows readable through RLS", async () => {
+    for (let i = 0; i < 2; i++) {
+      const r = await fetch(`${URL_}/functions/v1/insights-sync?fixture=1`, {
+        method: "POST", headers: H, body: JSON.stringify({ symbols: ["RDDT"] }) });
+      expect((await r.json()).ok).toBe(true);
+    }
+    const { data } = await alice.from("insights").select("bullets,generated_at").eq("symbol", "RDDT").order("generated_at", { ascending: false });
+    expect(data!.length).toBeGreaterThanOrEqual(2);     // append-only history
+    const api = makeApi(alice);
+    const latest = await api.getInsights("RDDT");
+    expect(latest!.bullets.length).toBeGreaterThanOrEqual(3);
+  });
+  it("Korean-language search returns KRX names in Korean", async () => {
+    const r = await fetch(`${URL_}/functions/v1/symbol-search`, {
+      method: "POST", headers: H, body: JSON.stringify({ q: "삼성전자" }) });
+    const body = await r.json();
+    const syms = body.results.map((x: { symbol: string }) => x.symbol);
+    expect(syms).toContain("005930.KS");
+    expect(body.results[0].name).toMatch(/삼성전자/);
+  });
+});

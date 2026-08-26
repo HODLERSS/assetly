@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Api, NewsItem, PortfolioRow } from "../lib/api";
 import { timeAgo } from "../lib/format";
+import { InsightsCard } from "../components/InsightsCard";
 
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
 export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
@@ -47,6 +48,7 @@ export function NewsScreen({ api, rows }: { api: Api; rows: PortfolioRow[] }) {
           </button>
         ))}
       </div>
+      {filter && <InsightsCard api={api} symbol={filter} />}
       {state === "error" && <div className="error-note" role="alert">News missed the handoff — pull to retry.</div>}
       {state === "pulling" && (
         <p className="empty" aria-busy="true">Pulling the latest stories{filter ? ` for ${filter}` : ""}…</p>

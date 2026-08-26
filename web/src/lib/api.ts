@@ -17,6 +17,9 @@ export type PortfolioRow = {
   value: number | null; total_gl: number | null;
 };
 export type HistoryPoint = { ts: string; price: number };
+export type Insight = {
+  bullets: string[]; windows: Record<string, string> | null; model: string; generated_at: string;
+};
 export type NewsItem = { id: string; symbol: string; title: string; url: string; source: string; published_at: string | null };
 export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
 
@@ -150,6 +153,14 @@ export function makeApi(sb: SupabaseClient = supabase) {
         const { data, error } = await sb.functions.invoke("news-sync", { body: { symbols } });
         return !error && !!data?.ok;
       } catch { return false; }
+    },
+    /** Latest AI insight for a symbol (append-only history; newest wins). */
+    async getInsights(symbol: string): Promise<Insight | null> {
+      const { data } = await sb.from("insights").select("bullets,windows,model,generated_at")
+        .eq("symbol", symbol).order("generated_at", { ascending: false }).limit(1).maybeSingle();
+      if (!data) return null;
+      return { bullets: (data.bullets as string[]) ?? [], windows: data.windows as Record<string, string> | null,
+               model: data.model, generated_at: String(data.generated_at) };
     },
     async getNews(scope?: string | string[]): Promise<NewsItem[]> {
       let q = sb.from("news").select("id,symbol,title,url,source,published_at")

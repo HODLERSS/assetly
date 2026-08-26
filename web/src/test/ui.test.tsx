@@ -44,6 +44,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     getFxRate: vi.fn().mockResolvedValue(1380),
     getFxInfo: vi.fn().mockResolvedValue({ rate: 1381, asOf: new Date(Date.now() - 60000).toISOString() }),
     updateBaseCurrency: vi.fn().mockResolvedValue(undefined),
+    getInsights: vi.fn().mockResolvedValue(null),
     getHistory: vi.fn().mockResolvedValue([
       { ts: "2026-08-20T20:00:00Z", price: 190 }, { ts: "2026-08-21T14:00:00Z", price: 188 },
       { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
@@ -154,6 +155,43 @@ describe("U3 add position", () => {
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/positive/i);
     expect(api.addPosition).not.toHaveBeenCalled();
+  });
+});
+
+describe("U20 Assetly Intelligence", () => {
+  const insight = { bullets: ["Take one about margins", "Take two about the balance sheet", "Take three on valuation"],
+    windows: { d7: "hot week", y1: "long slog" }, model: "MiniMax-M2.7", generated_at: new Date(Date.now() - 300000).toISOString() };
+  it("position shows the branded card with bullets and horizons, separate from news", async () => {
+    const api = stubApi({ getInsights: vi.fn().mockResolvedValue(insight) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    const card = await screen.findByTestId("insights-card");
+    expect(card.textContent).toContain("Assetly Intelligence");
+    expect(card.textContent).toContain("Take one about margins");
+    expect(card.textContent).toContain("not financial advice");
+    await userEvent.click(screen.getByRole("button", { name: /^horizons$/i }));
+    expect(screen.getByText("hot week")).toBeTruthy();
+  });
+  it("no insight yet: card takes no space at all", async () => {
+    const api = stubApi();   // getInsights -> null
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await screen.findByRole("heading", { name: /^lots$/i });
+    expect(screen.queryByTestId("insights-card")).toBeNull();
+  });
+  it("news tab: card appears only when a symbol chip is selected", async () => {
+    const api = stubApi({ getInsights: vi.fn().mockResolvedValue(insight) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+    await screen.findByRole("button", { name: /all holdings/i });
+    expect(screen.queryByTestId("insights-card")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^RDDT$/ }));
+    await screen.findByTestId("insights-card");
   });
 });
 
