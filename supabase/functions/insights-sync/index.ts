@@ -33,7 +33,7 @@ async function askMara(key: string, model: string, prompt: string): Promise<stri
         { role: "system", content: "You are a sharp buy-side equity analyst writing for busy retail investors. Be specific, opinionated, and honest about uncertainty. Plain language, no hedging filler, no disclaimers. Use concrete numbers from the provided data. Respond with the JSON object ONLY — your first character must be '{'. Never write analysis prose outside the JSON." },
         { role: "user", content: prompt },
       ],
-      temperature: 0.3, max_tokens: 3000,
+      temperature: 0.3, max_tokens: 6000,
       response_format: { type: "json_object" },
     }),
   });
