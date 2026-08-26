@@ -63,7 +63,7 @@ export function AskScreen({ api }: { api: Api }) {
         onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
         <input aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
                placeholder="Ask about your portfolio…" style={{ flex: 1, padding: 12, border: "1px solid var(--as-rule)", borderRadius: 6, background: "var(--as-surface)", minHeight: 44 }} />
-        <button className="btn" style={{ width: "auto", padding: "0 18px" }} disabled={busy || !q.trim()}>{busy ? "…" : "Ask"}</button>
+        <button className="btn" style={{ width: "auto", padding: "0 18px" }} disabled={busy || !q.trim()}>{busy ? "…" : "Send"}</button>
       </form>
     </>
   );

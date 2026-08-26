@@ -176,7 +176,7 @@ describe("U24 ASK", () => {
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
     await userEvent.type(screen.getByLabelText(/ask about your portfolio/i), "my 1W move?");
-    await userEvent.click(screen.getByRole("button", { name: /^ask$/i, hidden: false }));
+    await userEvent.click(screen.getByRole("button", { name: /^send$/i }));
     const card = await screen.findByTestId("ask-answer");
     expect(card.textContent).toContain("+$824");
     expect(card.textContent).toContain("Not financial advice");
@@ -217,7 +217,7 @@ describe("U22 portfolio insights on Holdings", () => {
 
 describe("U20 Assetly Intelligence", () => {
   const insight = { bullets: ["Take one about margins", "Take two about the balance sheet", "Take three on valuation"],
-    windows: { d7: "hot week", y1: "long slog" }, model: "MiniMax-M2.7", generated_at: new Date(Date.now() - 300000).toISOString() };
+    windows: { trend: "Hot week against a long slog of a year." }, model: "MiniMax-M2.7", generated_at: new Date(Date.now() - 300000).toISOString() };
   it("position shows the branded card with bullets and horizons, separate from news", async () => {
     const api = stubApi({ getInsights: vi.fn().mockResolvedValue(insight) });
     render(<App api={api} />);
@@ -229,7 +229,7 @@ describe("U20 Assetly Intelligence", () => {
     expect(card.textContent).toContain("Take one about margins");
     expect(card.textContent).toContain("Not financial advice");
     expect(card.textContent).not.toMatch(/MiniMax|MARA Cloud|AI-generated/);
-    expect(screen.getByText("hot week")).toBeTruthy();   // horizons always visible now
+    expect((await screen.findByTestId("insights-trend")).textContent).toContain("Hot week");
   });
   it("no insight yet: card takes no space at all", async () => {
     const api = stubApi();   // getInsights -> null

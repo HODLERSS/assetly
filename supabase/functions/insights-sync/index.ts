@@ -58,7 +58,8 @@ function parseInsight(raw: string): { bullets: string[]; windows: Record<string,
   try {
     const o = JSON.parse(cleaned.slice(start, end));
     if (!Array.isArray(o.bullets) || o.bullets.length < 2) return null;
-    return { bullets: o.bullets.slice(0, 5).map(String), windows: o.windows ?? {} };
+    const windows = o.trend ? { trend: String(o.trend) } : (o.windows ?? {});
+    return { bullets: o.bullets.slice(0, 5).map(String), windows };
   } catch { return null; }
 }
 
@@ -127,9 +128,9 @@ Headlines from the last 7 days (${n30 ?? 0} stories in 30d):
 ${(news7 ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (no fresh headlines)"}
 ${(fils ?? []).length ? `\nSEC filings (last 9 months): ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}${latestTr ? `\nLatest earnings call ("${latestTr.title}", ${latestTr.published_at}):\n${String(latestTr.content).slice(0, 7000)}\n${(tr ?? []).slice(1).length ? "Older calls on file: " + (tr ?? []).slice(1).map((t) => t.title).join(" | ") : ""}` : "\n(no earnings transcript on file yet)"}
 
-Return STRICT JSON: {"bullets": [3-5 strings], "windows": {"d7": str, "d30": str, "d60": str, "y1": str, "y2": str}}.
-bullets: your sharpest takes on what actually matters for this company RIGHT NOW — synthesize the recent news, the earnings call substance, and the price action; each <= 20 words; specific, opinionated, useful. Do not restate headlines; interpret them.
-windows: one crisp line each (<= 12 words) on what that horizon's move means.`;
+Return STRICT JSON: {"bullets": [3-4 strings], "trend": str}.
+bullets: the sharpest takes on what matters RIGHT NOW, synthesizing news, the earnings call, and price action. Each 10-15 words MAX. Interpret, never restate headlines. Plain punchy language. Never use em dashes or semicolons.
+trend: ONE sentence, max 20 words, covering the recent move and the longer-term picture together.`;
         content = await askMara(key, model, prompt);
       }
       const parsed = content ? parseInsight(content) : null;

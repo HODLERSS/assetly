@@ -38,12 +38,10 @@ export function InsightsCard({ api, symbol }: { api: Api; symbol: string }) {
       <ul className="insights-list">
         {ins.bullets.map((b, i) => <li key={i}>{b}</li>)}
       </ul>
-      {ins.windows && HORIZONS.some(([k]) => ins.windows![k]) && (
-        <dl className="insights-horizons" style={{ marginTop: 8, borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>
-          {HORIZONS.filter(([k]) => ins.windows![k]).map(([k, label]) => (
-            <div key={k}><dt className="num">{label}</dt><dd>{ins.windows![k]}</dd></div>
-          ))}
-        </dl>
+      {ins.windows && (ins.windows.trend || HORIZONS.some(([k]) => ins.windows![k])) && (
+        <p className="sub" data-testid="insights-trend" style={{ marginTop: 8, borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>
+          {ins.windows.trend ?? [ins.windows.d7, ins.windows.y1].filter(Boolean).join(" ")}
+        </p>
       )}
       <p className="insights-foot">Not financial advice</p>
     </section>
