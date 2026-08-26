@@ -31,6 +31,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
     setLots(await api.getLots(row.holding_id));
     await onChanged();
   };
+  const cashish = row.kind === "cash" || row.kind === "debt";
 
   return (
     <>
@@ -56,22 +57,27 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <h3 className="h1" style={{ fontSize: 15 }}>Lots</h3>
-        <button className="chip" onClick={() => setAdding(true)}>+ Lot</button>
+        <h3 className="h1" style={{ fontSize: 15 }}>{cashish ? "Balance" : "Lots"}</h3>
+        {!cashish && <button className="chip" onClick={() => setAdding(true)}>+ Lot</button>}
       </div>
       <div className="card">
         {lots.map((l) => (
           <button key={l.id} className="row" onClick={() => setEditing(l)} aria-label={`Edit lot ${l.qty} shares`}>
-            <span><span className="num">{l.qty} sh @ {moneyExact(l.cost_per_share, row.currency)}</span>{l.note ? <><br /><span className="sub">{l.note}</span></> : null}</span>
-            <span className="sub">{l.acquired_on ?? "no date"}</span>
+            <span><span className="num">{cashish ? money(l.qty, row.currency) : `${l.qty} sh @ ${moneyExact(l.cost_per_share, row.currency)}`}</span>{l.note ? <><br /><span className="sub">{l.note}</span></> : null}</span>
+            <span className="sub">{cashish ? "" : `${l.acquired_on ?? "no date"} · `}<span style={{ color: "var(--as-primary)", fontWeight: 600 }}>Edit</span></span>
           </button>
         ))}
         {lotsLoaded && lots.length === 0 && <p className="empty">No lots yet.</p>}
         {!lotsLoaded && <div className="row" aria-busy="true" aria-label="Loading lots"><span className="sub">Loading lots…</span></div>}
       </div>
-      <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 0 16px" }}>The average is derived from lots — never typed.</p>
+      {!cashish && <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 0 16px" }}>The average is derived from lots — never typed.</p>}
 
       {err && <div className="error-note" role="alert">{err}</div>}
+      {lots.length === 1 && (
+        <button className="btn secondary" style={{ marginBottom: 8 }} onClick={() => setEditing(lots[0])}>
+          {cashish ? "Edit amount" : "Edit position"}
+        </button>
+      )}
       <button className="btn danger" style={{ marginBottom: 20 }} onClick={() => setConfirming(true)}>Remove position</button>
 
       {confirming && (
@@ -93,6 +99,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
       {(editing || adding) && (
         <LotSheet
           currency={row.currency}
+          cashish={cashish}
           lot={editing}
           onClose={() => { setEditing(null); setAdding(false); }}
           onSave={async (qty, cost, date, note) => {
@@ -112,8 +119,8 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
   );
 }
 
-function LotSheet({ currency, lot, onClose, onSave, onDelete }: {
-  currency: "USD" | "KRW"; lot: Lot | null; onClose: () => void;
+function LotSheet({ currency, cashish = false, lot, onClose, onSave, onDelete }: {
+  currency: "USD" | "KRW"; cashish?: boolean; lot: Lot | null; onClose: () => void;
   onSave: (qty: number, cost: number, date: string, note: string) => void; onDelete?: () => void;
 }) {
   const [qty, setQty] = useState(lot ? String(lot.qty) : "");
@@ -124,19 +131,21 @@ function LotSheet({ currency, lot, onClose, onSave, onDelete }: {
   return (
     <div className="sheet-back" role="dialog" aria-modal="true" aria-label={lot ? "Edit lot" : "Add lot"}>
       <div className="sheet">
-        <h2>{lot ? "Edit lot" : "Add lot"}</h2>
-        <div className="field"><label htmlFor="lot-qty">Shares</label>
+        <h2>{cashish ? (lot ? "Edit balance" : "Add balance") : lot ? "Edit lot" : "Add lot"}</h2>
+        <div className="field"><label htmlFor="lot-qty">{cashish ? `Amount (${currency === "KRW" ? "₩" : "$"})` : "Shares"}</label>
           <input id="lot-qty" className="num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} /></div>
+        {!cashish && (<>
         <div className="field"><label htmlFor="lot-cost">Cost per share ({currency === "KRW" ? "₩" : "$"})</label>
           <input id="lot-cost" className="num" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} /></div>
         <div className="field"><label htmlFor="lot-date">Acquired (optional)</label>
           <input id="lot-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        </>)}
         <div className="field"><label htmlFor="lot-note">Note (optional)</label>
           <input id="lot-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. DCA week 3" /></div>
         {msg && <div className="error-note" role="alert">{msg}</div>}
         <button className="btn" onClick={() => {
-          const nq = parseFloat(qty), nc = parseFloat(cost);
-          if (!(nq > 0)) { setMsg("Shares must be positive."); return; }
+          const nq = parseFloat(qty), nc = cashish ? 1 : parseFloat(cost);
+          if (!(nq > 0)) { setMsg(cashish ? "Amount must be positive." : "Shares must be positive."); return; }
           if (!(nc >= 0)) { setMsg("Cost can't be negative."); return; }
           onSave(nq, nc, date, note);
         }}>{lot ? "Save changes" : "Add lot"}</button>

@@ -286,6 +286,49 @@ describe("U28 pre-open pulse", () => {
   });
 });
 
+describe("U32 edit from the position view", () => {
+  it("single-lot position: Edit button opens the sheet, saving updates the lot and refreshes", async () => {
+    const api = stubApi({ getLots: vi.fn().mockResolvedValue([
+      { id: "l1", holding_id: "h1", qty: 10, cost_per_share: 166.55, acquired_on: null, note: null }]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    const calls = vi.mocked(api.getPortfolio).mock.calls.length;
+    await userEvent.click(await screen.findByRole("button", { name: /^edit position$/i }));
+    const shares = screen.getByLabelText(/^shares$/i);
+    await userEvent.clear(shares);
+    await userEvent.type(shares, "12");
+    const noteInput = screen.getByLabelText(/note \(optional\)/i);
+    await userEvent.type(noteInput, "trimmed on strength");
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(api.updateLot).toHaveBeenCalledWith("l1",
+      { qty: 12, cost_per_share: 166.55, acquired_on: null, note: "trimmed on strength" }));
+    await waitFor(() => expect(vi.mocked(api.getPortfolio).mock.calls.length).toBeGreaterThan(calls));
+  });
+  it("cash position: Edit amount is a single field, cost stays pinned at 1", async () => {
+    const api = stubApi({
+      getPortfolio: vi.fn().mockResolvedValue([
+        row({ holding_id: "hc", symbol: "$CASH", name: "Cash", kind: "cash", account: "bank", price: 1, change_pct: 0, value: 5000, cost_basis: 5000, total_gl: 0, qty: 5000 })]),
+      getLots: vi.fn().mockResolvedValue([
+        { id: "lc", holding_id: "hc", qty: 5000, cost_per_share: 1, acquired_on: null, note: null }]),
+    });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Cash/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^edit amount$/i }));
+    expect(screen.queryByLabelText(/cost per share/i)).toBeNull();
+    expect(screen.queryByLabelText(/acquired/i)).toBeNull();
+    const amt = screen.getByLabelText(/^amount/i);
+    await userEvent.clear(amt);
+    await userEvent.type(amt, "6000");
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(api.updateLot).toHaveBeenCalledWith("lc",
+      { qty: 6000, cost_per_share: 1, acquired_on: null, note: null }));
+  });
+});
+
 describe("U25 notes", () => {
   it("a note travels from the add form into addPosition", async () => {
     const api = stubApi();
