@@ -194,11 +194,11 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error) throw error;
       return (data ?? []) as NewsItem[];
     },
-    /** ASK: grounded portfolio Q&A. Returns the analyst answer text. */
-    async ask(question: string): Promise<string> {
+    /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
+    async ask(question: string): Promise<{ answer: string; followups: string[] }> {
       const { data, error } = await sb.functions.invoke("ask", { body: { question } });
       if (error || !data?.ok) throw new Error(data?.error ?? "Ask is unavailable right now.");
-      return String(data.answer);
+      return { answer: String(data.answer), followups: Array.isArray(data.followups) ? data.followups.map(String).slice(0, 3) : [] };
     },
     async signOut() { await sb.auth.signOut(); },
   };

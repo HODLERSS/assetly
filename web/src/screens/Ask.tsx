@@ -8,7 +8,7 @@ const SUGGESTIONS = [
   "Am I too concentrated?",
 ];
 
-type Turn = { q: string; a: string | null; error?: string };
+type Turn = { q: string; a: string | null; followups?: string[]; error?: string };
 
 // Minimal markdown for what the model actually emits: **bold**, bullet lines, light headers.
 function inline(text: string): ReactNode[] {
@@ -46,8 +46,8 @@ export function AskScreen({ api }: { api: Api }) {
     setBusy(true);
     setTurns((t) => [...t, { q: text, a: null }]);
     try {
-      const a = await api.ask(text);
-      setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a } : x)));
+      const { answer, followups } = await api.ask(text);
+      setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: answer, followups } : x)));
     } catch (e) {
       setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: "", error: e instanceof Error ? e.message : "Something broke — try again." } : x)));
     } finally { setBusy(false); }
@@ -80,6 +80,13 @@ export function AskScreen({ api }: { api: Api }) {
               </div>
             )}
             {t.error && <div className="error-note" role="alert">{t.error}</div>}
+            {i === turns.length - 1 && !busy && t.a && !t.error && (t.followups?.length ?? 0) > 0 && (
+              <div className="chips" style={{ flexWrap: "wrap", padding: 0 }} aria-label="Follow-up questions">
+                {t.followups!.map((f) => (
+                  <button key={f} className="chip" onClick={() => void submit(f)}>{f}</button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         <div ref={endRef} />

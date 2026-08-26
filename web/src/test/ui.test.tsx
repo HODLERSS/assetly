@@ -62,7 +62,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     getPulse: vi.fn().mockResolvedValue([]),
     getInsights: vi.fn().mockResolvedValue(null),
     getPortfolioInsights: vi.fn().mockResolvedValue(null),
-    ask: vi.fn().mockResolvedValue("• 1W: +$824 (+14.2%)\n• Watch MARA margins"),
+    ask: vi.fn().mockResolvedValue({ answer: "1W movement: +$824 (+14.2%). MARA led.", followups: ["What drove MARA this week?", "How is my 1M trend?"] }),
     getHistory: vi.fn().mockResolvedValue([
       { ts: "2026-08-20T20:00:00Z", price: 190 }, { ts: "2026-08-21T14:00:00Z", price: 188 },
       { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
@@ -321,7 +321,7 @@ describe("U25 notes", () => {
 
 describe("U29 ASK chat", () => {
   it("renders markdown bold and bullets inside a chat bubble", async () => {
-    const api = stubApi({ ask: vi.fn().mockResolvedValue("**Bottom line**: solid week.\n\u2022 MARA led with **+5.8%**\n- Watch concentration") });
+    const api = stubApi({ ask: vi.fn().mockResolvedValue({ answer: "**Bottom line**: solid week.\n\u2022 MARA led with **+5.8%**\n- Watch concentration", followups: ["How concentrated am I?", "What moved MARA?"] }) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
@@ -360,6 +360,25 @@ describe("U24 ASK", () => {
     await userEvent.click(screen.getByRole("button", { name: /1W movement/i }));
     await screen.findByTestId("ask-answer");
     expect(api.ask).toHaveBeenCalledWith("What was my 1W movement in $ and %?");
+  });
+});
+
+describe("U31 ASK follow-ups", () => {
+  it("renders 2-3 follow-up chips under the latest answer and they fire the next question", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
+    await userEvent.type(screen.getByLabelText(/ask about your portfolio/i), "my week?");
+    await userEvent.click(screen.getByRole("button", { name: /^send$/i }));
+    await screen.findByTestId("ask-answer");
+    const fu = await screen.findByRole("button", { name: "What drove MARA this week?" });
+    expect(screen.getByRole("button", { name: "How is my 1M trend?" })).toBeTruthy();
+    await userEvent.click(fu);
+    await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith("What drove MARA this week?"));
+    // chips belong to the LATEST turn only; after the follow-up answered, new chips render
+    const chips = screen.getAllByRole("button", { name: "What drove MARA this week?" });
+    expect(chips.length).toBe(1);
   });
 });
 

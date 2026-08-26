@@ -47,7 +47,7 @@ function excerptFor(content: string, question: string): string {
 }
 
 /** M2.7 narrates its reasoning unless forced into JSON; extract only the answer. */
-function parseAnswer(raw: string): string | null {
+function parseAnswer(raw: string): { answer: string; followups: string[] } | null {
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   const start = cleaned.indexOf('{"answer"') >= 0 ? cleaned.indexOf('{"answer"') : cleaned.indexOf("{");
   if (start < 0) return null;
@@ -57,7 +57,12 @@ function parseAnswer(raw: string): string | null {
     else if (cleaned[i] === "}") { depth--; if (depth === 0) { end = i + 1; break; } }
   }
   if (end < 0) return null;
-  try { const o = JSON.parse(cleaned.slice(start, end)); return o.answer ? String(o.answer) : null; } catch { return null; }
+  try {
+    const o = JSON.parse(cleaned.slice(start, end));
+    if (!o.answer) return null;
+    const followups = Array.isArray(o.followups) ? o.followups.map(String).filter((f: string) => f.trim()).slice(0, 3) : [];
+    return { answer: String(o.answer), followups };
+  } catch { return null; }
 }
 
 Deno.serve(async (req) => {
@@ -165,7 +170,7 @@ Question: "${question}"
 
 Answer as their analyst: direct, specific, tight. Ground qualitative answers in the signals, headlines, filings, and earnings-call material above, not just prices. Numbers must come only from the stats block. Earnings-call titles and dates listed are reliable even when the excerpt is partial. HARD LIMIT: 80 words total, 3-5 short bullets max, readable on a phone in under 20 seconds. No preamble, no repetition. If the question needs data you truly don't have, one line saying exactly what's missing.`;
 
-  if (fixture) return json({ ok: true, answer: "FIXTURE\n" + "TOTAL:" + Math.round(totNow) + "\n" + totalLines, mentioned });
+  if (fixture) return json({ ok: true, answer: "FIXTURE\n" + "TOTAL:" + Math.round(totNow) + "\n" + totalLines, followups: ["Fixture follow-up one?", "Fixture follow-up two?"], mentioned });
 
   let key = Deno.env.get("MARA_API_KEY") ?? "";
   if (!key) { const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" }); key = data ?? ""; }
@@ -175,7 +180,7 @@ Answer as their analyst: direct, specific, tight. Ground qualitative answers in 
     body: JSON.stringify({
       model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7",
       messages: [
-        { role: "system", content: 'You are a direct, analytical portfolio assistant. Respond ONLY with strict JSON: {"answer": "..."}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, 80 words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no disclaimers.' },
+        { role: "system", content: 'You are a direct, analytical portfolio assistant. Respond ONLY with strict JSON: {"answer": "...", "followups": ["...", "..."]}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, 80 words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no disclaimers. The followups value: AFTER writing the answer, reread it and offer 2-3 natural next questions this user would ask, each under 12 words, ending with ?, answerable from their portfolio stats, news, SEC filings, or earnings-call data, and never repeating the question just answered.' },
         { role: "user", content: prompt },
       ],
       temperature: 0.2, max_tokens: 6000,
@@ -185,7 +190,8 @@ Answer as their analyst: direct, specific, tight. Ground qualitative answers in 
   if (!r.ok) return json({ ok: false, error: "model " + r.status }, 502);
   const out = await r.json().catch(() => null);
   const parsedA = parseAnswer(out?.choices?.[0]?.message?.content ?? "");
-  const answer = (parsedA ?? "").trim().replace(/\s*\u2014\s*/g, ": ").replace(/\s*\u2013\s*/g, ": ");
+  const deDash = (v: string) => v.trim().replace(/\s*\u2014\s*/g, ": ").replace(/\s*\u2013\s*/g, ": ");
+  const answer = deDash(parsedA?.answer ?? "");
   if (!answer) return json({ ok: false, error: "The analyst lost the thread mid-answer. Ask again." }, 502);
-  return json({ ok: true, answer, mentioned });
+  return json({ ok: true, answer, followups: (parsedA?.followups ?? []).map(deDash), mentioned });
 });
