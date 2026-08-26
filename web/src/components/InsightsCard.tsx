@@ -8,7 +8,6 @@ const HORIZONS: [string, string][] = [["d7", "7D"], ["d30", "30D"], ["d60", "60D
 
 export function InsightsCard({ api, symbol }: { api: Api; symbol: string }) {
   const [ins, setIns] = useState<Insight | null | undefined>(undefined);   // undefined = loading
-  const [horizons, setHorizons] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -29,13 +28,8 @@ export function InsightsCard({ api, symbol }: { api: Api; symbol: string }) {
       <ul className="insights-list">
         {ins.bullets.map((b, i) => <li key={i}>{b}</li>)}
       </ul>
-      {ins.windows && Object.keys(ins.windows).length > 0 && (
-        <button className="insights-toggle" aria-expanded={horizons} onClick={() => setHorizons(!horizons)}>
-          {horizons ? "Hide horizons" : "Horizons"}
-        </button>
-      )}
-      {horizons && ins.windows && (
-        <dl className="insights-horizons">
+      {ins.windows && HORIZONS.some(([k]) => ins.windows![k]) && (
+        <dl className="insights-horizons" style={{ marginTop: 8, borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>
           {HORIZONS.filter(([k]) => ins.windows![k]).map(([k, label]) => (
             <div key={k}><dt className="num">{label}</dt><dd>{ins.windows![k]}</dd></div>
           ))}

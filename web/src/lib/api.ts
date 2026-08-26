@@ -162,6 +162,13 @@ export function makeApi(sb: SupabaseClient = supabase) {
       return { bullets: (data.bullets as string[]) ?? [], windows: data.windows as Record<string, string> | null,
                model: data.model, generated_at: String(data.generated_at) };
     },
+    /** Latest portfolio-level insight for the signed-in user. */
+    async getPortfolioInsights(): Promise<Insight | null> {
+      const { data } = await sb.from("portfolio_insights").select("bullets,model,generated_at")
+        .order("generated_at", { ascending: false }).limit(1).maybeSingle();
+      if (!data) return null;
+      return { bullets: (data.bullets as string[]) ?? [], windows: null, model: data.model, generated_at: String(data.generated_at) };
+    },
     async getNews(scope?: string | string[]): Promise<NewsItem[]> {
       let q = sb.from("news").select("id,symbol,title,url,source,published_at")
         .order("published_at", { ascending: false, nullsFirst: false }).limit(50);

@@ -423,6 +423,21 @@ describe("AI insights + transcripts pipeline (fixture)", () => {
     const latest = await api.getInsights("RDDT");
     expect(latest!.bullets.length).toBeGreaterThanOrEqual(3);
   });
+  it("portfolio-level insights: per-user row, readable only by its owner", async () => {
+    const H = { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE}` };
+    await makeApi(alice).addPosition("AAPL", 5, 200);           // ensure alice has a book
+    const r = await fetch(`${URL_}/functions/v1/insights-sync?fixture=1`, {
+      method: "POST", headers: H, body: JSON.stringify({ symbols: ["AAPL"] }) });
+    const body = await r.json();
+    expect(body.ok).toBe(true);
+    expect(body.portfolioWrote).toBeGreaterThan(0);
+    const mine = await makeApi(alice).getPortfolioInsights();
+    expect(mine!.bullets[0]).toContain("portfolio fixture");
+    const { data: bobSees } = await bob.from("portfolio_insights").select("user_id");
+    const { data: u } = await alice.auth.getUser();
+    expect((bobSees ?? []).every((x) => x.user_id !== u.user!.id)).toBe(true);   // RLS isolation
+  });
+
   it("Korean-language search returns KRX names in Korean", async () => {
     const r = await fetch(`${URL_}/functions/v1/symbol-search`, {
       method: "POST", headers: H, body: JSON.stringify({ q: "삼성전자" }) });

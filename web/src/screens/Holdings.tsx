@@ -1,14 +1,23 @@
 import { useState } from "react";
 import type { PortfolioRow } from "../lib/api";
 import { marketOf } from "../lib/markets";
+import { useEffect, useState } from "react";
+import type { Insight } from "../lib/api";
+import { timeAgo } from "../lib/format";
 import { glClass, money, moneyExact, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2b: the table as a touch list with filter chips.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA" };
 
-export function Holdings({ rows, onOpen, onAdd }: {
-  rows: PortfolioRow[]; onOpen: (id: string) => void; onAdd: () => void;
+export function Holdings({ rows, onOpen, onAdd, api }: {
+  rows: PortfolioRow[]; onOpen: (id: string) => void; onAdd: () => void; api: import("../lib/api").Api;
 }) {
+  const [pins, setPins] = useState<Insight | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (rows.length > 0) api.getPortfolioInsights().then((v) => { if (live) setPins(v); }).catch(() => {});
+    return () => { live = false; };
+  }, [api, rows.length]);
   const [filter, setFilter] = useState<string>("all");
   const marketsHeld = [...new Set(rows.map((r) => marketOf(r)).filter((m): m is "US" | "KR" => m === "US" || m === "KR"))];
   const kinds = ["all", ...(marketsHeld.length > 1 ? marketsHeld : []), ...new Set(rows.map((r) => r.kind))];
@@ -22,6 +31,18 @@ export function Holdings({ rows, onOpen, onAdd }: {
         <h2 className="h1">Holdings</h2>
         <button className="chip" onClick={onAdd} aria-label="Add position">+ Add</button>
       </div>
+      {pins && (
+        <section className="card insights" data-testid="portfolio-insights-card" aria-label="Portfolio insights">
+          <div className="insights-head">
+            <span className="insights-brand">Your portfolio</span>
+            <span className="sub num">{timeAgo(pins.generated_at)}</span>
+          </div>
+          <ul className="insights-list">
+            {pins.bullets.map((b, i) => <li key={i}>{b}</li>)}
+          </ul>
+          <p className="insights-foot">Not financial advice</p>
+        </section>
+      )}
       <div className="chips" role="group" aria-label="Filter by type">
         {kinds.map((k) => (
           <button key={k} className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>

@@ -56,6 +56,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     getFxInfo: vi.fn().mockResolvedValue({ rate: 1381, asOf: new Date(Date.now() - 60000).toISOString() }),
     updateBaseCurrency: vi.fn().mockResolvedValue(undefined),
     getInsights: vi.fn().mockResolvedValue(null),
+    getPortfolioInsights: vi.fn().mockResolvedValue(null),
     getHistory: vi.fn().mockResolvedValue([
       { ts: "2026-08-20T20:00:00Z", price: 190 }, { ts: "2026-08-21T14:00:00Z", price: 188 },
       { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
@@ -167,6 +168,28 @@ describe("U3 add position", () => {
   });
 });
 
+describe("U22 portfolio insights on Holdings", () => {
+  it("renders the quiet 'Your portfolio' card above the list", async () => {
+    const api = stubApi({ getPortfolioInsights: vi.fn().mockResolvedValue({
+      bullets: ["MARA is 39% of assets — one earnings call moves your month", "Korea book carried today (+1.2%) while US slept", "Cash buffer under 2 months of burn"],
+      windows: null, model: "MiniMax-M2.7", generated_at: new Date().toISOString() }) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    const card = await screen.findByTestId("portfolio-insights-card");
+    expect(card.textContent).toContain("Your portfolio");
+    expect(card.textContent).toContain("39% of assets");
+    expect(card.textContent).toContain("Not financial advice");
+  });
+  it("absent quietly when there is none yet", async () => {
+    render(<App api={stubApi()} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await screen.findByText(/Reddit/);
+    expect(screen.queryByTestId("portfolio-insights-card")).toBeNull();
+  });
+});
+
 describe("U20 Assetly Intelligence", () => {
   const insight = { bullets: ["Take one about margins", "Take two about the balance sheet", "Take three on valuation"],
     windows: { d7: "hot week", y1: "long slog" }, model: "MiniMax-M2.7", generated_at: new Date(Date.now() - 300000).toISOString() };
@@ -181,8 +204,7 @@ describe("U20 Assetly Intelligence", () => {
     expect(card.textContent).toContain("Take one about margins");
     expect(card.textContent).toContain("Not financial advice");
     expect(card.textContent).not.toMatch(/MiniMax|MARA Cloud|AI-generated/);
-    await userEvent.click(screen.getByRole("button", { name: /^horizons$/i }));
-    expect(screen.getByText("hot week")).toBeTruthy();
+    expect(screen.getByText("hot week")).toBeTruthy();   // horizons always visible now
   });
   it("no insight yet: card takes no space at all", async () => {
     const api = stubApi();   // getInsights -> null

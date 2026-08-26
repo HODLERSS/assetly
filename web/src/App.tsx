@@ -116,7 +116,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
         {view.kind === "tab" && view.tab === "holdings" && (
-          <Holdings rows={rows} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
+          <Holdings rows={rows} api={api} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
         {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} />}
         {view.kind === "tab" && view.tab === "settings" && (

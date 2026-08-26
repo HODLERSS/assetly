@@ -138,5 +138,48 @@ windows: one crisp line each (<= 12 words) on what that horizon's move means.`;
       if (upErr) errors.push(symbol + ": " + upErr.message); else wrote++;
     } catch (e) { errors.push(symbol + ": " + (e instanceof Error ? e.message : String(e))); }
   }
-  return json({ ok: true, targets: targets.length, wrote, errors: errors.slice(0, 5) });
+  // ---- portfolio-level insights: per user, their actual mix ----
+  let pWrote = 0;
+  const { data: pf } = await admin.from("portfolio").select("user_id, symbol, kind, account, currency, value, change_pct, nickname");
+  const byUser = new Map<string, NonNullable<typeof pf>>();
+  for (const r of pf ?? []) {
+    if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
+    byUser.get(r.user_id)!.push(r);
+  }
+  const { data: fxRow } = await admin.from("prices").select("price").eq("symbol", "USDKRW").maybeSingle();
+  const fx = fxRow ? Number(fxRow.price) : 1380;
+  const userIds = [...byUser.keys()].slice(0, 10);
+  for (const uid of userIds) {
+    try {
+      const rows = byUser.get(uid)!;
+      const usd = (r: (typeof rows)[number]) => (r.currency === "KRW" ? Number(r.value ?? 0) / fx : Number(r.value ?? 0));
+      const assets = rows.filter((r) => r.kind !== "debt");
+      const debt = rows.filter((r) => r.kind === "debt").reduce((a, r) => a + usd(r), 0);
+      const total = assets.reduce((a, r) => a + usd(r), 0);
+      if (total < 100) continue;                                   // nothing meaningful to say
+      const desc = assets.sort((a, b) => usd(b) - usd(a)).slice(0, 15)
+        .map((r) => `${r.nickname || r.symbol} (${r.kind}${r.account !== "brokerage" ? ", " + r.account : ""}): $${Math.round(usd(r))} = ${(usd(r) / total * 100).toFixed(1)}% of assets, day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}`).join("\n");
+      const { data: symIns } = await admin.from("insights").select("symbol, bullets, generated_at")
+        .in("symbol", assets.map((r) => r.symbol)).order("generated_at", { ascending: false }).limit(30);
+      const latestBySym = new Map<string, string>();
+      for (const i of symIns ?? []) if (!latestBySym.has(i.symbol)) latestBySym.set(i.symbol, (i.bullets as string[])[0] ?? "");
+      let content: string | null;
+      if (fixture) {
+        content = JSON.stringify(body.cannedPortfolio ?? { bullets: ["portfolio fixture one", "portfolio fixture two", "portfolio fixture three"] });
+      } else {
+        const prompt = `A retail investor's portfolio (total assets $${Math.round(total)}, debt $${Math.round(debt)}):
+${desc}
+Sharpest current takes per holding:
+${[...latestBySym.entries()].map(([sym, b]) => `- ${sym}: ${b}`).join("\n") || "- (none yet)"}
+
+Return STRICT JSON: {"bullets": [3-5 strings]}. You are their portfolio strategist: assess concentration, what actually moved their money today, cross-holding themes, and one thing they should watch or consider. Each bullet <= 22 words, specific to THIS portfolio (use the numbers), opinionated, useful. No generic advice.`;
+        content = await askMara(key, model, prompt);
+      }
+      const parsed = content ? parseInsight(content) : null;
+      if (!parsed) { errors.push("user " + uid.slice(0, 8) + ": unparseable"); continue; }
+      const { error: piErr } = await admin.from("portfolio_insights").insert({ user_id: uid, bullets: parsed.bullets, model });
+      if (piErr) errors.push("user " + uid.slice(0, 8) + ": " + piErr.message); else pWrote++;
+    } catch (e) { errors.push("user: " + (e instanceof Error ? e.message : String(e))); }
+  }
+  return json({ ok: true, targets: targets.length, wrote, portfolios: userIds.length, portfolioWrote: pWrote, errors: errors.slice(0, 5) });
 });
