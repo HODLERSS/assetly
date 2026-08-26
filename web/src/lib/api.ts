@@ -141,6 +141,15 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { error } = await sb.from("profiles").update(patch).eq("id", u.user.id);
       if (error) throw error;
     },
+    /** Pre-open pulse: US index futures tracked by the 1-min price pipeline. */
+    async getPulse(): Promise<{ symbol: string; name: string; price: number; change_pct: number | null }[]> {
+      const names: Record<string, string> = { "ES=F": "S&P 500 futures", "NQ=F": "Nasdaq 100 futures" };
+      const { data } = await sb.from("prices").select("symbol,price,change_pct").in("symbol", ["ES=F", "NQ=F"]);
+      return (data ?? []).map((r: Record<string, unknown>) => ({
+        symbol: String(r.symbol), name: names[String(r.symbol)] ?? String(r.symbol),
+        price: Number(r.price), change_pct: r.change_pct === null ? null : Number(r.change_pct),
+      })).sort((a, b) => a.symbol.localeCompare(b.symbol));
+    },
     /** Rate + freshness for the Settings surface. */
     async getFxInfo(): Promise<{ rate: number; asOf: string } | null> {
       const { data } = await sb.from("prices").select("price,updated_at").eq("symbol", "USDKRW").maybeSingle();

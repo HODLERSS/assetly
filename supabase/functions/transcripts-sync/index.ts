@@ -56,11 +56,13 @@ Deno.serve(async (req) => {
       const yahooSym = symbol.replace(".", "-");
       const r = await fetch(`https://seekingalpha.com/api/sa/combined/${encodeURIComponent(yahooSym)}.xml`, { headers: { "User-Agent": UA } });
       if (!r.ok) { errors.push(symbol + ": rss " + r.status); continue; }
-      const items = parseItems(await r.text()).filter((i) => /earnings call transcript/i.test(i.title)).slice(0, 4);
-      const { data: have } = await admin.from("transcripts").select("url").eq("symbol", symbol);
-      const known = new Set((have ?? []).map((x) => x.url));
+      const items = parseItems(await r.text()).filter((i) => /transcript/i.test(i.title)).slice(0, 6);
+      const { data: have } = await admin.from("transcripts").select("url,content").eq("symbol", symbol);
+      const known = new Map((have ?? []).map((x) => [x.url, String(x.content ?? "").length]));
       for (const it of items) {
-        if (known.has(it.url)) continue;
+        // skip only when we already hold real content; thin rows (title-only fallbacks
+        // from a blocked article fetch) get retried every lap until the text lands.
+        if ((known.get(it.url) ?? 0) >= 600) continue;
         const page = await fetch(it.url, { headers: { "User-Agent": UA }, redirect: "follow" }).catch(() => null);
         let content = page && page.ok ? extractText(await page.text()) : "";
         if (content.length < 600) content = it.title;            // article body blocked: title + link still float and date the quarter
@@ -68,9 +70,9 @@ Deno.serve(async (req) => {
         await admin.from("news").upsert({ symbol, title: it.title.slice(0, 500), url: it.url.slice(0, 1000), source: "Earnings Call", published_at: it.pub }, { onConflict: "symbol,url", ignoreDuplicates: true });
         wrote++;
       }
-      // retention: newest 4 per symbol
+      // retention: newest 6 per symbol (>= the latest 4 quarters)
       const { data: all } = await admin.from("transcripts").select("url,published_at").eq("symbol", symbol).order("published_at", { ascending: false, nullsFirst: false });
-      for (const extra of (all ?? []).slice(4)) await admin.from("transcripts").delete().eq("symbol", symbol).eq("url", extra.url);
+      for (const extra of (all ?? []).slice(6)) await admin.from("transcripts").delete().eq("symbol", symbol).eq("url", extra.url);
     } catch (e) { errors.push(symbol + ": " + (e instanceof Error ? e.message : String(e))); }
   }
   return json({ ok: true, targets: targets.length, wrote, errors: errors.slice(0, 5) });

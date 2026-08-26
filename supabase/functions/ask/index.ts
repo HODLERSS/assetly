@@ -71,6 +71,25 @@ Deno.serve(async (req) => {
     return `${d}D: $${Math.round(delta)} (${pct.toFixed(1)}%)`;
   }).join(" · ");
 
+  // ---- signal digest for EVERY holding (news, filings, earnings calls) ----
+  let digest = "";
+  const digSyms = held.slice(0, 12).map((r) => r.symbol);
+  if (digSyms.length) {
+    const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
+    const [{ data: dn }, { data: dt }, { data: df }] = await Promise.all([
+      admin.from("news").select("symbol,title,source,published_at").in("symbol", digSyms).gte("published_at", since14).order("published_at", { ascending: false }).limit(80),
+      admin.from("transcripts").select("symbol,title,published_at").in("symbol", digSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(48),
+      admin.from("filings").select("symbol,form,filed_at").in("symbol", digSyms).order("filed_at", { ascending: false }).limit(60),
+    ]);
+    for (const s of digSyms) {
+      const tt = (dt ?? []).filter((x) => x.symbol === s).slice(0, 1).map((x) => `latest earnings call ${String(x.published_at).slice(0, 10)}`);
+      const ff = (df ?? []).filter((x) => x.symbol === s).slice(0, 2).map((x) => `${x.form} ${String(x.filed_at).slice(5, 10)}`);
+      const nn = (dn ?? []).filter((x) => x.symbol === s).slice(0, 2).map((x) => `"${String(x.title).slice(0, 90)}" [${x.source} ${String(x.published_at).slice(5, 10)}]`);
+      const bits = [...tt, ...(ff.length ? ["filings " + ff.join(", ")] : []), ...nn];
+      if (bits.length) digest += `\n${s}: ${bits.join(" · ")}`;
+    }
+  }
+
   // ---- context for mentioned symbols ----
   const qUp = question.toUpperCase();
   const mentioned = held.filter((r) => qUp.includes(r.symbol.toUpperCase().replace(".KS", "").replace(".KQ", "")) || (r.nickname && qUp.includes(r.nickname.toUpperCase()))).map((r) => r.symbol).slice(0, 3);
@@ -83,22 +102,27 @@ Deno.serve(async (req) => {
       .order("generated_at", { ascending: false }).limit(1);
     const { data: fils } = await admin.from("filings").select("form,filed_at,title").eq("symbol", sym)
       .order("filed_at", { ascending: false }).limit(6);
-    const { data: tr } = await admin.from("transcripts").select("title,content").eq("symbol", sym)
-      .order("published_at", { ascending: false, nullsFirst: false }).limit(1);
+    const { data: trAll } = await admin.from("transcripts").select("title,published_at,content").eq("symbol", sym)
+      .order("published_at", { ascending: false, nullsFirst: false }).limit(4);
     context += `\n[${sym}] 7d headlines:\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- none"}`;
     if (ins?.[0]) context += `\n[${sym}] current AI take: ${(ins[0].bullets as string[]).join(" | ")}`;
     if (fils?.length) context += `\n[${sym}] SEC filings: ${fils.map((f) => `${f.form} ${f.filed_at}`).join(", ")}`;
-    if (tr?.[0]) context += `\n[${sym}] latest earnings call (${tr[0].title}): ${String(tr[0].content).slice(0, 3000)}`;
+    if (trAll?.length) {
+      context += `\n[${sym}] earnings calls on file: ${trAll.map((t) => `${String(t.title).slice(0, 90)} (${String(t.published_at).slice(0, 10)})`).join(" ; ")}`;
+      const latest = trAll[0];
+      if (latest.content && String(latest.content).length > 200) context += `\n[${sym}] latest call excerpt: ${String(latest.content).slice(0, 4500)}`;
+    }
   }
 
   const prompt = `User's portfolio (all $ figures USD at ₩${Math.round(fx)}/$):
 ${stats.join("\n")}
 Portfolio total: $${Math.round(totNow)} · movement ${totalLines}
+Signals on file per holding (earnings calls, SEC filings, headlines):${digest || "\n(none)"}
 ${context}
 
 Question: "${question}"
 
-Answer as their analyst: direct, specific, concise. Use ONLY the numbers above — never invent figures. Prefer 2-5 short bullets or <=90 words. If the question needs data you don't have, say exactly what's missing in one line.`;
+Answer as their analyst: direct, specific, concise. Ground qualitative answers in the signals, headlines, filings, and earnings-call material above, not just prices. Numbers must come only from the stats block. Earnings-call titles and dates listed are reliable even when the excerpt is partial. Prefer 2-6 short bullets or <=120 words. If the question needs data you truly don't have, say exactly what's missing in one line.`;
 
   if (fixture) return json({ ok: true, answer: "FIXTURE\n" + "TOTAL:" + Math.round(totNow) + "\n" + totalLines, mentioned });
 

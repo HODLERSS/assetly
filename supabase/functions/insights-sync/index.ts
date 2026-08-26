@@ -166,16 +166,33 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
         .in("symbol", assets.map((r) => r.symbol)).order("generated_at", { ascending: false }).limit(30);
       const latestBySym = new Map<string, string>();
       for (const i of symIns ?? []) if (!latestBySym.has(i.symbol)) latestBySym.set(i.symbol, (i.bullets as string[])[0] ?? "");
+      // signals beyond price: latest earnings calls (dated) + fresh headlines per holding
+      const sigSyms = assets.map((r) => r.symbol).filter((sy) => !sy.startsWith("$")).slice(0, 12);
+      const since7 = new Date(Date.now() - 7 * 86400000).toISOString();
+      const [{ data: trs }, { data: nws }] = await Promise.all([
+        admin.from("transcripts").select("symbol,title,published_at").in("symbol", sigSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(30),
+        admin.from("news").select("symbol,title,source,published_at").in("symbol", sigSyms).gte("published_at", since7).order("published_at", { ascending: false }).limit(80),
+      ]);
+      const callLines = sigSyms.map((sy) => { const t = (trs ?? []).find((x) => x.symbol === sy); return t ? `- ${sy}: ${String(t.title).slice(0, 80)} (call date ${String(t.published_at).slice(0, 10)})` : null; }).filter(Boolean).join("\n");
+      const newsLines = sigSyms.map((sy) => (nws ?? []).filter((x) => x.symbol === sy).slice(0, 2).map((x) => `- ${sy} [${x.source}]: ${String(x.title).slice(0, 90)}`).join("\n")).filter(Boolean).join("\n");
       let content: string | null;
       if (fixture) {
         content = JSON.stringify(body.cannedPortfolio ?? { bullets: ["portfolio fixture one", "portfolio fixture two", "portfolio fixture three"] });
       } else {
         const prompt = `A retail investor's portfolio (total assets $${Math.round(total)}, debt $${Math.round(debt)}):
 ${desc}
+Latest earnings calls on file:
+${callLines || "- (none)"}
+Fresh headlines (7d):
+${newsLines || "- (none)"}
 Sharpest current takes per holding:
 ${[...latestBySym.entries()].map(([sym, b]) => `- ${sym}: ${b}`).join("\n") || "- (none yet)"}
 
-Return STRICT JSON: {"bullets": [exactly 3 strings]}. You are their portfolio strategist. Bullet 1: what actually moved their money today, with numbers. Bullet 2: the biggest news right now among the companies they hold. Bullet 3: the concentration or risk to watch. Each bullet 15 words MAX. Plain punchy language, specific to THIS portfolio. Never use em dashes or semicolons. No generic advice.`;
+Return STRICT JSON: {"bullets": [exactly 3 strings]}. You are their portfolio strategist writing 3 bullets.
+Bullet 1: the ONLY price bullet. Recent moves that mattered, with numbers.
+Bullet 2: the most decision-relevant company signal right now: an earnings call (state its date), interview, filing, or news. Any holding qualifies, not just the largest position.
+Bullet 3: a mid-term signal a value investor should note: valuation, fundamentals trend, or upcoming catalyst.
+Each bullet 15 words MAX. Spread coverage across different holdings when the signals warrant it. Plain punchy language. Never use em dashes or semicolons. No generic advice.`;
         content = await askMara(key, model, prompt);
       }
       const parsed = content ? parseInsight(content) : null;

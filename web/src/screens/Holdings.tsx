@@ -16,22 +16,12 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
     if (rows.length > 0) api.getPortfolioInsights().then((v) => { if (live) setPins(v); }).catch(() => {});
     return () => { live = false; };
   }, [api, rows.length]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<"all" | "US" | "KR" | "ret">("all");
   const marketsHeld = [...new Set(rows.map((r) => marketOf(r)).filter((m): m is "US" | "KR" => m === "US" || m === "KR"))];
-  const kindsHeld = [...new Set(rows.map((r) => r.kind))];
   const hasRet = rows.some((r) => r.account === "401k" || r.account === "ira");
-  const chips = [...(marketsHeld.length > 1 ? marketsHeld : []), ...(hasRet ? ["ret"] : []), ...kindsHeld];
+  const chips: ("US" | "KR" | "ret")[] = [...(marketsHeld.length > 1 ? marketsHeld : []), ...(hasRet ? ["ret" as const] : [])];
   const isRet = (r: PortfolioRow) => r.account === "401k" || r.account === "ira";
-  const matches = (r: PortfolioRow): boolean => {
-    if (selected.size === 0) return true;
-    const selMkts = [...selected].filter((f) => f === "US" || f === "KR");
-    const selKinds = [...selected].filter((f) => f !== "US" && f !== "KR" && f !== "ret");
-    if (selMkts.length && !(selMkts as string[]).includes(marketOf(r) ?? "")) return false;
-    if (selected.has("ret") && !isRet(r)) return false;
-    if (selKinds.length && !selKinds.includes(r.kind)) return false;
-    return true;
-  };
-  const shown = rows.filter(matches);
+  const shown = rows.filter((r) => (filter === "all" ? true : filter === "ret" ? isRet(r) : marketOf(r) === filter));
   // Per-market display currency (Settings matrix): KRW rows follow dispKr, everything else dispUs.
   const show = (v: number | null, r: PortfolioRow): [number | null, "USD" | "KRW"] => {
     const target = r.currency === "KRW" ? dispKr : dispUs;
@@ -58,18 +48,14 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
         </section>
       )}
       <div className="chips" role="group" aria-label="Filter by type">
-        <button className="chip" aria-pressed={selected.size === 0} onClick={() => setSelected(new Set())}>All</button>
+        <button className="chip" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>All</button>
         {chips.map((k) => (
-          <button key={k} className="chip" aria-pressed={selected.has(k)} onClick={() => {
-            const next = new Set(selected);
-            if (next.has(k)) next.delete(k); else next.add(k);
-            setSelected(next);
-          }}>
-            {k === "US" ? "US" : k === "KR" ? "KR" : k === "ret" ? "Ret" : k === "etf" ? "ETF" : k.charAt(0).toUpperCase() + k.slice(1)}
+          <button key={k} className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>
+            {k === "US" ? "US" : k === "KR" ? "KR" : "Ret"}
           </button>
         ))}
       </div>
-      {selected.size > 0 && shown.length > 0 && (() => {
+      {filter !== "all" && shown.length > 0 && (() => {
         let value = 0, day = 0, gl = 0;
         for (const r of shown) {
           const sign = r.kind === "debt" ? -1 : 1;
@@ -89,8 +75,6 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
       <div className="card">
         {shown.map((r) => {
           const [rv, rc] = show(r.value, r);
-          const [rg] = [show(r.total_gl, r)[0]];
-          void rg;
           return (
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span>

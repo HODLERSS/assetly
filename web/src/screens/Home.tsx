@@ -1,16 +1,24 @@
-import type { PortfolioRow } from "../lib/api";
-import { marketOf, moverEligible, sessionLabel } from "../lib/markets";
+import { useEffect, useState } from "react";
+import type { Api, PortfolioRow } from "../lib/api";
+import { marketOf, moverEligible, moverMode, sessionLabel } from "../lib/markets";
 import { convertCcy, dayChangeAmount, glClass, money, signedMoney, signedPct } from "../lib/format";
 
 // Canvas 2a: net worth, movers, market pulse.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
 
-export function Home({ rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" }: {
-  rows: PortfolioRow[];
+export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" }: {
+  api: Api; rows: PortfolioRow[];
   totals: { value: number; gl: number; cost: number; day: number; mixed: boolean; fx: number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
   dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
 }) {
+  const mode = moverMode();
+  const [pulse, setPulse] = useState<{ symbol: string; name: string; price: number; change_pct: number | null }[]>([]);
+  useEffect(() => {
+    let live = true;
+    if (mode.kind === "pulse") api.getPulse().then((p) => { if (live) setPulse(p); }).catch(() => {});
+    return () => { live = false; };
+  }, [api, mode.kind]);
   // Per-market display currency (Settings matrix).
   const show = (v: number | null, r: PortfolioRow): [number | null, "USD" | "KRW"] => {
     const target = r.currency === "KRW" ? dispKr : dispUs;
@@ -28,6 +36,10 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD"
   }
   const movers = [...rows].filter((r) => r.change_pct !== null && moverEligible(r))
     .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0)).slice(0, 3);
+  const quietMovers = [...rows].filter((r) => r.change_pct !== null && marketOf(r) !== null)
+    .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0)).slice(0, 3);
+  const showPulse = mode.kind === "pulse" && pulse.length > 0;
+  const moverList = mode.kind === "pulse" && !showPulse ? quietMovers : movers;
   return (
     <>
       <section aria-label="Net worth" style={{ margin: "8px 0 18px" }}>
@@ -61,8 +73,22 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD"
         <div className="countdown" aria-hidden="true"><div style={{ width: "38%" }} /></div>
       </section>
       <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {sessionLabel()}</span></h2>
-      <div className="card" style={{ marginBottom: 16 }}>
-        {movers.map((r) => (
+      {showPulse && (
+        <div className="card" style={{ marginBottom: 16 }} data-testid="pulse-card">
+          {pulse.map((p) => (
+            <div key={p.symbol} className="row" style={{ cursor: "default" }}>
+              <span><span className="sym">{p.name}</span></span>
+              <span className={`right ${glClass(p.change_pct)}`}>
+                <span className="num">{p.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+                <span className="num sub"> · {signedPct(p.change_pct)}</span>
+              </span>
+            </div>
+          ))}
+          <p className="sub" style={{ margin: "6px 2px 2px" }}>Index futures ahead of the US open.</p>
+        </div>
+      )}
+      {!showPulse && <div className="card" style={{ marginBottom: 16 }}>
+        {moverList.map((r) => (
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span></span>
             <span className={`right ${glClass(r.change_pct)}`}>
@@ -71,7 +97,7 @@ export function Home({ rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD"
             </span>
           </button>
         ))}
-      </div>
+      </div>}
       <h2 className="h1" style={{ fontSize: 16 }}>Positions</h2>
       <div className="card">
         {rows.map((r) => (

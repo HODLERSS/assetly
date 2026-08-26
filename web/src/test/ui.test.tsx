@@ -25,11 +25,14 @@ vi.mock("../lib/supabase", () => {
 
 // Market sessions are wall-clock dependent; pin them for deterministic UI tests.
 // (The real session/holiday logic is covered by markets.test.ts with fixed instants.)
+const marketsState = vi.hoisted(() => ({ mode: { kind: "open" } as { kind: string; market?: string; opensInMin?: number } }));
 vi.mock("../lib/markets", async (importOriginal) => {
   const real = await importOriginal<typeof import("../lib/markets")>();
   return { ...real, isMarketOpen: (m: string) => m === "US" || m === "CRYPTO",
-           sessionLabel: () => "US open",
+           sessionLabel: () => (marketsState.mode.kind === "pulse" ? "US opens in ~2h" : "US open"),
+           moverMode: () => marketsState.mode,
            moverEligible: (row: { symbol: string; kind: string }) => {
+             if (marketsState.mode.kind === "pulse") return false;
              const m = real.marketOf(row); return m === "US" || m === "CRYPTO";
            } };
 });
@@ -56,6 +59,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     getFxInfo: vi.fn().mockResolvedValue({ rate: 1381, asOf: new Date(Date.now() - 60000).toISOString() }),
     updateBaseCurrency: vi.fn().mockResolvedValue(undefined),
     updateDisplayCcy: vi.fn().mockResolvedValue(undefined),
+    getPulse: vi.fn().mockResolvedValue([]),
     getInsights: vi.fn().mockResolvedValue(null),
     getPortfolioInsights: vi.fn().mockResolvedValue(null),
     ask: vi.fn().mockResolvedValue("• 1W: +$824 (+14.2%)\n• Watch MARA margins"),
@@ -205,27 +209,50 @@ describe("U26 currency matrix", () => {
   });
 });
 
-describe("U27 multi-select filters", () => {
+describe("U27 holdings filters", () => {
   const three = () => [
     row({}),
     row({ holding_id: "h2", symbol: "QQQM", name: "Invesco NASDAQ 100", account: "401k" }),
     row({ holding_id: "hk", symbol: "005930.KS", name: "Samsung Electronics",
       currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 }),
   ];
-  it("US and Ret chips combine as an intersection and both stay pressed", async () => {
+  it("chips are All, KR, US, Ret only and single-select", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(three()) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /^US$/ }));
+    await screen.findByText("QQQM");
+    expect(screen.queryByRole("button", { name: /^Equity$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Cash$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^ETF$/ })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^US$/ }));
     await waitFor(() => expect(screen.queryByText("005930.KS")).toBeNull());
+    expect(screen.getByText("QQQM")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: /^Ret$/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Ret$/ }).getAttribute("aria-pressed")).toBe("true"));
+    expect(screen.getByRole("button", { name: /^US$/ }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByText("QQQM")).toBeTruthy();
     expect(screen.queryByText("RDDT")).toBeNull();
-    expect(screen.getByRole("button", { name: /^US$/ }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: /^Ret$/ }).getAttribute("aria-pressed")).toBe("true");
     await userEvent.click(screen.getByRole("button", { name: /^All$/ }));
     await waitFor(() => expect(screen.getByText("005930.KS")).toBeTruthy());
+  });
+});
+
+describe("U28 pre-open pulse", () => {
+  it("shows index futures when the US open is a couple hours out", async () => {
+    marketsState.mode = { kind: "pulse", opensInMin: 120 };
+    try {
+      const api = stubApi({ getPulse: vi.fn().mockResolvedValue([
+        { symbol: "ES=F", name: "S&P 500 futures", price: 6612.5, change_pct: 0.45 },
+        { symbol: "NQ=F", name: "Nasdaq 100 futures", price: 24380.75, change_pct: -0.3 },
+      ]) });
+      render(<App api={api} />);
+      await screen.findByTestId("net-worth");
+      await screen.findByText("S&P 500 futures");
+      expect(screen.getByTestId("pulse-card").textContent).toContain("Nasdaq 100 futures");
+      expect(document.body.textContent).toContain("+0.45%");
+      expect(document.body.textContent).toContain("US opens in ~2h");
+    } finally { marketsState.mode = { kind: "open" }; }
   });
 });
 

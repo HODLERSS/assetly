@@ -113,7 +113,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
             onBack={() => go({ kind: "tab", tab: "holdings" })} />
         )}
         {view.kind === "tab" && view.tab === "home" && (
-          <Home rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"}
+          <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"}
             dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"}
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
