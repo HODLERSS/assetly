@@ -64,7 +64,10 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack }: {
         {lots.map((l) => (
           <button key={l.id} className="row" onClick={() => setEditing(l)} aria-label={`Edit lot ${l.qty} shares`}>
             <span><span className="num">{cashish ? money(l.qty, row.currency) : `${l.qty} sh @ ${moneyExact(l.cost_per_share, row.currency)}`}</span>{l.note ? <><br /><span className="sub">{l.note}</span></> : null}</span>
-            <span className="sub">{cashish ? "" : `${l.acquired_on ?? "no date"} · `}<span style={{ color: "var(--as-primary)", fontWeight: 600 }}>Edit</span></span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {!cashish && <span className="sub">{l.acquired_on ?? "no date"}</span>}
+              <span className="edit-pill">Edit</span>
+            </span>
           </button>
         ))}
         {lotsLoaded && lots.length === 0 && <p className="empty">No lots yet.</p>}
