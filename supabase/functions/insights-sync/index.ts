@@ -44,6 +44,37 @@ async function askMara(key: string, model: string, prompt: string): Promise<stri
   return c;
 }
 
+// ---- market sessions (mirror of web/src/lib/markets.ts) ----
+const US_HOL = new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25","2027-01-01"]);
+const KR_HOL = new Set(["2026-01-01","2026-03-02","2026-05-01","2026-05-05","2026-06-03","2026-06-06","2026-08-17","2026-10-05","2026-10-09","2026-12-25","2026-12-31","2027-01-01"]);
+function minsSinceOpen(mkt: "US" | "KR", now = new Date()): number | null {
+  const tz = mkt === "US" ? "America/New_York" : "Asia/Seoul";
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", hour: "numeric", minute: "numeric", hour12: false, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const dow = ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[get("weekday")] ?? 0;
+  const ymd = `${get("year")}-${get("month")}-${get("day")}`;
+  if (dow < 1 || dow > 5 || (mkt === "US" ? US_HOL : KR_HOL).has(ymd)) return null;
+  const mins = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
+  const open = mkt === "US" ? 570 : 540;
+  return mins >= open ? mins - open : null;
+}
+const OPEN_GATE = 10;   // minutes after the bell before the new day's tape is trusted
+/** Stale = older than 50min, OR written before today's open once that market has
+ *  been trading >=10 min (a pre-open take must not survive into the session). */
+function staleInsight(genMs: number, mkt: "US" | "KR" | null, now = new Date()): boolean {
+  if (now.getTime() - genMs > 50 * 60000) return true;
+  if (!mkt) return false;
+  const m = minsSinceOpen(mkt, now);
+  return m !== null && m >= OPEN_GATE && genMs < now.getTime() - m * 60000;
+}
+function sessNote(mkt: "US" | "KR", now = new Date()): string {
+  const m = minsSinceOpen(mkt, now);
+  const name = mkt === "US" ? "US market" : "Korean market";
+  if (m === null) return `${name} has NOT opened today. Any day-change figure is from the LAST completed session. Never call it today's move.`;
+  if (m < 390) return `${name} opened ${m} minutes ago. Day changes are TODAY's live tape.`;
+  return `${name} finished today's session. Day changes are today's final moves.`;
+}
+
 function parseInsight(raw: string): { bullets: string[]; windows: Record<string, string> } | null {
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   const start = cleaned.indexOf('{"bullets"') >= 0 ? cleaned.indexOf('{"bullets"') : cleaned.indexOf("{");
@@ -92,10 +123,13 @@ Deno.serve(async (req) => {
   const { data: pv } = await admin.from("portfolio").select("symbol, value").in("symbol", targets);
   const invested = new Map<string, number>();
   for (const r of pv ?? []) invested.set(r.symbol, (invested.get(r.symbol) ?? 0) + Number(r.value ?? 0));
-  // Incremental: an insight fresher than 50 minutes is current — skip it. Keeps
-  // re-triggers cheap and guarantees the portfolio phase gets compute headroom.
-  const freshCut = Date.now() - 50 * 60000;
-  if (!only) targets = targets.filter((s) => (age.get(s) ?? 0) < freshCut);
+  // Incremental + session-aware: fresh insights are skipped, but anything written
+  // before today's open regenerates ~10 min into the session (no stale "today" takes).
+  const { data: kindRows } = await admin.from("symbols").select("symbol,kind").in("symbol", targets);
+  const kindOf = new Map((kindRows ?? []).map((k) => [k.symbol, String(k.kind)]));
+  const mktOf = (sy: string): "US" | "KR" | null =>
+    kindOf.get(sy) === "crypto" ? null : (sy.endsWith(".KS") || sy.endsWith(".KQ") ? "KR" : "US");
+  if (!only) targets = targets.filter((sy) => staleInsight(age.get(sy) ?? 0, mktOf(sy)));
   targets = targets.sort((a, b) =>
     (age.get(a) ?? 0) - (age.get(b) ?? 0) || (invested.get(b) ?? 0) - (invested.get(a) ?? 0)).slice(0, 16);
 
@@ -127,7 +161,9 @@ Deno.serve(async (req) => {
       if (fixture) {
         content = JSON.stringify(body.canned ?? { bullets: ["fixture bullet one", "fixture bullet two", "fixture bullet three"], windows: { d7: "flat week", d30: "quiet month", d60: "range-bound", y1: "recovering", y2: "volatile" } });
       } else {
+        const mkt = mktOf(symbol);
         const prompt = `Company: ${srow?.name ?? symbol} (${symbol}). Current price ${price}. Price change by window: ${JSON.stringify(perf)}.
+Session: ${mkt ? sessNote(mkt) : "Crypto trades 24/7; day changes are rolling."}
 Headlines from the last 7 days (${n30 ?? 0} stories in 30d):
 ${(news7 ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (no fresh headlines)"}
 ${(fils ?? []).length ? `\nSEC filings (last 9 months): ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}${latestTr ? `\nLatest earnings call ("${latestTr.title}", ${latestTr.published_at}):\n${String(latestTr.content).slice(0, 7000)}\n${(tr ?? []).slice(1).length ? "Older calls on file: " + (tr ?? []).slice(1).map((t) => t.title).join(" | ") : ""}` : "\n(no earnings transcript on file yet)"}
@@ -156,9 +192,19 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
   const { data: fxRow } = await admin.from("prices").select("price").eq("symbol", "USDKRW").maybeSingle();
   const fx = fxRow ? Number(fxRow.price) : 1380;
   const userIds = fixture ? [...byUser.keys()] : [...byUser.keys()].slice(0, 25);
+  const { data: lastPis } = await admin.from("portfolio_insights").select("user_id, generated_at")
+    .in("user_id", userIds).order("generated_at", { ascending: false }).limit(200);
+  const lastPi = new Map<string, number>();
+  for (const pRow of lastPis ?? []) if (!lastPi.has(pRow.user_id)) lastPi.set(pRow.user_id, +new Date(pRow.generated_at));
   for (const uid of userIds) {
     try {
       const rows = byUser.get(uid)!;
+      const userMkts: ("US" | "KR")[] = [...new Set(rows
+        .filter((r) => r.kind !== "cash" && r.kind !== "debt" && r.kind !== "crypto")
+        .map((r) => (r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ") ? "KR" as const : "US" as const)))];
+      // Same session-aware staleness as symbols: skip only while genuinely current.
+      if (!fixture && !userMkts.some((mk) => staleInsight(lastPi.get(uid) ?? 0, mk))
+          && Date.now() - (lastPi.get(uid) ?? 0) <= 50 * 60000) continue;
       const usd = (r: (typeof rows)[number]) => (r.currency === "KRW" ? Number(r.value ?? 0) / fx : Number(r.value ?? 0));
       const assets = rows.filter((r) => r.kind !== "debt");
       const debt = rows.filter((r) => r.kind === "debt").reduce((a, r) => a + usd(r), 0);
@@ -184,6 +230,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
         content = JSON.stringify(body.cannedPortfolio ?? { bullets: ["portfolio fixture one", "portfolio fixture two", "portfolio fixture three"] });
       } else {
         const prompt = `A retail investor's portfolio (total assets $${Math.round(total)}, debt $${Math.round(debt)}):
+Market sessions right now: ${userMkts.map((mk) => sessNote(mk)).join(" ")}
 ${desc}
 Latest earnings calls on file:
 ${callLines || "- (none)"}
@@ -196,7 +243,7 @@ Return STRICT JSON: {"bullets": [exactly 3 strings]}. You are their portfolio st
 Bullet 1: the ONLY price bullet. Recent moves that mattered, with numbers.
 Bullet 2: the most decision-relevant company signal right now: an earnings call (state its date), interview, filing, or news. Any holding qualifies, not just the largest position.
 Bullet 3: a mid-term signal a value investor should note: valuation, fundamentals trend, or upcoming catalyst.
-Each bullet 15 words MAX. Spread coverage across different holdings when the signals warrant it. Plain punchy language. Never use em dashes or semicolons. No generic advice.`;
+Each bullet 15 words MAX. Spread coverage across different holdings when the signals warrant it. Respect the session notes: never present the last session's move as happening today. Plain punchy language. Never use em dashes or semicolons. No generic advice.`;
         content = await askMara(key, model, prompt);
       }
       const parsed = content ? parseInsight(content) : null;
