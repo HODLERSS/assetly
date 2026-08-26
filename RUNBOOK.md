@@ -3,7 +3,8 @@
 ## Production (LIVE)
 - App: **https://hodlerss.github.io/assetly/** (GitHub Pages, repo HODLERSS/assetly, branch gh-pages)
 - Supabase: project `assetly` in org Thunder Route, ref `hhdpthrfmsdmxdrfckxq` — schema, RLS, grants,
-  edge functions `price-sync` + `news-sync` + `symbol-search` (universal US+KR ticker search
+  edge functions `price-sync` + `news-sync` + `symbol-search` + `insights-sync` (hourly AI
+  bullets via MARA Cloud M2.7, key in Vault) + `transcripts-sync` (daily earnings calls) (universal US+KR ticker search
   and on-demand register: live price + ~3mo daily history at add time), pg_cron (1-min prices / 15-min news via vault
   `project_url` + `edge_bearer` = publishable key), auth URL config. Deploy new code:
   `cd web && VITE_BASE=/assetly/ npm run build` → rsync **with `-c` (checksum)** `dist/` to the

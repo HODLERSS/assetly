@@ -50,6 +50,17 @@ production project; **Judged** = scored against the stated criterion.
 8. iPhone e2e race on derived-average assertion → wait-for.
 9. (8/24) Yahoo search API rejects Hangul queries ("Invalid Search Query") → server-side
    Korean→English alias rewrite in symbol-search; caught by cloud battery C3.
+10j. (8/25) Assetly Intelligence shipped: hourly insights-sync (MARA Cloud MiniMax
+   M2.7; key in Vault via security-definer get_secret; response_format json_object —
+   M2.7 otherwise burns budget on visible reasoning, needed 6k tokens) turns 7d
+   headlines + latest earnings transcript + 5-horizon price action into 3-5 opinionated
+   bullets + horizon one-liners; append-only per-symbol history, rotation weighted by
+   invested value. transcripts-sync (daily): latest 4 earnings-call transcripts per
+   held company from Seeking Alpha direct links (Google News URLs now encrypted; SA
+   serves ~4.7k chars pre-paywall), floated into news as 'Earnings Call'. Korean-name
+   search: curated 56-entry KRX map (삼성전자 works, Korean display). News breadth:
+   +Seeking Alpha feed, deeper Google, normalized-title dedupe. InsightsCard: branded
+   accent-bar card on Position + filtered News with disclosure line.
 10i. (8/25) Named balances + bank accounts: optional labels on cash/debt ("Cash
    (Yeonhwa)") — nickname joined the uniqueness so several labeled balances coexist per
    account while market adds keep merging; 'bank' account type, preselected for
