@@ -41,7 +41,12 @@ async function foolTranscript(symbol: string, qhint: string): Promise<string | n
     if (!r.ok) return null;
     const html = await r.text();
     const links = [...html.matchAll(/uddg=([^"&]+)/g)].map((m) => decodeURIComponent(m[1]));
-    const url = links.find((u) => u.includes("fool.com/earnings/call-transcripts"));
+    let url = links.find((u) => u.includes("fool.com/earnings/call-transcripts"));
+    if (!url) {
+      // DDG may challenge datacenter IPs; Bing's HTML SERP usually serves them.
+      const b = await fetch(`https://www.bing.com/search?q=${q}`, { headers: { "User-Agent": UA } });
+      if (b.ok) url = (await b.text()).match(/https:\/\/www\.fool\.com\/earnings\/call-transcripts\/[^"'&\s<)]+/)?.[0];
+    }
     if (!url) return null;
     const page = await fetch(url, { headers: { "User-Agent": UA }, redirect: "follow" });
     if (!page.ok) return null;
@@ -94,9 +99,21 @@ Deno.serve(async (req) => {
           const mf = await foolTranscript(symbol, qhint);
           content = mf ?? it.title;                              // last resort: title still dates the quarter
         }
+        // never replace stored content with something shorter (no downgrades)
+        const prev = known.get(it.url) ?? "";
+        if (!isRealTranscript(content) && content.length <= prev.length) continue;
         await admin.from("transcripts").upsert({ symbol, url: it.url, title: it.title.slice(0, 400), content, published_at: it.pub }, { onConflict: "symbol,url" });
         await admin.from("news").upsert({ symbol, title: it.title.slice(0, 500), url: it.url.slice(0, 1000), source: "Earnings Call", published_at: it.pub }, { onConflict: "symbol,url", ignoreDuplicates: true });
         wrote++;
+      }
+      // rows that fell out of the SA feed but still hold junk: heal via Motley Fool
+      const feedUrls = new Set(items.map((i) => i.url));
+      const { data: thinRows } = await admin.from("transcripts").select("url,title,content").eq("symbol", symbol);
+      for (const row of thinRows ?? []) {
+        if (feedUrls.has(row.url) || isRealTranscript(String(row.content ?? ""))) continue;
+        const qhint = String(row.title).match(/Q[1-4]\s*(?:FY)?\s*\d{4}/i)?.[0] ?? "";
+        const mf = await foolTranscript(symbol, qhint);
+        if (mf) { await admin.from("transcripts").update({ content: mf }).eq("symbol", symbol).eq("url", row.url); wrote++; }
       }
       // retention: newest 6 per symbol (>= the latest 4 quarters)
       const { data: all } = await admin.from("transcripts").select("url,published_at").eq("symbol", symbol).order("published_at", { ascending: false, nullsFirst: false });
