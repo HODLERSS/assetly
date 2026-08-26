@@ -92,8 +92,12 @@ Deno.serve(async (req) => {
   const { data: pv } = await admin.from("portfolio").select("symbol, value").in("symbol", targets);
   const invested = new Map<string, number>();
   for (const r of pv ?? []) invested.set(r.symbol, (invested.get(r.symbol) ?? 0) + Number(r.value ?? 0));
+  // Incremental: an insight fresher than 50 minutes is current — skip it. Keeps
+  // re-triggers cheap and guarantees the portfolio phase gets compute headroom.
+  const freshCut = Date.now() - 50 * 60000;
+  if (!only) targets = targets.filter((s) => (age.get(s) ?? 0) < freshCut);
   targets = targets.sort((a, b) =>
-    (age.get(a) ?? 0) - (age.get(b) ?? 0) || (invested.get(b) ?? 0) - (invested.get(a) ?? 0)).slice(0, 20);
+    (age.get(a) ?? 0) - (age.get(b) ?? 0) || (invested.get(b) ?? 0) - (invested.get(a) ?? 0)).slice(0, 16);
 
   let wrote = 0;
   const errors: string[] = [];
