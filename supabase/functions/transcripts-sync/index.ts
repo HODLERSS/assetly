@@ -29,7 +29,9 @@ function extractText(html: string): string {
 
 /** Nav boilerplate from a blocked article page is NOT a transcript. */
 function isRealTranscript(c: string): boolean {
-  return c.length >= 3000 && /prepared remarks|thank you for joining|welcome to the|good (morning|afternoon|evening), everyone/i.test(c);
+  // strict: nav boilerplate contains greetings ("Welcome to Seeking Alpha") but never
+  // the actual call structure
+  return c.length >= 3000 && /prepared remarks|question-and-answer session|q&a session/i.test(c);
 }
 
 /** Motley Fool publishes full transcript text server-side; find it via DuckDuckGo's
