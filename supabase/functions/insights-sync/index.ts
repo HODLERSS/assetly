@@ -89,6 +89,9 @@ function parseInsight(raw: string): { bullets: string[]; windows: Record<string,
   try {
     const o = JSON.parse(cleaned.slice(start, end));
     if (!Array.isArray(o.bullets) || o.bullets.length < 2) return null;
+    const deDash = (v: unknown) => String(v).replace(/\s*\u2014\s*/g, ", ").replace(/\s*\u2013\s*/g, ", ");
+    o.bullets = o.bullets.map(deDash);
+    if (o.trend) o.trend = deDash(o.trend);
     const windows = o.trend ? { trend: String(o.trend) } : (o.windows ?? {});
     return { bullets: o.bullets.slice(0, 5).map(String), windows };
   } catch { return null; }

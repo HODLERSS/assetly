@@ -142,7 +142,7 @@ Answer as their analyst: direct, specific, concise. Ground qualitative answers i
   });
   if (!r.ok) return json({ ok: false, error: "model " + r.status }, 502);
   const out = await r.json().catch(() => null);
-  const answer = (out?.choices?.[0]?.message?.content ?? "").trim();
+  const answer = (out?.choices?.[0]?.message?.content ?? "").trim().replace(/\s*\u2014\s*/g, ": ").replace(/\s*\u2013\s*/g, ": ");
   if (!answer) return json({ ok: false, error: "empty answer" }, 502);
   return json({ ok: true, answer, mentioned });
 });
