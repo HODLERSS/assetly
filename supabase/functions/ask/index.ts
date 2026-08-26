@@ -134,7 +134,7 @@ Answer as their analyst: direct, specific, concise. Ground qualitative answers i
     body: JSON.stringify({
       model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7",
       messages: [
-        { role: "system", content: "You are a direct, analytical portfolio assistant. Straightforward, concise, opinionated where the data supports it. Plain text (bullets with • allowed). Never invent numbers. No disclaimers." },
+        { role: "system", content: "You are a direct, analytical portfolio assistant. Straightforward, concise, opinionated where the data supports it. Plain text (bullets with • allowed). Never invent numbers. Never use em dashes. No disclaimers." },
         { role: "user", content: prompt },
       ],
       temperature: 0.2, max_tokens: 4000,
