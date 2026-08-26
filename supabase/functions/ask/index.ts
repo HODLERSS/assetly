@@ -19,6 +19,47 @@ function pctOver(history: { ts: string; price: number }[], days: number): number
   return ((last.price / start.price) - 1) * 100;
 }
 
+/** Pull the question-relevant windows out of a long transcript instead of the
+ *  boilerplate intro (operator, safe-harbor) that always leads these pages. */
+function excerptFor(content: string, question: string): string {
+  const c = String(content);
+  if (c.length <= 4500) return c;
+  const words = question.toLowerCase().match(/[a-z]{3,}/g) ?? [];
+  const stop = new Set(["the","and","what","are","this","that","view","views","about","does","how","why","when","tell","their","your","latest","recent","say","said"]);
+  const keys = [...new Set(words.filter((w) => !stop.has(w)))].slice(0, 6);
+  const lower = c.toLowerCase();
+  const spans: [number, number][] = [[0, 1200]];
+  for (const k of keys) {
+    let idx = 0, found = 0;
+    while (found < 2) {
+      const i = lower.indexOf(k, idx);
+      if (i < 0) break;
+      spans.push([Math.max(0, i - 600), Math.min(c.length, i + 1400)]);
+      idx = i + 1400; found++;
+    }
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const sp of spans) { const l = merged[merged.length - 1]; if (l && sp[0] <= l[1]) l[1] = Math.max(l[1], sp[1]); else merged.push([sp[0], sp[1]]); }
+  let out = "";
+  for (const [a, b] of merged) { out += c.slice(a, b) + "\n[...]\n"; if (out.length > 6000) break; }
+  return out.slice(0, 6500);
+}
+
+/** M2.7 narrates its reasoning unless forced into JSON; extract only the answer. */
+function parseAnswer(raw: string): string | null {
+  const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  const start = cleaned.indexOf('{"answer"') >= 0 ? cleaned.indexOf('{"answer"') : cleaned.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0, end = -1;
+  for (let i = start; i < cleaned.length; i++) {
+    if (cleaned[i] === "{") depth++;
+    else if (cleaned[i] === "}") { depth--; if (depth === 0) { end = i + 1; break; } }
+  }
+  if (end < 0) return null;
+  try { const o = JSON.parse(cleaned.slice(start, end)); return o.answer ? String(o.answer) : null; } catch { return null; }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const auth = req.headers.get("Authorization") ?? "";
@@ -110,7 +151,7 @@ Deno.serve(async (req) => {
     if (trAll?.length) {
       context += `\n[${sym}] earnings calls on file: ${trAll.map((t) => `${String(t.title).slice(0, 90)} (${String(t.published_at).slice(0, 10)})`).join(" ; ")}`;
       const latest = trAll[0];
-      if (latest.content && String(latest.content).length > 200) context += `\n[${sym}] latest call excerpt: ${String(latest.content).slice(0, 4500)}`;
+      if (latest.content && String(latest.content).length > 200) context += `\n[${sym}] latest call excerpts (question-relevant windows): ${excerptFor(String(latest.content), question)}`;
     }
   }
 
@@ -122,7 +163,7 @@ ${context}
 
 Question: "${question}"
 
-Answer as their analyst: direct, specific, concise. Ground qualitative answers in the signals, headlines, filings, and earnings-call material above, not just prices. Numbers must come only from the stats block. Earnings-call titles and dates listed are reliable even when the excerpt is partial. Prefer 2-6 short bullets or <=120 words. If the question needs data you truly don't have, say exactly what's missing in one line.`;
+Answer as their analyst: direct, specific, tight. Ground qualitative answers in the signals, headlines, filings, and earnings-call material above, not just prices. Numbers must come only from the stats block. Earnings-call titles and dates listed are reliable even when the excerpt is partial. HARD LIMIT: 80 words total, 3-5 short bullets max, readable on a phone in under 20 seconds. No preamble, no repetition. If the question needs data you truly don't have, one line saying exactly what's missing.`;
 
   if (fixture) return json({ ok: true, answer: "FIXTURE\n" + "TOTAL:" + Math.round(totNow) + "\n" + totalLines, mentioned });
 
@@ -134,15 +175,17 @@ Answer as their analyst: direct, specific, concise. Ground qualitative answers i
     body: JSON.stringify({
       model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7",
       messages: [
-        { role: "system", content: "You are a direct, analytical portfolio assistant. Straightforward, concise, opinionated where the data supports it. Plain text (bullets with • allowed). Never invent numbers. Never use em dashes. No disclaimers." },
+        { role: "system", content: 'You are a direct, analytical portfolio assistant. Respond ONLY with strict JSON: {"answer": "..."}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, 80 words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no disclaimers.' },
         { role: "user", content: prompt },
       ],
-      temperature: 0.2, max_tokens: 4000,
+      temperature: 0.2, max_tokens: 6000,
+      response_format: { type: "json_object" },
     }),
   });
   if (!r.ok) return json({ ok: false, error: "model " + r.status }, 502);
   const out = await r.json().catch(() => null);
-  const answer = (out?.choices?.[0]?.message?.content ?? "").trim().replace(/\s*\u2014\s*/g, ": ").replace(/\s*\u2013\s*/g, ": ");
-  if (!answer) return json({ ok: false, error: "empty answer" }, 502);
+  const parsedA = parseAnswer(out?.choices?.[0]?.message?.content ?? "");
+  const answer = (parsedA ?? "").trim().replace(/\s*\u2014\s*/g, ": ").replace(/\s*\u2013\s*/g, ": ");
+  if (!answer) return json({ ok: false, error: "The analyst lost the thread mid-answer. Ask again." }, 502);
   return json({ ok: true, answer, mentioned });
 });
