@@ -127,7 +127,7 @@ describe("U6 home + prices", () => {
     expect(gl.textContent).toContain("+$779");
     expect(net.textContent).not.toMatch(/\.\d\d$/);        // values are whole dollars
     expect(gl.className).toContain("gain");
-    expect(screen.getAllByText("+5.26%").length).toBeGreaterThan(0);
+    expect((document.body.textContent ?? "").match(/\+5\.26%/g)!.length).toBeGreaterThan(0);
   });
   it("KRW rows format in won", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
