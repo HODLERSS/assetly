@@ -27,6 +27,29 @@ function extractText(html: string): string {
   return body.slice(Math.max(0, i), Math.max(0, i) + 80000);
 }
 
+/** Nav boilerplate from a blocked article page is NOT a transcript. */
+function isRealTranscript(c: string): boolean {
+  return c.length >= 3000 && /prepared remarks|thank you for joining|welcome to the|good (morning|afternoon|evening), everyone/i.test(c);
+}
+
+/** Motley Fool publishes full transcript text server-side; find it via DuckDuckGo's
+ *  HTML endpoint (Google News encrypts URLs, Bing RSS self-references). */
+async function foolTranscript(symbol: string, qhint: string): Promise<string | null> {
+  try {
+    const q = encodeURIComponent(`site:fool.com ${symbol} ${qhint} earnings call transcript`);
+    const r = await fetch(`https://html.duckduckgo.com/html/?q=${q}`, { headers: { "User-Agent": UA } });
+    if (!r.ok) return null;
+    const html = await r.text();
+    const links = [...html.matchAll(/uddg=([^"&]+)/g)].map((m) => decodeURIComponent(m[1]));
+    const url = links.find((u) => u.includes("fool.com/earnings/call-transcripts"));
+    if (!url) return null;
+    const page = await fetch(url, { headers: { "User-Agent": UA }, redirect: "follow" });
+    if (!page.ok) return null;
+    const text = extractText(await page.text());
+    return isRealTranscript(text) ? text : null;
+  } catch { return null; }
+}
+
 Deno.serve(async (req) => {
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const url = new URL(req.url);
@@ -58,14 +81,19 @@ Deno.serve(async (req) => {
       if (!r.ok) { errors.push(symbol + ": rss " + r.status); continue; }
       const items = parseItems(await r.text()).filter((i) => /transcript/i.test(i.title)).slice(0, 6);
       const { data: have } = await admin.from("transcripts").select("url,content").eq("symbol", symbol);
-      const known = new Map((have ?? []).map((x) => [x.url, String(x.content ?? "").length]));
+      const known = new Map((have ?? []).map((x) => [x.url, String(x.content ?? "")]));
       for (const it of items) {
-        // skip only when we already hold real content; thin rows (title-only fallbacks
-        // from a blocked article fetch) get retried every lap until the text lands.
-        if ((known.get(it.url) ?? 0) >= 600) continue;
+        // skip only when we already hold REAL transcript text; thin rows (titles or the
+        // nav boilerplate a blocked article fetch produces) retry every lap until it lands.
+        if (isRealTranscript(known.get(it.url) ?? "")) continue;
         const page = await fetch(it.url, { headers: { "User-Agent": UA }, redirect: "follow" }).catch(() => null);
         let content = page && page.ok ? extractText(await page.text()) : "";
-        if (content.length < 600) content = it.title;            // article body blocked: title + link still float and date the quarter
+        if (!isRealTranscript(content)) {
+          // Seeking Alpha blocked the body: Motley Fool carries the same call in full.
+          const qhint = it.title.match(/Q[1-4]\s*(?:FY)?\s*\d{4}/i)?.[0] ?? "";
+          const mf = await foolTranscript(symbol, qhint);
+          content = mf ?? it.title;                              // last resort: title still dates the quarter
+        }
         await admin.from("transcripts").upsert({ symbol, url: it.url, title: it.title.slice(0, 400), content, published_at: it.pub }, { onConflict: "symbol,url" });
         await admin.from("news").upsert({ symbol, title: it.title.slice(0, 500), url: it.url.slice(0, 1000), source: "Earnings Call", published_at: it.pub }, { onConflict: "symbol,url", ignoreDuplicates: true });
         wrote++;
