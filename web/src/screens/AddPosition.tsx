@@ -112,6 +112,7 @@ export function AddPosition({ api, onDone, onCancel }: {
             const sym = isCash && ccy === "KRW" ? `${picked.symbol}.KRW` : picked.symbol;
             try {
               await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "", note.trim());
+      if (!sym.startsWith("$")) void api.warmup(sym);   // first-look intelligence, fire-and-forget
               if (!isCash) void api.refreshNews([picked.symbol]);        // stories land while the user looks around
               await onDone();
             }

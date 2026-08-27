@@ -130,3 +130,8 @@ input, select { font: inherit; }
 .live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--as-gain, #0e9f6e); margin-left: 6px; vertical-align: middle; animation: livepulse 2s ease-in-out infinite; }
 @keyframes livepulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; opacity: .8; } }
+
+/* intelligence cards arrive, they don't just appear */
+.card.insights { animation: fadeUp .45s ease; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .card.insights { animation: none; } }

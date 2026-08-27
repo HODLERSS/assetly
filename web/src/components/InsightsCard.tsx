@@ -8,23 +8,29 @@ import { timeAgo } from "../lib/format";
 // no links. 3-5 opinionated bullets (7-day focus) + one-liners per horizon.
 const HORIZONS: [string, string][] = [["d7", "7D"], ["d30", "30D"], ["d60", "60D"], ["y1", "1Y"], ["y2", "2Y"]];
 
-export function InsightsCard({ api, symbol }: { api: Api; symbol: string }) {
+export function InsightsCard({ api, symbol, pollMs = 3000 }: { api: Api; symbol: string; pollMs?: number }) {
   const [ins, setIns] = useState<Insight | null | undefined>(undefined);   // undefined = loading
 
   useEffect(() => {
-    let live = true;
+    let live = true, tries = 0;
     if (insightCache.has(symbol)) setIns(insightCache.get(symbol));   // instant on revisit
     else setIns(undefined);
-    api.getInsights(symbol).then((v) => { insightCache.set(symbol, v); if (live) setIns(v); })
-      .catch(() => { if (live) setIns(null); });
+    const check = () => api.getInsights(symbol).then((v) => {
+      if (!live) return;
+      insightCache.set(symbol, v);
+      setIns(v);
+      // warmup writes the first card within ~15s of a symbol being added — keep looking
+      if (v === null && tries++ < 14) setTimeout(check, pollMs);
+    }).catch(() => { if (live) setIns(null); });
+    check();
     return () => { live = false; };
-  }, [api, symbol]);
+  }, [api, symbol, pollMs]);
 
   if (ins === undefined) return null;                     // quiet while loading
   if (ins === null) {
     return (
-      <p className="status-line" data-testid="insights-pending" style={{ margin: "4px 2px 8px" }}>
-        Intelligence for {symbol} lands on the next hourly lap.
+      <p className="status-line" data-testid="insights-pending" aria-busy="true" style={{ margin: "4px 2px 8px" }}>
+        Reading {symbol}'s last earnings call and this month's news…
       </p>
     );
   }

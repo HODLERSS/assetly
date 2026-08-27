@@ -196,6 +196,10 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error) throw error;
       return (data ?? []) as NewsItem[];
     },
+    /** First-look intelligence for a just-added symbol; fire-and-forget from the UI. */
+    async warmup(symbol: string): Promise<void> {
+      try { await sb.functions.invoke("warmup", { body: { symbol } }); } catch { /* the hourly lap covers it */ }
+    },
     /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
     async ask(question: string): Promise<{ answer: string; followups: string[] }> {
       const { data, error } = await sb.functions.invoke("ask", { body: { question } });

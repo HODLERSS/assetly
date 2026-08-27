@@ -60,6 +60,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     updateBaseCurrency: vi.fn().mockResolvedValue(undefined),
     updateDisplayCcy: vi.fn().mockResolvedValue(undefined),
     getPulse: vi.fn().mockResolvedValue([]),
+    warmup: vi.fn().mockResolvedValue(undefined),
     getInsights: vi.fn().mockResolvedValue(null),
     getPortfolioInsights: vi.fn().mockResolvedValue(null),
     ask: vi.fn().mockResolvedValue({ answer: "1W movement: +$824 (+14.2%). MARA led.", followups: ["What drove MARA this week?", "How is my 1M trend?"] }),
@@ -203,6 +204,44 @@ describe("U35 live-session dot", () => {
     expect(usRow.querySelector(".live-dot")).toBeTruthy();
     expect(krRow.querySelector(".live-dot")).toBeNull();
   });
+});
+
+describe("U37 warmup first look", () => {
+  it("adding a stock fires warmup; cash does not", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
+    await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
+    await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
+    await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.warmup).toHaveBeenCalledWith("MARA"));
+    // cash path
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /add a cash balance/i }));
+    await userEvent.type(screen.getByLabelText(/amount/i), "5000");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 5000, 1, undefined, "bank", "", ""));
+    expect(vi.mocked(api.warmup).mock.calls.length).toBe(1);
+  });
+  it("the pending line reads as active work and flips to the card when warmup lands", async () => {
+    let calls = 0;
+    const api = stubApi({ getInsights: vi.fn().mockImplementation(async () =>
+      ++calls < 3 ? null : { bullets: ["Q2 call Aug 6: revenue miss, AI pivot forward", "Settlement headline lifted the overhang"],
+        windows: { trend: "Two-year grind, recent AI re-rating." }, model: "m", generated_at: new Date().toISOString() }) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    const pending = await screen.findByTestId("insights-pending");
+    expect(pending.textContent).toMatch(/Reading RDDT/);
+    const card = await screen.findByTestId("insights-card", {}, { timeout: 9000 });
+    expect(card.textContent).toContain("AI pivot");
+    expect(card.textContent).toContain("Two-year grind");
+  }, 15000);
 });
 
 describe("U34 KR names over codes", () => {
