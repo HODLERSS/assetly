@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Api, Insight, PortfolioRow } from "../lib/api";
 import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyExact, signedMoney, signedPct, timeAgo } from "../lib/format";
-import { marketOf } from "../lib/markets";
+import { isMarketOpen, marketOf } from "../lib/markets";
 
 // Canvas 2b: the table as a touch list with multi-select filter chips.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
@@ -28,6 +28,7 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
   const chips: ("US" | "KR" | "ret")[] = [...(marketsHeld.length > 1 ? marketsHeld : []), ...(hasRet ? ["ret" as const] : [])];
   const isRet = (r: PortfolioRow) => r.account === "401k" || r.account === "ira";
   const shown = rows.filter((r) => (filter === "all" ? true : filter === "ret" ? isRet(r) : mktFor(r) === filter));
+  const isLive = (r: PortfolioRow) => { const m = marketOf(r); return m !== null && r.change_pct !== null && isMarketOpen(m); };
   // Per-market display currency (Settings matrix): KRW rows follow dispKr, everything else dispUs.
   const show = (v: number | null, r: PortfolioRow): [number | null, "USD" | "KRW"] => {
     const target = r.currency === "KRW" ? dispKr : dispUs;
@@ -89,7 +90,7 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
             </span>
             <span className="right">
               <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span><br />
-              <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)} today</span>
+              <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)} today{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span>
             </span>
           </button>
           );

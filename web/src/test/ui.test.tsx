@@ -174,6 +174,25 @@ describe("U3 add position", () => {
   });
 });
 
+describe("U35 live-session dot", () => {
+  it("open-market rows get the pulse dot; closed-market rows do not", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({}),                                            // US row: mock says US is open
+      row({ holding_id: "hk", symbol: "000660.KS", name: "SK hynix Inc.", name_kr: "SK하이닉스",
+        currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 1.1 }),
+    ]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await screen.findByText("RDDT");
+    const rowsEls = [...document.querySelectorAll(".card .row")];
+    const usRow = rowsEls.find((e) => e.textContent!.includes("RDDT"))!;
+    const krRow = rowsEls.find((e) => e.textContent!.includes("000660.KS"))!;
+    expect(usRow.querySelector(".live-dot")).toBeTruthy();
+    expect(krRow.querySelector(".live-dot")).toBeNull();
+  });
+});
+
 describe("U34 KR names over codes", () => {
   const krRows = () => [
     row({}),

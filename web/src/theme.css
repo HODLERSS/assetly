@@ -125,3 +125,8 @@ input, select { font: inherit; }
 
 /* clear tap affordance on lot rows */
 .edit-pill { border: 1.5px solid var(--as-primary); color: var(--as-primary); border-radius: 999px; font: 600 11px/1 var(--as-font-ui); padding: 5px 12px; white-space: nowrap; }
+
+/* live-session pulse: the market for this row is open and ticking */
+.live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--as-gain, #0e9f6e); margin-left: 6px; vertical-align: middle; animation: livepulse 2s ease-in-out infinite; }
+@keyframes livepulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; opacity: .8; } }
