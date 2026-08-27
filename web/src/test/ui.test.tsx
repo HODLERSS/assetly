@@ -206,6 +206,24 @@ describe("U35 live-session dot", () => {
   });
 });
 
+describe("U38 add lands on the position", () => {
+  it("a stock add navigates to that position's page where the card will arrive", async () => {
+    const api = stubApi({ addPosition: vi.fn().mockResolvedValue("h1") });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
+    await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
+    await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
+    await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    // holding h1 = the stub RDDT row: we land on its position page
+    await screen.findByRole("button", { name: /holdings/i });
+    await screen.findByText(/derived from lots/i);
+  });
+});
+
 describe("U37 warmup first look", () => {
   it("adding a stock fires warmup; cash does not", async () => {
     const api = stubApi();

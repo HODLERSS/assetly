@@ -3,7 +3,7 @@ import type { Account, Api, SymbolRow } from "../lib/api";
 
 // Canvas 3c/3d applied post-onboarding: search, then the two required fields.
 export function AddPosition({ api, onDone, onCancel }: {
-  api: Api; onDone: () => Promise<void> | void; onCancel: () => void;
+  api: Api; onDone: (holdingId?: string) => Promise<void> | void; onCancel: () => void;
 }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SymbolRow[]>([]);
@@ -111,10 +111,10 @@ export function AddPosition({ api, onDone, onCancel }: {
             setBusy(true); setErr(null);
             const sym = isCash && ccy === "KRW" ? `${picked.symbol}.KRW` : picked.symbol;
             try {
-              await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "", note.trim());
+              const newId = await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "", note.trim());
       if (!sym.startsWith("$")) void api.warmup(sym);   // first-look intelligence, fire-and-forget
               if (!isCash) void api.refreshNews([picked.symbol]);        // stories land while the user looks around
-              await onDone();
+              await onDone(sym.startsWith("$") ? undefined : (newId ?? undefined));
             }
             catch (e) { setErr(e instanceof Error ? e.message : "Could not add position."); }
             finally { setBusy(false); }
