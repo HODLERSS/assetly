@@ -52,10 +52,16 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
           {signedMoney(totals.gl, baseCurrency)} ({signedPct(totals.cost !== 0 ? (totals.gl / totals.cost) * 100 : 0)}) all time
         </div>
         {(() => {
-          const buckets: ["US" | "KR" | "CRYPTO", string][] = [["US", "US"], ["KR", "KRX"], ["CRYPTO", "Crypto"]];
-          const held = buckets.filter(([m]) => rows.some((r) => marketOf(r) === m));
+          // Crypto folds into the market of its pricing currency ($ -> US), same as Holdings.
+          const bucketOf = (r: PortfolioRow): "US" | "KR" | null => {
+            const m = marketOf(r);
+            if (m === "CRYPTO") return r.currency === "KRW" ? "KR" : "US";
+            return m;
+          };
+          const buckets: ["US" | "KR", string][] = [["US", "US"], ["KR", "KRX"]];
+          const held = buckets.filter(([m]) => rows.some((r) => bucketOf(r) === m));
           if (held.length < 2 || !totals.fx) return null;
-          const agg = (m: string, f: (r: PortfolioRow) => number) => rows.filter((r) => marketOf(r) === m)
+          const agg = (m: string, f: (r: PortfolioRow) => number) => rows.filter((r) => bucketOf(r) === m)
             .reduce((a, r) => a + (convertCcy(f(r), r.currency, baseCurrency, totals.fx) ?? 0), 0);
           const line = (f: (r: PortfolioRow) => number, base: (r: PortfolioRow) => number) => held.map(([m, label]) => {
             const d = agg(m, f), b = agg(m, base);
