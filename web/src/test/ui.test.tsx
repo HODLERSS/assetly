@@ -69,7 +69,7 @@ function stubApi(over: Partial<Api> = {}): Api {
       { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
     ]),
     getPortfolio: vi.fn().mockResolvedValue([row({})]),
-    addPosition: vi.fn().mockResolvedValue("h-new"),
+    addPosition: vi.fn().mockResolvedValue(undefined),   // no id -> legacy back-to-holdings flow
     getLots: vi.fn().mockResolvedValue([{ id: "l1", holding_id: "h1", qty: 10, cost_per_share: 166.55, acquired_on: "2026-07-22", note: null }]),
     addLot: vi.fn().mockResolvedValue(undefined),
     updateLot: vi.fn().mockResolvedValue(undefined),
@@ -219,8 +219,8 @@ describe("U38 add lands on the position", () => {
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     // holding h1 = the stub RDDT row: we land on its position page
-    await screen.findByRole("button", { name: /holdings/i });
     await screen.findByText(/derived from lots/i);
+    expect(screen.getByRole("button", { name: /remove position/i })).toBeTruthy();
   });
 });
 
