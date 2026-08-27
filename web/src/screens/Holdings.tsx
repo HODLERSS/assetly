@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Api, Insight, PortfolioRow } from "../lib/api";
-import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyExact, signedMoney, signedPct, timeAgo } from "../lib/format";
+import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyExact, signedMoney, signedMoneyCompact, signedPct, timeAgo } from "../lib/format";
 import { isMarketOpen, marketOf } from "../lib/markets";
 
 // Canvas 2b: the table as a touch list with multi-select filter chips.
@@ -90,7 +90,7 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
             </span>
             <span className="right">
               <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span><br />
-              <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)} today{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span>
+              <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)}{r.change_pct !== null && (() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} today{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span>
             </span>
           </button>
           );

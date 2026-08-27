@@ -174,6 +174,18 @@ describe("U3 add position", () => {
   });
 });
 
+describe("U36 compact day dollars", () => {
+  it("Holdings rows show the day move as compact $ next to the percent", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await screen.findByText("RDDT");
+    // value 4800 at +5.26% -> day move ~= $240
+    expect(document.body.textContent).toMatch(/\+5\.26% \(\+\$240\) today/);
+  });
+});
+
 describe("U35 live-session dot", () => {
   it("open-market rows get the pulse dot; closed-market rows do not", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([

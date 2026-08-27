@@ -78,3 +78,11 @@ export function labelParts(r: { symbol: string; name?: string | null; name_kr?: 
     .replace(/\s*(Co\.?,?\s*Ltd\.?|Inc\.?|Corp(?:oration)?\.?|Company|Ltd\.?)\s*$/i, "").trim();
   return { main: nm || r.symbol, sub: r.symbol };
 }
+
+/** Compact signed money for tight row lines: +$28.1K, -\u20a99.3M. */
+export function signedMoneyCompact(v: number | null, ccy: "USD" | "KRW"): string {
+  if (v === null) return "\u2014";
+  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
+  const num = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(Math.abs(v));
+  return `${sign}${ccy === "KRW" ? "\u20a9" : "$"}${num}`;
+}

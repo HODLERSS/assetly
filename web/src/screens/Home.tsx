@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Api, PortfolioRow } from "../lib/api";
 import { isMarketOpen, marketOf, moverEligible, moverMode, sessionLabel } from "../lib/markets";
-import { convertCcy, dayChangeAmount, glClass, labelParts, money, signedMoney, signedPct } from "../lib/format";
+import { convertCcy, dayChangeAmount, glClass, labelParts, money, signedMoney, signedMoneyCompact, signedPct } from "../lib/format";
 
 // Canvas 2a: net worth, movers, market pulse.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
@@ -105,7 +105,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{labelParts(r, dispKr === "KRW").main}</span><br />
               <span className="sub">{r.kind === "cash" ? "cash" : r.kind === "debt" ? "debt" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{ACCT[r.account] ? ` · ${ACCT[r.account]}` : ""}</span>
-              {r.change_pct !== null && <span className={`sub num ${glClass(r.change_pct)}`}> · {signedPct(r.change_pct)}{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span>}</span>
+              {r.change_pct !== null && <span className={`sub num ${glClass(r.change_pct)}`}> · {signedPct(r.change_pct)}{(() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()}{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span>}</span>
             <span className="right">
               {(() => { const [v, c] = show(r.value, r); return <span className="num">{r.kind === "debt" ? signedMoney(-(v ?? 0), c) : money(v, c)}</span>; })()}<br />
               {(() => { const [g, c] = show(r.total_gl, r); return <span className={`num sub ${glClass(r.total_gl)}`}>{signedMoney(g, c)}</span>; })()}
