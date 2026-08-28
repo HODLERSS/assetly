@@ -137,6 +137,8 @@ Deno.serve(async (req) => {
   let wrote = 0;
   const errors: string[] = [];
   for (const uid of userIds) {
+    const tStart = Date.now();
+    const elapsed = () => (Date.now() - tStart) / 1000;
     try {
       const rows = byUser.get(uid)!;
       const usd = (v: number, c: string) => (c === "KRW" ? v / fxNum : v);
@@ -168,7 +170,7 @@ Deno.serve(async (req) => {
         };
       } else {
         // ---- stage 1: analyst memos, parallel over top holdings ----
-        const memoTargets = holdings.slice(0, 6);
+        const memoTargets = holdings.slice(0, 5);
         const memos = await Promise.all(memoTargets.map(async (r) => {
           try {
             const dispN = krName(r.symbol, r.nickname, r.name);
@@ -181,7 +183,7 @@ Deno.serve(async (req) => {
             ]);
             const h = (hist ?? []).map((x) => ({ ts: String(x.ts), price: Number(x.price) }));
             const memoPrompt = `Internal analyst memo on ${dispN} (${r.symbol}) for a portfolio where it is ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets. Day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}, 30d ${pctOver(h, 30)}, 1y ${pctOver(h, 365)}.
-${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}):\n${String(tr[0].content).slice(0, 5000)}` : "No earnings call on file."}
+${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}):\n${String(tr[0].content).slice(0, 4000)}` : "No earnings call on file."}
 ${(fils ?? []).length ? `Filings: ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}
 News (14d):\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- none"}
 
@@ -217,20 +219,22 @@ ${prev ? `YESTERDAY (${prev.brief_date}):\n${JSON.stringify(prev.sections)}` : "
 Return STRICT JSON:
 {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}
 lede: the ONE thing that matters for THIS portfolio today. <= 2 sentences, <= 34 words. Earn the reader's next 3 minutes.
-overnight: the tape that touches them. MUST contain at least THREE literal numbers copied from the MARKET line (futures, VIX, index, FX), each tied to a named holding of THIS user. <= 55 words.
+overnight: the tape that touches them. MUST contain at least THREE literal numbers copied from the MARKET line (futures, VIX, index, FX) using their EXACT labels (never call futures "the S&P"; never merge two instruments), then one clause on what it means for their largest exposures BY NAME. <= 55 words.
 positions: the 1-4 holdings that EARNED coverage today (news, calls, filings, breaks). Not just the biggest. note <= 32 words with at least one number; incorporate the skeptic where it sharpens. watch <= 10 words and must be a CONCRETE event, date, or level (e.g. "Q3 guidance Sep 4", "HBM pricing at Goldman conf"). NEVER verbs like monitor, watch, track, keep an eye.
-desk_view: one STRUCTURAL observation only: valuation, correlation, concentration, or rotation. Mentioning today's price moves here is a failure. Builds on yesterday when given. <= 40 words.
+desk_view: one STRUCTURAL observation only: valuation, correlation, concentration, or rotation. It may not contain ANY overnight or single-day number; multi-week, valuation, or weight numbers only. Builds on yesterday when given. <= 40 words.
 calendar: 0-3 items <= 10 words each (estimated earnings dates OK if labeled est).
-BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching".
+BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching", "demands scrutiny", "warrants attention".
+NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
+NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
 RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as ₩ (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
         let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts.", editorPrompt, 14000);
-        if (!draft || !validSections(draft)) {
+        if ((!draft || !validSections(draft)) && elapsed() < 90) {
           draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Output the exact JSON shape requested.", editorPrompt, 16000);
         }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": editor failed"); continue; }
 
-        // ---- stage 4: fact-check ----
-        const checked = await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
+        // ---- stage 4: fact-check (skipped when the wall clock is tight; scrub still runs) ----
+        const checked = elapsed() > 110 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
           `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers.`, 10000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       }
