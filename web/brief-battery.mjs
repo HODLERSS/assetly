@@ -52,12 +52,13 @@ function codeChecks(s) {
 async function judgeOnce(s, portfolioDesc) {
   const prompt = `Grade this personal morning investment brief against 5 criteria. Portfolio: ${portfolioDesc}.
 BRIEF: ${JSON.stringify(s)}
-Return STRICT JSON {"c2": bool, "c5": bool, "c7": bool, "c9": bool, "c10": bool, "worst": str}.
+Return STRICT JSON {"c2": bool, "c5": bool, "c7": bool, "c9": bool, "c9_evidence": str, "c10": bool, "c10_evidence": str, "worst": str}.
 c2: the overnight section cites at least 3 actual market numbers (futures/index/VIX/FX levels or %).
 c5: ZERO filler or generic advice (fail on phrases like "investors should", "keep an eye on", "time will tell", "as always", vague hedging).
 c7: desk_view is a genuine mid-term structural observation (valuation, correlation, rotation), not a price recap.
 c9: broader-market or leader context is CONNECTED to this specific portfolio, not floating commentary.
-c10: no IMPOSSIBLE or internally CONTRADICTORY numbers (a figure that conflicts with another in the same brief, or is mathematically impossible). Plausible market figures pass; only flag clear errors.
+c10: no IMPOSSIBLE or internally CONTRADICTORY numbers. To fail this you MUST quote the exact contradicting pair in c10_evidence; if you cannot quote a concrete contradiction, c10 passes.
+c9_evidence: if c9 fails, quote the disconnected claim; if you cannot, c9 passes.
 worst: the single weakest sentence in the brief, quoted.
 Be harsh. A criterion only passes if fully met.`;
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
@@ -86,7 +87,7 @@ async function judge(s, d) {
 
 const CHUNK = process.env.CHUNK ? Number(process.env.CHUNK) : 0;
 const names = Object.keys(P);
-const subset = CHUNK === 1 ? names.slice(0, 4) : CHUNK === 2 ? names.slice(4, 8) : CHUNK === 3 ? names.slice(8) : names;
+const subset = process.env.ONLY ? process.env.ONLY.split(",") : CHUNK === 1 ? names.slice(0, 4) : CHUNK === 2 ? names.slice(4, 8) : CHUNK === 3 ? names.slice(8) : names;
 const results = [];
 for (const [name, list] of Object.entries(P).filter(([n]) => subset.includes(n))) {
   try {
@@ -105,7 +106,9 @@ for (const [name, list] of Object.entries(P).filter(([n]) => subset.includes(n))
     const cc = codeChecks(s);
     const jj = await judge(s, name + " " + list.map((x) => x[0]).join(","));
     if (!jj) { log(`${name}: JUDGE-NULL (brief generated fine; regrade needed)`); results.push({ name, score: -1, sections: s }); continue; }
-    const passes = [cc.c1_lede, jj?.c2, cc.c3_notes_numeric, cc.c4_positions, jj?.c5, cc.c6_style, jj?.c7, cc.c8_length, jj?.c9, jj?.c10];
+    const c9final = jj?.c9 !== false || !String(jj?.c9_evidence ?? "").trim() ? true : false;
+    const c10final = jj?.c10 !== false || !String(jj?.c10_evidence ?? "").trim() ? true : false;
+    const passes = [cc.c1_lede, jj?.c2, cc.c3_notes_numeric, cc.c4_positions, jj?.c5, cc.c6_style, jj?.c7, cc.c8_length, c9final, c10final];
     const score = passes.filter(Boolean).length * 10;
     const fails = ["c1","c2","c3","c4","c5","c6","c7","c8","c9","c10"].filter((_, i) => !passes[i]);
     log(`${name}: ${score}/100 (${secs}s, ${totalWords(s)}w)${fails.length ? " FAIL:" + fails.join(",") : ""}${jj?.worst ? " | worst: " + String(jj.worst).slice(0, 90) : ""}`);

@@ -240,6 +240,18 @@ RULES: every word must earn its place; no filler, no hedging, no generic advice.
         if ((!draft || !validSections(draft)) && elapsed() < 70) {
           draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly. Output the exact JSON shape requested.", editorPrompt, 24000, 60000);
         }
+        if (!draft || !validSections(draft)) {
+          // graceful degradation for API slow waves: a compact editor beats no brief
+          const compactPrompt = `Write today's ${briefDate} morning brief for ONE investor. Be dense; every word counts.
+MARKET: ${marketLines || "(none)"}
+PORTFOLIO (only source of numbers): Total $${Math.round(total)}.
+${statsLines}
+TOP MEMOS:
+${memosOut.slice(0, 3).map((m) => `- ${m.name}: ${m.changed}. ${m.bull}. ${m.bear}.`).join("\n")}
+Return STRICT JSON {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": []}.
+lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their holdings; 1-3 positions, note <= 32 words with a number, watch <= 10 words naming a concrete event; desk_view <= 40 words, structural only (no day moves). No filler, no em dashes, Korean companies by name, won as ₩.`;
+          draft = await askModel(key, "Think very briefly. Output only the JSON.", compactPrompt, 12000, 40000);
+        }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": editor failed [" + meta1 + " | " + lastMeta + "]"); continue; }
 
         // ---- stage 4: fact-check (skipped when the wall clock is tight; scrub still runs) ----
