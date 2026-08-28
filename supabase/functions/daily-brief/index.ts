@@ -163,8 +163,8 @@ Deno.serve(async (req) => {
       const total = assets.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
       if (total < 100) continue;
       if (!force) {
-        const { data: have } = await admin.from("daily_briefs").select("id").eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
-        if (have) continue;
+        const { data: have } = await admin.from("daily_briefs").select("id, model").eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
+        if (have && !String(have.model ?? "").includes("compact")) continue;   // sweeps upgrade degraded (compact) briefs
       }
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
         .sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
@@ -184,6 +184,7 @@ Deno.serve(async (req) => {
       }
 
       let sections: Sections | null = null;
+      let usedCompact = false;
       let memosOut: Record<string, unknown>[] = [];
       if (fixture) {
         sections = body.canned ?? {
@@ -269,6 +270,7 @@ ${memosOut.slice(0, 3).map((m) => `- ${m.name}: ${m.changed}. ${m.bull}. ${m.bea
 Return STRICT JSON {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": []}.
 lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their holdings; 1-3 positions, note <= 32 words with a number, watch <= 10 words naming a concrete event (NEVER the words monitor, watch, track, keep an eye); desk_view <= 40 words, structural only: no day moves, no overnight numbers. Banned: investors should, keep an eye, monitor, worth watching, remains to be seen. No filler, no em dashes, Korean companies by name, won as ₩.`;
           draft = await askModel(key, "Think very briefly. Output only the JSON.", compactPrompt, 12000, 40000);
+          if (draft && validSections(draft)) usedCompact = true;
         }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": editor failed [" + meta1 + " | " + lastMeta + "]"); continue; }
 
@@ -360,9 +362,12 @@ ${STYLE_RULES}`;
 MARKET NOW: ${mktLive || "(none)"}
 PORTFOLIO (only source of numbers): Total $${Math.round(total)}. ${pnlLine}
 ${statsLines}
+DESK CONTEXT:
+${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.changed ?? ""}. watch: ${m.watch ?? ""}`).join("\n") || "- none"}
 ${shape}
-lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 3 MARKET NOW numbers and exact labels; 1-3 positions ordered by weight, note <= 28 words with a number, watch <= 10 words naming a concrete event (NEVER monitor/watch/track); desk_view <= 36 words structural only; calendar []. No filler, no em dashes, Korean companies by name, won as \u20a9.`;
+lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 3 MARKET NOW numbers and exact labels; 1-3 positions ordered by weight, note <= 28 words with a number, watch <= 10 words taken from DESK CONTEXT or "next session open", NEVER an invented level or date (and NEVER monitor/watch/track); desk_view <= 36 words structural only; calendar []. The day G/L figures in PORTFOLIO are the only loss/gain numbers allowed. No filler, no em dashes, Korean companies by name, won as \u20a9.`;
           draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 12000, 35000);
+          if (draft && validSections(draft)) usedCompact = true;
         }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": writer failed [" + lastMeta + "]"); continue; }
         const caps = edition === "midday" ? "lede 28, overnight 50, note 28, watch 10, desk_view 36" : "lede 30, overnight 55, note 30, watch 10, desk_view 40";
@@ -391,7 +396,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, scrubDeep(x)])) : v;
       sections = scrubDeep(sections) as Sections;
       const { error: upErr } = await admin.from("daily_briefs").upsert({
-        user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : model,
+        user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
       }, { onConflict: "user_id,brief_date,edition" });
       if (upErr) errors.push(uid.slice(0, 8) + ": " + upErr.message); else wrote++;
       // ---- audio narration (background; the text brief never waits on it) ----

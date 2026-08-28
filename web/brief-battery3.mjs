@@ -130,7 +130,13 @@ for (const name of subset) {
       const genScore = 100;
       const secs = ((Date.now() - t0) / 1000).toFixed(0);
       if (w.error || !(w.data?.wrote > 0)) { log(`${name}/${ed}: GEN FAIL ${secs}s ${w.error?.message ?? JSON.stringify(w.data)}`); results.push({ name, ed, M: { M1: 0 } }); continue; }
-      const { data: b } = await c.from("daily_briefs").select("sections").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", ed).maybeSingle();
+      let { data: b } = await c.from("daily_briefs").select("sections, model").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", ed).maybeSingle();
+      if (b && String(b.model ?? "").includes("compact") && attempts < 3) {
+        // sweep simulation: a degraded (compact-fallback) brief gets one upgrade pass
+        await new Promise(r => setTimeout(r, 60000)); await invoke(); attempts += 1;
+        const { data: b2 } = await c.from("daily_briefs").select("sections, model").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", ed).maybeSingle();
+        if (b2 && !String(b2.model ?? "").includes("compact")) b = b2;
+      }
       const s = b?.sections;
       if (!s) { log(`${name}/${ed}: NO ROW`); results.push({ name, ed, M: { M1: 0 } }); continue; }
       if (ed === "morning") morningSecs = s;
