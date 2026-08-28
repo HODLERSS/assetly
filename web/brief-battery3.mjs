@@ -124,8 +124,8 @@ for (const name of subset) {
         new Promise((res) => setTimeout(() => res({ error: { message: "invoke timeout 200s" } }), 200000)),
       ]);
       let w = await invoke(); let genScore = 100;
-      if (w.error || !(w.data?.wrote > 0)) { await new Promise(r => setTimeout(r, 30000)); w = await invoke(); genScore = 70; }
-      if (w.error || !(w.data?.wrote > 0)) { await new Promise(r => setTimeout(r, 45000)); w = await invoke(); genScore = 50; }
+      if (w.error || !(w.data?.wrote > 0)) { await new Promise(r => setTimeout(r, 60000)); w = await invoke(); genScore = 70; }
+      if (w.error || !(w.data?.wrote > 0)) { await new Promise(r => setTimeout(r, 120000)); w = await invoke(); genScore = 50; }
       const secs = ((Date.now() - t0) / 1000).toFixed(0);
       if (w.error || !(w.data?.wrote > 0)) { log(`${name}/${ed}: GEN FAIL ${secs}s ${w.error?.message ?? JSON.stringify(w.data)}`); results.push({ name, ed, M: { M1: 0 } }); continue; }
       const { data: b } = await c.from("daily_briefs").select("sections").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", ed).maybeSingle();
