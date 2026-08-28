@@ -193,7 +193,7 @@ News (14d):\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") 
 
 Return STRICT JSON: {"name": "${dispN}", "changed": str, "promise_check": str, "bull": str, "bear": str, "watch": str}.
 changed: what actually changed in the last 24-48h (or "quiet"). promise_check: management's last stated promise and whether evidence supports it. Each field <= 22 words. Specific, numbers where available, no filler.`;
-            const m = await askModel(key, "You are a buy-side analyst writing an internal memo.", memoPrompt, 6000);
+            const m = await askModel(key, "You are a buy-side analyst writing an internal memo.", memoPrompt, 6000, 25000);
             return m ? { symbol: r.symbol, ...m } : null;
           } catch { return null; }
         }));
@@ -202,7 +202,7 @@ changed: what actually changed in the last 24-48h (or "quiet"). promise_check: m
 
         // ---- stage 2: devil's advocate ----
         const devil = await askModel(key, "You are the desk's skeptic.",
-          `Memos:\n${JSON.stringify(memosOut)}\n\nReturn STRICT JSON: {"pushback": [{"name": str, "point": str}]}. For each memo that deserves it (max 4): the single strongest objection, what's overstated, or the risk it ignores. <= 18 words each. Ruthless, specific.`, 6000);
+          `Memos:\n${JSON.stringify(memosOut)}\n\nReturn STRICT JSON: {"pushback": [{"name": str, "point": str}]}. For each memo that deserves it (max 4): the single strongest objection, what's overstated, or the risk it ignores. <= 18 words each. Ruthless, specific.`, 5000, 20000);
         const pushback = Array.isArray((devil as { pushback?: unknown })?.pushback) ? (devil as { pushback: unknown[] }).pushback : [];
 
         // ---- stage 3: editor ----
@@ -216,8 +216,8 @@ PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
 Total assets $${Math.round(total)}.
 ${statsLines}
 
-ANALYST MEMOS:\n${JSON.stringify(memosOut)}
-SKEPTIC PUSHBACK:\n${JSON.stringify(pushback)}
+ANALYST MEMOS:\n${JSON.stringify(memosOut.slice(0, 4))}
+SKEPTIC PUSHBACK:\n${JSON.stringify(pushback.slice(0, 3))}
 ${prev ? `YESTERDAY'S NOTE (for continuity): lede "${(prev.sections as { lede?: string })?.lede ?? ""}" · desk view "${(prev.sections as { desk_view?: string })?.desk_view ?? ""}"` : ""}
 
 Return STRICT JSON:
@@ -231,15 +231,15 @@ BANNED PHRASES (never write these or variants): "investors should", "keep an eye
 NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
 RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as ₩ (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
-        let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts.", editorPrompt, 16000, 40000);
-        if ((!draft || !validSections(draft)) && elapsed() < 90) {
-          draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Output the exact JSON shape requested.", editorPrompt, 16000, 40000);
+        let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts.", editorPrompt, 20000, 60000);
+        if ((!draft || !validSections(draft)) && elapsed() < 70) {
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Output the exact JSON shape requested.", editorPrompt, 20000, 60000);
         }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": editor failed"); continue; }
 
         // ---- stage 4: fact-check (skipped when the wall clock is tight; scrub still runs) ----
-        const checked = elapsed() > 110 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
-          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers.`, 10000);
+        const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
+          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers.`, 10000, 30000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       }
       if (!sections || !validSections(sections)) { errors.push(uid.slice(0, 8) + ": invalid sections"); continue; }
