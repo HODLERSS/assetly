@@ -48,7 +48,12 @@ export function AddPosition({ api, onDone, onCancel }: {
             {results.map((r) => (
               <button key={r.symbol} className="row" disabled={busy} onClick={async () => {
                 setErr(null); setBusy(true);
-                try { await api.ensureSymbol(r); setPicked(r); }
+                try {
+                  await api.ensureSymbol(r);
+                  setPicked(r);
+                  // head start: intelligence generates WHILE they type shares and cost
+                  if (!r.symbol.startsWith("$")) void api.warmup(r.symbol);
+                }
                 catch (e) { setErr(e instanceof Error ? e.message : "Could not add that ticker."); }
                 finally { setBusy(false); }
               }}>

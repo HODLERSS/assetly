@@ -8,8 +8,21 @@ import { timeAgo } from "../lib/format";
 // no links. 3-5 opinionated bullets (7-day focus) + one-liners per horizon.
 const HORIZONS: [string, string][] = [["d7", "7D"], ["d30", "30D"], ["d60", "60D"], ["y1", "1Y"], ["y2", "2Y"]];
 
-export function InsightsCard({ api, symbol, pollMs = 3000 }: { api: Api; symbol: string; pollMs?: number }) {
+const PHASES = [
+  "Reading {sym}'s last earnings call and this month's news…",
+  "Scanning SEC filings and price history…",
+  "Writing the first take…",
+];
+
+export function InsightsCard({ api, symbol, pollMs = 2000 }: { api: Api; symbol: string; pollMs?: number }) {
   const [ins, setIns] = useState<Insight | null | undefined>(undefined);   // undefined = loading
+  const [phase, setPhase] = useState(0);
+
+  useEffect(() => {
+    if (ins !== null) return;
+    const t = setInterval(() => setPhase((x) => (x + 1) % PHASES.length), 2500);
+    return () => clearInterval(t);
+  }, [ins]);
 
   useEffect(() => {
     let live = true, tries = 0;
@@ -29,9 +42,15 @@ export function InsightsCard({ api, symbol, pollMs = 3000 }: { api: Api; symbol:
   if (ins === undefined) return null;                     // quiet while loading
   if (ins === null) {
     return (
-      <p className="status-line" data-testid="insights-pending" aria-busy="true" style={{ margin: "4px 2px 8px" }}>
-        Reading {symbol}'s last earnings call and this month's news…
-      </p>
+      <section className="card insights" data-testid="insights-pending" aria-busy="true" aria-label={`Preparing insights for ${symbol}`}>
+        <div className="insights-head">
+          <span className="insights-brand">Assetly Intelligence</span>
+        </div>
+        <div className="skel-line" style={{ width: "92%" }} />
+        <div className="skel-line" style={{ width: "76%" }} />
+        <div className="skel-line" style={{ width: "58%" }} />
+        <p className="sub" style={{ margin: "10px 0 0" }}>{PHASES[phase].replace("{sym}", symbol)}</p>
+      </section>
     );
   }
 

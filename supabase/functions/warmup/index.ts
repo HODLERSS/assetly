@@ -56,8 +56,15 @@ Deno.serve(async (req) => {
     return json({ ok: true, cached: true });
   }
 
-  // Pull the raw material in parallel (each sibling is idempotent + fast).
+  // Pull only the raw material we don't already hold (popular symbols skip straight
+  // to generation, cutting time-to-card roughly in half).
   if (!fixture) {
+    const since6h = new Date(Date.now() - 6 * 3600000).toISOString();
+    const [nFresh, tAny, fAny] = await Promise.all([
+      admin.from("news").select("id", { count: "exact", head: true }).eq("symbol", symbol).gte("published_at", since6h),
+      admin.from("transcripts").select("url", { count: "exact", head: true }).eq("symbol", symbol),
+      admin.from("filings").select("form", { count: "exact", head: true }).eq("symbol", symbol),
+    ]);
     const SK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const base = Deno.env.get("SUPABASE_URL")!;
     const call = (fn: string) => fetch(`${base}/functions/v1/${fn}`, {
@@ -65,7 +72,11 @@ Deno.serve(async (req) => {
       headers: { Authorization: `Bearer ${SK}`, apikey: SK, "Content-Type": "application/json" },
       body: JSON.stringify({ symbols: [symbol] }),
     }).catch(() => null);
-    await Promise.all([call("news-sync"), call("filings-sync"), call("transcripts-sync")]);
+    const needed: Promise<unknown>[] = [];
+    if (!(nFresh.count ?? 0)) needed.push(call("news-sync"));
+    if (!(tAny.count ?? 0)) needed.push(call("transcripts-sync"));
+    if (!(fAny.count ?? 0)) needed.push(call("filings-sync"));
+    if (needed.length) await Promise.all(needed);
   }
 
   const { data: srow } = await admin.from("symbols").select("name,kind").eq("symbol", symbol).maybeSingle();

@@ -243,7 +243,9 @@ describe("U37 warmup first look", () => {
     await userEvent.type(screen.getByLabelText(/amount/i), "5000");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 5000, 1, undefined, "bank", "", ""));
-    expect(vi.mocked(api.warmup).mock.calls.length).toBe(1);
+    // fires at pick time and again post-add (deduped in the real client); never for cash
+    expect(vi.mocked(api.warmup).mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(vi.mocked(api.warmup).mock.calls.every((call) => call[0] === "MARA")).toBe(true);
   });
   it("the pending line reads as active work and flips to the card when warmup lands", async () => {
     let calls = 0;

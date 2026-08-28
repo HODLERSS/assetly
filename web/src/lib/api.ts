@@ -24,6 +24,7 @@ export type NewsItem = { id: string; symbol: string; title: string; url: string;
 export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
 
 const nm = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+const warmupFired = new Set<string>();
 
 export function makeApi(sb: SupabaseClient = supabase) {
   return {
@@ -196,8 +197,11 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error) throw error;
       return (data ?? []) as NewsItem[];
     },
-    /** First-look intelligence for a just-added symbol; fire-and-forget from the UI. */
+    /** First-look intelligence for a just-added symbol; fire-and-forget from the UI.
+     *  Deduped per session so the pick-time head start and the post-add call don't double-spend. */
     async warmup(symbol: string): Promise<void> {
+      if (warmupFired.has(symbol)) return;
+      warmupFired.add(symbol);
       try { await sb.functions.invoke("warmup", { body: { symbol } }); } catch { /* the hourly lap covers it */ }
     },
     /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
