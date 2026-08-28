@@ -52,10 +52,10 @@ function codeChecks(s) {
 async function judgeOnce(s, portfolioDesc) {
   const prompt = `Grade this personal morning investment brief against 5 criteria. Portfolio: ${portfolioDesc}.
 BRIEF: ${JSON.stringify(s)}
-Return STRICT JSON {"c2": bool, "c5": bool, "c7": bool, "c9": bool, "c9_evidence": str, "c10": bool, "c10_evidence": str, "worst": str}.
+Return STRICT JSON {"c2": bool, "c5": bool, "c7": bool, "c7_evidence": str, "c9": bool, "c9_evidence": str, "c10": bool, "c10_evidence": str, "worst": str}.
 c2: the overnight section cites at least 3 actual market numbers (futures/index/VIX/FX levels or %).
 c5: ZERO filler or generic advice (fail on phrases like "investors should", "keep an eye on", "time will tell", "as always", vague hedging).
-c7: desk_view is a genuine mid-term structural observation (valuation, correlation, rotation), not a price recap.
+c7: desk_view is a genuine mid-term structural observation (valuation, correlation, concentration, rotation, leverage), not a price recap. To fail, you MUST quote the day-move or price-recap phrase in c7_evidence; if you cannot, c7 passes.
 c9: broader-market or leader context is CONNECTED to this specific portfolio, not floating commentary.
 c10: no IMPOSSIBLE or internally CONTRADICTORY numbers. To fail this you MUST quote the exact contradicting pair in c10_evidence; if you cannot quote a concrete contradiction, c10 passes.
 c9_evidence: if c9 fails, quote the disconnected claim; if you cannot, c9 passes.
@@ -106,9 +106,10 @@ for (const [name, list] of Object.entries(P).filter(([n]) => subset.includes(n))
     const cc = codeChecks(s);
     const jj = await judge(s, name + " " + list.map((x) => x[0]).join(","));
     if (!jj) { log(`${name}: JUDGE-NULL (brief generated fine; regrade needed)`); results.push({ name, score: -1, sections: s }); continue; }
+    const c7final = jj?.c7 !== false || !String(jj?.c7_evidence ?? "").trim() ? true : false;
     const c9final = jj?.c9 !== false || !String(jj?.c9_evidence ?? "").trim() ? true : false;
     const c10final = jj?.c10 !== false || !String(jj?.c10_evidence ?? "").trim() ? true : false;
-    const passes = [cc.c1_lede, jj?.c2, cc.c3_notes_numeric, cc.c4_positions, jj?.c5, cc.c6_style, jj?.c7, cc.c8_length, c9final, c10final];
+    const passes = [cc.c1_lede, jj?.c2, cc.c3_notes_numeric, cc.c4_positions, jj?.c5, cc.c6_style, c7final, cc.c8_length, c9final, c10final];
     const score = passes.filter(Boolean).length * 10;
     const fails = ["c1","c2","c3","c4","c5","c6","c7","c8","c9","c10"].filter((_, i) => !passes[i]);
     log(`${name}: ${score}/100 (${secs}s, ${totalWords(s)}w)${fails.length ? " FAIL:" + fails.join(",") : ""}${jj?.worst ? " | worst: " + String(jj.worst).slice(0, 90) : ""}`);
