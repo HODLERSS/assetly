@@ -2,12 +2,9 @@
 // Score = 10 binary criteria x 10. Deterministic checks in code; judgment calls via M2.7.
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync, appendFileSync, writeFileSync } from "fs";
-import { execSync } from "child_process";
-const others = execSync("pgrep -f brief-battery || true").toString().trim().split("\n").filter(Boolean);
-if (others.length > 1) { console.error("another battery instance is running; refusing to start"); process.exit(2); }
 const LOG = "/tmp/brief-battery.log";
 const log = (m) => { console.log(m); appendFileSync(LOG, m + "\n"); };
-writeFileSync(LOG, "");
+if (!process.env.CHUNK || process.env.CHUNK === "1") writeFileSync(LOG, "");
 const key = readFileSync("/Users/minjaelee/Documents/_Claude/AI/stockAnalysis/app/supabase/.env.local", "utf8").match(/MARA_API_KEY=(.+)/)[1].trim();
 const c = createClient("https://hhdpthrfmsdmxdrfckxq.supabase.co", "sb_publishable_MKb_6rBvHA6JJ4UYxhg9Cw_BIrKkICE", { auth: { persistSession: false } });
 await c.auth.signInWithPassword({ email: "e2e-cloud@assetly.test", password: "Assetly-e2e-fixture-2026" });
@@ -87,13 +84,19 @@ async function judge(s, d) {
   return null;
 }
 
+const CHUNK = process.env.CHUNK ? Number(process.env.CHUNK) : 0;
+const names = Object.keys(P);
+const subset = CHUNK === 1 ? names.slice(0, 4) : CHUNK === 2 ? names.slice(4, 8) : CHUNK === 3 ? names.slice(8) : names;
 const results = [];
-for (const [name, list] of Object.entries(P)) {
+for (const [name, list] of Object.entries(P).filter(([n]) => subset.includes(n))) {
   try {
     await setPortfolio(list);
     await new Promise(r => setTimeout(r, 2000));
     const t0 = Date.now();
-    const w = await c.functions.invoke("daily-brief", { body: { user_email: "e2e-cloud@assetly.test", force: true } });
+    const w = await Promise.race([
+      c.functions.invoke("daily-brief", { body: { user_email: "e2e-cloud@assetly.test", force: true } }),
+      new Promise((res) => setTimeout(() => res({ error: { message: "invoke timeout 200s" } }), 200000)),
+    ]);
     const secs = ((Date.now() - t0) / 1000).toFixed(0);
     if (w.error || !(w.data?.wrote > 0)) { log(`${name}: GEN FAIL ${secs}s ${w.error?.message ?? JSON.stringify(w.data)}`); results.push({ name, score: 0 }); continue; }
     const { data: b } = await c.from("daily_briefs").select("sections").eq("user_id", u.user.id).order("generated_at", { ascending: false }).limit(1).maybeSingle();
@@ -108,6 +111,12 @@ for (const [name, list] of Object.entries(P)) {
     log(`${name}: ${score}/100 (${secs}s, ${totalWords(s)}w)${fails.length ? " FAIL:" + fails.join(",") : ""}${jj?.worst ? " | worst: " + String(jj.worst).slice(0, 90) : ""}`);
     results.push({ name, score, fails, sections: s });
   } catch (e) { log(`${name}: ERROR ${e.message}`); results.push({ name, score: 0 }); }
+}
+if (CHUNK === 1 || CHUNK === 2) {
+  const avgC = results.filter(r => r.score >= 0);
+  log(`CHUNK ${CHUNK} AVG ${(avgC.reduce((a, r) => a + r.score, 0) / Math.max(1, avgC.length)).toFixed(1)}`);
+  writeFileSync(`/tmp/brief-chunk${CHUNK}.json`, JSON.stringify(results, null, 1));
+  process.exit(0);
 }
 // stability: regenerate P1 twice more, structures must validate
 await setPortfolio(P.P1_tech);
