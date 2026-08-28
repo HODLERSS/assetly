@@ -121,14 +121,18 @@ Deno.serve(async (req) => {
         const acctId = String(a.id ?? "");
         if (!acctId) continue;
         const inst = String(a.institution_name ?? "Brokerage");
-        // newer SnapTrade accounts 410 the legacy /positions endpoint; the unified /holdings
-        // snapshot carries positions and balances together. Fall back to legacy paths if needed.
-        const hold = await get(`/accounts/${acctId}/holdings`) as Record<string, unknown> | null;
-        await rawSave("holdings", acctId, hold);
-        let poss = hold && Array.isArray(hold.positions) ? hold.positions as Record<string, unknown>[] : null;
-        let bals = hold && Array.isArray(hold.balances) ? hold.balances as Record<string, unknown>[] : null;
+        // Accounts created after May 2026 use the unified positions endpoint; older ones the legacy paths.
+        const allPos = await get(`/accounts/${acctId}/positions/all`) as Record<string, unknown> | null;
+        await rawSave("positions_all", acctId, allPos);
+        let poss = allPos && Array.isArray((allPos as { results?: unknown }).results) ? (allPos as { results: Record<string, unknown>[] }).results : null;
+        if (!poss) {
+          const hold = await get(`/accounts/${acctId}/holdings`) as Record<string, unknown> | null;
+          await rawSave("holdings", acctId, hold);
+          poss = hold && Array.isArray(hold.positions) ? hold.positions as Record<string, unknown>[] : null;
+        }
         if (!poss) { poss = await get(`/accounts/${acctId}/positions`) as Record<string, unknown>[] | null; await rawSave("positions", acctId, poss); }
-        if (!bals) { bals = await get(`/accounts/${acctId}/balances`) as Record<string, unknown>[] | null; await rawSave("balances", acctId, bals); }
+        const bals = await get(`/accounts/${acctId}/balances`) as Record<string, unknown>[] | null;
+        await rawSave("balances", acctId, bals);
         if (!Array.isArray(poss)) continue;   // never delete on a failed fetch
         const seen: string[] = [];
         const ensureHolding = async (sym: string, ext: string, nickname: string, qty: number, cost: number | null) => {
@@ -145,22 +149,40 @@ Deno.serve(async (req) => {
           seen.push(ext);
         };
         for (const p of poss) {
-          const symObj = (p.symbol as Record<string, unknown> | undefined)?.symbol as Record<string, unknown> | string | undefined;
-          const sym = typeof symObj === "string" ? symObj : String(symObj?.symbol ?? symObj?.raw_symbol ?? "");
+          // unified shape: { instrument: {kind, symbol, description, currency, exchange}, units, price, cost_basis }
+          // legacy shape:  { symbol: { symbol: {symbol, description, currency:{code}, exchange:{code}} }, units, price, average_purchase_price }
+          const inst = p.instrument as Record<string, unknown> | undefined;
+          const kindRaw = String(inst?.kind ?? "stock");
+          if (["option", "future", "cfd"].includes(kindRaw)) continue;   // out of scope for the holdings book
+          let sym = "", desc = "", ccy = "USD", exch = "US";
+          if (inst) {
+            sym = String(inst.symbol ?? inst.raw_symbol ?? "");
+            desc = String(inst.description ?? sym);
+            ccy = String((p.currency as string | undefined) ?? (inst.currency as string | undefined) ?? "USD");
+            exch = String((inst.exchange as string | undefined) ?? "US");
+          } else {
+            const symObj = (p.symbol as Record<string, unknown> | undefined)?.symbol as Record<string, unknown> | string | undefined;
+            sym = typeof symObj === "string" ? symObj : String((symObj as Record<string, unknown> | undefined)?.symbol ?? (symObj as Record<string, unknown> | undefined)?.raw_symbol ?? "");
+            const meta = typeof symObj === "object" && symObj ? symObj as Record<string, unknown> : {};
+            desc = String((meta as { description?: string }).description ?? sym);
+            ccy = String(((meta as { currency?: { code?: string } }).currency?.code) ?? "USD");
+            exch = String(((meta as { exchange?: { code?: string } }).exchange?.code) ?? "US");
+          }
           const units = Number(p.units ?? p.fractional_units ?? 0);
           if (!sym || !(units > 0)) continue;
-          const meta = typeof symObj === "object" && symObj ? symObj : {};
-          const desc = String((meta as { description?: string }).description ?? sym);
-          const ccy = String(((meta as { currency?: { code?: string } }).currency?.code) ?? "USD");
-          const exch = String(((meta as { exchange?: { code?: string } }).exchange?.code) ?? "US");
-          await admin.from("symbols").upsert({ symbol: sym, name: desc, exchange: exch, currency: ccy, kind: "equity" }, { onConflict: "symbol", ignoreDuplicates: true });
+          const kind = kindRaw === "crypto" ? "crypto" : "equity";
+          // class shares: SnapTrade "BRKB" -> Yahoo "BRK-B"
+          const cls = sym.match(/^([A-Z]{2,})([AB])$/);
+          const yahoo = cls && /class [ab]/i.test(desc) ? `${cls[1]}-${cls[2]}` : null;
+          await admin.from("symbols").upsert({ symbol: sym, name: desc, exchange: exch, currency: ccy, kind, ...(yahoo ? { yahoo } : {}) }, { onConflict: "symbol", ignoreDuplicates: true });
           const price = p.price === null || p.price === undefined ? null : Number(p.price);
           if (price !== null && Number.isFinite(price)) {
             await admin.from("prices").upsert(
               { symbol: sym, price, currency: ccy, as_of: new Date().toISOString(), source: "snaptrade", updated_at: new Date().toISOString() },
               { onConflict: "symbol", ignoreDuplicates: true });   // price-sync owns existing rows
           }
-          const avg = p.average_purchase_price === null || p.average_purchase_price === undefined ? null : Number(p.average_purchase_price);
+          const avgRaw = p.cost_basis ?? p.average_purchase_price;
+          const avg = avgRaw === null || avgRaw === undefined ? null : Number(avgRaw);
           await ensureHolding(sym, `st:${acctId}:${sym}`, "", units, avg);
           positions++;
         }

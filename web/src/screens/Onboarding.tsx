@@ -32,9 +32,15 @@ export function Onboarding({ api, onDone, snaptrade = null }: {
       try {
         const rows = (await api.getPortfolio()).filter((r) => !r.symbol.startsWith("$"));
         if (!live) return;
-        if (rows.length > 0) { setImported(rows); setImportDone(true); return; }
+        if (rows.length > 0) {
+          setImported((prev) => {
+            // live ticker feed: rows land one by one; settle once the count stops growing
+            if (prev && rows.length === prev.length && pollRef.current > 2) setImportDone(true);
+            return rows;
+          });
+        }
       } catch { /* keep polling */ }
-      if (pollRef.current < 12) setTimeout(tick, 2000);
+      if (pollRef.current < 16) setTimeout(tick, 1500);
       else if (live) setImportDone(true);   // give up waiting; they can continue anyway
     };
     void tick();
@@ -89,7 +95,11 @@ export function Onboarding({ api, onDone, snaptrade = null }: {
         <div className="card" data-testid="ob-import">
           {!importDone && (<>
             <p style={{ margin: 0, fontWeight: 600 }}>Importing your positions…</p>
-            <p className="sub" style={{ margin: "6px 0 0" }}>Shares and cost basis are landing now. This usually takes a few seconds.</p>
+            <p className="sub" style={{ margin: "6px 0 0" }}>
+              {(imported?.length ?? 0) > 0
+                ? `Found so far: ${imported!.slice(-4).map((r) => r.symbol).join(" · ")}${imported!.length > 4 ? ` (+${imported!.length - 4} more)` : ""}`
+                : "Shares and cost basis are landing now. This usually takes a few seconds."}
+            </p>
           </>)}
           {importDone && n > 0 && (<>
             <p style={{ margin: 0, fontWeight: 600 }}>✓ Imported {n} position{n === 1 ? "" : "s"}</p>
