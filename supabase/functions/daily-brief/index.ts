@@ -350,11 +350,11 @@ desk_view: the setup for ${isFri ? "next week" : "tomorrow"}: the one structural
 CONTINUITY LAW: a claim already made in the morning brief may only reappear if you ADVANCE it (resolved, worsened, confirmed by the close); restating it in different words is a failure.
 calendar: 0-3 items: tonight's after-hours reports, ${isFri ? "next week's" : "tomorrow's"} data or earnings. <= 10 words each.${krHeld ? `\nTheir Korean holdings trade TONIGHT (KRX opens 9:00 PM Eastern). If a Korean name has a catalyst, put it in positions or calendar.` : ""}
 ${STYLE_RULES}`;
-        let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly, then write.", writerPrompt, 20000, 75000);
-        if ((!draft || !validSections(draft)) && elapsed() < 80) {
-          draft = await askModel(key, "You are the editor of a one-reader research desk. Think briefly. Output the exact JSON shape requested.", writerPrompt, 20000, 55000);
+        let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly, then write.", writerPrompt, 20000, 60000);
+        if ((!draft || !validSections(draft)) && elapsed() < 70) {
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Think briefly. Output the exact JSON shape requested.", writerPrompt, 20000, 45000);
         }
-        if ((!draft || !validSections(draft)) && elapsed() < 115) {
+        if ((!draft || !validSections(draft)) && elapsed() < 105) {
           // API slow-wave degradation: a compact intraday note beats no note
           const compact = `Write the ${briefDate} ${edition === "midday" ? "MIDDAY session pulse (11 AM Central)" : "post-close note"} for ONE investor. Dense; every word counts.
 MARKET NOW: ${mktLive || "(none)"}
