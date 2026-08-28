@@ -285,13 +285,24 @@ lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their h
             let ek = Deno.env.get("ELEVEN_API_KEY") ?? "";
             if (!ek) { const { data } = await admin.rpc("get_secret", { secret_name: "eleven_api_key" }); ek = data ?? ""; }
             if (!ek) return;
-            const scriptOut = await askModel(key,
-              "You turn a written morning investment brief into a vivid spoken radio script. Output only the JSON.",
-              `Brief:\n${JSON.stringify(finalSections)}\n\nReturn STRICT JSON {"spoken": str}.
-spoken: a 2-to-3 minute radio script (330-430 words) of this exact brief for expressive text-to-speech. Voice: a sharp, warm morning-desk analyst speaking to ONE client they know well. Short sentences. Contractions. Spell numbers for the ear ("up five point eight percent", "about a hundred and forty-seven thousand dollars"). Vary the rhythm: punchy for surprises, slower with commas and ellipses for risk warnings, one earned exclamation at most. Structure: one-line greeting with the date, the lede, the overnight tape, each position with what to watch, the desk view, a one-line sign-off. Insert <break time="0.7s" /> between sections and <break time="0.3s" /> after key numbers. Use ONLY facts and numbers from the brief. No headers, no ticker codes, company names only. Never mention sections or that this is generated.`,
-              9000, 70000);
-            const spoken = scriptOut && typeof (scriptOut as { spoken?: unknown }).spoken === "string" ? String((scriptOut as { spoken: string }).spoken) : null;
+            const dayLine = new Date(dateCopy + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
+            const scriptPrompt = `Brief:\n${JSON.stringify(finalSections)}\n\nReturn STRICT JSON {"spoken": str}.
+spoken: a 2-to-3 minute radio script (340-430 words) of this exact brief for expressive text-to-speech. Today is ${dayLine} — use that in the greeting and NEVER guess a different weekday. Voice: a sharp, warm morning-desk analyst speaking to ONE client they know well. Short sentences. Contractions. Spell numbers for the ear ("up five point eight percent", "about a hundred and forty-seven thousand dollars"). Vary the rhythm: punchy for surprises, slower with commas and ellipses for risk warnings, one earned exclamation at most. Structure, all parts REQUIRED: one-line greeting with the date, the lede, the overnight tape, each position with what to watch, the desk view, and a closing sign-off sentence that says goodbye (e.g. "That\u2019s your brief. Talk soon."). The script MUST end with that complete sign-off sentence — never end on a market point or a pause. Insert <break time="0.7s" /> between sections and <break time="0.3s" /> after key numbers. Use ONLY facts and numbers from the brief. No headers, no ticker codes, company names only. Never mention sections or that this is generated.`;
+            const sysLine = "You turn a written morning investment brief into a vivid spoken radio script. Output only the JSON.";
+            const getScript = async (): Promise<string | null> => {
+              const out = await askModel(key, sysLine, scriptPrompt, 12000, 70000);
+              const sp = out && typeof (out as { spoken?: unknown }).spoken === "string" ? String((out as { spoken: string }).spoken) : null;
+              if (!sp) return null;
+              // trailing pause tags read as an abrupt dead-air ending — always strip
+              const trimmed = sp.replace(/(?:\s*<break[^>]*\/>\s*)+$/g, "").trim();
+              return trimmed.split(/\s+/).length >= 280 && /[.!?]$/.test(trimmed) ? trimmed : null;
+            };
+            let spoken = await getScript();
+            if (!spoken) spoken = await getScript();   // one retry on a short or broken script
             if (!spoken || spoken.length < 400) return;
+            // deterministic safety net: never ship a script that stops on a market point
+            if (!/(talk soon|talk to you|see you|good luck|tomorrow|that\u2019s your|that's your|sign\w* off|catch you|have a (good|great)|go get)/i.test(spoken.slice(-160)))
+              spoken += ` <break time="0.6s" /> That\u2019s your brief for this ${dayLine.split(",")[0]}. Talk soon.`;
             const voice = Deno.env.get("ELEVEN_VOICE_ID") ?? "JBFqnCBsd6RMkjVDRZzb";   // George: warm storyteller
             const vr = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
               method: "POST", headers: { "xi-api-key": ek, "Content-Type": "application/json" },
