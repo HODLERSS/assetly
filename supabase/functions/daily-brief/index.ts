@@ -40,6 +40,7 @@ function parseJsonBlock(raw: string): Record<string, unknown> | null {
   try { return JSON.parse(cleaned.slice(start, end)); } catch { return null; }
 }
 
+let lastMeta = "";   // finish_reason + content length of the most recent call (diagnostics)
 async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs = 30000): Promise<Record<string, unknown> | null> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -57,9 +58,10 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
     }),
   }).catch(() => null);
   clearTimeout(timer);
-  if (!r || !r.ok) return null;
+  if (!r || !r.ok) { lastMeta = "http=" + (r ? r.status : "abort"); return null; }
   const out = await r.json().catch(() => null);
   const c = out?.choices?.[0]?.message?.content;
+  lastMeta = "fr=" + (out?.choices?.[0]?.finish_reason ?? "?") + " clen=" + String(c ?? "").length;
   return c ? parseJsonBlock(String(c)) : null;
 }
 
@@ -216,8 +218,10 @@ PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
 Total assets $${Math.round(total)}.
 ${statsLines}
 
-ANALYST MEMOS:\n${JSON.stringify(memosOut.slice(0, 4))}
-SKEPTIC PUSHBACK:\n${JSON.stringify(pushback.slice(0, 3))}
+ANALYST MEMOS:
+${memosOut.slice(0, 4).map((m) => `- ${m.name}: changed: ${m.changed}. promises: ${m.promise_check}. bull: ${m.bull}. bear: ${m.bear}. watch: ${m.watch}`).join("\n")}
+SKEPTIC PUSHBACK:
+${pushback.slice(0, 3).map((pb) => `- ${(pb as { name?: string }).name}: ${(pb as { point?: string }).point}`).join("\n") || "- none"}
 ${prev ? `YESTERDAY'S NOTE (for continuity): lede "${(prev.sections as { lede?: string })?.lede ?? ""}" · desk view "${(prev.sections as { desk_view?: string })?.desk_view ?? ""}"` : ""}
 
 Return STRICT JSON:
@@ -231,11 +235,12 @@ BANNED PHRASES (never write these or variants): "investors should", "keep an eye
 NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
 RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as ₩ (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
-        let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts.", editorPrompt, 20000, 60000);
-        if ((!draft || !validSections(draft)) && elapsed() < 70) {
-          draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Output the exact JSON shape requested.", editorPrompt, 20000, 60000);
+        let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly, then write.", editorPrompt, 16000, 50000);
+        const meta1 = lastMeta;
+        if ((!draft || !validSections(draft)) && elapsed() < 85) {
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly. Output the exact JSON shape requested.", editorPrompt, 16000, 50000);
         }
-        if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": editor failed"); continue; }
+        if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": editor failed [" + meta1 + " | " + lastMeta + "]"); continue; }
 
         // ---- stage 4: fact-check (skipped when the wall clock is tight; scrub still runs) ----
         const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",

@@ -2,6 +2,9 @@
 // Score = 10 binary criteria x 10. Deterministic checks in code; judgment calls via M2.7.
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync, appendFileSync, writeFileSync } from "fs";
+import { execSync } from "child_process";
+const others = execSync("pgrep -f brief-battery || true").toString().trim().split("\n").filter(Boolean);
+if (others.length > 1) { console.error("another battery instance is running; refusing to start"); process.exit(2); }
 const LOG = "/tmp/brief-battery.log";
 const log = (m) => { console.log(m); appendFileSync(LOG, m + "\n"); };
 writeFileSync(LOG, "");
