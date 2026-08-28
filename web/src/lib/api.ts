@@ -26,7 +26,7 @@ export type BriefSections = {
   positions: { name: string; note: string; watch: string }[];
   desk_view: string; calendar: string[];
 };
-export type DailyBrief = { brief_date: string; sections: BriefSections; generated_at: string };
+export type DailyBrief = { brief_date: string; sections: BriefSections; generated_at: string; audio_path?: string | null };
 export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
 
 const nm = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -215,10 +215,16 @@ export function makeApi(sb: SupabaseClient = supabase) {
     },
     /** The latest Daily Brief for the signed-in user (today's, or the most recent). */
     async getDailyBrief(): Promise<DailyBrief | null> {
-      const { data } = await sb.from("daily_briefs").select("brief_date,sections,generated_at")
+      const { data } = await sb.from("daily_briefs").select("brief_date,sections,generated_at,audio_path")
         .order("brief_date", { ascending: false }).limit(1).maybeSingle();
       if (!data) return null;
-      return { brief_date: String(data.brief_date), sections: data.sections as BriefSections, generated_at: String(data.generated_at) };
+      return { brief_date: String(data.brief_date), sections: data.sections as BriefSections,
+               generated_at: String(data.generated_at), audio_path: (data.audio_path as string | null) ?? null };
+    },
+    /** Short-lived playback URL for a brief's narration. */
+    async getBriefAudioUrl(path: string): Promise<string | null> {
+      const { data } = await sb.storage.from("briefs-audio").createSignedUrl(path, 3600);
+      return data?.signedUrl ?? null;
     },
     /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
     async ask(question: string): Promise<{ answer: string; followups: string[] }> {

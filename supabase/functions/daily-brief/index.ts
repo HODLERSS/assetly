@@ -77,7 +77,7 @@ function pctOver(history: { ts: string; price: number }[], days: number): string
   return (((last.price / start.price) - 1) * 100).toFixed(1) + "%";
 }
 
-type Sections = { lede: string; overnight: string; positions: { name: string; note: string; watch: string }[]; desk_view: string; calendar: string[] };
+type Sections = { lede: string; overnight: string; positions: { name: string; note: string; watch: string }[]; desk_view: string; calendar: string[]; spoken?: string };
 function validSections(o: unknown): o is Sections {
   const s = o as Sections;
   return !!s && typeof s.lede === "string" && !!s.lede.trim() && typeof s.overnight === "string"
@@ -225,12 +225,13 @@ ${pushback.slice(0, 3).map((pb) => `- ${(pb as { name?: string }).name}: ${(pb a
 ${prev ? `YESTERDAY'S NOTE (for continuity): lede "${(prev.sections as { lede?: string })?.lede ?? ""}" · desk view "${(prev.sections as { desk_view?: string })?.desk_view ?? ""}"` : ""}
 
 Return STRICT JSON:
-{"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}
+{"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str], "spoken": str}
 lede: the ONE thing that matters for THIS portfolio today. <= 2 sentences, <= 34 words. Earn the reader's next 3 minutes.
 overnight: the tape that touches them. MUST contain at least THREE literal numbers copied from the MARKET line (futures, VIX, index, FX) using their EXACT labels (never call futures "the S&P"; never merge two instruments), then one clause on what it means for their largest exposures BY NAME. <= 55 words.
 positions: the 1-4 holdings that EARNED coverage today (news, calls, filings, breaks). Not just the biggest. note <= 32 words with at least one number; incorporate the skeptic where it sharpens. watch <= 10 words and must be a CONCRETE event, date, or level (e.g. "Q3 guidance Sep 4", "HBM pricing at Goldman conf"). NEVER verbs like monitor, watch, track, keep an eye.
 desk_view: one STRUCTURAL observation only: valuation, correlation, concentration, or rotation. It may not contain ANY overnight or single-day number; multi-week, valuation, or weight numbers only. Builds on yesterday when given. <= 40 words.
 calendar: 0-3 items <= 10 words each (estimated earnings dates OK if labeled est).
+spoken: a 2-to-3 minute radio script (330-430 words) of this brief for expressive text-to-speech. Voice direction: a sharp, warm morning-desk analyst speaking to ONE client they know well. Short sentences. Contractions. Spell numbers for the ear ("up five point eight percent", "about a hundred and forty-seven thousand dollars"). Vary the rhythm: punchy for genuine surprises, slower and deliberate for risk warnings (use commas and ellipses for pacing), one earned exclamation at most. Structure: one-line greeting with the date; the lede; the overnight tape; each covered position with what to watch; the desk view; one-line sign-off. Insert <break time="0.7s" /> between sections and <break time="0.3s" /> after key numbers. No headers, no bullets, no ticker codes; company names only. Never mention sections, sources, or that this is generated.
 BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching", "demands scrutiny", "warrants attention".
 NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
@@ -256,7 +257,7 @@ lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their h
 
         // ---- stage 4: fact-check (skipped when the wall clock is tight; scrub still runs) ----
         const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
-          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers.`, 10000, 30000);
+          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers. Verify the numbers inside "spoken" the same way (spelled-out numbers must match the data) and keep it 330-430 words with its break tags intact.`, 12000, 35000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       }
       if (!sections || !validSections(sections)) { errors.push(uid.slice(0, 8) + ": invalid sections"); continue; }
@@ -277,6 +278,32 @@ lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their h
         user_id: uid, brief_date: briefDate, sections, memos: memosOut.slice(0, 8), model: fixture ? "fixture" : model,
       }, { onConflict: "user_id,brief_date" });
       if (upErr) errors.push(uid.slice(0, 8) + ": " + upErr.message); else wrote++;
+      // ---- audio narration (background; the text brief never waits on it) ----
+      const spoken = (sections as { spoken?: string }).spoken;
+      if (!fixture && !upErr && spoken && spoken.length > 400) {
+        const uidCopy = uid, dateCopy = briefDate;
+        const doAudio = (async () => {
+          try {
+            let ek = Deno.env.get("ELEVEN_API_KEY") ?? "";
+            if (!ek) { const { data } = await admin.rpc("get_secret", { secret_name: "eleven_api_key" }); ek = data ?? ""; }
+            if (!ek) return;
+            const voice = Deno.env.get("ELEVEN_VOICE_ID") ?? "JBFqnCBsd6RMkjVDRZzb";   // George: warm storyteller
+            const vr = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
+              method: "POST", headers: { "xi-api-key": ek, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: spoken, model_id: "eleven_multilingual_v2",
+                voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true },
+              }),
+            });
+            if (!vr.ok) return;
+            const audio = new Uint8Array(await vr.arrayBuffer());
+            const path = `${uidCopy}/${dateCopy}.mp3`;
+            const { error: upE } = await admin.storage.from("briefs-audio").upload(path, audio, { contentType: "audio/mpeg", upsert: true });
+            if (!upE) await admin.from("daily_briefs").update({ audio_path: path }).eq("user_id", uidCopy).eq("brief_date", dateCopy);
+          } catch { /* the written brief stands alone */ }
+        })();
+        try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(doAudio); } catch { /* ignore */ }
+      }
     } catch (e) { errors.push(uid.slice(0, 8) + ": " + (e instanceof Error ? e.message : String(e))); }
   }
   return json({ ok: true, users: userIds.length, wrote, briefDate, errors: errors.slice(0, 5) });

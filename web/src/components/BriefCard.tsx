@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Api, DailyBrief } from "../lib/api";
 
 // The Daily Brief — a personal morning research note. Collapsed to the lede by
@@ -6,6 +6,30 @@ import type { Api, DailyBrief } from "../lib/api";
 export function BriefCard({ api }: { api: Api }) {
   const [brief, setBrief] = useState<DailyBrief | null | undefined>(undefined);
   const [open, setOpen] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const toggleAudio = async () => {
+    if (!brief?.audio_path) return;
+    if (audioRef.current) {
+      if (playing) { audioRef.current.pause(); setPlaying(false); }
+      else { void audioRef.current.play(); setPlaying(true); }
+      return;
+    }
+    const url = await api.getBriefAudioUrl(brief.audio_path);
+    if (!url) return;
+    const a = new Audio(url);
+    audioRef.current = a;
+    a.onended = () => setPlaying(false);
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: "Morning Brief", artist: "Assetly", album: brief.brief_date });
+      navigator.mediaSession.setActionHandler?.("pause", () => { a.pause(); setPlaying(false); });
+      navigator.mediaSession.setActionHandler?.("play", () => { void a.play(); setPlaying(true); });
+    }
+    void a.play();
+    setPlaying(true);
+  };
+  useEffect(() => () => { audioRef.current?.pause(); }, []);
 
   useEffect(() => {
     let live = true;
@@ -21,9 +45,16 @@ export function BriefCard({ api }: { api: Api }) {
     <section className="card insights" data-testid="brief-card" aria-label="Your morning brief">
       <div className="insights-head">
         <span className="insights-brand">Morning Brief · {dateLabel}</span>
-        <button className="insights-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? "Close" : "Read · 3 min"}
-        </button>
+        <span style={{ display: "flex", gap: 10 }}>
+          {brief.audio_path && (
+            <button className="insights-toggle" onClick={() => void toggleAudio()} aria-label={playing ? "Pause narration" : "Listen to your brief"}>
+              {playing ? "❚❚ Pause" : "▶ Listen"}
+            </button>
+          )}
+          <button className="insights-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+            {open ? "Close" : "Read · 3 min"}
+          </button>
+        </span>
       </div>
       <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, fontWeight: open ? 400 : 500 }}>{s.lede}</p>
       {open && (

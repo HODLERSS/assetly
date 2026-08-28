@@ -61,6 +61,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     updateDisplayCcy: vi.fn().mockResolvedValue(undefined),
     getPulse: vi.fn().mockResolvedValue([]),
     getDailyBrief: vi.fn().mockResolvedValue(null),
+    getBriefAudioUrl: vi.fn().mockResolvedValue(null),
     warmup: vi.fn().mockResolvedValue(undefined),
     getInsights: vi.fn().mockResolvedValue(null),
     getPortfolioInsights: vi.fn().mockResolvedValue(null),
@@ -245,7 +246,7 @@ describe("U39 morning brief", () => {
         ],
         desk_view: "Your AI-infrastructure correlation remains the book's true risk.",
         calendar: ["MARA earnings tonight (est)"],
-      } }) });
+      }, audio_path: "u-test/2026-08-28.mp3" }) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     const card = await screen.findByTestId("brief-card");
@@ -257,6 +258,8 @@ describe("U39 morning brief", () => {
     expect(bodyEl.textContent).toContain("VIX 14.2");
     expect(bodyEl.textContent).toContain("SK hynix");
     expect(bodyEl.textContent).toContain("Not financial advice");
+    // audio narration button appears when a recording exists
+    expect(screen.getByRole("button", { name: /listen to your brief/i })).toBeTruthy();
   });
   it("no brief yet: nothing renders", async () => {
     render(<App api={stubApi()} />);
