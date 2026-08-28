@@ -106,13 +106,13 @@ Deno.serve(async (req) => {
       const part = await yahooBatch(targets.slice(i, i + 40));
       for (const [k, v] of part) quotes.set(k, v);
     }
-    let fallbacks = 0;
-    for (const p of targets) {                       // fallback for anything the batch missed
-      if (!quotes.has(p.symbol) && fallbacks < 25) {
-        fallbacks++;
-        const q = await yahooChart(p.symbol, p.yahoo);
-        if (q) quotes.set(p.symbol, q);
-      }
+    // Yahoo v7 batch now often 401s (crumb requirement); the chart endpoint stays
+    // reliable. Fetch EVERY missing symbol in parallel chunks — no cap, or the same
+    // tail symbols go permanently stale (seen: 10 of 35 stuck at Thursday's close).
+    const missing = targets.filter((p) => !quotes.has(p.symbol));
+    for (let i = 0; i < missing.length; i += 8) {
+      const part = await Promise.all(missing.slice(i, i + 8).map((p) => yahooChart(p.symbol, p.yahoo)));
+      for (const q of part) if (q) quotes.set(q.symbol, q);
     }
   }
 

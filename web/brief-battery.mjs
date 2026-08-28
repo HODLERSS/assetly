@@ -57,7 +57,7 @@ c2: the overnight section cites at least 3 actual market numbers (futures/index/
 c5: ZERO filler or generic advice (fail on phrases like "investors should", "keep an eye on", "time will tell", "as always", vague hedging).
 c7: desk_view is a genuine mid-term structural observation (valuation, correlation, concentration, rotation, leverage), not a price recap. To fail, you MUST quote the day-move or price-recap phrase in c7_evidence; if you cannot, c7 passes.
 c9: broader-market or leader context is CONNECTED to this specific portfolio, not floating commentary.
-c10: no IMPOSSIBLE or internally CONTRADICTORY numbers. To fail this you MUST quote the exact contradicting pair in c10_evidence; if you cannot quote a concrete contradiction, c10 passes.
+c10: no IMPOSSIBLE or internally CONTRADICTORY numbers. Rounded figures are CONSISTENT (a value within 1% of the derived exact figure is a rounding, not a contradiction). To fail this you MUST quote a contradicting pair that differs by more than 1%; otherwise c10 passes.
 c9_evidence: if c9 fails, quote the disconnected claim; if you cannot, c9 passes.
 worst: the single weakest sentence in the brief, quoted.
 Be harsh. A criterion only passes if fully met.`;
