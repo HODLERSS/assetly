@@ -138,11 +138,11 @@ Each bullet 10-15 words. Plain punchy language. Never use em dashes or semicolon
   const g1 = await gather(false);
   let content: string | null;
   if (fixture) content = JSON.stringify(body.canned ?? { bullets: ["fixture call verdict with date", "fixture biggest headline take"], trend: "fixture two-year trajectory in one line" });
-  else content = await askModel(key, g1.prompt, 3000);
+  else content = await askModel(key, g1.prompt, 5000);
   const wrote = await writeGlance(content);
   if (!wrote && !fixture) {
     // one immediate retry on a transient model failure keeps the promise to the UI
-    const retry = await askModel(key, g1.prompt, 3000);
+    const retry = await askModel(key, g1.prompt, 5000);
     if (!(await writeGlance(retry))) return json({ ok: false, error: "unparseable" }, 502);
   } else if (!wrote) {
     return json({ ok: false, error: "unparseable" }, 502);
