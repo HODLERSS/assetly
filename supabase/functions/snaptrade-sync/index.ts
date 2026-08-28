@@ -121,12 +121,14 @@ Deno.serve(async (req) => {
         const acctId = String(a.id ?? "");
         if (!acctId) continue;
         const inst = String(a.institution_name ?? "Brokerage");
-        const [poss, bals] = await Promise.all([
-          get(`/accounts/${acctId}/positions`) as Promise<Record<string, unknown>[] | null>,
-          get(`/accounts/${acctId}/balances`) as Promise<Record<string, unknown>[] | null>,
-        ]);
-        await rawSave("positions", acctId, poss);
-        await rawSave("balances", acctId, bals);
+        // newer SnapTrade accounts 410 the legacy /positions endpoint; the unified /holdings
+        // snapshot carries positions and balances together. Fall back to legacy paths if needed.
+        const hold = await get(`/accounts/${acctId}/holdings`) as Record<string, unknown> | null;
+        await rawSave("holdings", acctId, hold);
+        let poss = hold && Array.isArray(hold.positions) ? hold.positions as Record<string, unknown>[] : null;
+        let bals = hold && Array.isArray(hold.balances) ? hold.balances as Record<string, unknown>[] : null;
+        if (!poss) { poss = await get(`/accounts/${acctId}/positions`) as Record<string, unknown>[] | null; await rawSave("positions", acctId, poss); }
+        if (!bals) { bals = await get(`/accounts/${acctId}/balances`) as Record<string, unknown>[] | null; await rawSave("balances", acctId, bals); }
         if (!Array.isArray(poss)) continue;   // never delete on a failed fetch
         const seen: string[] = [];
         const ensureHolding = async (sym: string, ext: string, nickname: string, qty: number, cost: number | null) => {
