@@ -60,6 +60,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     updateBaseCurrency: vi.fn().mockResolvedValue(undefined),
     updateDisplayCcy: vi.fn().mockResolvedValue(undefined),
     getPulse: vi.fn().mockResolvedValue([]),
+    getDailyBrief: vi.fn().mockResolvedValue(null),
     warmup: vi.fn().mockResolvedValue(undefined),
     getInsights: vi.fn().mockResolvedValue(null),
     getPortfolioInsights: vi.fn().mockResolvedValue(null),
@@ -227,6 +228,40 @@ describe("U38 serial adds", () => {
     // Done exits to Holdings
     await userEvent.click(screen.getByRole("button", { name: /done/i }));
     await screen.findByRole("button", { name: /add position/i });
+  });
+});
+
+describe("U39 morning brief", () => {
+  it("the brief card leads with the lede and opens to the full note", async () => {
+    const api = stubApi({ getDailyBrief: vi.fn().mockResolvedValue({
+      brief_date: "2026-08-28",
+      generated_at: new Date().toISOString(),
+      sections: {
+        lede: "MARA reports after the close; 37% of your book is on the line.",
+        overnight: "S&P futures +0.3%, VIX 14.2, KOSPI +0.8% lifted your Korea sleeve.",
+        positions: [
+          { name: "MARA", note: "Q3 print tonight; street at -$0.20 EPS.", watch: "hashrate guidance" },
+          { name: "SK hynix", note: "\u20a940T buyback continues to support the 20% position.", watch: "HBM pricing commentary" },
+        ],
+        desk_view: "Your AI-infrastructure correlation remains the book's true risk.",
+        calendar: ["MARA earnings tonight (est)"],
+      } }) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    const card = await screen.findByTestId("brief-card");
+    expect(card.textContent).toContain("Morning Brief");
+    expect(card.textContent).toContain("37% of your book");
+    expect(screen.queryByTestId("brief-body")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /read · 3 min/i }));
+    const bodyEl = await screen.findByTestId("brief-body");
+    expect(bodyEl.textContent).toContain("VIX 14.2");
+    expect(bodyEl.textContent).toContain("SK hynix");
+    expect(bodyEl.textContent).toContain("Not financial advice");
+  });
+  it("no brief yet: nothing renders", async () => {
+    render(<App api={stubApi()} />);
+    await screen.findByTestId("net-worth");
+    expect(screen.queryByTestId("brief-card")).toBeNull();
   });
 });
 

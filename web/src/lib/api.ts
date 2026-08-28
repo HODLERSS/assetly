@@ -21,6 +21,12 @@ export type Insight = {
   bullets: string[]; windows: Record<string, string> | null; news5?: string[] | null; model: string; generated_at: string;
 };
 export type NewsItem = { id: string; symbol: string; title: string; url: string; source: string; published_at: string | null };
+export type BriefSections = {
+  lede: string; overnight: string;
+  positions: { name: string; note: string; watch: string }[];
+  desk_view: string; calendar: string[];
+};
+export type DailyBrief = { brief_date: string; sections: BriefSections; generated_at: string };
 export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
 
 const nm = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -206,6 +212,13 @@ export function makeApi(sb: SupabaseClient = supabase) {
         const { data, error } = await sb.functions.invoke("warmup", { body: { symbol } });
         if (error || !data?.ok) warmupFired.delete(symbol);   // transient model hiccup: the post-add call retries
       } catch { warmupFired.delete(symbol); }
+    },
+    /** The latest Daily Brief for the signed-in user (today's, or the most recent). */
+    async getDailyBrief(): Promise<DailyBrief | null> {
+      const { data } = await sb.from("daily_briefs").select("brief_date,sections,generated_at")
+        .order("brief_date", { ascending: false }).limit(1).maybeSingle();
+      if (!data) return null;
+      return { brief_date: String(data.brief_date), sections: data.sections as BriefSections, generated_at: String(data.generated_at) };
     },
     /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
     async ask(question: string): Promise<{ answer: string; followups: string[] }> {

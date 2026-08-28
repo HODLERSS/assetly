@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Api, PortfolioRow } from "../lib/api";
+import { BriefCard } from "../components/BriefCard";
 import { isMarketOpen, marketOf, moverEligible, moverMode, sessionLabel } from "../lib/markets";
 import { convertCcy, dayChangeAmount, glClass, labelParts, money, signedMoney, signedMoneyCompact, signedPct } from "../lib/format";
 
@@ -79,6 +80,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
         )}
         <div className="countdown" aria-hidden="true"><div style={{ width: "38%" }} /></div>
       </section>
+      <BriefCard api={api} />
       <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {sessionLabel()}</span></h2>
       {showPulse && (
         <div className="card" style={{ marginBottom: 16 }} data-testid="pulse-card">

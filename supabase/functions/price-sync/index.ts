@@ -83,6 +83,7 @@ Deno.serve(async (req) => {
     ...(recent.data ?? []).map((r) => r.symbol),
     "USDKRW",                                       // FX rate for cross-currency totals: always fresh
     "ES=F", "NQ=F",                                 // US index futures: the pre-open pulse card
+    "^VIX", "^KS11", "^GSPC",                       // market context for the Daily Brief
   ]);
   const { data: symbols, error } = await admin
     .from("symbols").select("symbol, yahoo, kind").eq("active", true)
