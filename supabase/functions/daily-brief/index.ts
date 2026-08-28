@@ -75,7 +75,7 @@ type Sections = { lede: string; overnight: string; positions: { name: string; no
 function validSections(o: unknown): o is Sections {
   const s = o as Sections;
   return !!s && typeof s.lede === "string" && !!s.lede.trim() && typeof s.overnight === "string"
-    && Array.isArray(s.positions) && s.positions.length >= 2 && s.positions.length <= 4
+    && Array.isArray(s.positions) && s.positions.length >= 1 && s.positions.length <= 5
     && s.positions.every((p) => p && typeof p.name === "string" && typeof p.note === "string" && typeof p.watch === "string")
     && typeof s.desk_view === "string" && Array.isArray(s.calendar ?? []);
 }
@@ -217,21 +217,34 @@ ${prev ? `YESTERDAY (${prev.brief_date}):\n${JSON.stringify(prev.sections)}` : "
 Return STRICT JSON:
 {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}
 lede: the ONE thing that matters for THIS portfolio today. <= 2 sentences, <= 34 words. Earn the reader's next 3 minutes.
-overnight: the tape that touches them: futures, VIX, KOSPI if they hold Korea, their KRX moves, leaders driving their names. <= 55 words, cite the actual numbers above.
-positions: the 2-4 holdings that EARNED coverage today (news, calls, filings, breaks). Not just the biggest. note <= 32 words with at least one number; incorporate the skeptic where it sharpens. watch <= 10 words, concrete.
-desk_view: one mid-term observation (valuation, correlation, rotation) that builds on yesterday when given. <= 40 words.
+overnight: the tape that touches them. MUST contain at least THREE literal numbers copied from the MARKET line (futures, VIX, index, FX), each tied to a named holding of THIS user. <= 55 words.
+positions: the 1-4 holdings that EARNED coverage today (news, calls, filings, breaks). Not just the biggest. note <= 32 words with at least one number; incorporate the skeptic where it sharpens. watch <= 10 words and must be a CONCRETE event, date, or level (e.g. "Q3 guidance Sep 4", "HBM pricing at Goldman conf"). NEVER verbs like monitor, watch, track, keep an eye.
+desk_view: one STRUCTURAL observation only: valuation, correlation, concentration, or rotation. Mentioning today's price moves here is a failure. Builds on yesterday when given. <= 40 words.
 calendar: 0-3 items <= 10 words each (estimated earnings dates OK if labeled est).
-RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above. Korean companies by NAME with won as ₩. Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
+BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching".
+RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as ₩ (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
         const draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts.", editorPrompt, 14000);
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": editor failed"); continue; }
 
         // ---- stage 4: fact-check ----
         const checked = await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
-          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance.`, 10000);
+          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers.`, 10000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       }
       if (!sections || !validSections(sections)) { errors.push(uid.slice(0, 8) + ": invalid sections"); continue; }
+      sections.positions = sections.positions.slice(0, 4);
       sections = deepDeDash(sections);
+      // deterministic style guarantees: KRX codes -> names, KRW-prefix -> ₩
+      const codeToName = new Map(holdings.map((r) => [r.symbol, krName(r.symbol, r.nickname, r.name)] as [string, string]));
+      const scrub = (t: string) => {
+        let x = t;
+        for (const [code, nm] of codeToName) if (code.endsWith(".KS") || code.endsWith(".KQ")) x = x.split(code).join(nm);
+        return x.replace(/KRW\s?(?=[0-9₩])/g, "₩").replace(/₩\s+(?=[0-9])/g, "₩");
+      };
+      const scrubDeep = (v: unknown): unknown => typeof v === "string" ? scrub(v)
+        : Array.isArray(v) ? v.map(scrubDeep)
+        : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, scrubDeep(x)])) : v;
+      sections = scrubDeep(sections) as Sections;
       const { error: upErr } = await admin.from("daily_briefs").upsert({
         user_id: uid, brief_date: briefDate, sections, memos: memosOut.slice(0, 8), model: fixture ? "fixture" : model,
       }, { onConflict: "user_id,brief_date" });
