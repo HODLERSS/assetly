@@ -23,7 +23,7 @@ function pctOver(history: { ts: string; price: number }[], days: number): string
   return (((last.price / start.price) - 1) * 100).toFixed(1) + "%";
 }
 
-async function askMara(key: string, model: string, prompt: string): Promise<string | null> {
+async function askMara(key: string, model: string, prompt: string, maxTokens = 10000): Promise<string | null> {
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -33,7 +33,7 @@ async function askMara(key: string, model: string, prompt: string): Promise<stri
         { role: "system", content: "You are a sharp buy-side equity analyst writing for busy retail investors. Be specific, opinionated, and honest about uncertainty. Plain language, no hedging filler, no disclaimers. Use concrete numbers from the provided data. Respond with the JSON object ONLY — your first character must be '{'. Never write analysis prose outside the JSON." },
         { role: "user", content: prompt },
       ],
-      temperature: 0.3, max_tokens: 10000,
+      temperature: 0.3, max_tokens: maxTokens,
       response_format: { type: "json_object" },
     }),
   });
@@ -258,7 +258,7 @@ Bullet 3: a mid-term signal a value investor should note: valuation, fundamental
 Each bullet 15 words MAX. Spread coverage across different holdings when the signals warrant it.
 news5: the top 5 signals from this week across their holdings, RANKED by importance to THIS portfolio (weight by position size and decision impact). Each 10 words MAX, names the company (US ticker OK; Korean companies by NAME), no two about the same story.
 Respect the session notes: never present the last session's move as happening today. Refer to Korean companies by NAME, never numeric KRX codes like 005930.KS. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons. No generic advice.`;
-        content = await askMara(key, model, prompt);
+        content = await askMara(key, model, prompt, 14000);
       }
       const parsed = content ? parseInsight(content) : null;
       if (!parsed) { errors.push("user " + uid.slice(0, 8) + ": unparseable"); continue; }
