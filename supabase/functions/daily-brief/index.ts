@@ -223,7 +223,10 @@ desk_view: one STRUCTURAL observation only: valuation, correlation, concentratio
 calendar: 0-3 items <= 10 words each (estimated earnings dates OK if labeled est).
 BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching".
 RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as ₩ (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
-        const draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts.", editorPrompt, 14000);
+        let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts.", editorPrompt, 14000);
+        if (!draft || !validSections(draft)) {
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Output the exact JSON shape requested.", editorPrompt, 16000);
+        }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": editor failed"); continue; }
 
         // ---- stage 4: fact-check ----
