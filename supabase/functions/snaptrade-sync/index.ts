@@ -49,7 +49,8 @@ Deno.serve(async (req) => {
 
   // resolve targets
   let targets: string[] = [];
-  if (bearer === svcKey) {
+  const isService = (() => { try { return JSON.parse(atob(bearer.split(".")[1] ?? "")).role === "service_role"; } catch { return false; } })();
+  if (isService) {
     if (typeof body.user_id === "string") targets = [body.user_id];
     else { const { data } = await admin.from("snaptrade_tokens").select("user_id"); targets = (data ?? []).map((r) => r.user_id); }
   } else {
