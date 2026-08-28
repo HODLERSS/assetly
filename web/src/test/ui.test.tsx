@@ -234,6 +234,30 @@ describe("U38 serial adds", () => {
   });
 });
 
+describe("U43 connect-first onboarding", () => {
+  it("step 1 offers brokerage connect above manual search", async () => {
+    const api = stubApi({ getProfile: vi.fn().mockResolvedValue({ id: "u1", display_name: "T", base_currency: "USD", display_us: "USD", display_kr: "KRW", markets: ["US"], onboarded_at: null }) });
+    render(<App api={api} />);
+    const btn = await screen.findByTestId("ob-connect");
+    expect(btn.textContent).toContain("Connect your brokerage");
+    expect(screen.getByLabelText(/find your first position/i)).toBeTruthy();
+  });
+  it("returning connected shows the import and finishes in one tap", async () => {
+    const api = stubApi({
+      getProfile: vi.fn().mockResolvedValue({ id: "u1", display_name: "T", base_currency: "USD", display_us: "USD", display_kr: "KRW", markets: ["US"], onboarded_at: null }),
+      completeOnboarding: vi.fn().mockResolvedValue(undefined),
+    });
+    window.history.replaceState({}, "", "/?snaptrade=connected");
+    render(<App api={api} />);
+    const card = await screen.findByTestId("ob-import");
+    await screen.findByText(/imported 1 position/i, {}, { timeout: 4000 });
+    expect(card.textContent).toContain("RDDT");
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    await vi.waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD"));
+    window.history.replaceState({}, "", "/");
+  });
+});
+
 describe("U39 morning brief", () => {
   it("the brief card leads with the lede and opens to the full note", async () => {
     const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([{

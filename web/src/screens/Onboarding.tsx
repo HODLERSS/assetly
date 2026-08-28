@@ -1,9 +1,13 @@
-import { useState } from "react";
-import type { Api, SymbolRow } from "../lib/api";
+import { useEffect, useRef, useState } from "react";
+import type { Api, PortfolioRow, SymbolRow } from "../lib/api";
 import { marketOf } from "../lib/markets";
 
-// Canvas 3b→3f: markets → first position → shares + cost → first real number.
-export function Onboarding({ api, onDone }: { api: Api; onDone: () => Promise<void> | void }) {
+// Setup: connect a brokerage (positions import in seconds) OR add the first
+// position manually. After the OAuth return, this screen shows the live import
+// and finishes onboarding in one tap — markets are inferred, never asked.
+export function Onboarding({ api, onDone, snaptrade = null }: {
+  api: Api; onDone: () => Promise<void> | void; snaptrade?: string | null;
+}) {
   const [step, setStep] = useState(1);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SymbolRow[]>([]);
@@ -12,6 +16,47 @@ export function Onboarding({ api, onDone }: { api: Api; onDone: () => Promise<vo
   const [cost, setCost] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [imported, setImported] = useState<PortfolioRow[] | null>(null);   // null = not polling
+  const [importDone, setImportDone] = useState(false);
+  const pollRef = useRef(0);
+
+  // Returned from the brokerage OAuth: watch the import land, then offer one-tap finish.
+  useEffect(() => {
+    if (snaptrade !== "connected") return;
+    setImported([]);
+    let live = true;
+    pollRef.current = 0;
+    const tick = async () => {
+      if (!live) return;
+      pollRef.current += 1;
+      try {
+        const rows = (await api.getPortfolio()).filter((r) => !r.symbol.startsWith("$"));
+        if (!live) return;
+        if (rows.length > 0) { setImported(rows); setImportDone(true); return; }
+      } catch { /* keep polling */ }
+      if (pollRef.current < 12) setTimeout(tick, 2000);
+      else if (live) setImportDone(true);   // give up waiting; they can continue anyway
+    };
+    void tick();
+    return () => { live = false; };
+  }, [api, snaptrade]);
+
+  const marketsOf = (rows: PortfolioRow[]) => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const m = marketOf({ symbol: r.symbol, kind: r.kind });
+      set.add(m === "KR" ? "KR" : m === "CRYPTO" ? "Crypto" : "US");
+    }
+    return set.size ? [...set] : ["US"];
+  };
+  const finishImported = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await api.completeOnboarding(marketsOf(imported ?? []), "USD");
+      await onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not save. Try again."); }
+    finally { setBusy(false); }
+  };
 
   const search = async (text: string) => {
     setQ(text);
@@ -34,16 +79,64 @@ export function Onboarding({ api, onDone }: { api: Api; onDone: () => Promise<vo
     } finally { setBusy(false); }
   };
 
+  // The import panel replaces the choice once the user comes back connected.
+  if (imported !== null) {
+    const n = imported.length;
+    return (
+      <main className="screen" style={{ paddingTop: 28 }}>
+        <h1 className="h1">Set up Assetly</h1>
+        <p className="mutedc" style={{ marginBottom: 18 }}>Brokerage connected</p>
+        <div className="card" data-testid="ob-import">
+          {!importDone && (<>
+            <p style={{ margin: 0, fontWeight: 600 }}>Importing your positions…</p>
+            <p className="sub" style={{ margin: "6px 0 0" }}>Shares and cost basis are landing now. This usually takes a few seconds.</p>
+          </>)}
+          {importDone && n > 0 && (<>
+            <p style={{ margin: 0, fontWeight: 600 }}>✓ Imported {n} position{n === 1 ? "" : "s"}</p>
+            <p className="sub" style={{ margin: "6px 0 0" }}>
+              {imported.slice(0, 4).map((r) => r.symbol).join(" · ")}{n > 4 ? ` · +${n - 4} more` : ""}
+            </p>
+          </>)}
+          {importDone && n === 0 && (<>
+            <p style={{ margin: 0, fontWeight: 600 }}>Connected — the import is still running</p>
+            <p className="sub" style={{ margin: "6px 0 0" }}>Your positions will appear on Home in a minute. You can continue now.</p>
+          </>)}
+        </div>
+        {err && <div className="error-note" role="alert">{err}</div>}
+        <button className="btn" disabled={busy || (!importDone && true)} onClick={finishImported} style={{ marginTop: 14 }}>
+          {busy ? "Finishing…" : "Continue"}
+        </button>
+      </main>
+    );
+  }
+
   return (
     <main className="screen" style={{ paddingTop: 28 }}>
       <h1 className="h1">Set up Assetly</h1>
       <p className="mutedc" style={{ marginBottom: 18 }}>Step {step} of 2</p>
 
       {step === 1 && (
-        <section aria-label="Find your first position">
+        <section aria-label="Add your holdings">
+          <button className="btn" data-testid="ob-connect" disabled={busy} onClick={async () => {
+            setErr(null); setBusy(true);
+            try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); }
+            catch (e) { setErr(e instanceof Error ? e.message : "Could not start the brokerage link."); setBusy(false); }
+          }}>⚡ Connect your brokerage</button>
+          <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 2px 0" }}>
+            Robinhood, Fidelity, Schwab, and more. Positions and cost basis import in seconds.
+            Read-only — Assetly can never trade or move money.
+          </p>
+          {snaptrade && snaptrade !== "connected" && (
+            <div className="error-note" role="alert" style={{ marginTop: 10 }}>
+              {snaptrade === "denied" ? "The brokerage link was declined. You can try again or add positions manually." : "The brokerage link didn't complete. Try again or add positions manually."}
+            </div>
+          )}
+          <p className="mutedc" style={{ textAlign: "center", margin: "16px 0 10px", fontSize: 12.5, textTransform: "uppercase", letterSpacing: 1 }}>
+            or add one manually
+          </p>
           <div className="field">
             <label htmlFor="ob-q">Find your first position</label>
-            <input id="ob-q" value={q} onChange={(e) => search(e.target.value)} placeholder="Ticker or name — try FIG or Samsung" autoFocus />
+            <input id="ob-q" value={q} onChange={(e) => search(e.target.value)} placeholder="Ticker or name — try FIG or Samsung" />
           </div>
           <div className="card">
             {results.map((r) => (

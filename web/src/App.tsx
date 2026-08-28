@@ -51,11 +51,13 @@ export function App({ api = defaultApi }: { api?: Api }) {
   }, [api]);
 
   const [notice, setNotice] = useState<string | null>(null);
+  const [obSnap, setObSnap] = useState<string | null>(null);
   useEffect(() => {
     if (!session) return;
     const q = new URLSearchParams(window.location.search);
     const stp = q.get("snaptrade");
     if (!stp) return;
+    setObSnap(stp);
     q.delete("snaptrade");
     window.history.replaceState({}, "", window.location.pathname + (q.toString() ? "?" + q.toString() : "") + window.location.hash);
     if (stp === "connected") {
@@ -94,7 +96,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   if (!authReady) return <div className="screen" aria-busy="true" />;
   if (!session) return <AuthScreen />;
   if (profile && !profile.onboarded_at) {
-    return <Onboarding api={api} onDone={load} />;
+    return <Onboarding api={api} onDone={load} snaptrade={obSnap} />;
   }
 
   const go = (v: View) => { setError(null); setView(v); };
