@@ -354,6 +354,16 @@ ${STYLE_RULES}`;
         if ((!draft || !validSections(draft)) && elapsed() < 80) {
           draft = await askModel(key, "You are the editor of a one-reader research desk. Think briefly. Output the exact JSON shape requested.", writerPrompt, 20000, 55000);
         }
+        if ((!draft || !validSections(draft)) && elapsed() < 115) {
+          // API slow-wave degradation: a compact intraday note beats no note
+          const compact = `Write the ${briefDate} ${edition === "midday" ? "MIDDAY session pulse (11 AM Central)" : "post-close note"} for ONE investor. Dense; every word counts.
+MARKET NOW: ${mktLive || "(none)"}
+PORTFOLIO (only source of numbers): Total $${Math.round(total)}. ${pnlLine}
+${statsLines}
+${shape}
+lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 3 MARKET NOW numbers and exact labels; 1-3 positions ordered by weight, note <= 28 words with a number, watch <= 10 words naming a concrete event (NEVER monitor/watch/track); desk_view <= 36 words structural only; calendar []. No filler, no em dashes, Korean companies by name, won as \u20a9.`;
+          draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 12000, 35000);
+        }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": writer failed [" + lastMeta + "]"); continue; }
         const caps = edition === "midday" ? "lede 28, overnight 50, note 28, watch 10, desk_view 36" : "lede 30, overnight 55, note 30, watch 10, desk_view 40";
         const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
