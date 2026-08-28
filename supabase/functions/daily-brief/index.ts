@@ -142,6 +142,12 @@ Deno.serve(async (req) => {
   for (const r of pf ?? []) { if (!byUser.has(r.user_id)) byUser.set(r.user_id, []); byUser.get(r.user_id)!.push(r); }
   const fxNum = px.get("USDKRW")?.price ?? 1380;
   let userIds = [...byUser.keys()];
+  if (!onlyEmail && !fixture) {
+    // cron runs never touch test accounts (no token spend, no interference with battery fixtures)
+    const { data: au } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+    const testIds = new Set((au?.users ?? []).filter((u) => u.email?.endsWith("assetly.test")).map((u) => u.id));
+    userIds = userIds.filter((id) => !testIds.has(id));
+  }
   if (onlyEmail) {
     const { data: us } = await admin.from("profiles").select("id, display_name").in("id", userIds);
     void us;   // profiles has no email; resolve via auth admin

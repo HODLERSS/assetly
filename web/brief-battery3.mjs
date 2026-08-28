@@ -130,7 +130,7 @@ for (const name of subset) {
       const genScore = 100;
       const secs = ((Date.now() - t0) / 1000).toFixed(0);
       let { data: b } = await c.from("daily_briefs").select("sections, model, generated_at").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", ed).maybeSingle();
-      const freshRow = b && (Date.now() - +new Date(b.generated_at)) < 900000;   // written in the last 15 min = this run's
+      const freshRow = b && +new Date(b.generated_at) >= t0;   // must be written by THIS run, not a leftover
       if ((w.error || !(w.data?.wrote > 0)) && !freshRow) { log(`${name}/${ed}: GEN FAIL ${secs}s ${w.error?.message ?? JSON.stringify(w.data)}`); results.push({ name, ed, M: { M1: 0 } }); continue; }
       if (b && String(b.model ?? "").includes("compact") && attempts < 3) {
         // sweep simulation: a degraded (compact-fallback) brief gets one upgrade pass
@@ -138,8 +138,8 @@ for (const name of subset) {
         const { data: b2 } = await c.from("daily_briefs").select("sections, model").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", ed).maybeSingle();
         if (b2 && !String(b2.model ?? "").includes("compact")) b = b2;
       }
-      const s = b?.sections;
-      if (!s) { log(`${name}/${ed}: NO ROW`); results.push({ name, ed, M: { M1: 0 } }); continue; }
+      const s = b && +new Date(b.generated_at) >= t0 ? b.sections : null;
+      if (!s) { log(`${name}/${ed}: NO ROW (or stale row)`); results.push({ name, ed, M: { M1: 0 } }); continue; }
       if (ed === "morning") morningSecs = s;
       const all = JSON.stringify(s);
       const cap = CAPS[ed];
