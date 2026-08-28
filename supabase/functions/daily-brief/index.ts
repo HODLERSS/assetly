@@ -96,6 +96,7 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const force = url.searchParams.get("force") === "1" || body.force === true;
   const onlyEmail = typeof body.user_email === "string" ? body.user_email : null;
+  const noAudio = body.noAudio === true;   // battery/test runs must not spend TTS quota
   const validEd = (x: unknown): x is "morning" | "midday" | "close" => x === "morning" || x === "midday" || x === "close";
   const edRaw = url.searchParams.get("edition") ?? (body as { edition?: unknown }).edition;
   const utcH = new Date().getUTCHours();
@@ -376,7 +377,7 @@ ${STYLE_RULES}`;
       }, { onConflict: "user_id,brief_date,edition" });
       if (upErr) errors.push(uid.slice(0, 8) + ": " + upErr.message); else wrote++;
       // ---- audio narration (background; the text brief never waits on it) ----
-      if (!fixture && !upErr) {
+      if (!fixture && !upErr && !noAudio) {
         const uidCopy = uid, dateCopy = briefDate, edCopy = edition, finalSections = sections;
         const doAudio = (async () => {
           try {
