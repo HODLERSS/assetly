@@ -168,9 +168,14 @@ Deno.serve(async (req) => {
       const assets = rows.filter((r) => r.kind !== "debt");
       const total = assets.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
       if (total < 100) continue;
+      let backfillOnly: Sections | null = null;
       if (!force) {
-        const { data: have } = await admin.from("daily_briefs").select("id, model").eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
-        if (have && !String(have.model ?? "").includes("compact")) continue;   // sweeps upgrade degraded (compact) briefs
+        const { data: have } = await admin.from("daily_briefs").select("id, model, audio_path, sections").eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
+        if (have && !String(have.model ?? "").includes("compact")) {
+          // self-heal: the text exists but narration is missing -> regenerate audio only
+          if (!fixture && !noAudio && !have.audio_path && validSections(have.sections)) backfillOnly = have.sections as Sections;
+          else continue;
+        }
       }
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
         .sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
@@ -192,7 +197,9 @@ Deno.serve(async (req) => {
       let sections: Sections | null = null;
       let usedCompact = false;
       let memosOut: Record<string, unknown>[] = [];
-      if (fixture) {
+      if (backfillOnly) {
+        sections = backfillOnly;
+      } else if (fixture) {
         sections = body.canned ?? {
           lede: "Fixture lede for the day.", overnight: "Fixture overnight with numbers.",
           positions: [{ name: "FixtureCo", note: "Fixture note 1", watch: "fixture watch" }, { name: "FixtureCo2", note: "Fixture note 2", watch: "fixture watch 2" }],
@@ -401,10 +408,10 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         : Array.isArray(v) ? v.map(scrubDeep)
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, scrubDeep(x)])) : v;
       sections = scrubDeep(sections) as Sections;
-      const { error: upErr } = await admin.from("daily_briefs").upsert({
+      const { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
       }, { onConflict: "user_id,brief_date,edition" });
-      if (upErr) errors.push(uid.slice(0, 8) + ": " + upErr.message); else wrote++;
+      if (upErr) errors.push(uid.slice(0, 8) + ": " + (upErr as { message: string }).message); else wrote++;
       // ---- audio narration (background; the text brief never waits on it) ----
       if (!fixture && !upErr && !noAudio) {
         const uidCopy = uid, dateCopy = briefDate, edCopy = edition, finalSections = sections;

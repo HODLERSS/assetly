@@ -95,11 +95,15 @@ Deno.serve(async (req) => {
         if (!tok) { results.push({ uid: uid.slice(0, 8), error: "token refresh failed" }); continue; }
         get = (path: string) => stGet(tok, path);
       }
+      const rawSave = (kind: string, accountId: string | null, payload: unknown) =>
+        admin.from("snaptrade_raw").insert({ user_id: uid, account_id: accountId, kind, payload: payload ?? null }).then(() => {}, () => {});
       const accounts = (await get("/accounts")) as Record<string, unknown>[] | null;
       if (!Array.isArray(accounts)) { results.push({ uid: uid.slice(0, 8), error: "accounts fetch failed" }); continue; }
+      await rawSave("accounts", null, accounts);
       const institutions = [...new Set(accounts.map((a) => String(a.institution_name ?? "")).filter(Boolean))];
       let positions = 0;
-      for (const a of accounts) {
+      const importAccounts = async (accts: Record<string, unknown>[]) => {
+      for (const a of accts) {
         const acctId = String(a.id ?? "");
         if (!acctId) continue;
         const inst = String(a.institution_name ?? "Brokerage");
@@ -107,6 +111,8 @@ Deno.serve(async (req) => {
           get(`/accounts/${acctId}/positions`) as Promise<Record<string, unknown>[] | null>,
           get(`/accounts/${acctId}/balances`) as Promise<Record<string, unknown>[] | null>,
         ]);
+        await rawSave("positions", acctId, poss);
+        await rawSave("balances", acctId, bals);
         if (!Array.isArray(poss)) continue;   // never delete on a failed fetch
         const seen: string[] = [];
         const ensureHolding = async (sym: string, ext: string, nickname: string, qty: number, cost: number | null) => {
@@ -154,8 +160,21 @@ Deno.serve(async (req) => {
         const stale = (mine ?? []).filter((m) => !seen.includes(String(m.external_id)));
         for (const m of stale) await admin.from("holdings").delete().eq("id", m.id);
       }
+      };
+      await importAccounts(accounts);
+      // SnapTrade's initial holdings pull from the brokerage is asynchronous: a connection made
+      // moments ago can legitimately return zero positions. Retry briefly instead of trusting it.
+      const { data: trow } = await admin.from("snaptrade_tokens").select("connected_at").eq("user_id", uid).maybeSingle();
+      const freshConn = trow && Date.now() - +new Date(trow.connected_at) < 45 * 60000;
+      let retries = 0;
+      while (positions === 0 && freshConn && targets.length === 1 && retries < 4) {
+        retries++;
+        await new Promise((res) => setTimeout(res, 15000));
+        const again = (await get("/accounts")) as Record<string, unknown>[] | null;
+        if (Array.isArray(again)) { await rawSave("accounts", null, again); await importAccounts(again); }
+      }
       await admin.from("snaptrade_tokens").update({ last_sync_at: new Date().toISOString(), institutions }).eq("user_id", uid);
-      results.push({ uid: uid.slice(0, 8), accounts: accounts.length, positions, institutions });
+      results.push({ uid: uid.slice(0, 8), accounts: accounts.length, positions, retries, institutions });
     } catch (e) { results.push({ uid: uid.slice(0, 8), error: e instanceof Error ? e.message : String(e) }); }
   }
   return json({ ok: true, results });
