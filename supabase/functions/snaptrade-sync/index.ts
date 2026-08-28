@@ -154,6 +154,11 @@ Deno.serve(async (req) => {
           const inst = p.instrument as Record<string, unknown> | undefined;
           const kindRaw = String(inst?.kind ?? "stock");
           if (["option", "future", "cfd"].includes(kindRaw)) continue;   // out of scope for the holdings book
+          const descProbe = String((inst as { description?: string } | undefined)?.description ?? "");
+          const symProbe = String((inst as { symbol?: string } | undefined)?.symbol ?? "");
+          // cash-equivalent sweep positions (FCASH/SPAXX/CORE...) duplicate the balances endpoint
+          if (kindRaw === "other" && (/^cash$/i.test(descProbe.trim()) || /cash|spaxx|fdrxx|core/i.test(symProbe))) continue;
+          if (kindRaw === "cash" || (p as { cash_equivalent?: boolean }).cash_equivalent === true) continue;
           let sym = "", desc = "", ccy = "USD", exch = "US";
           if (inst) {
             sym = String(inst.symbol ?? inst.raw_symbol ?? "");
