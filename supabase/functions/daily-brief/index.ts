@@ -79,6 +79,17 @@ function pctOver(history: { ts: string; price: number }[], days: number): string
   return (((last.price / start.price) - 1) * 100).toFixed(1) + "%";
 }
 
+const MONTH_IDX: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+// a calendar item survives only with an explicit date that is today or later (45-day lookback tolerance handles year rollover)
+function futureDated(text: string, briefDate: string): boolean {
+  const m = text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b/i);
+  if (!m) return false;
+  const today = new Date(briefDate + "T00:00:00Z");
+  let d = new Date(Date.UTC(today.getUTCFullYear(), MONTH_IDX[m[1].slice(0, 3).toLowerCase()], Number(m[2])));
+  if (+d < +today - 45 * 86400000) d = new Date(Date.UTC(today.getUTCFullYear() + 1, d.getUTCMonth(), d.getUTCDate()));
+  return +d >= +today - 86400000;
+}
+
 type Sections = { lede: string; overnight: string; positions: { name: string; note: string; watch: string }[]; desk_view: string; calendar: string[]; spoken?: string };
 function validSections(o: unknown): o is Sections {
   const s = o as Sections;
@@ -184,6 +195,22 @@ Deno.serve(async (req) => {
         return `${krName(r.symbol, r.nickname, r.name)}: $${Math.round(sign * usd(Number(r.value ?? 0), r.currency))} (${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets), day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}, total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
       }).join("\n");
 
+      // deterministic next-earnings estimates: last call date + ~91d, rolled past today. The ONLY earnings dates the model may use.
+      const { data: trDates } = await admin.from("transcripts").select("symbol, published_at").in("symbol", holdings.slice(0, 6).map((r) => r.symbol)).order("published_at", { ascending: false });
+      const nextEarnSeen = new Set<string>();
+      const nextEarn: string[] = [];
+      for (const t of trDates ?? []) {
+        if (!t.published_at || nextEarnSeen.has(t.symbol)) continue;
+        nextEarnSeen.add(t.symbol);
+        const hRow = holdings.find((h) => h.symbol === t.symbol);
+        let d = new Date(+new Date(String(t.published_at)) + 91 * 86400000);
+        const today0 = new Date(briefDate + "T00:00:00Z");
+        while (+d < +today0) d = new Date(+d + 91 * 86400000);
+        nextEarn.push(`${krName(t.symbol, hRow?.nickname, hRow?.name)} ~${d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} (est)`);
+      }
+      const earnLine = nextEarn.join("; ") || "(none on file)";
+      const dateLaw = `TODAY is ${briefDate}. Anything dated before today is the PAST and must NOT appear in calendar or watch. Earnings dates may come ONLY from NEXT EARNINGS ESTIMATES, always labeled (est); never invent a date.`;
+
       // yesterday for continuity
       const { data: prev } = await admin.from("daily_briefs").select("brief_date, sections, memos").eq("user_id", uid)
         .lt("brief_date", briefDate).order("brief_date", { ascending: false }).limit(1).maybeSingle();
@@ -249,6 +276,8 @@ LEADER HEADLINES (24h):\n${leaderHeads || "- none"}
 PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
 Total assets $${Math.round(total)}.
 ${statsLines}
+NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
+${dateLaw}
 
 ANALYST MEMOS:
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: changed: ${m.changed}. promises: ${m.promise_check}. bull: ${m.bull}. bear: ${m.bear}. watch: ${m.watch}`).join("\n")}
@@ -262,7 +291,7 @@ lede: the ONE thing that matters for THIS portfolio today. <= 2 sentences, <= 34
 overnight: the tape that touches them. MUST contain at least THREE literal numbers copied from the MARKET line (futures, VIX, index, FX) using their EXACT labels (never call futures "the S&P"; never merge two instruments), then one clause on what it means for their largest exposures BY NAME. <= 55 words.
 positions: the 1-4 holdings that EARNED coverage today (news, calls, filings, breaks). Not just the biggest. note <= 32 words with at least one number; incorporate the skeptic where it sharpens. watch <= 10 words and must be a CONCRETE event, date, or level (e.g. "Q3 guidance Sep 4", "HBM pricing at Goldman conf"). NEVER verbs like monitor, watch, track, keep an eye.
 desk_view: one STRUCTURAL observation only: valuation, correlation, concentration, or rotation. It may not contain ANY overnight or single-day number; multi-week, valuation, or weight numbers only. Builds on yesterday when given. <= 40 words.
-calendar: 0-3 items <= 10 words each (estimated earnings dates OK if labeled est).
+calendar: 0-3 items <= 10 words each; EVERY item must carry an explicit FUTURE date (from NEXT EARNINGS ESTIMATES or dated headlines); undated or past items are forbidden.
 BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching", "demands scrutiny", "warrants attention".
 NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
@@ -289,7 +318,7 @@ lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their h
 
         // ---- stage 4: fact-check (skipped when the wall clock is tight; scrub still runs) ----
         const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
-          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers.`, 10000, 30000);
+          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete any calendar or watch item whose date is before today (${briefDate}) and any undated calendar item; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers.`, 10000, 30000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       } else {
         // ---- intraday editions (midday pulse / closing note): reuse the morning desk work, focus on the live tape ----
@@ -336,6 +365,8 @@ PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
 Total assets $${Math.round(total)}. ${pnlLine}
 ${statsLines}
 
+NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
+${dateLaw}
 DESK CONTEXT (from the morning work):
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.changed ?? ""}${m.bull ? `. bull: ${m.bull}` : ""}${m.bear ? `. bear: ${m.bear}` : ""}. watch: ${m.watch ?? ""}`).join("\n") || "- none"}
 ${morningCtx}`;
@@ -386,10 +417,11 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": writer failed [" + lastMeta + "]"); continue; }
         const caps = edition === "midday" ? "lede 28, overnight 50, note 28, watch 10, desk_view 36" : "lede 30, overnight 55, note 30, watch 10, desk_view 40";
         const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
-          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET NOW: ${mktLive}\nLEADERS: ${leaderLines}\nPORTFOLIO: Total $${Math.round(total)}. ${pnlLine}\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (${caps}) by tightening, not by losing substance. Also: replace any numeric KRX code with the company name; write won as \u20a9 never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; overnight must keep at least three market numbers.`, 10000, 30000);
+          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET NOW: ${mktLive}\nLEADERS: ${leaderLines}\nPORTFOLIO: Total $${Math.round(total)}. ${pnlLine}\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (${caps}) by tightening, not by losing substance. Also: replace any numeric KRX code with the company name; write won as \u20a9 never "KRW"; delete any calendar or watch item whose date is before today (${briefDate}) and any undated calendar item; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; overnight must keep at least three market numbers.`, 10000, 30000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       }
       if (!sections || !validSections(sections)) { errors.push(uid.slice(0, 8) + ": invalid sections"); continue; }
+      sections.calendar = (sections.calendar ?? []).filter((c) => futureDated(String(c), briefDate)).slice(0, 3);
       sections.positions = sections.positions.slice(0, 4)
         .map((p) => ({ ...p, watch: p.watch.replace(/[,;\s]*\b(watch(ing)?|monitor(ing)?|track(ing)?)\b[.\s]*$/i, "").trim() }));
       sections = deepDeDash(sections);
