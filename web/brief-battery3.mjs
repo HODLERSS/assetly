@@ -108,9 +108,12 @@ for (const name of subset) {
     const { data: rows } = await c.from("portfolio").select("symbol,name,nickname,value,currency,change_pct,kind,total_gl");
     const tot = (rows ?? []).filter(r => r.kind !== "debt").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
     const stats = `Total $${Math.round(tot)}. ` + (rows ?? []).map(r => `${r.nickname || r.name || r.symbol}: $${Math.round(usd(Number(r.value ?? 0), r.currency))} (${(usd(Number(r.value ?? 0), r.currency) / tot * 100).toFixed(1)}%), day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}, total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`).join("; ");
+    const syms = (rows ?? []).filter(r => !r.symbol.startsWith("$")).map(r => r.symbol);
+    const { data: hp } = await c.from("prices").select("symbol,price").in("symbol", syms);
+    const priceLine = (hp ?? []).map(q => `${q.symbol} price $${Number(q.price).toLocaleString("en-US")}`).join("; ");
     const { data: mkt } = await c.from("prices").select("symbol,price,change_pct").in("symbol", ["ES=F","NQ=F","^VIX","^GSPC","^KS11","USDKRW"]);
     const market = (mkt ?? []).map(m => `${m.symbol} ${Number(m.price).toLocaleString("en-US")} (${m.change_pct === null ? "n/a" : Number(m.change_pct).toFixed(1) + "%"})`).join(" | ");
-    return { stats, market };
+    return { stats: stats + (priceLine ? ` | UNIT PRICES (per share/coin, distinct from position values): ${priceLine}` : ""), market };
   };
   let morningSecs = null;
   for (const ed of EDS) {
