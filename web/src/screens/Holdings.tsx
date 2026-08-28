@@ -40,7 +40,12 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2 className="h1">Holdings</h2>
-        <button className="chip" onClick={onAdd} aria-label="Add position">+ Add</button>
+        <span style={{ display: "flex", gap: 8 }}>
+          <button className="chip" aria-label="Import from brokerage" onClick={async () => {
+            try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } catch { /* connect button stays */ }
+          }}>⚡ Import</button>
+          <button className="chip" onClick={onAdd} aria-label="Add position">+ Add</button>
+        </span>
       </div>
       {pins && (
         <section className="card insights" data-testid="portfolio-insights-card" aria-label="Portfolio insights">
@@ -97,7 +102,10 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
         })}
         {shown.length === 0 && rows.length === 0 && (
           <div className="empty"><p style={{ marginBottom: 14 }}>No runners on the track.</p>
-            <button className="btn" onClick={onAdd}>Add your first position</button></div>
+            <button className="btn" style={{ marginBottom: 10 }} onClick={async () => {
+              try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } catch { /* stay */ }
+            }}>⚡ Connect your brokerage</button>
+            <button className="btn secondary" onClick={onAdd}>Add positions manually</button></div>
         )}
         {shown.length === 0 && rows.length > 0 && <p className="empty">Nothing in this filter.</p>}
       </div>
