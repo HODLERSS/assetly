@@ -1,5 +1,7 @@
-// SnapTrade OAuth redirect target (public; verify_jwt=false). Exchanges the code,
-// stores tokens, kicks the first import in the background, bounces back to the app.
+// SnapTrade redirect target (public; verify_jwt=false).
+// Commercial portal returns with ?u=<state> (no code exchange; the user secret is already stored):
+// look up the state, kick the first import, bounce back to the app.
+// The legacy OAuth-app path (?code&state) is kept for rows created before the commercial switch.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const APP = "https://hodlerss.github.io/assetly/";
@@ -7,12 +9,32 @@ const go = (q: string) => new Response(null, { status: 302, headers: { Location:
 
 Deno.serve(async (req) => {
   const u = new URL(req.url);
+  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const kickSync = (userId: string) => {
+    const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/snaptrade-sync`, {
+      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId }),
+    }).catch(() => null);
+    try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(p); } catch { /* ignore */ }
+  };
+
+  // ---- commercial Connection Portal return ----
+  const portalState = u.searchParams.get("u");
+  if (portalState) {
+    const { data: st } = await admin.from("snaptrade_oauth_states").select("user_id,created_at").eq("state", portalState).maybeSingle();
+    await admin.from("snaptrade_oauth_states").delete().eq("state", portalState);
+    if (!st || Date.now() - +new Date(st.created_at) > 3600000) return go("?snaptrade=expired");
+    kickSync(st.user_id);
+    return go("?snaptrade=connected");
+  }
+
+  // ---- legacy OAuth-app return ----
   const err = u.searchParams.get("error");
   const state = u.searchParams.get("state") ?? "";
   const code = u.searchParams.get("code") ?? "";
   if (err) return go("?snaptrade=denied");
   if (!state || !code) return go("?snaptrade=failed");
-  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const { data: st } = await admin.from("snaptrade_oauth_states").select("user_id,verifier,created_at").eq("state", state).maybeSingle();
   await admin.from("snaptrade_oauth_states").delete().eq("state", state);
   if (!st || Date.now() - +new Date(st.created_at) > 900000) return go("?snaptrade=expired");
@@ -34,16 +56,11 @@ Deno.serve(async (req) => {
   const sub = tk.sub;
   const stUserId = sub && typeof sub === "object" ? String((sub as { snaptrade_user_id?: string }).snaptrade_user_id ?? "") : String(sub ?? "");
   const { error: upErr } = await admin.from("snaptrade_tokens").upsert({
-    user_id: st.user_id, refresh_token: tk.refresh_token, access_token: tk.access_token ?? null,
+    user_id: st.user_id, mode: "oauth", refresh_token: tk.refresh_token, access_token: tk.access_token ?? null,
     access_expires_at: new Date(Date.now() + (Number(tk.expires_in) || 36000) * 1000).toISOString(),
     scope: tk.scope ?? "read", st_user_id: stUserId, updated_at: new Date().toISOString(),
-  });
+  }, { onConflict: "user_id" });
   if (upErr) return go("?snaptrade=failed");
-  const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const doSync = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/snaptrade-sync`, {
-    method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: st.user_id }),
-  }).catch(() => null);
-  try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(doSync); } catch { /* ignore */ }
+  kickSync(st.user_id);
   return go("?snaptrade=connected");
 });

@@ -28,3 +28,8 @@ create unique index if not exists holdings_external_id_key on public.holdings (u
 
 -- periodic re-import for connected users (positions drift as people trade)
 select cron.schedule('assetly-snaptrade-sync', '15 */6 * * *', $$select public.invoke_edge('snaptrade-sync')$$);
+
+-- commercial (Connection Portal) mode: per-user SnapTrade secret; oauth tokens optional
+alter table public.snaptrade_tokens alter column refresh_token drop not null;
+alter table public.snaptrade_tokens add column if not exists mode text not null default 'oauth';
+alter table public.snaptrade_tokens add column if not exists st_secret text;

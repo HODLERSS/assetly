@@ -12,7 +12,14 @@ const CORS = {
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 const API = "https://api.snaptrade.com/api/v1";
 
-type TokenRow = { user_id: string; refresh_token: string; access_token: string | null; access_expires_at: string | null };
+type TokenRow = { user_id: string; mode?: string | null; st_secret?: string | null; refresh_token: string | null; access_token: string | null; access_expires_at: string | null };
+
+const canon = (o: unknown): string => {
+  if (o === null || typeof o !== "object") return JSON.stringify(o);
+  if (Array.isArray(o)) return "[" + o.map(canon).join(",") + "]";
+  const r = o as Record<string, unknown>;
+  return "{" + Object.keys(r).sort().map((k) => JSON.stringify(k) + ":" + canon(r[k])).join(",") + "}";
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -25,7 +32,20 @@ Deno.serve(async (req) => {
   if (!cid) { const { data } = await admin.rpc("get_secret", { secret_name: "snaptrade_client_id" }); cid = data ?? ""; }
   let sec = Deno.env.get("SNAPTRADE_CONSUMER_KEY") ?? "";
   if (!sec) { const { data } = await admin.rpc("get_secret", { secret_name: "snaptrade_consumer_key" }); sec = data ?? ""; }
-  if (!cid || !sec) return json({ ok: false, error: "not configured" }, 500);
+  let ccid = Deno.env.get("SNAPTRADE_COMM_CLIENT_ID") ?? "";
+  if (!ccid) { const { data } = await admin.rpc("get_secret", { secret_name: "snaptrade_comm_client_id" }); ccid = data ?? ""; }
+  let ckey = Deno.env.get("SNAPTRADE_COMM_CONSUMER_KEY") ?? "";
+  if (!ckey) { const { data } = await admin.rpc("get_secret", { secret_name: "snaptrade_comm_consumer_key" }); ckey = data ?? ""; }
+  if (!cid && !ccid) return json({ ok: false, error: "not configured" }, 500);
+  const signedGet = async (path: string, extraQuery: string): Promise<unknown> => {
+    const ts = Math.floor(Date.now() / 1000);
+    const q = `clientId=${ccid}&timestamp=${ts}` + (extraQuery ? `&${extraQuery}` : "");
+    const payload = { content: null, path: `/api/v1${path}`, query: q };
+    const rawKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(ckey), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const sig = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", rawKey, new TextEncoder().encode(canon(payload))))));
+    const r = await fetch(`${API}${path}?${q}`, { headers: { Signature: sig, Accept: "application/json" } }).catch(() => null);
+    return r && r.ok ? await r.json().catch(() => null) : null;
+  };
 
   // resolve targets
   let targets: string[] = [];
@@ -43,7 +63,7 @@ Deno.serve(async (req) => {
     const r = await fetch("https://api.snaptrade.com/oauth/token/", {
       method: "POST",
       headers: { Authorization: "Basic " + btoa(`${cid}:${sec}`), "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: row.refresh_token }),
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: row.refresh_token ?? "" }),
     }).catch(() => null);
     if (!r || !r.ok) return null;
     const tk = await r.json().catch(() => null);
@@ -63,11 +83,19 @@ Deno.serve(async (req) => {
   const results: Record<string, unknown>[] = [];
   for (const uid of targets.slice(0, 25)) {
     try {
-      const { data: row } = await admin.from("snaptrade_tokens").select("user_id,refresh_token,access_token,access_expires_at").eq("user_id", uid).maybeSingle();
+      const { data: row } = await admin.from("snaptrade_tokens").select("user_id,mode,st_secret,refresh_token,access_token,access_expires_at").eq("user_id", uid).maybeSingle();
       if (!row) { results.push({ uid: uid.slice(0, 8), error: "not connected" }); continue; }
-      const tok = await freshToken(row as TokenRow);
-      if (!tok) { results.push({ uid: uid.slice(0, 8), error: "token refresh failed" }); continue; }
-      const accounts = (await stGet(tok, "/accounts")) as Record<string, unknown>[] | null;
+      const commercial = (row as TokenRow).mode === "commercial" || !!(row as TokenRow).st_secret;
+      let get: (path: string) => Promise<unknown>;
+      if (commercial) {
+        const uq = `userId=${encodeURIComponent(uid)}&userSecret=${encodeURIComponent((row as TokenRow).st_secret ?? "")}`;
+        get = (path: string) => signedGet(path, uq);
+      } else {
+        const tok = await freshToken(row as TokenRow);
+        if (!tok) { results.push({ uid: uid.slice(0, 8), error: "token refresh failed" }); continue; }
+        get = (path: string) => stGet(tok, path);
+      }
+      const accounts = (await get("/accounts")) as Record<string, unknown>[] | null;
       if (!Array.isArray(accounts)) { results.push({ uid: uid.slice(0, 8), error: "accounts fetch failed" }); continue; }
       const institutions = [...new Set(accounts.map((a) => String(a.institution_name ?? "")).filter(Boolean))];
       let positions = 0;
@@ -76,8 +104,8 @@ Deno.serve(async (req) => {
         if (!acctId) continue;
         const inst = String(a.institution_name ?? "Brokerage");
         const [poss, bals] = await Promise.all([
-          stGet(tok, `/accounts/${acctId}/positions`) as Promise<Record<string, unknown>[] | null>,
-          stGet(tok, `/accounts/${acctId}/balances`) as Promise<Record<string, unknown>[] | null>,
+          get(`/accounts/${acctId}/positions`) as Promise<Record<string, unknown>[] | null>,
+          get(`/accounts/${acctId}/balances`) as Promise<Record<string, unknown>[] | null>,
         ]);
         if (!Array.isArray(poss)) continue;   // never delete on a failed fetch
         const seen: string[] = [];
