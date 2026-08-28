@@ -371,7 +371,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       }
       if (!sections || !validSections(sections)) { errors.push(uid.slice(0, 8) + ": invalid sections"); continue; }
-      sections.positions = sections.positions.slice(0, 4);
+      sections.positions = sections.positions.slice(0, 4)
+        .map((p) => ({ ...p, watch: p.watch.replace(/[,;\s]*\b(watch(ing)?|monitor(ing)?|track(ing)?)\b[.\s]*$/i, "").trim() }));
       sections = deepDeDash(sections);
       // deterministic style guarantees: KRX codes -> names, KRW-prefix -> ₩
       const codeToName = new Map(holdings.map((r) => [r.symbol, krName(r.symbol, r.nickname, r.name)] as [string, string]));
