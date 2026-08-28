@@ -175,7 +175,7 @@ ${(news7 ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (no fr
 ${(fils ?? []).length ? `\nSEC filings (last 9 months): ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}${latestTr ? `\nLatest earnings call ("${latestTr.title}", ${latestTr.published_at}):\n${String(latestTr.content).slice(0, 7000)}\n${(tr ?? []).slice(1).length ? "Older calls on file: " + (tr ?? []).slice(1).map((t) => t.title).join(" | ") : ""}` : "\n(no earnings transcript on file yet)"}
 
 Return STRICT JSON: {"bullets": [3-4 strings], "trend": str}.
-bullets: the sharpest takes on what matters RIGHT NOW, synthesizing news, the earnings call, and price action. Each 10-15 words MAX. Interpret, never restate headlines. Plain punchy language. Never use em dashes or semicolons.
+bullets: the sharpest takes on what matters RIGHT NOW, synthesizing news, the earnings call, and price action. Each 10-15 words MAX. Interpret, never restate headlines. Refer to the company by NAME, never numeric KRX codes. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons.
 trend: ONE sentence, max 20 words, covering the recent move and the longer-term picture together.`;
         content = await askMara(key, model, prompt);
       }
@@ -189,7 +189,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
   }
   // ---- portfolio-level insights: per user, their actual mix ----
   let pWrote = 0;
-  const { data: pf } = await admin.from("portfolio").select("user_id, symbol, kind, account, currency, value, change_pct, nickname");
+  const { data: pf } = await admin.from("portfolio").select("user_id, symbol, kind, account, currency, value, change_pct, nickname, name");
   const byUser = new Map<string, NonNullable<typeof pf>>();
   for (const r of pf ?? []) {
     if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
@@ -197,6 +197,12 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
   }
   const { data: fxRow } = await admin.from("prices").select("price").eq("symbol", "USDKRW").maybeSingle();
   const fx = fxRow ? Number(fxRow.price) : 1380;
+  // Korean tickers are opaque numbers; the model reads and writes NAMES for them.
+  const dispName = (sy: string, nick?: string | null, nm?: string | null) =>
+    (nick || ((sy.endsWith(".KS") || sy.endsWith(".KQ")) && nm ? nm : sy));
+  const nameBySym = new Map<string, string>();
+  for (const r of pf ?? []) nameBySym.set(r.symbol, dispName(r.symbol, r.nickname, (r as { name?: string }).name));
+  const nOf = (sy: string) => nameBySym.get(sy) ?? sy;
   const userIds = fixture ? [...byUser.keys()] : [...byUser.keys()].slice(0, 25);
   const { data: lastPis } = await admin.from("portfolio_insights").select("user_id, generated_at")
     .in("user_id", userIds).order("generated_at", { ascending: false }).limit(200);
@@ -217,7 +223,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const total = assets.reduce((a, r) => a + usd(r), 0);
       if (total < 100) continue;                                   // nothing meaningful to say
       const desc = assets.sort((a, b) => usd(b) - usd(a)).slice(0, 15)
-        .map((r) => `${r.nickname || r.symbol} (${r.kind}${r.account !== "brokerage" ? ", " + r.account : ""}): $${Math.round(usd(r))} = ${(usd(r) / total * 100).toFixed(1)}% of assets, day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}`).join("\n");
+        .map((r) => `${nOf(r.symbol)} (${r.kind}${r.account !== "brokerage" ? ", " + r.account : ""}): $${Math.round(usd(r))} = ${(usd(r) / total * 100).toFixed(1)}% of assets, day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}`).join("\n");
       const { data: symIns } = await admin.from("insights").select("symbol, bullets, generated_at")
         .in("symbol", assets.map((r) => r.symbol)).order("generated_at", { ascending: false }).limit(30);
       const latestBySym = new Map<string, string>();
@@ -229,8 +235,8 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
         admin.from("transcripts").select("symbol,title,published_at").in("symbol", sigSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(30),
         admin.from("news").select("symbol,title,source,published_at").in("symbol", sigSyms).gte("published_at", since7).order("published_at", { ascending: false }).limit(80),
       ]);
-      const callLines = sigSyms.map((sy) => { const t = (trs ?? []).find((x) => x.symbol === sy); return t ? `- ${sy}: ${String(t.title).slice(0, 80)} (call date ${String(t.published_at).slice(0, 10)})` : null; }).filter(Boolean).join("\n");
-      const newsLines = sigSyms.map((sy) => (nws ?? []).filter((x) => x.symbol === sy).slice(0, 2).map((x) => `- ${sy} [${x.source}]: ${String(x.title).slice(0, 90)}`).join("\n")).filter(Boolean).join("\n");
+      const callLines = sigSyms.map((sy) => { const t = (trs ?? []).find((x) => x.symbol === sy); return t ? `- ${nOf(sy)}: ${String(t.title).slice(0, 80)} (call date ${String(t.published_at).slice(0, 10)})` : null; }).filter(Boolean).join("\n");
+      const newsLines = sigSyms.map((sy) => (nws ?? []).filter((x) => x.symbol === sy).slice(0, 2).map((x) => `- ${nOf(sy)} [${x.source}]: ${String(x.title).slice(0, 90)}`).join("\n")).filter(Boolean).join("\n");
       let content: string | null;
       if (fixture) {
         content = JSON.stringify(body.cannedPortfolio ?? { bullets: ["portfolio fixture one", "portfolio fixture two", "portfolio fixture three"], news5: ["fixture signal one", "fixture signal two", "fixture signal three", "fixture signal four", "fixture signal five"] });
@@ -243,15 +249,15 @@ ${callLines || "- (none)"}
 Fresh headlines (7d):
 ${newsLines || "- (none)"}
 Sharpest current takes per holding:
-${[...latestBySym.entries()].map(([sym, b]) => `- ${sym}: ${b}`).join("\n") || "- (none yet)"}
+${[...latestBySym.entries()].map(([sym, b]) => `- ${nOf(sym)}: ${b}`).join("\n") || "- (none yet)"}
 
 Return STRICT JSON: {"bullets": [exactly 3 strings], "news5": [exactly 5 strings]}. You are their portfolio strategist.
 Bullet 1: the ONLY price bullet. Recent moves that mattered, with numbers.
 Bullet 2: the most decision-relevant company signal right now: an earnings call (state its date), interview, filing, or news. Any holding qualifies, not just the largest position.
 Bullet 3: a mid-term signal a value investor should note: valuation, fundamentals trend, or upcoming catalyst.
 Each bullet 15 words MAX. Spread coverage across different holdings when the signals warrant it.
-news5: the top 5 signals from this week across their holdings, RANKED by importance to THIS portfolio (weight by position size and decision impact). Each 10 words MAX, names its ticker, no two about the same story.
-Respect the session notes: never present the last session's move as happening today. Plain punchy language. Never use em dashes or semicolons. No generic advice.`;
+news5: the top 5 signals from this week across their holdings, RANKED by importance to THIS portfolio (weight by position size and decision impact). Each 10 words MAX, names the company (US ticker OK; Korean companies by NAME), no two about the same story.
+Respect the session notes: never present the last session's move as happening today. Refer to Korean companies by NAME, never numeric KRX codes like 005930.KS. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons. No generic advice.`;
         content = await askMara(key, model, prompt);
       }
       const parsed = content ? parseInsight(content) : null;

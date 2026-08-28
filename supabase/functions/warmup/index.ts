@@ -120,7 +120,7 @@ Return STRICT JSON: {"bullets": [exactly 2 strings], "trend": str}.
 bullet 1: the latest earnings call in one line WITH its date. If none on file, the most recent fundamental signal instead, honestly labeled.
 bullet 2: the single biggest story of the past month, interpreted, never restated.
 trend: the 2-year trajectory in ONE sentence, max 20 words.
-Each bullet 10-15 words. Plain punchy language. Never use em dashes or semicolons.`;
+Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons.`;
     return { prompt, hadTranscript: !!latestTr, newsCount: (news ?? []).length };
   };
 
