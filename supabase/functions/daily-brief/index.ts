@@ -366,14 +366,19 @@ ${STYLE_RULES}`;
       const scrub = (t: string) => {
         let x = t;
         for (const [code, nm] of codeToName) if (code.endsWith(".KS") || code.endsWith(".KQ")) x = x.split(code).join(nm);
-        return x.replace(/KRW\s?(?=[0-9₩])/g, "₩").replace(/₩\s+(?=[0-9])/g, "₩");
+        x = x.replace(/KRW\s?(?=[0-9₩])/g, "₩").replace(/₩\s+(?=[0-9])/g, "₩");
+        // NUMBER STYLE is guaranteed in code: dollar amounts >= 1,000 rounded to the nearest hundred, comma-grouped
+        return x.replace(/\$([\d,]+)(\.\d+)?/g, (m, d, dec) => {
+          const v = Number(String(d).replace(/,/g, "") + (dec ?? ""));
+          return v >= 1000 ? "$" + (Math.round(v / 100) * 100).toLocaleString("en-US") : m;
+        });
       };
       const scrubDeep = (v: unknown): unknown => typeof v === "string" ? scrub(v)
         : Array.isArray(v) ? v.map(scrubDeep)
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, scrubDeep(x)])) : v;
       sections = scrubDeep(sections) as Sections;
       const { error: upErr } = await admin.from("daily_briefs").upsert({
-        user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), model: fixture ? "fixture" : model,
+        user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : model,
       }, { onConflict: "user_id,brief_date,edition" });
       if (upErr) errors.push(uid.slice(0, 8) + ": " + upErr.message); else wrote++;
       // ---- audio narration (background; the text brief never waits on it) ----
