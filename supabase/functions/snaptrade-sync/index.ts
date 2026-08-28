@@ -57,8 +57,15 @@ Deno.serve(async (req) => {
     else { const { data } = await admin.from("snaptrade_tokens").select("user_id"); targets = (data ?? []).map((r) => r.user_id); }
   } else {
     const { data: ud } = await admin.auth.getUser(bearer);
-    if (!ud?.user?.id) return json({ ok: false, error: "not signed in" }, 401);
-    targets = [ud.user.id];
+    if (ud?.user?.id) targets = [ud.user.id];
+    else {
+      // the platform (verify_jwt) accepted the credential but it maps to no user: the scheduler.
+      // Allow an all-user sweep, rate-limited so the public key cannot be used to hammer SnapTrade.
+      const { data: last } = await admin.from("snaptrade_tokens").select("last_sync_at").order("last_sync_at", { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
+      if (last?.last_sync_at && Date.now() - +new Date(last.last_sync_at) < 20 * 60000) return json({ ok: true, skipped: "recent sweep" });
+      const { data } = await admin.from("snaptrade_tokens").select("user_id");
+      targets = (data ?? []).map((r) => r.user_id);
+    }
   }
 
   const freshToken = async (row: TokenRow): Promise<string | null> => {
