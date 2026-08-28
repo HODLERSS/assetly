@@ -1,4 +1,6 @@
-// Assetly Daily Brief — a personal morning research note, one per user per trading day.
+// Assetly Daily Brief — three personal research notes per trading day: morning (pre-open,
+// full 4-stage chain), midday pulse (11am CT, live tape vs the morning view), closing note
+// (post-close, day tally + next-session setup). Edition resolves from the clock or body.edition.
 // Four-stage chain, token-maximalist by design:
 //   1 analyst memos  (parallel, one per top holding: full transcript + news + filings)
 //   2 devil's advocate (attacks the memos: what's overstated, what's missing)
@@ -94,6 +96,10 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const force = url.searchParams.get("force") === "1" || body.force === true;
   const onlyEmail = typeof body.user_email === "string" ? body.user_email : null;
+  const validEd = (x: unknown): x is "morning" | "midday" | "close" => x === "morning" || x === "midday" || x === "close";
+  const edRaw = url.searchParams.get("edition") ?? (body as { edition?: unknown }).edition;
+  const utcH = new Date().getUTCHours();
+  const edition: "morning" | "midday" | "close" = validEd(edRaw) ? edRaw : utcH >= 19 ? "close" : utcH >= 15 ? "midday" : "morning";
 
   let key = "";
   if (!fixture) {
@@ -118,6 +124,10 @@ Deno.serve(async (req) => {
   const marketLines = [
     fmtCtx("ES=F", "S&P500 futures"), fmtCtx("NQ=F", "Nasdaq futures"), fmtCtx("^GSPC", "S&P500 close"),
     fmtCtx("^VIX", "VIX"), fmtCtx("^KS11", "KOSPI"), fmtCtx("USDKRW", "USDKRW"),
+  ].filter(Boolean).join(" · ");
+  const mktLive = [
+    fmtCtx("^GSPC", "S&P500 index"), fmtCtx("NQ=F", "Nasdaq futures"), fmtCtx("^VIX", "VIX"),
+    fmtCtx("^KS11", "KOSPI"), fmtCtx("USDKRW", "USDKRW"),
   ].filter(Boolean).join(" · ");
   const leaderLines = LEADERS.map((sy) => { const p = px.get(sy); return p && p.chg !== null ? `${sy} ${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%` : null; }).filter(Boolean).join(" · ");
   const since24h = new Date(Date.now() - 24 * 3600000).toISOString();
@@ -152,7 +162,7 @@ Deno.serve(async (req) => {
       const total = assets.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
       if (total < 100) continue;
       if (!force) {
-        const { data: have } = await admin.from("daily_briefs").select("id").eq("user_id", uid).eq("brief_date", briefDate).maybeSingle();
+        const { data: have } = await admin.from("daily_briefs").select("id").eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
         if (have) continue;
       }
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
@@ -165,6 +175,12 @@ Deno.serve(async (req) => {
       // yesterday for continuity
       const { data: prev } = await admin.from("daily_briefs").select("brief_date, sections, memos").eq("user_id", uid)
         .lt("brief_date", briefDate).order("brief_date", { ascending: false }).limit(1).maybeSingle();
+      let morningRow: { sections: unknown; memos: unknown } | null = null;
+      if (edition !== "morning") {
+        const { data: te } = await admin.from("daily_briefs").select("sections, memos").eq("user_id", uid)
+          .eq("brief_date", briefDate).eq("edition", "morning").maybeSingle();
+        morningRow = te ?? null;
+      }
 
       let sections: Sections | null = null;
       let memosOut: Record<string, unknown>[] = [];
@@ -174,7 +190,7 @@ Deno.serve(async (req) => {
           positions: [{ name: "FixtureCo", note: "Fixture note 1", watch: "fixture watch" }, { name: "FixtureCo2", note: "Fixture note 2", watch: "fixture watch 2" }],
           desk_view: "Fixture desk view.", calendar: [],
         };
-      } else {
+      } else if (edition === "morning") {
         // ---- stage 1: analyst memos, parallel over top holdings ----
         const memoTargets = holdings.slice(0, 5);
         const memos = await Promise.all(memoTargets.map(async (r) => {
@@ -258,6 +274,87 @@ lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their h
         const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
           `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers.`, 10000, 30000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
+      } else {
+        // ---- intraday editions (midday pulse / closing note): reuse the morning desk work, focus on the live tape ----
+        memosOut = Array.isArray(morningRow?.memos) ? (morningRow?.memos as Record<string, unknown>[]) : [];
+        if (!memosOut.length) {
+          const quick = await Promise.all(holdings.slice(0, 4).map(async (r) => {
+            try {
+              const dispN = krName(r.symbol, r.nickname, r.name);
+              const since7 = new Date(Date.now() - 7 * 86400000).toISOString();
+              const { data: news } = await admin.from("news").select("title,source").eq("symbol", r.symbol).gte("published_at", since7).order("published_at", { ascending: false }).limit(6);
+              const m = await askModel(key, "You are a buy-side analyst. Terse.",
+                `Quick memo on ${dispN}, ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of the portfolio, day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}.
+News (7d):
+${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- none"}
+
+Return STRICT JSON {"name": "${dispN}", "changed": str, "watch": str}. changed: the live driver or "quiet". watch: next concrete catalyst. <= 18 words each.`, 3500, 18000);
+              return m ? { symbol: r.symbol, ...m } : null;
+            } catch { return null; }
+          }));
+          memosOut = quick.filter(Boolean) as Record<string, unknown>[];
+        }
+        const nameBy = new Map(holdings.map((r) => [r.symbol, krName(r.symbol, r.nickname, r.name)]));
+        const since8h = new Date(Date.now() - 8 * 3600000).toISOString();
+        const { data: freshNews } = await admin.from("news").select("symbol,title").in("symbol", holdings.slice(0, 8).map((r) => r.symbol))
+          .gte("published_at", since8h).order("published_at", { ascending: false }).limit(12);
+        const freshHeads = (freshNews ?? []).map((n) => `- ${nameBy.get(n.symbol) ?? n.symbol}: ${String(n.title).slice(0, 90)}`).join("\n");
+        const dayPnl = assets.reduce((a, r) => r.change_pct === null ? a : a + usd(Number(r.value ?? 0), r.currency) * (Number(r.change_pct) / 100) / (1 + Number(r.change_pct) / 100), 0);
+        const dayPct = total > 0 ? (dayPnl / (total - dayPnl) * 100) : 0;
+        const pnlLine = `DAY P&L: ${dayPnl >= 0 ? "+" : "-"}$${Math.abs(Math.round(dayPnl)).toLocaleString("en-US")} (${dayPnl >= 0 ? "+" : ""}${dayPct.toFixed(1)}%)`;
+        const mSec = morningRow ? morningRow.sections as Sections : null;
+        const morningCtx = mSec ? `THIS MORNING'S BRIEF (build on it, never repeat a sentence from it): lede "${mSec.lede}" \u00b7 tape "${mSec.overnight}" \u00b7 desk view "${mSec.desk_view}" \u00b7 watches: ${mSec.positions.map((p) => `${p.name}: ${p.watch}`).join("; ")}` : "(no morning brief today; write standalone, no references to an earlier note)";
+        const isFri = new Date(briefDate + "T12:00:00Z").getUTCDay() === 5;
+        const krHeld = holdings.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"));
+        const STYLE_RULES = `BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching", "demands scrutiny", "warrants attention".
+NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
+NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
+RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as \u20a9 (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
+        const dataBlock = `MARKET NOW: ${mktLive || "(no market data)"}
+LEADERS: ${leaderLines || "(none tracked)"}
+FRESH HEADLINES (8h):
+${freshHeads || "- none"}
+
+PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
+Total assets $${Math.round(total)}. ${pnlLine}
+${statsLines}
+
+DESK CONTEXT (from the morning work):
+${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.changed ?? ""}${m.bull ? `. bull: ${m.bull}` : ""}${m.bear ? `. bear: ${m.bear}` : ""}. watch: ${m.watch ?? ""}`).join("\n") || "- none"}
+${morningCtx}`;
+        const shape = `Return STRICT JSON:\n{"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}`;
+        const writerPrompt = edition === "midday"
+          ? `Write the ${briefDate} MIDDAY PULSE (11:00 AM Central, about 2.5 hours into the US session) for ONE investor. You wrote this morning's brief; now tell them what the session is ACTUALLY doing versus what was expected.
+
+${dataBlock}
+
+${shape}
+lede: the ONE thing that changed since the open for THIS portfolio. If the session confirms the morning view, say so in one clause, then what's new. <= 28 words.
+overnight: the tape RIGHT NOW: at least THREE literal numbers copied from MARKET NOW with their EXACT labels, then the single biggest portfolio day move BY NAME with its number. <= 50 words.
+positions: the 1-4 holdings actually moving or with fresh news since the open. note <= 28 words with the day number and WHY it moves; if the driver is unknown write "no clear driver yet" rather than inventing one. watch <= 10 words: a concrete afternoon or tonight event, level, or time. NEVER verbs like monitor, watch, track.
+desk_view: what today's action changes about the morning view, or the specific level or event this afternoon that would change it. Structural; never repeat the morning desk view. <= 36 words.
+calendar: 0-3 items for this afternoon or tonight, <= 10 words each.
+${STYLE_RULES}`
+          : `Write the ${briefDate} CLOSING NOTE (published minutes after the 4:00 PM Eastern close${isFri ? "; it is FRIDAY, so set up the WEEK AHEAD" : ""}) for ONE investor. Your job: settle what today meant for their money and arm them for the next session.
+
+${dataBlock}
+
+${shape}
+lede: the day's story for THIS portfolio in one breath, anchored on the DAY P&L number. <= 30 words.
+overnight: the tape at the bell: at least THREE literal numbers copied from MARKET NOW with their EXACT labels, plus the portfolio day P&L. <= 55 words.
+positions: the 1-4 holdings that defined the day. note <= 30 words: what happened AND what it means beyond today, with the day number. watch <= 10 words naming a concrete ${isFri ? "next-week" : "tonight-or-tomorrow"} catalyst, level, or event (after-hours earnings, data time, KRX open). NEVER verbs like monitor, watch, track.
+desk_view: the setup for ${isFri ? "next week" : "tomorrow"}: the one structural risk or opportunity to sleep on. No single-day numbers. <= 40 words.
+calendar: 0-3 items: tonight's after-hours reports, ${isFri ? "next week's" : "tomorrow's"} data or earnings. <= 10 words each.${krHeld ? `\nTheir Korean holdings trade TONIGHT (KRX opens 9:00 PM Eastern). If a Korean name has a catalyst, put it in positions or calendar.` : ""}
+${STYLE_RULES}`;
+        let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly, then write.", writerPrompt, 20000, 75000);
+        if ((!draft || !validSections(draft)) && elapsed() < 80) {
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Think briefly. Output the exact JSON shape requested.", writerPrompt, 20000, 55000);
+        }
+        if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": writer failed [" + lastMeta + "]"); continue; }
+        const caps = edition === "midday" ? "lede 28, overnight 50, note 28, watch 10, desk_view 36" : "lede 30, overnight 55, note 30, watch 10, desk_view 40";
+        const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
+          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET NOW: ${mktLive}\nLEADERS: ${leaderLines}\nPORTFOLIO: Total $${Math.round(total)}. ${pnlLine}\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (${caps}) by tightening, not by losing substance. Also: replace any numeric KRX code with the company name; write won as \u20a9 never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); overnight must keep at least three market numbers.`, 10000, 30000);
+        sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       }
       if (!sections || !validSections(sections)) { errors.push(uid.slice(0, 8) + ": invalid sections"); continue; }
       sections.positions = sections.positions.slice(0, 4);
@@ -274,20 +371,25 @@ lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their h
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, scrubDeep(x)])) : v;
       sections = scrubDeep(sections) as Sections;
       const { error: upErr } = await admin.from("daily_briefs").upsert({
-        user_id: uid, brief_date: briefDate, sections, memos: memosOut.slice(0, 8), model: fixture ? "fixture" : model,
-      }, { onConflict: "user_id,brief_date" });
+        user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), model: fixture ? "fixture" : model,
+      }, { onConflict: "user_id,brief_date,edition" });
       if (upErr) errors.push(uid.slice(0, 8) + ": " + upErr.message); else wrote++;
       // ---- audio narration (background; the text brief never waits on it) ----
       if (!fixture && !upErr) {
-        const uidCopy = uid, dateCopy = briefDate, finalSections = sections;
+        const uidCopy = uid, dateCopy = briefDate, edCopy = edition, finalSections = sections;
         const doAudio = (async () => {
           try {
             let ek = Deno.env.get("ELEVEN_API_KEY") ?? "";
             if (!ek) { const { data } = await admin.rpc("get_secret", { secret_name: "eleven_api_key" }); ek = data ?? ""; }
             if (!ek) return;
             const dayLine = new Date(dateCopy + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
+            const spec = edCopy === "midday"
+              ? { label: "midday check-in radio script", len: "a 60-to-90 second (150-220 word)", who: "midday-desk", floor: 120, min: 250 }
+              : edCopy === "close"
+              ? { label: "closing-bell wrap radio script", len: "a 90-second-to-2-minute (200-290 word)", who: "end-of-day", floor: 170, min: 250 }
+              : { label: "radio script", len: "a 2-to-3 minute (340-430 word)", who: "morning-desk", floor: 280, min: 400 };
             const scriptPrompt = `Brief:\n${JSON.stringify(finalSections)}\n\nReturn STRICT JSON {"spoken": str}.
-spoken: a 2-to-3 minute radio script (340-430 words) of this exact brief for expressive text-to-speech. Today is ${dayLine} — use that in the greeting and NEVER guess a different weekday. Voice: a sharp, warm morning-desk analyst speaking to ONE client they know well. Short sentences. Contractions. Spell numbers for the ear ("up five point eight percent", "about a hundred and forty-seven thousand dollars"). Vary the rhythm: punchy for surprises, slower with commas and ellipses for risk warnings, one earned exclamation at most. Structure, all parts REQUIRED: one-line greeting with the date, the lede, the overnight tape, each position with what to watch, the desk view, and a closing sign-off sentence that says goodbye (e.g. "That\u2019s your brief. Talk soon."). The script MUST end with that complete sign-off sentence — never end on a market point or a pause. Insert <break time="0.7s" /> between sections and <break time="0.3s" /> after key numbers. Use ONLY facts and numbers from the brief. No headers, no ticker codes, company names only. Never mention sections or that this is generated.`;
+spoken: ${spec.len} spoken ${spec.label} of this exact brief for expressive text-to-speech. Today is ${dayLine} — use that in the greeting and NEVER guess a different weekday. Voice: a sharp, warm ${spec.who} analyst speaking to ONE client they know well. Short sentences. Contractions. Spell numbers for the ear ("up five point eight percent", "about a hundred and forty-seven thousand dollars"). Vary the rhythm: punchy for surprises, slower with commas and ellipses for risk warnings, one earned exclamation at most. Structure, all parts REQUIRED: one-line greeting with the date, the lede, the overnight tape, each position with what to watch, the desk view, and a closing sign-off sentence that says goodbye (e.g. "That\u2019s your brief. Talk soon."). The script MUST end with that complete sign-off sentence — never end on a market point or a pause. Insert <break time="0.7s" /> between sections and <break time="0.3s" /> after key numbers. Use ONLY facts and numbers from the brief. No headers, no ticker codes, company names only. Never mention sections or that this is generated.`;
             const sysLine = "You turn a written morning investment brief into a vivid spoken radio script. Output only the JSON.";
             const getScript = async (): Promise<string | null> => {
               const out = await askModel(key, sysLine, scriptPrompt, 12000, 70000);
@@ -295,11 +397,11 @@ spoken: a 2-to-3 minute radio script (340-430 words) of this exact brief for exp
               if (!sp) return null;
               // trailing pause tags read as an abrupt dead-air ending — always strip
               const trimmed = sp.replace(/(?:\s*<break[^>]*\/>\s*)+$/g, "").trim();
-              return trimmed.split(/\s+/).length >= 280 && /[.!?]$/.test(trimmed) ? trimmed : null;
+              return trimmed.split(/\s+/).length >= spec.floor && /[.!?]$/.test(trimmed) ? trimmed : null;
             };
             let spoken = await getScript();
             if (!spoken) spoken = await getScript();   // one retry on a short or broken script
-            if (!spoken || spoken.length < 400) return;
+            if (!spoken || spoken.length < spec.min) return;
             // deterministic safety net: never ship a script that stops on a market point
             if (!/(talk soon|talk to you|see you|good luck|tomorrow|that\u2019s your|that's your|sign\w* off|catch you|have a (good|great)|go get)/i.test(spoken.slice(-160)))
               spoken += ` <break time="0.6s" /> That\u2019s your brief for this ${dayLine.split(",")[0]}. Talk soon.`;
@@ -313,9 +415,9 @@ spoken: a 2-to-3 minute radio script (340-430 words) of this exact brief for exp
             });
             if (!vr.ok) return;
             const audio = new Uint8Array(await vr.arrayBuffer());
-            const path = `${uidCopy}/${dateCopy}.mp3`;
+            const path = `${uidCopy}/${dateCopy}-${edCopy}.mp3`;
             const { error: upE } = await admin.storage.from("briefs-audio").upload(path, audio, { contentType: "audio/mpeg", upsert: true });
-            if (!upE) await admin.from("daily_briefs").update({ audio_path: path }).eq("user_id", uidCopy).eq("brief_date", dateCopy);
+            if (!upE) await admin.from("daily_briefs").update({ audio_path: path }).eq("user_id", uidCopy).eq("brief_date", dateCopy).eq("edition", edCopy);
           } catch { /* the written brief stands alone */ }
         })();
         try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(doAudio); } catch { /* ignore */ }
