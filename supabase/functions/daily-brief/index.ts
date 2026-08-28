@@ -398,6 +398,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const uidCopy = uid, dateCopy = briefDate, edCopy = edition, finalSections = sections;
         const doAudio = (async () => {
           try {
+            const { data: au } = await admin.auth.admin.getUserById(uidCopy);
+            if (au?.user?.email?.endsWith("assetly.test")) return;   // test accounts never spend TTS quota
             let ek = Deno.env.get("ELEVEN_API_KEY") ?? "";
             if (!ek) { const { data } = await admin.rpc("get_secret", { secret_name: "eleven_api_key" }); ek = data ?? ""; }
             if (!ek) return;
