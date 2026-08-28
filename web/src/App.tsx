@@ -50,6 +50,25 @@ export function App({ api = defaultApi }: { api?: Api }) {
     }
   }, [api]);
 
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!session) return;
+    const q = new URLSearchParams(window.location.search);
+    const stp = q.get("snaptrade");
+    if (!stp) return;
+    q.delete("snaptrade");
+    window.history.replaceState({}, "", window.location.pathname + (q.toString() ? "?" + q.toString() : "") + window.location.hash);
+    if (stp === "connected") {
+      setNotice("Brokerage connected. Importing your positions…");
+      api.snaptradeSync().then(async () => { await load(); setNotice("Brokerage import complete."); setTimeout(() => setNotice(null), 6000); })
+        .catch(() => { setNotice("Connected. The first import runs in the background — pull to refresh."); setTimeout(() => setNotice(null), 8000); });
+    } else {
+      setNotice(stp === "denied" ? "Brokerage link was declined." : "Brokerage link didn't complete. Try again from Settings.");
+      setTimeout(() => setNotice(null), 8000);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   useEffect(() => {
     if (!session) { setProfile(null); setRows([]); return; }
     load();
@@ -96,6 +115,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         </span>
       </header>
 
+      {notice && <div className="error-note" role="status" style={{ borderColor: "#2A3F92" }}>{notice}</div>}
       {error && (
         <div className="error-note" role="alert">
           {error} <button className="chip" onClick={load} style={{ marginLeft: 8 }}>Retry</button>

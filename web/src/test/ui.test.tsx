@@ -60,7 +60,9 @@ function stubApi(over: Partial<Api> = {}): Api {
     updateBaseCurrency: vi.fn().mockResolvedValue(undefined),
     updateDisplayCcy: vi.fn().mockResolvedValue(undefined),
     getPulse: vi.fn().mockResolvedValue([]),
-    getDailyBrief: vi.fn().mockResolvedValue(null),
+    snaptrade: vi.fn().mockResolvedValue({ ok: true, connected: false }),
+    snaptradeSync: vi.fn().mockResolvedValue(undefined),
+    getDailyBriefs: vi.fn().mockResolvedValue([]),
     getBriefAudioUrl: vi.fn().mockResolvedValue(null),
     warmup: vi.fn().mockResolvedValue(undefined),
     getInsights: vi.fn().mockResolvedValue(null),
@@ -234,8 +236,9 @@ describe("U38 serial adds", () => {
 
 describe("U39 morning brief", () => {
   it("the brief card leads with the lede and opens to the full note", async () => {
-    const api = stubApi({ getDailyBrief: vi.fn().mockResolvedValue({
+    const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([{
       brief_date: "2026-08-28",
+      edition: "morning",
       generated_at: new Date().toISOString(),
       sections: {
         lede: "MARA reports after the close; 37% of your book is on the line.",
@@ -246,7 +249,7 @@ describe("U39 morning brief", () => {
         ],
         desk_view: "Your AI-infrastructure correlation remains the book's true risk.",
         calendar: ["MARA earnings tonight (est)"],
-      }, audio_path: "u-test/2026-08-28.mp3" }) });
+      }, audio_path: "u-test/2026-08-28-morning.mp3" }]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     const card = await screen.findByTestId("brief-card");
@@ -265,6 +268,23 @@ describe("U39 morning brief", () => {
     render(<App api={stubApi()} />);
     await screen.findByTestId("net-worth");
     expect(screen.queryByTestId("brief-card")).toBeNull();
+  });
+  it("U40: multiple editions default to the latest with chips to switch back", async () => {
+    const sec = (lede: string) => ({
+      lede, overnight: "S&P500 index 6,470 (+0.4%), VIX 14.1, KOSPI 3,120 (+0.8%).",
+      positions: [{ name: "MARA", note: "Up 2.1% into the print.", watch: "Q3 call tonight" }],
+      desk_view: "Concentration unchanged.", calendar: [],
+    });
+    const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([
+      { brief_date: "2026-08-28", edition: "morning", generated_at: "2026-08-28T12:35:00Z", sections: sec("Morning lede here."), audio_path: null },
+      { brief_date: "2026-08-28", edition: "close", generated_at: "2026-08-28T20:05:00Z", sections: sec("Close lede: day settled."), audio_path: null },
+    ]) });
+    render(<App api={api} />);
+    const card = await screen.findByTestId("brief-card");
+    expect(card.textContent).toContain("Closing Note");
+    expect(card.textContent).toContain("Close lede: day settled.");
+    await userEvent.click(screen.getByRole("button", { name: "Morning" }));
+    expect((await screen.findByTestId("brief-card")).textContent).toContain("Morning lede here.");
   });
 });
 

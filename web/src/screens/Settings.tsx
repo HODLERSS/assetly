@@ -9,6 +9,13 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
   onChanged: () => Promise<void> | void; onSignedOut: () => void;
 }) {
   const [fx, setFx] = useState<{ rate: number; asOf: string } | null>(null);
+  const [st, setSt] = useState<{ connected: boolean; last_sync_at?: string | null; institutions?: string[] } | null>(null);
+  const [stBusy, setStBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api.snaptrade("status").then((r) => { if (live) setSt({ connected: !!r.connected, last_sync_at: r.last_sync_at, institutions: r.institutions }); }).catch(() => { if (live) setSt(null); });
+    return () => { live = false; };
+  }, [api]);
   const [busy, setBusy] = useState(false);
   const base = profile?.base_currency ?? "USD";
   const dispUs = profile?.display_us ?? "USD";
@@ -58,6 +65,32 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
         )}
         <div className="row"><span>Markets</span><span className="sub">{(profile?.markets ?? []).join(" · ") || "—"}</span></div>
         <div className="row"><span>Price cadence</span><span className="sub num">every 60s market hours</span></div>
+      </div>
+      <div className="card" style={{ marginBottom: 14 }} data-testid="snaptrade-card">
+        <div className="row"><span>Brokerage sync</span>
+          <span className="sub">{st?.connected ? `Connected · ${(st.institutions ?? []).join(", ") || "SnapTrade"}` : "Not connected"}</span></div>
+        {st?.connected && st.last_sync_at && (
+          <div className="row"><span>Last import</span><span className="sub num">{timeAgo(st.last_sync_at)}</span></div>
+        )}
+        <div className="chips" style={{ padding: "6px 0 0" }}>
+          {!st?.connected && (
+            <button className="chip" disabled={stBusy} onClick={async () => {
+              setStBusy(true);
+              try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } finally { setStBusy(false); }
+            }}>Connect brokerage</button>
+          )}
+          {st?.connected && (<>
+            <button className="chip" disabled={stBusy} onClick={async () => {
+              setStBusy(true);
+              try { await api.snaptradeSync(); await onChanged(); const r = await api.snaptrade("status"); setSt({ connected: !!r.connected, last_sync_at: r.last_sync_at, institutions: r.institutions }); }
+              finally { setStBusy(false); }
+            }}>Sync now</button>
+            <button className="chip" disabled={stBusy} onClick={async () => {
+              setStBusy(true);
+              try { await api.snaptrade("disconnect"); setSt({ connected: false }); } finally { setStBusy(false); }
+            }}>Disconnect</button>
+          </>)}
+        </div>
       </div>
       <button className="btn secondary" onClick={async () => { await api.signOut(); onSignedOut(); }}>Sign out</button>
       <p className="mutedc" style={{ fontSize: 12.5, marginTop: 14 }}>

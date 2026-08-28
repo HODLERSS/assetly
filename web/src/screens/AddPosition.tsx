@@ -42,6 +42,14 @@ export function AddPosition({ api, onDone, onRefresh, onCancel }: {
           </div>
           <div className="card">
             {!q.trim() && (<>
+              <button className="row" disabled={busy} data-testid="snaptrade-import" onClick={async () => {
+                setErr(null); setBusy(true);
+                try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); }
+                catch (e) { setErr(e instanceof Error ? e.message : "Could not start the brokerage link."); setBusy(false); }
+              }}>
+                <span><span className="sym">⚡ Import</span> <span className="sub">Connect a brokerage, positions land in seconds</span></span>
+                <span className="sub">→</span>
+              </button>
               <button className="row" disabled={busy} onClick={() => { setAccount("bank"); setPicked({ symbol: "$CASH", name: "Cash (USD)", exchange: "CASH", currency: "USD", kind: "cash" }); }}>
                 <span><span className="sym">CASH</span> <span className="sub">Add a cash balance</span></span>
                 <span className="sub">$</span>

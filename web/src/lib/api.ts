@@ -26,7 +26,8 @@ export type BriefSections = {
   positions: { name: string; note: string; watch: string }[];
   desk_view: string; calendar: string[];
 };
-export type DailyBrief = { brief_date: string; sections: BriefSections; generated_at: string; audio_path?: string | null };
+export type BriefEdition = "morning" | "midday" | "close";
+export type DailyBrief = { brief_date: string; edition: BriefEdition; sections: BriefSections; generated_at: string; audio_path?: string | null };
 export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
 
 const nm = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -213,18 +214,34 @@ export function makeApi(sb: SupabaseClient = supabase) {
         if (error || !data?.ok) warmupFired.delete(symbol);   // transient model hiccup: the post-add call retries
       } catch { warmupFired.delete(symbol); }
     },
-    /** The latest Daily Brief for the signed-in user (today's, or the most recent). */
-    async getDailyBrief(): Promise<DailyBrief | null> {
-      const { data } = await sb.from("daily_briefs").select("brief_date,sections,generated_at,audio_path")
-        .order("brief_date", { ascending: false }).limit(1).maybeSingle();
-      if (!data) return null;
-      return { brief_date: String(data.brief_date), sections: data.sections as BriefSections,
-               generated_at: String(data.generated_at), audio_path: (data.audio_path as string | null) ?? null };
+    /** All editions of the most recent brief day (morning, midday pulse, closing note), oldest first. */
+    async getDailyBriefs(): Promise<DailyBrief[]> {
+      const { data } = await sb.from("daily_briefs").select("brief_date,edition,sections,generated_at,audio_path")
+        .order("brief_date", { ascending: false }).order("generated_at", { ascending: true }).limit(6);
+      const rows = data ?? [];
+      if (!rows.length) return [];
+      const day = String(rows[0].brief_date);
+      const order = { morning: 0, midday: 1, close: 2 } as const;
+      return rows.filter((r) => String(r.brief_date) === day)
+        .map((r) => ({ brief_date: String(r.brief_date), edition: (r.edition ?? "morning") as BriefEdition,
+                       sections: r.sections as BriefSections, generated_at: String(r.generated_at),
+                       audio_path: (r.audio_path as string | null) ?? null }))
+        .sort((a, b) => order[a.edition] - order[b.edition]);
     },
     /** Short-lived playback URL for a brief's narration. */
     async getBriefAudioUrl(path: string): Promise<string | null> {
       const { data } = await sb.storage.from("briefs-audio").createSignedUrl(path, 3600);
       return data?.signedUrl ?? null;
+    },
+    /** SnapTrade: connection status / start connect / disconnect. */
+    async snaptrade(action: "status" | "connect" | "disconnect"): Promise<{ ok: boolean; connected?: boolean; url?: string; last_sync_at?: string | null; institutions?: string[] }> {
+      const { data, error } = await sb.functions.invoke("snaptrade-connect", { body: { action } });
+      if (error || !data?.ok) throw new Error(data?.error ?? "Brokerage link is unavailable right now.");
+      return data;
+    },
+    /** SnapTrade: import holdings now for the signed-in user. */
+    async snaptradeSync(): Promise<void> {
+      await sb.functions.invoke("snaptrade-sync", { body: {} });
     },
     /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
     async ask(question: string): Promise<{ answer: string; followups: string[] }> {

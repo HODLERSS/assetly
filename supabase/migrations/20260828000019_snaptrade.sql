@@ -25,3 +25,6 @@ alter table public.snaptrade_oauth_states enable row level security;
 alter table public.holdings add column if not exists source text not null default 'manual';
 alter table public.holdings add column if not exists external_id text;
 create unique index if not exists holdings_external_id_key on public.holdings (user_id, external_id) where external_id is not null;
+
+-- periodic re-import for connected users (positions drift as people trade)
+select cron.schedule('assetly-snaptrade-sync', '15 */6 * * *', $$select public.invoke_edge('snaptrade-sync')$$);
