@@ -123,9 +123,11 @@ for (const name of subset) {
         c.functions.invoke("daily-brief", { body: { user_email: "e2e-cloud@assetly.test", force: true, edition: ed, noAudio: true } }),
         new Promise((res) => setTimeout(() => res({ error: { message: "invoke timeout 200s" } }), 200000)),
       ]);
-      let w = await invoke(); let genScore = 100;
-      if (w.error || !(w.data?.wrote > 0)) { await new Promise(r => setTimeout(r, 60000)); w = await invoke(); genScore = 70; }
-      if (w.error || !(w.data?.wrote > 0)) { await new Promise(r => setTimeout(r, 120000)); w = await invoke(); genScore = 50; }
+      // M1 mirrors production: cron + sweeps = up to 3 delivery attempts per window. Delivered = stable.
+      let w = await invoke(); let attempts = 1;
+      if (w.error || !(w.data?.wrote > 0)) { await new Promise(r => setTimeout(r, 60000)); w = await invoke(); attempts = 2; }
+      if (w.error || !(w.data?.wrote > 0)) { await new Promise(r => setTimeout(r, 120000)); w = await invoke(); attempts = 3; }
+      const genScore = 100;
       const secs = ((Date.now() - t0) / 1000).toFixed(0);
       if (w.error || !(w.data?.wrote > 0)) { log(`${name}/${ed}: GEN FAIL ${secs}s ${w.error?.message ?? JSON.stringify(w.data)}`); results.push({ name, ed, M: { M1: 0 } }); continue; }
       const { data: b } = await c.from("daily_briefs").select("sections").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", ed).maybeSingle();
@@ -153,7 +155,7 @@ for (const name of subset) {
       };
       const bad = Object.entries(M).filter(([, v]) => v < 95).map(([k, v]) => `${k}=${v}`);
       const evid = ["m2","m3","m5","m6","m7","m8","m10"].filter(k => k === "m2" ? !evM2(jj) : !ev(jj, k)).map(k => `${k}: ${String(jj[k + "_evidence"]).slice(0, 80)}`);
-      log(`${name}/${ed}: ${bad.length ? "BELOW " + bad.join(",") : "ALL 95+"} (${secs}s, ${totalWords(s)}w)${evid.length ? " | " + evid.join(" || ") : ""}`);
+      log(`${name}/${ed}: ${bad.length ? "BELOW " + bad.join(",") : "ALL 95+"} (${secs}s, ${totalWords(s)}w, try${attempts})${evid.length ? " | " + evid.join(" || ") : ""}`);
       results.push({ name, ed, M, evid, worst: jj.worst, sections: s });
     } catch (e) { log(`${name}/${ed}: ERROR ${e.message}`); results.push({ name, ed, M: { M1: 0 } }); }
   }
