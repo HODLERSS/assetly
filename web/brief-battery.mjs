@@ -49,7 +49,7 @@ function codeChecks(s) {
   return r;
 }
 
-async function judge(s, portfolioDesc) {
+async function judgeOnce(s, portfolioDesc) {
   const prompt = `Grade this personal morning investment brief against 5 criteria. Portfolio: ${portfolioDesc}.
 BRIEF: ${JSON.stringify(s)}
 Return STRICT JSON {"c2": bool, "c5": bool, "c7": bool, "c9": bool, "c10": bool, "worst": str}.
@@ -64,7 +64,7 @@ Be harsh. A criterion only passes if fully met.`;
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: "MiniMax-M2.7", messages: [
       { role: "system", content: "You are a ruthless editorial reviewer. Respond with the JSON object ONLY, first character '{'." },
-      { role: "user", content: prompt }], temperature: 0.1, max_tokens: 6000, response_format: { type: "json_object" } }),
+      { role: "user", content: prompt }], temperature: 0.1, max_tokens: 9000, response_format: { type: "json_object" } }),
   });
   if (!r.ok) return null;
   const out = await r.json().catch(() => null);
@@ -73,6 +73,15 @@ Be harsh. A criterion only passes if fully met.`;
   let d = 0, e = -1;
   for (let i = st; i < raw.length; i++) { if (raw[i] === "{") d++; else if (raw[i] === "}") { d--; if (!d) { e = i + 1; break; } } }
   try { return JSON.parse(raw.slice(st, e)); } catch { return null; }
+}
+
+async function judge(s, d) {
+  for (let i = 0; i < 3; i++) {
+    const j = await judgeOnce(s, d);
+    if (j && typeof j.c2 === "boolean") return j;
+    await new Promise(r => setTimeout(r, 10000));
+  }
+  return null;
 }
 
 const results = [];
@@ -89,6 +98,7 @@ for (const [name, list] of Object.entries(P)) {
     if (!s) { log(`${name}: NO BRIEF ROW`); results.push({ name, score: 0 }); continue; }
     const cc = codeChecks(s);
     const jj = await judge(s, name + " " + list.map((x) => x[0]).join(","));
+    if (!jj) { log(`${name}: JUDGE-NULL (brief generated fine; regrade needed)`); results.push({ name, score: -1, sections: s }); continue; }
     const passes = [cc.c1_lede, jj?.c2, cc.c3_notes_numeric, cc.c4_positions, jj?.c5, cc.c6_style, jj?.c7, cc.c8_length, jj?.c9, jj?.c10];
     const score = passes.filter(Boolean).length * 10;
     const fails = ["c1","c2","c3","c4","c5","c6","c7","c8","c9","c10"].filter((_, i) => !passes[i]);
@@ -107,7 +117,8 @@ log(`db rows for fixture (should be 1, upsert per day): ${rows?.length}`);
 // unknown email -> zero users, no crash
 const bad = await c.functions.invoke("daily-brief", { body: { user_email: "nobody@nowhere.test", force: true } });
 log(`unknown-email path: ${bad.error ? "FAIL" : JSON.stringify(bad.data)}`);
-const avg = results.reduce((a, r) => a + r.score, 0) / results.length;
+const graded = results.filter((r) => r.score >= 0);
+const avg = graded.reduce((a, r) => a + r.score, 0) / Math.max(1, graded.length);
 log(`\nAVG ${avg.toFixed(1)}/100 across ${results.length} portfolios`);
 writeFileSync("/tmp/brief-battery-results.json", JSON.stringify(results, null, 1));
 // restore empty fixture book

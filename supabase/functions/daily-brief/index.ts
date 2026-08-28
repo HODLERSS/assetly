@@ -40,8 +40,11 @@ function parseJsonBlock(raw: string): Record<string, unknown> | null {
   try { return JSON.parse(cleaned.slice(start, end)); } catch { return null; }
 }
 
-async function askModel(key: string, system: string, prompt: string, maxTokens: number): Promise<Record<string, unknown> | null> {
+async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs = 30000): Promise<Record<string, unknown> | null> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
+    signal: ac.signal,
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7",
@@ -53,6 +56,7 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
       response_format: { type: "json_object" },
     }),
   }).catch(() => null);
+  clearTimeout(timer);
   if (!r || !r.ok) return null;
   const out = await r.json().catch(() => null);
   const c = out?.choices?.[0]?.message?.content;
@@ -214,7 +218,7 @@ ${statsLines}
 
 ANALYST MEMOS:\n${JSON.stringify(memosOut)}
 SKEPTIC PUSHBACK:\n${JSON.stringify(pushback)}
-${prev ? `YESTERDAY (${prev.brief_date}):\n${JSON.stringify(prev.sections)}` : ""}
+${prev ? `YESTERDAY'S NOTE (for continuity): lede "${(prev.sections as { lede?: string })?.lede ?? ""}" · desk view "${(prev.sections as { desk_view?: string })?.desk_view ?? ""}"` : ""}
 
 Return STRICT JSON:
 {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}
@@ -227,9 +231,9 @@ BANNED PHRASES (never write these or variants): "investors should", "keep an eye
 NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
 RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as ₩ (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
-        let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts.", editorPrompt, 14000);
+        let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts.", editorPrompt, 16000, 40000);
         if ((!draft || !validSections(draft)) && elapsed() < 90) {
-          draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Output the exact JSON shape requested.", editorPrompt, 16000);
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Output the exact JSON shape requested.", editorPrompt, 16000, 40000);
         }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": editor failed"); continue; }
 
