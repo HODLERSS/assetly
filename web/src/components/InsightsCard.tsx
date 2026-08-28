@@ -32,8 +32,12 @@ export function InsightsCard({ api, symbol, pollMs = 2000 }: { api: Api; symbol:
       if (!live) return;
       insightCache.set(symbol, v);
       setIns(v);
-      // warmup writes the first card within ~15s of a symbol being added — keep looking
+      // warmup's fast pass lands within ~5s — keep looking
       if (v === null && tries++ < 14) setTimeout(check, pollMs);
+      // the background enrichment may upgrade the card shortly after; pick it up once
+      else if (v !== null && tries > 0) setTimeout(() => {
+        api.getInsights(symbol).then((nv) => { if (live && nv) { insightCache.set(symbol, nv); setIns(nv); } }).catch(() => {});
+      }, 25000);
     }).catch(() => { if (live) setIns(null); });
     check();
     return () => { live = false; };
