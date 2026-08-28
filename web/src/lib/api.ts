@@ -202,7 +202,10 @@ export function makeApi(sb: SupabaseClient = supabase) {
     async warmup(symbol: string): Promise<void> {
       if (warmupFired.has(symbol)) return;
       warmupFired.add(symbol);
-      try { await sb.functions.invoke("warmup", { body: { symbol } }); } catch { /* the hourly lap covers it */ }
+      try {
+        const { data, error } = await sb.functions.invoke("warmup", { body: { symbol } });
+        if (error || !data?.ok) warmupFired.delete(symbol);   // transient model hiccup: the post-add call retries
+      } catch { warmupFired.delete(symbol); }
     },
     /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
     async ask(question: string): Promise<{ answer: string; followups: string[] }> {
