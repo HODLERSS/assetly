@@ -206,9 +206,9 @@ describe("U35 live-session dot", () => {
   });
 });
 
-describe("U38 add lands on the position", () => {
-  it("a stock add navigates to that position's page where the card will arrive", async () => {
-    const api = stubApi({ addPosition: vi.fn().mockResolvedValue("h1") });
+describe("U38 serial adds", () => {
+  it("after an add the form resets for the next ticker with the fresh card inline; Done exits", async () => {
+    const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
@@ -218,9 +218,15 @@ describe("U38 add lands on the position", () => {
     await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    // holding h1 = the stub RDDT row: we land on its position page
-    await screen.findByText(/derived from lots/i);
-    expect(screen.getByRole("button", { name: /remove position/i })).toBeTruthy();
+    // still in the add flow: search is back, the added strip + card slot render
+    await screen.findByTestId("added-strip");
+    expect(screen.getByLabelText(/ticker or name/i)).toBeTruthy();
+    expect(screen.getByTestId("added-strip").textContent).toContain("MARA");
+    // intelligence pending/card renders inline for the just-added symbol
+    expect(document.querySelector('[data-testid="insights-pending"], [data-testid="insights-card"]')).toBeTruthy();
+    // Done exits to Holdings
+    await userEvent.click(screen.getByRole("button", { name: /done/i }));
+    await screen.findByRole("button", { name: /add position/i });
   });
 });
 
@@ -237,8 +243,7 @@ describe("U37 warmup first look", () => {
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15.5");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     await waitFor(() => expect(api.warmup).toHaveBeenCalledWith("MARA"));
-    // cash path
-    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    // cash path — the flow stays open for serial adds, quick rows right there
     await userEvent.click(await screen.findByRole("button", { name: /add a cash balance/i }));
     await userEvent.type(screen.getByLabelText(/amount/i), "5000");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));

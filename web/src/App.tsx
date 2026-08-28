@@ -105,11 +105,9 @@ export function App({ api = defaultApi }: { api?: Api }) {
       <main className="screen">
         <h1 className="sr-only">Assetly</h1>
         {view.kind === "add" && (
-          <AddPosition api={api} onDone={async (holdingId) => {
-            await load();
-            // land on the new position so the first-look card fades in right in front of them
-            go(holdingId ? { kind: "position", holdingId } : { kind: "tab", tab: "holdings" });
-          }} onCancel={() => go({ kind: "tab", tab: "holdings" })} />
+          <AddPosition api={api} onRefresh={load}
+            onDone={() => go({ kind: "tab", tab: "holdings" })}
+            onCancel={() => go({ kind: "tab", tab: "holdings" })} />
         )}
         {view.kind === "position" && (
           <PositionScreen api={api} dispKr={profile?.display_kr ?? "KRW"} row={rows.find((r) => r.holding_id === view.holdingId) ?? null}

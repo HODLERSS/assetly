@@ -1,10 +1,14 @@
 import { useState } from "react";
 import type { Account, Api, SymbolRow } from "../lib/api";
+import { InsightsCard } from "../components/InsightsCard";
 
 // Canvas 3c/3d applied post-onboarding: search, then the two required fields.
-export function AddPosition({ api, onDone, onCancel }: {
-  api: Api; onDone: (holdingId?: string) => Promise<void> | void; onCancel: () => void;
+// Serial adds: after each save the form resets for the next ticker while the
+// just-added stock's intelligence card fades in right below the search.
+export function AddPosition({ api, onDone, onRefresh, onCancel }: {
+  api: Api; onDone: () => Promise<void> | void; onRefresh: () => Promise<void> | void; onCancel: () => void;
 }) {
+  const [added, setAdded] = useState<string[]>([]);          // newest first, this session
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SymbolRow[]>([]);
   const [picked, setPicked] = useState<SymbolRow | null>(null);
@@ -26,7 +30,9 @@ export function AddPosition({ api, onDone, onCancel }: {
 
   return (
     <>
-      <button className="chip" onClick={onCancel}>&larr; Cancel</button>
+      <button className="chip" onClick={() => (added.length ? void onDone() : onCancel())}>
+        {added.length ? "\u2713 Done" : "\u2190 Cancel"}
+      </button>
       <h2 className="h1" style={{ margin: "12px 0" }}>Add position</h2>
       {!picked && (
         <>
@@ -65,6 +71,14 @@ export function AddPosition({ api, onDone, onCancel }: {
             {err && <div className="error-note" role="alert">{err}</div>}
             {q && results.length === 0 && <p className="empty">Nothing matched “{q}” — any US or Korean listing should appear as you type.</p>}
           </div>
+          {added.length > 0 && (
+            <div data-testid="added-strip" style={{ marginTop: 14 }}>
+              <p className="sub" style={{ margin: "0 2px 6px" }}>
+                Added: {added.join(" · ")} — keep going, or tap <strong>Done</strong>.
+              </p>
+              {(() => { const latest = added.find((sy) => !sy.startsWith("$")); return latest ? <InsightsCard api={api} symbol={latest} /> : null; })()}
+            </div>
+          )}
         </>
       )}
       {picked && (
@@ -116,10 +130,13 @@ export function AddPosition({ api, onDone, onCancel }: {
             setBusy(true); setErr(null);
             const sym = isCash && ccy === "KRW" ? `${picked.symbol}.KRW` : picked.symbol;
             try {
-              const newId = await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "", note.trim());
-      if (!sym.startsWith("$")) void api.warmup(sym);   // first-look intelligence, fire-and-forget
+              await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "", note.trim());
+              if (!sym.startsWith("$")) void api.warmup(sym);   // first-look intelligence, fire-and-forget
               if (!isCash) void api.refreshNews([picked.symbol]);        // stories land while the user looks around
-              await onDone(sym.startsWith("$") ? undefined : (newId ?? undefined));
+              await onRefresh();
+              // stay here for the next add; the fresh card renders below the search
+              setAdded((a) => [sym, ...a]);
+              setPicked(null); setQty(""); setCost(""); setDate(""); setLabel(""); setNote(""); setQ(""); setResults([]);
             }
             catch (e) { setErr(e instanceof Error ? e.message : "Could not add position."); }
             finally { setBusy(false); }
