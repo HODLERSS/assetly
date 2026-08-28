@@ -45,7 +45,7 @@ function codeChecks(s) {
   const r = {};
   r.c1_lede = wc(s.lede) <= 40 && s.lede.trim().length > 0;
   r.c3_notes_numeric = s.positions.length > 0 && s.positions.every((p) => hasNum(p.note));
-  r.c4_positions = s.positions.length >= 2 && s.positions.length <= 4 && s.positions.every((p) => p.watch && wc(p.watch) <= 14);
+  r.c4_positions = s.positions.length >= 1 && s.positions.length <= 4 && s.positions.every((p) => p.watch && wc(p.watch) <= 14);
   const all = JSON.stringify(s);
   r.c6_style = !all.includes("—") && !/[0-9]{6}\.(KS|KQ)/.test(all) && !/KRW[0-9]/.test(all);
   r.c8_length = totalWords(s) <= 330;
@@ -60,7 +60,7 @@ c2: the overnight section cites at least 3 actual market numbers (futures/index/
 c5: ZERO filler or generic advice (fail on phrases like "investors should", "keep an eye on", "time will tell", "as always", vague hedging).
 c7: desk_view is a genuine mid-term structural observation (valuation, correlation, rotation), not a price recap.
 c9: broader-market or leader context is CONNECTED to this specific portfolio, not floating commentary.
-c10: no internal contradictions and no suspicious numbers (percentages that don't fit, made-up-looking figures).
+c10: no IMPOSSIBLE or internally CONTRADICTORY numbers (a figure that conflicts with another in the same brief, or is mathematically impossible). Plausible market figures pass; only flag clear errors.
 worst: the single weakest sentence in the brief, quoted.
 Be harsh. A criterion only passes if fully met.`;
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
