@@ -22,3 +22,8 @@ values ('^VIX', 'CBOE Volatility Index', 'CBOE', 'USD', 'etf', '^VIX', true),
        ('^KS11', 'KOSPI Composite', 'KRX', 'KRW', 'etf', '^KS11', true),
        ('^GSPC', 'S&P 500', 'NYSE', 'USD', 'etf', '^GSPC', true)
 on conflict (symbol) do nothing;
+
+-- Sweep passes: one 150s invocation fits ~1-2 fresh briefs, so re-run every 15 min
+-- after the main lap; each pass skips users whose brief already exists, converging
+-- across the whole user base within the window.
+select cron.schedule('assetly-daily-brief-sweep', '*/15 12-14 * * 1-5', $$select public.invoke_edge('daily-brief')$$);
