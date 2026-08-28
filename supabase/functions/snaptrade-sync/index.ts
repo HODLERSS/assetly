@@ -43,8 +43,10 @@ Deno.serve(async (req) => {
     const payload = { content: null, path: `/api/v1${path}`, query: q };
     const rawKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(ckey), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
     const sig = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", rawKey, new TextEncoder().encode(canon(payload))))));
-    const r = await fetch(`${API}${path}?${q}`, { headers: { Signature: sig, Accept: "application/json" } }).catch(() => null);
-    return r && r.ok ? await r.json().catch(() => null) : null;
+    const r = await fetch(`${API}${path}?${q}`, { headers: { Signature: sig, Accept: "application/json" } }).catch((e) => ({ __neterr: String(e) } as unknown as Response));
+    if (!r || (r as unknown as { __neterr?: string }).__neterr) return { __err: "network", detail: (r as unknown as { __neterr?: string })?.__neterr };
+    if (!r.ok) return { __err: r.status, detail: (await r.text().catch(() => "")).slice(0, 300) };
+    return await r.json().catch(() => ({ __err: "badjson" }));
   };
 
   // resolve targets
@@ -99,7 +101,11 @@ Deno.serve(async (req) => {
       const rawSave = (kind: string, accountId: string | null, payload: unknown) =>
         admin.from("snaptrade_raw").insert({ user_id: uid, account_id: accountId, kind, payload: payload ?? null }).then(() => {}, () => {});
       const accounts = (await get("/accounts")) as Record<string, unknown>[] | null;
-      if (!Array.isArray(accounts)) { results.push({ uid: uid.slice(0, 8), error: "accounts fetch failed" }); continue; }
+      if (!Array.isArray(accounts)) {
+        await rawSave("accounts_error", null, accounts);
+        results.push({ uid: uid.slice(0, 8), error: "accounts fetch failed", detail: accounts });
+        continue;
+      }
       await rawSave("accounts", null, accounts);
       const institutions = [...new Set(accounts.map((a) => String(a.institution_name ?? "")).filter(Boolean))];
       let positions = 0;
