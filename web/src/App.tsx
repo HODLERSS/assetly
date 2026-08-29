@@ -171,6 +171,19 @@ export function App({ api = defaultApi }: { api?: Api }) {
       // the callback already queued the full chain server-side; here we wait for the import to land, then
       // kick the chain again as a belt-and-braces (idempotent: the per-user lock makes a duplicate sync yield)
       connectPendingRef.current = String(Date.now());
+      // Imported rows land over several seconds (callback sync + webhook syncs). Poll the book quickly
+      // until it stops growing so Home shows the new stocks immediately, not on the next 60s tick.
+      let lastCount = -1, stable = 0, ticks = 0;
+      const settle = async () => {
+        if (ticks++ > 30) return;                       // ~60s ceiling
+        try {
+          const r = await api.getPortfolio();
+          setRows(r);
+          if (r.length === lastCount) stable++; else { stable = 0; lastCount = r.length; }
+        } catch { /* keep polling */ }
+        if (stable < 3) setTimeout(settle, 2000);        // three quiet ticks = import has landed
+      };
+      void settle();
       api.snaptradeSync().then(async () => {
         await load(); void api.brokerageConnected();
         setNoticeKind("ok"); setNotice("Import complete · fresh intelligence and your brief are on the way"); setTimeout(() => setNotice(null), 8000);
