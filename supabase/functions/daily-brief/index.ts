@@ -460,67 +460,15 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
       }, { onConflict: "user_id,brief_date,edition" });
       if (upErr) errors.push(uid.slice(0, 8) + ": " + (upErr as { message: string }).message); else wrote++;
-      // ---- audio narration (background; the text brief never waits on it) ----
+      // ---- audio narration: handed to the dedicated `narrate` function (own wall clock, retries, fallback) ----
       if (!fixture && !upErr && !noAudio) {
-        const uidCopy = uid, dateCopy = briefDate, edCopy = edition, finalSections = sections;
-        const doAudio = (async () => {
-          try {
-            const { data: au } = await admin.auth.admin.getUserById(uidCopy);
-            if (au?.user?.email?.endsWith("assetly.test")) return;   // test accounts never spend TTS quota
-            let ek = Deno.env.get("ELEVEN_API_KEY") ?? "";
-            if (!ek) { const { data } = await admin.rpc("get_secret", { secret_name: "eleven_api_key" }); ek = data ?? ""; }
-            if (!ek) return;
-            const dayLine = new Date(dateCopy + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
-            const spec = edCopy === "midday"
-              ? { label: "midday check-in radio script", len: "a 60-to-90 second (150-220 word)", who: "midday-desk", floor: 120, min: 250 }
-              : edCopy === "close"
-              ? { label: "closing-bell wrap radio script", len: "a 90-second-to-2-minute (200-290 word)", who: "end-of-day", floor: 170, min: 250 }
-              : { label: "radio script", len: "a 2-to-3 minute (340-430 word)", who: "morning-desk", floor: 280, min: 400 };
-            const scriptPrompt = `Brief:\n${JSON.stringify(finalSections)}\n\nReturn STRICT JSON {"spoken": str}.
-spoken: ${spec.len} spoken ${spec.label} of this exact brief for expressive text-to-speech. Today is ${dayLine} — use that in the greeting and NEVER guess a different weekday. Voice: a sharp, warm ${spec.who} analyst speaking to ONE client they know well. Short sentences. Contractions. Spell numbers for the ear ("up five point eight percent", "about a hundred and forty-seven thousand dollars"). Vary the rhythm: punchy for surprises, slower with commas and ellipses for risk warnings, one earned exclamation at most. Structure, all parts REQUIRED: one-line greeting with the date, the lede, the overnight tape, each position with what to watch, the desk view, and a closing sign-off sentence that says goodbye (e.g. "That\u2019s your brief. Talk soon."). The script MUST end with that complete sign-off sentence — never end on a market point or a pause. Insert <break time="0.7s" /> between sections and <break time="0.3s" /> after key numbers. Use ONLY facts and numbers from the brief. No headers, no ticker codes, company names only. Never mention sections or that this is generated.`;
-            const sysLine = "You turn a written morning investment brief into a vivid spoken radio script. Output only the JSON.";
-            const getScript = async (): Promise<string | null> => {
-              const out = await askModel(key, sysLine, scriptPrompt, 12000, 70000);
-              const sp = out && typeof (out as { spoken?: unknown }).spoken === "string" ? String((out as { spoken: string }).spoken) : null;
-              if (!sp) return null;
-              // trailing pause tags read as an abrupt dead-air ending — always strip
-              const trimmed = sp.replace(/(?:\s*<break[^>]*\/>\s*)+$/g, "").trim();
-              return trimmed.split(/\s+/).length >= spec.floor && /[.!?]$/.test(trimmed) ? trimmed : null;
-            };
-            let spoken = await getScript();
-            if (!spoken) spoken = await getScript();   // one retry on a short or broken script
-            if (!spoken || spoken.length < spec.min) return;
-            // deterministic safety net: never ship a script that stops on a market point
-            if (!/(talk soon|talk to you|see you|good luck|tomorrow|that\u2019s your|that's your|sign\w* off|catch you|have a (good|great)|go get)/i.test(spoken.slice(-160)))
-              spoken += ` <break time="0.6s" /> That\u2019s your brief for this ${dayLine.split(",")[0]}. Talk soon.`;
-            const voice = Deno.env.get("ELEVEN_VOICE_ID") ?? "JBFqnCBsd6RMkjVDRZzb";   // George: warm storyteller
-            const vr = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
-              method: "POST", headers: { "xi-api-key": ek, "Content-Type": "application/json" },
-              body: JSON.stringify({
-                text: spoken, model_id: "eleven_multilingual_v2",
-                voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true },
-              }),
-            });
-            if (!vr.ok) return;
-            const audio = new Uint8Array(await vr.arrayBuffer());
-            const path = `${uidCopy}/${dateCopy}-${edCopy}.mp3`;
-            const { error: upE } = await admin.storage.from("briefs-audio").upload(path, audio, { contentType: "audio/mpeg", upsert: true });
-            if (!upE) await admin.from("daily_briefs").update({ audio_path: path }).eq("user_id", uidCopy).eq("brief_date", dateCopy).eq("edition", edCopy);
-          } catch { /* the written brief stands alone */ }
-        })();
-        if (elapsed() > 60 && !backfillOnly) {
-          // the text chain used most of this request's 150s: narration would be killed mid-TTS.
-          // Hand it to a fresh request (audio-only backfill path) so it gets its own wall clock.
-          const svcK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-          let itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
-          if (!itok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itok = data ?? ""; }
-          fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/daily-brief`, {
-            method: "POST", headers: { Authorization: `Bearer ${svcK}`, apikey: svcK, "Content-Type": "application/json", "x-internal-token": itok },
-            body: JSON.stringify({ user_id: uidCopy, edition: edCopy }),   // no force: hits the audio-backfill branch
-          }).catch(() => null);
-        } else {
-          try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(doAudio); } catch { /* ignore */ }
-        }
+        const svcK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        let itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
+        if (!itok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itok = data ?? ""; }
+        fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/narrate`, {
+          method: "POST", headers: { Authorization: `Bearer ${svcK}`, apikey: svcK, "Content-Type": "application/json", "x-internal-token": itok },
+          body: JSON.stringify({ user_id: uid, brief_date: briefDate, edition }),
+        }).catch(() => null);
       }
     } catch (e) { errors.push(uid.slice(0, 8) + ": " + (e instanceof Error ? e.message : String(e))); }
   }
