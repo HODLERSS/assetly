@@ -81,6 +81,12 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
         {conns.map((c) => (
           <div className="row" key={c.id}>
             <span>{c.institution}{c.disabled ? <span className="sub"> · needs reconnect</span> : null}</span>
+            <span style={{ display: "flex", gap: 8 }}>
+            <button className="chip" disabled={stBusy} onClick={async () => {
+              setStBusy(true);
+              try { await api.snaptradeSync(); await onChanged(); const r = await api.snaptrade("status"); setSt({ connected: !!r.connected, last_sync_at: r.last_sync_at, institutions: r.institutions }); }
+              finally { setStBusy(false); }
+            }}>Sync now</button>
             <button className="chip" disabled={stBusy} onClick={async () => {
               if (removing !== c.id) { setRemoving(c.id); setTimeout(() => setRemoving((v) => v === c.id ? null : v), 4000); return; }
               setStBusy(true);
@@ -91,6 +97,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
                 await onChanged();
               } finally { setStBusy(false); }
             }}>{removing === c.id ? "Sure? Remove" : "Remove"}</button>
+            </span>
           </div>
         ))}
         <div className="chips" style={{ padding: "10px 14px 4px" }}>
@@ -100,21 +107,12 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
               try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } finally { setStBusy(false); }
             }}>Connect brokerage</button>
           )}
-          {st?.connected && (<>
+          {st?.connected && (
             <button className="chip" disabled={stBusy} onClick={async () => {
               setStBusy(true);
               try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } finally { setStBusy(false); }
             }}>+ Add another brokerage</button>
-            <button className="chip" disabled={stBusy} onClick={async () => {
-              setStBusy(true);
-              try { await api.snaptradeSync(); await onChanged(); const r = await api.snaptrade("status"); setSt({ connected: !!r.connected, last_sync_at: r.last_sync_at, institutions: r.institutions }); }
-              finally { setStBusy(false); }
-            }}>Sync now</button>
-            <button className="chip" disabled={stBusy} onClick={async () => {
-              setStBusy(true);
-              try { await api.snaptrade("disconnect"); setSt({ connected: false }); } finally { setStBusy(false); }
-            }}>Disconnect all</button>
-          </>)}
+          )}
         </div>
       </div>
       <button className="btn secondary" onClick={async () => { await api.signOut(); onSignedOut(); }}>Sign out</button>
