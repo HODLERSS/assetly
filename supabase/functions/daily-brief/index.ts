@@ -458,6 +458,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections = scrubDeep(sections) as Sections;
       const { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
+        audio_path: null,   // new text => stale audio; narrate re-runs for this row
       }, { onConflict: "user_id,brief_date,edition" });
       if (upErr) errors.push(uid.slice(0, 8) + ": " + (upErr as { message: string }).message); else wrote++;
       // ---- audio narration: handed to the dedicated `narrate` function (own wall clock, retries, fallback) ----
@@ -465,10 +466,12 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const svcK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
         let itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
         if (!itok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itok = data ?? ""; }
-        fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/narrate`, {
+        // waitUntil: a bare fire-and-forget fetch dies when this request's response is sent
+        const handoff = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/narrate`, {
           method: "POST", headers: { Authorization: `Bearer ${svcK}`, apikey: svcK, "Content-Type": "application/json", "x-internal-token": itok },
           body: JSON.stringify({ user_id: uid, brief_date: briefDate, edition }),
-        }).catch(() => null);
+        }).then((r) => r.text().catch(() => "")).catch(() => null);
+        try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(handoff); } catch { /* ignore */ }
       }
     } catch (e) { errors.push(uid.slice(0, 8) + ": " + (e instanceof Error ? e.message : String(e))); }
   }

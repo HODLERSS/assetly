@@ -193,8 +193,15 @@ Answer as their analyst: direct, specific, tight. Ground qualitative answers in 
   if (!key) { const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" }); key = data ?? ""; }
   if (!key) return json({ ok: false, error: "not configured" }, 500);
   let parsedA: { answer: string; followups: string[] } | null = null;
-  for (let attempt = 0; attempt < 2 && !parsedA; attempt++) {
+  // Reliability: each attempt gets a hard timeout (a hung call otherwise eats the whole 150s and surfaces
+  // as a transport error = "unavailable"); 3 attempts with short backoff outlast a slow wave.
+  const t0 = Date.now();
+  for (let attempt = 0; attempt < 3 && !parsedA; attempt++) {
+  if (Date.now() - t0 > 110000) break;
+  if (attempt > 0) await new Promise((res) => setTimeout(res, 2500 * attempt));
+  const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), attempt === 0 ? 45000 : 35000);
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
+    signal: ac.signal,
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7",
@@ -205,8 +212,9 @@ Answer as their analyst: direct, specific, tight. Ground qualitative answers in 
       temperature: attempt === 0 ? 0.2 : 0.4, max_tokens: 6000,
       response_format: { type: "json_object" },
     }),
-  });
-  if (!r.ok) { if (attempt === 1) return json({ ok: false, error: "model " + r.status }, 502); continue; }
+  }).catch(() => null);
+  clearTimeout(timer);
+  if (!r || !r.ok) { continue; }
   const out = await r.json().catch(() => null);
   parsedA = parseAnswer(out?.choices?.[0]?.message?.content ?? "");
   }

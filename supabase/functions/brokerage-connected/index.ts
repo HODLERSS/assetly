@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     // narration guard: text landed but audio is missing -> one backfill request (audio-only path)
     const fin = await briefState();
     if (fin && !fin.audio_path && Date.now() - t0 < 140000) {
-      fetch(`${base}/functions/v1/narrate`, { method: "POST", headers, body: JSON.stringify({ user_id: uid, brief_date: today, edition }) }).catch(() => null);
+      await fetch(`${base}/functions/v1/narrate`, { method: "POST", headers, body: JSON.stringify({ user_id: uid, brief_date: today, edition }) }).then((r) => r.text().catch(() => "")).catch(() => null);
     }
   })();
   try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(work); } catch { /* ignore */ }
