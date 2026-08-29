@@ -141,6 +141,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel }: {
               await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "", note.trim());
               if (!sym.startsWith("$")) void api.warmup(sym);   // first-look intelligence, fire-and-forget
               if (!isCash) void api.refreshNews([picked.symbol]);        // stories land while the user looks around
+              if (!isCash) void api.refreshPortfolioInsights();          // the portfolio view must reflect the new name now, not at the next stale lap
               await onRefresh();
               // stay here for the next add; the fresh card renders below the search
               setAdded((a) => [sym, ...a]);
