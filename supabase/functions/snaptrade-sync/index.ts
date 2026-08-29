@@ -115,6 +115,21 @@ Deno.serve(async (req) => {
       }
       await rawSave("accounts", null, accounts);
       const institutions = [...new Set(accounts.map((a) => String(a.institution_name ?? "")).filter(Boolean))];
+      const { data: exRows } = await admin.from("snaptrade_exclusions").select("symbol").eq("user_id", uid);
+      const excluded = new Set((exRows ?? []).map((r) => String(r.symbol)));
+      const { data: preRows } = await admin.from("holdings").select("symbol, source, external_id").eq("user_id", uid);
+      const preImported = new Set((preRows ?? []).filter((r) => r.source === "snaptrade").map((r) => String(r.symbol)));
+      const manualSyms = new Set((preRows ?? []).filter((r) => r.source !== "snaptrade" && !String(r.symbol).startsWith("$")).map((r) => String(r.symbol)));
+      const firstImport = preImported.size === 0;
+      const added: string[] = [];
+      const collisions: string[] = [];
+      // reconnect hygiene: drop imported rows tied to SnapTrade accounts that no longer exist
+      const liveAcctIds = new Set(accounts.map((a) => String(a.id ?? "")).filter(Boolean));
+      for (const r of preRows ?? []) {
+        if (r.source !== "snaptrade" || !r.external_id) continue;
+        const m = String(r.external_id).match(/^st:([^:]+):/);
+        if (m && !liveAcctIds.has(m[1])) await admin.from("holdings").delete().eq("user_id", uid).eq("external_id", r.external_id);
+      }
       let positions = 0;
       const importAccounts = async (accts: Record<string, unknown>[]) => {
       for (const a of accts) {
@@ -142,6 +157,10 @@ Deno.serve(async (req) => {
             const { data: ins } = await admin.from("holdings")
               .insert({ user_id: uid, symbol: sym, account: "brokerage", nickname, source: "snaptrade", external_id: ext }).select("id").single();
             hid = ins?.id;
+            if (hid && !sym.startsWith("$")) {
+              added.push(sym);
+              if (manualSyms.has(sym)) collisions.push(sym);
+            }
           }
           if (!hid) return;
           await admin.from("lots").delete().eq("holding_id", hid);
@@ -175,6 +194,7 @@ Deno.serve(async (req) => {
           }
           const units = Number(p.units ?? p.fractional_units ?? 0);
           if (!sym || !(units > 0)) continue;
+          if (excluded.has(sym)) continue;   // user chose to keep this out of Assetly
           const kind = kindRaw === "crypto" ? "crypto" : "equity";
           // class shares: SnapTrade "BRKB" -> Yahoo "BRK-B"
           const cls = sym.match(/^([A-Z]{2,})([AB])$/);
@@ -216,8 +236,14 @@ Deno.serve(async (req) => {
         const again = (await get("/accounts")) as Record<string, unknown>[] | null;
         if (Array.isArray(again)) { await rawSave("accounts", null, again); await importAccounts(again); }
       }
+      if (!firstImport && (added.length > 0 || collisions.length > 0)) {
+        await admin.from("snaptrade_events").insert({
+          user_id: uid, kind: "import_delta",
+          detail: { added, collisions, institution: institutions[0] ?? "your brokerage" },
+        }).then(() => {}, () => {});
+      }
       await admin.from("snaptrade_tokens").update({ last_sync_at: new Date().toISOString(), institutions }).eq("user_id", uid);
-      results.push({ uid: uid.slice(0, 8), accounts: accounts.length, positions, retries, institutions });
+      results.push({ uid: uid.slice(0, 8), accounts: accounts.length, positions, added: added.length, retries, institutions });
     } catch (e) { results.push({ uid: uid.slice(0, 8), error: e instanceof Error ? e.message : String(e) }); }
   }
   return json({ ok: true, results });

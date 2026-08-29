@@ -72,7 +72,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
         {st?.connected && st.last_sync_at && (
           <div className="row"><span>Last import</span><span className="sub num">{timeAgo(st.last_sync_at)}</span></div>
         )}
-        <div className="chips" style={{ padding: "6px 0 0" }}>
+        <div className="chips" style={{ padding: "10px 14px 4px" }}>
           {!st?.connected && (
             <button className="chip" disabled={stBusy} onClick={async () => {
               setStBusy(true);

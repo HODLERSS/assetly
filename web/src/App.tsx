@@ -74,9 +74,21 @@ export function App({ api = defaultApi }: { api?: Api }) {
   useEffect(() => {
     if (!session) { setProfile(null); setRows([]); return; }
     load();
+    // brokerage auto-sync deltas: greet returning users with what arrived while they were away
+    api.snaptradeEvents().then(async (evs) => {
+      if (!evs.length) return;
+      const added = [...new Set(evs.flatMap((e) => e.detail.added ?? []))];
+      const coll = [...new Set(evs.flatMap((e) => e.detail.collisions ?? []))];
+      const inst = evs[evs.length - 1].detail.institution ?? "your brokerage";
+      if (added.length) {
+        setNotice(`Added from ${inst}: ${added.slice(0, 4).join(", ")}${added.length > 4 ? ` +${added.length - 4} more` : ""}${coll.length ? ` · ${coll.join(", ")} also exists manually` : ""}`);
+        setTimeout(() => setNotice(null), 12000);
+      }
+      await api.snaptradeEventsSeen(evs.map((e) => e.id));
+    }).catch(() => {});
     const t = setInterval(load, REFRESH_MS);
     return () => clearInterval(t);
-  }, [session, load]);
+  }, [session, load, api]);
 
   const base = profile?.base_currency ?? "USD";
   const totals = useMemo(() => {

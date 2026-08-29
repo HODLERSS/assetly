@@ -15,6 +15,7 @@ export type PortfolioRow = {
   qty: number | null; cost_basis: number | null; avg_cost: number | null;
   price: number | null; change_pct: number | null; as_of: string | null;
   value: number | null; total_gl: number | null;
+  source?: string | null;
 };
 export type HistoryPoint = { ts: string; price: number };
 export type Insight = {
@@ -238,6 +239,19 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { data, error } = await sb.functions.invoke("snaptrade-connect", { body: { action } });
       if (error || !data?.ok) throw new Error(data?.error ?? "Brokerage link is unavailable right now.");
       return data;
+    },
+    /** Unseen brokerage sync events (positions auto-added later on), oldest first. */
+    async snaptradeEvents(): Promise<{ id: number; detail: { added?: string[]; collisions?: string[]; institution?: string } }[]> {
+      const { data } = await sb.from("snaptrade_events").select("id,detail").eq("seen", false).order("created_at", { ascending: true }).limit(5);
+      return (data ?? []) as { id: number; detail: { added?: string[]; collisions?: string[]; institution?: string } }[];
+    },
+    async snaptradeEventsSeen(ids: number[]): Promise<void> {
+      if (ids.length) await sb.from("snaptrade_events").update({ seen: true }).in("id", ids);
+    },
+    /** Keep a symbol out of future brokerage imports (used when removing an imported position). */
+    async excludeImport(symbol: string): Promise<void> {
+      const { data: u } = await sb.auth.getUser();
+      if (u.user) await sb.from("snaptrade_exclusions").upsert({ user_id: u.user.id, symbol });
     },
     /** SnapTrade: import holdings now for the signed-in user. */
     async snaptradeSync(): Promise<void> {
