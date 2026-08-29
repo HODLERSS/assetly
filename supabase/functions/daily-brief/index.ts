@@ -112,7 +112,14 @@ Deno.serve(async (req) => {
   let onlyUserId: string | null = typeof body.user_id === "string" ? body.user_id : null;
   if (onlyUserId) {
     const isSvc = (() => { try { return JSON.parse(atob(bearerJwt.split(".")[1] ?? "")).role === "service_role"; } catch { return false; } })();
-    if (!isSvc) { const { data: ud } = await admin.auth.getUser(bearerJwt); if (ud?.user?.id !== onlyUserId) onlyUserId = null; }
+    let internalTok = Deno.env.get("INTERNAL_TOKEN") ?? "";
+    if (!internalTok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); internalTok = data ?? ""; }
+    const isInternal = !!internalTok && (req.headers.get("x-internal-token") ?? "") === internalTok;
+    if (!isSvc && !isInternal) {
+      const { data: ud } = await admin.auth.getUser(bearerJwt);
+      // a caller may only target themself: refuse outright rather than silently widening to everyone
+      if (ud?.user?.id !== onlyUserId) return json({ ok: false, error: "forbidden target" }, 403);
+    }
   }
   const noAudio = body.noAudio === true;   // battery/test runs must not spend TTS quota
   const validEd = (x: unknown): x is "morning" | "midday" | "close" => x === "morning" || x === "midday" || x === "close";
@@ -501,7 +508,19 @@ spoken: ${spec.len} spoken ${spec.label} of this exact brief for expressive text
             if (!upE) await admin.from("daily_briefs").update({ audio_path: path }).eq("user_id", uidCopy).eq("brief_date", dateCopy).eq("edition", edCopy);
           } catch { /* the written brief stands alone */ }
         })();
-        try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(doAudio); } catch { /* ignore */ }
+        if (elapsed() > 60 && !backfillOnly) {
+          // the text chain used most of this request's 150s: narration would be killed mid-TTS.
+          // Hand it to a fresh request (audio-only backfill path) so it gets its own wall clock.
+          const svcK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          let itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
+          if (!itok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itok = data ?? ""; }
+          fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/daily-brief`, {
+            method: "POST", headers: { Authorization: `Bearer ${svcK}`, apikey: svcK, "Content-Type": "application/json", "x-internal-token": itok },
+            body: JSON.stringify({ user_id: uidCopy, edition: edCopy }),   // no force: hits the audio-backfill branch
+          }).catch(() => null);
+        } else {
+          try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(doAudio); } catch { /* ignore */ }
+        }
       }
     } catch (e) { errors.push(uid.slice(0, 8) + ": " + (e instanceof Error ? e.message : String(e))); }
   }

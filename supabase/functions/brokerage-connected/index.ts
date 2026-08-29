@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
   else if (bearer) { const { data: ud } = await admin.auth.getUser(bearer); uid = ud?.user?.id ?? null; }
   if (!uid) return json({ ok: false, error: "not signed in" }, 401);
 
-  const headers = { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" };
+  const headers = { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": internalTok };
   const call = (fn: string, b: unknown) => fetch(`${base}/functions/v1/${fn}`, { method: "POST", headers, body: JSON.stringify(b) }).then((r) => r.json().catch(() => null)).catch(() => null);
   const h = new Date().getUTCHours();
   const edition = h >= 19 ? "close" : h >= 15 ? "midday" : "morning";
