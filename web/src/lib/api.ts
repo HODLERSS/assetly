@@ -250,6 +250,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
       await sb.functions.invoke("insights-sync", { body: { force: true, user_id: u.user.id } }).catch(() => null);
       return this.getPortfolioInsights();
     },
+    /** Per-stock intelligence refresh: fresh news for that symbol FIRST, then its assessment (hourly pipeline, targeted). */
+    async refreshSymbolInsights(symbol: string): Promise<Insight | null> {
+      await sb.functions.invoke("news-sync", { body: { symbols: [symbol] } }).catch(() => null);
+      await sb.functions.invoke("insights-sync", { body: { symbols: [symbol] } }).catch(() => null);
+      return this.getInsights(symbol);
+    },
     /** SnapTrade: connection status / start connect / disconnect. */
     async snaptrade(action: "status" | "connect" | "disconnect" | "connections" | "remove_connection", extra?: Record<string, unknown>): Promise<{ ok: boolean; connected?: boolean; url?: string; last_sync_at?: string | null; institutions?: string[]; connections?: { id: string; institution: string; disabled: boolean }[] }> {
       const { data, error } = await sb.functions.invoke("snaptrade-connect", { body: { action, ...(extra ?? {}) } });

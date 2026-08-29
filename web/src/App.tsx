@@ -34,6 +34,21 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [newsAlert, setNewsAlert] = useState(false);
   const seenInsightRef = useRef<string | null>(null);   // generated_at the user has already seen
   const [pinsRefreshing, setPinsRefreshing] = useState(false);
+  // per-stock refreshes: keyed by symbol so several can run and each survives tab changes
+  const [symRefreshing, setSymRefreshing] = useState<Record<string, boolean>>({});
+  const [symFresh, setSymFresh] = useState<Record<string, Insight>>({});
+  const refreshSymbol = useCallback(async (symbol: string) => {
+    if (symRefreshing[symbol]) return;
+    setSymRefreshing((m) => ({ ...m, [symbol]: true }));
+    try {
+      const v = await api.refreshSymbolInsights(symbol);
+      if (v) {
+        setSymFresh((m) => ({ ...m, [symbol]: v }));
+        const cur = viewRef.current.kind === "tab" ? viewRef.current.tab : null;
+        if (cur !== "news") setNewsAlert(true);
+      }
+    } finally { setSymRefreshing((m) => ({ ...m, [symbol]: false })); }
+  }, [api, symRefreshing]);
   const [pinsFresh, setPinsFresh] = useState<Insight | null>(null);   // result of the last app-level refresh
   // Refresh lives here, not in Holdings: it keeps running across tabs and lights the tab when done.
   const refreshInsights = useCallback(async () => {
@@ -219,7 +234,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
         {view.kind === "tab" && view.tab === "news" && (
           <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"}
             onRefreshInsights={refreshInsights} insightsRefreshing={pinsRefreshing} freshInsights={pinsFresh}
-            onInsightsSeen={(g) => { seenInsightRef.current = g; setNewsAlert(false); }} />
+            onInsightsSeen={(g) => { seenInsightRef.current = g; setNewsAlert(false); }}
+            onRefreshSymbol={refreshSymbol} symbolRefreshing={symRefreshing} symbolFresh={symFresh} />
         )}
         {/* Ask stays mounted so an in-flight answer keeps generating across tabs */}
         <div style={view.kind === "tab" && view.tab === "ask" ? undefined : { display: "none" }}>

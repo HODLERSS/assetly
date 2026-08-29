@@ -14,8 +14,15 @@ const PHASES = [
   "Writing the first take…",
 ];
 
-export function InsightsCard({ api, symbol, pollMs = 2000 }: { api: Api; symbol: string; pollMs?: number }) {
+export function InsightsCard({ api, symbol, pollMs = 2000, onRefresh, refreshing = false, fresh = null }: {
+  api: Api; symbol: string; pollMs?: number; onRefresh?: () => void; refreshing?: boolean; fresh?: Insight | null;
+}) {
   const [ins, setIns] = useState<Insight | null | undefined>(undefined);   // undefined = loading
+  // an app-level refresh that finished (even while this card was unmounted) lands here: newest wins
+  useEffect(() => {
+    if (fresh && (!ins || fresh.generated_at > ins.generated_at)) { insightCache.set(symbol, fresh); setIns(fresh); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fresh]);
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
@@ -62,7 +69,11 @@ export function InsightsCard({ api, symbol, pollMs = 2000 }: { api: Api; symbol:
     <section className="card insights" data-testid="insights-card" aria-label={`AI insights for ${symbol}`}>
       <div className="insights-head">
         <span className="insights-brand">Assetly Intelligence</span>
-        <span className="sub num">{timeAgo(ins.generated_at)}</span>
+        {onRefresh ? (
+          <button className="insights-toggle" onClick={onRefresh} disabled={refreshing} aria-label={`Refresh ${symbol} intelligence`}>
+            {refreshing ? <>Refreshing <span className="spin" aria-hidden="true">↻</span></> : <>{timeAgo(ins.generated_at)} · ↻</>}
+          </button>
+        ) : <span className="sub num">{timeAgo(ins.generated_at)}</span>}
       </div>
       <ul className="insights-list">
         {ins.bullets.map((b, i) => <li key={i}>{b}</li>)}

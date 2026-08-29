@@ -4,9 +4,10 @@ import { labelParts, timeAgo } from "../lib/format";
 import { InsightsCard } from "../components/InsightsCard";
 
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
-export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen }: {
+export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen, onRefreshSymbol, symbolRefreshing = {}, symbolFresh = {} }: {
   api: Api; rows: PortfolioRow[]; dispKr?: "USD" | "KRW";
   onRefreshInsights?: () => void; insightsRefreshing?: boolean; freshInsights?: Insight | null; onInsightsSeen?: (generatedAt: string) => void;
+  onRefreshSymbol?: (symbol: string) => void; symbolRefreshing?: Record<string, boolean>; symbolFresh?: Record<string, Insight>;
 }) {
   const [filter, setFilter] = useState<string | null>(null);
   const [items, setItems] = useState<NewsItem[]>([]);
@@ -74,7 +75,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
           </button>
         ))}
       </div>
-      {filter && <InsightsCard api={api} symbol={filter} />}
+      {filter && <InsightsCard api={api} symbol={filter} onRefresh={onRefreshSymbol ? () => onRefreshSymbol(filter) : undefined} refreshing={!!symbolRefreshing[filter]} fresh={symbolFresh[filter] ?? null} />}
       {!filter && (top5?.news5?.length ?? 0) > 0 && (
         <section className="card insights" data-testid="news-top5-card" aria-label="Top portfolio signals">
           <div className="insights-head">

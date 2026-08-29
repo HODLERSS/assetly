@@ -62,6 +62,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     getPulse: vi.fn().mockResolvedValue([]),
     firstBrief: vi.fn().mockResolvedValue(undefined),
     refreshPortfolioInsights: vi.fn().mockResolvedValue(null),
+    refreshSymbolInsights: vi.fn().mockResolvedValue(null),
     snaptrade: vi.fn().mockResolvedValue({ ok: true, connected: false }),
     snaptradeEvents: vi.fn().mockResolvedValue([]),
     snaptradeEventsSeen: vi.fn().mockResolvedValue(undefined),
