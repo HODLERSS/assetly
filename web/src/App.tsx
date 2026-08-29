@@ -104,16 +104,21 @@ export function App({ api = defaultApi }: { api?: Api }) {
       try {
         const v = await api.getPortfolioInsights();
         if (!live || !v) return;
-        if (seenInsightRef.current === null) { seenInsightRef.current = v.generated_at; return; }
+        // a connect moment survives the callback's full page load via sessionStorage
+        let connectAt: string | null = null;
+        try { connectAt = sessionStorage.getItem("assetly-connect-at"); } catch { /* none */ }
+        const freshSinceConnect = !!connectAt && v.generated_at > connectAt;
+        if (seenInsightRef.current === null && !freshSinceConnect) { seenInsightRef.current = v.generated_at; return; }
         if (v.generated_at !== seenInsightRef.current) {
           const cur = viewRef.current.kind === "tab" ? viewRef.current.tab : null;
           if (cur === "holdings" || cur === "news") seenInsightRef.current = v.generated_at;
           if (cur !== "holdings") setHoldAlert(true);
           if (cur !== "news") setNewsAlert(true);
           // connect moment: a fresh assessment means news + intelligence are in -> ask the first question now
-          if (connectPendingRef.current) {
-            setAutoAsk({ question: "Assess my portfolio and provide insights", key: connectPendingRef.current });
+          if (connectPendingRef.current || freshSinceConnect) {
+            setAutoAsk({ question: "Assess my portfolio and provide insights", key: connectPendingRef.current ?? connectAt ?? String(Date.now()) });
             connectPendingRef.current = null;
+            try { sessionStorage.removeItem("assetly-connect-at"); } catch { /* none */ }
           }
         }
       } catch { /* quiet */ }
@@ -171,6 +176,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       // the callback already queued the full chain server-side; here we wait for the import to land, then
       // kick the chain again as a belt-and-braces (idempotent: the per-user lock makes a duplicate sync yield)
       connectPendingRef.current = String(Date.now());
+      try { sessionStorage.setItem("assetly-connect-at", new Date().toISOString()); } catch { /* storage unavailable */ }
       // Imported rows land over several seconds (callback sync + webhook syncs). Poll the book quickly
       // until it stops growing so Home shows the new stocks immediately, not on the next 60s tick.
       let lastCount = -1, stable = 0, ticks = 0;
