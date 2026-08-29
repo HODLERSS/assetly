@@ -34,6 +34,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [newsAlert, setNewsAlert] = useState(false);
   const [homeAlert, setHomeAlert] = useState(false);
   const [briefBanner, setBriefBanner] = useState<{ audio: boolean } | null>(null);   // first-arrival banner on Home
+  const [autoAsk, setAutoAsk] = useState<{ question: string; key: string } | null>(null);
+  const connectPendingRef = useRef<string | null>(null);   // set at the connect moment; consumed when fresh intelligence lands
   const seenBriefRef = useRef<string | null>(null);   // latest brief generated_at the user has seen
   // brief watcher: a new brief (first brief, or the next edition) lights Home when the user is elsewhere
   useEffect(() => {
@@ -108,10 +110,15 @@ export function App({ api = defaultApi }: { api?: Api }) {
           if (cur === "holdings" || cur === "news") seenInsightRef.current = v.generated_at;
           if (cur !== "holdings") setHoldAlert(true);
           if (cur !== "news") setNewsAlert(true);
+          // connect moment: a fresh assessment means news + intelligence are in -> ask the first question now
+          if (connectPendingRef.current) {
+            setAutoAsk({ question: "Assess my portfolio and provide insights", key: connectPendingRef.current });
+            connectPendingRef.current = null;
+          }
         }
       } catch { /* quiet */ }
     };
-    const t = setInterval(tick, 60000);
+    const t = setInterval(tick, 15000);   // 15s: a connect-moment assessment is noticed within seconds
     return () => { live = false; clearInterval(t); };
   }, [session, api]);
   const viewRef = useRef(view);
@@ -163,6 +170,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setNoticeKind("busy"); setNotice("Connected · importing your positions");
       // the callback already queued the full chain server-side; here we wait for the import to land, then
       // kick the chain again as a belt-and-braces (idempotent: the per-user lock makes a duplicate sync yield)
+      connectPendingRef.current = String(Date.now());
       api.snaptradeSync().then(async () => {
         await load(); void api.brokerageConnected();
         setNoticeKind("ok"); setNotice("Import complete · fresh intelligence and your brief are on the way"); setTimeout(() => setNotice(null), 8000);
@@ -280,7 +288,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         )}
         {/* Ask stays mounted so an in-flight answer keeps generating across tabs */}
         <div style={view.kind === "tab" && view.tab === "ask" ? undefined : { display: "none" }}>
-          <AskScreen api={api} onAnswered={() => {
+          <AskScreen api={api} autoAsk={autoAsk} onAnswered={() => {
             const v = viewRef.current;
             if (!(v.kind === "tab" && v.tab === "ask")) setAskAlert(true);
           }} />

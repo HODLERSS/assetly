@@ -48,11 +48,20 @@ function loadTurns(): Turn[] {
   } catch { return []; }
 }
 
-export function AskScreen({ api, onAnswered }: { api: Api; onAnswered?: () => void }) {
+export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAnswered?: () => void; autoAsk?: { question: string; key: string } | null }) {
   const [q, setQ] = useState("");
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const autoRef = useRef<string | null>(null);
+  // the connect moment asks the first question on the user's behalf, once per key, once the data is in
+  useEffect(() => {
+    if (!autoAsk || autoRef.current === autoAsk.key || busy) return;
+    if (turns.some((t) => t.q === autoAsk.question)) { autoRef.current = autoAsk.key; return; }
+    autoRef.current = autoAsk.key;
+    void submit(autoAsk.question);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAsk]);
 
   useEffect(() => {
     try { sessionStorage.setItem(ASK_STORE, JSON.stringify({ date: todayKey(), turns: turns.slice(-30) })); } catch { /* storage unavailable */ }
