@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertCcy, dayChangeAmount } from "./lib/format";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
-import { api as defaultApi, type Api, type PortfolioRow, type Profile } from "./lib/api";
+import { api as defaultApi, type Api, type Insight, type PortfolioRow, type Profile } from "./lib/api";
 import { AuthScreen } from "./screens/Auth";
 import { Onboarding } from "./screens/Onboarding";
 import { Home } from "./screens/Home";
@@ -33,6 +33,21 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [askAlert, setAskAlert] = useState(false);
   const [holdAlert, setHoldAlert] = useState(false);
   const seenInsightRef = useRef<string | null>(null);   // generated_at the user has already seen
+  const [pinsRefreshing, setPinsRefreshing] = useState(false);
+  const [pinsFresh, setPinsFresh] = useState<Insight | null>(null);   // result of the last app-level refresh
+  // Refresh lives here, not in Holdings: it keeps running across tabs and lights the tab when done.
+  const refreshInsights = useCallback(async () => {
+    if (pinsRefreshing) return;
+    setPinsRefreshing(true);
+    try {
+      const v = await api.refreshPortfolioInsights();
+      if (v) {
+        setPinsFresh(v);
+        const onHoldings = viewRef.current.kind === "tab" && viewRef.current.tab === "holdings";
+        if (onHoldings) seenInsightRef.current = v.generated_at; else setHoldAlert(true);
+      }
+    } finally { setPinsRefreshing(false); }
+  }, [api, pinsRefreshing]);
   // background watch: a newer portfolio assessment (cron/refresh) lights the Holdings tab
   useEffect(() => {
     if (!session) return;
@@ -198,7 +213,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
         )}
         {view.kind === "tab" && view.tab === "holdings" && (
           <Holdings rows={rows} api={api} fxRate={fx} totalsCcy={base} dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
-            onInsightsChanged={(g) => { seenInsightRef.current = g; setHoldAlert(false); }} />
+            onInsightsChanged={(g) => { seenInsightRef.current = g; setHoldAlert(false); }}
+            onRefreshInsights={refreshInsights} insightsRefreshing={pinsRefreshing} freshInsights={pinsFresh} />
         )}
         {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"} />}
         {/* Ask stays mounted so an in-flight answer keeps generating across tabs */}

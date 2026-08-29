@@ -6,24 +6,25 @@ import { isMarketOpen, marketOf } from "../lib/markets";
 // Canvas 2b: the table as a touch list with multi-select filter chips.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
 
-export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", dispUs = "USD", dispKr = "KRW", onInsightsChanged }: {
+export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", dispUs = "USD", dispKr = "KRW", onInsightsChanged, onRefreshInsights, insightsRefreshing = false, freshInsights = null }: {
   rows: PortfolioRow[]; onOpen: (id: string) => void; onAdd: () => void; api: Api; fxRate: number | null;
   totalsCcy?: "USD" | "KRW"; dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW"; onInsightsChanged?: (generatedAt: string) => void;
+  onRefreshInsights?: () => void; insightsRefreshing?: boolean; freshInsights?: Insight | null;
 }) {
   const [pins, setPins] = useState<Insight | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const refreshing = insightsRefreshing;
   useEffect(() => {
     let live = true;
     if (rows.length > 0) api.getPortfolioInsights().then((v) => { if (live) { setPins(v); if (v) onInsightsChanged?.(v.generated_at); } }).catch(() => {});
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, rows.length]);
-  const refreshPins = async () => {
-    if (refreshing) return;
-    setRefreshing(true);
-    try { const v = await api.refreshPortfolioInsights(); if (v) { setPins(v); onInsightsChanged?.(v.generated_at); } }
-    finally { setRefreshing(false); }
-  };
+  // an app-level refresh that finished while this screen was away (or open) lands here
+  useEffect(() => {
+    if (freshInsights && freshInsights.generated_at !== pins?.generated_at) { setPins(freshInsights); onInsightsChanged?.(freshInsights.generated_at); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freshInsights]);
+  const refreshPins = async () => { onRefreshInsights?.(); };
   const [filter, setFilter] = useState<"all" | "US" | "KR" | "ret">("all");
   // Crypto files under the market of its pricing currency ($ -> US, \u20a9 -> KR).
   const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
