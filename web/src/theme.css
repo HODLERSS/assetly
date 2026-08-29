@@ -36,7 +36,6 @@ input, select { font: inherit; }
 .screen { flex: 1; padding: 16px 16px calc(88px + env(safe-area-inset-bottom)); }
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; letter-spacing: -0.02em; color: var(--as-primary); }
-.status-line { font: 11.5px var(--as-font-num); color: var(--as-muted); }
 
 .tabbar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--as-surface);
   border-top: 1px solid var(--as-rule); padding-bottom: max(env(safe-area-inset-bottom), 6px); max-width: 480px; margin: 0 auto; z-index: 20; }

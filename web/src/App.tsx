@@ -29,7 +29,6 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [fx, setFx] = useState<number | null>(null);
   const [view, setView] = useState<View>({ kind: "tab", tab: "home" });
   const [error, setError] = useState<string | null>(null);
-  const [lastSync, setLastSync] = useState<Date | null>(null);
   const [askAlert, setAskAlert] = useState(false);
   const [holdAlert, setHoldAlert] = useState(false);
   const [newsAlert, setNewsAlert] = useState(false);
@@ -99,7 +98,6 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setProfile(p);
       setRows(r);
       setError(null);
-      setLastSync(new Date());
       api.getFxRate().then((v) => setFx(v)).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "The feed missed a handoff. Pull to retry.");
@@ -186,9 +184,6 @@ export function App({ api = defaultApi }: { api?: Api }) {
             <rect x="17" y="3" width="14" height="6" rx="3" fill="#2A3F92" opacity="0.45" />
           </svg>
           Assetly
-        </span>
-        <span className="status-line" data-testid="status-line">
-          {lastSync ? `synced ${lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "syncing…"}
         </span>
       </header>
 
