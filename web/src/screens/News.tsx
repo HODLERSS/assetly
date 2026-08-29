@@ -20,7 +20,11 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
 
   useEffect(() => {
     let live = true;
-    if (rows.length > 0) api.getPortfolioInsights().then((v) => { if (live) { setTop5(v); if (v) onInsightsSeen?.(v.generated_at); } }).catch(() => {});
+    if (rows.length > 0) api.getPortfolioInsights().then((v) => {
+      if (!live) return;
+      const best = freshInsights && (!v || freshInsights.generated_at >= v.generated_at) ? freshInsights : v;
+      setTop5(best); if (best) onInsightsSeen?.(best.generated_at);
+    }).catch(() => {});
     return () => { live = false; };
   }, [api, rows.length]);
   // an app-level refresh that finished while this screen was away (or open) lands here

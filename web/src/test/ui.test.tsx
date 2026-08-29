@@ -2,7 +2,7 @@
 // Covers the end-to-end user experience surface: auth, onboarding, add/edit/remove,
 // prices, news filter, errors, empty states, settings.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const oauthSpy = vi.fn().mockResolvedValue({ data: {}, error: null });
@@ -260,6 +260,32 @@ describe("U43 connect-first onboarding", () => {
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
     await vi.waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD"));
     window.history.replaceState({}, "", "/");
+  });
+});
+
+describe("U44 intelligence refresh light", () => {
+  it("tap refresh on Holdings, leave to Home, answer lands -> Holdings tab lights; opening it clears", async () => {
+    const old = { bullets: ["Old bullet"], windows: null, news5: ["old signal"], model: "m", generated_at: "2026-08-28T10:00:00Z" };
+    const fresh = { bullets: ["Fresh bullet"], windows: null, news5: ["fresh signal"], model: "m", generated_at: "2026-08-28T11:00:00Z" };
+    let resolveRefresh: (v: typeof fresh) => void = () => {};
+    const api = stubApi({
+      getPortfolioInsights: vi.fn().mockResolvedValue(old),
+      refreshPortfolioInsights: vi.fn(() => new Promise<typeof fresh>((res) => { resolveRefresh = res; })),
+    });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    const tabs = () => within(screen.getByRole("navigation", { name: "Tabs" }));
+    await userEvent.click(tabs().getByRole("button", { name: /^Holdings$/ }));
+    await screen.findByTestId("portfolio-insights-card");
+    await userEvent.click(screen.getByRole("button", { name: /refresh portfolio assessment/i }));
+    // leave mid-generation
+    await userEvent.click(tabs().getByRole("button", { name: /^Home$/ }));
+    expect(screen.queryByLabelText("New portfolio assessment")).toBeNull();
+    resolveRefresh(fresh);
+    await screen.findByLabelText("New portfolio assessment");          // the light
+    await userEvent.click(tabs().getByRole("button", { name: /New portfolio assessment|^Holdings$/ }));
+    await vi.waitFor(() => expect(screen.queryByLabelText("New portfolio assessment")).toBeNull());   // cleared on open
+    expect((await screen.findByTestId("portfolio-insights-card")).textContent).toContain("Fresh bullet");
   });
 });
 

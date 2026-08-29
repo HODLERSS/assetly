@@ -15,7 +15,12 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
   const refreshing = insightsRefreshing;
   useEffect(() => {
     let live = true;
-    if (rows.length > 0) api.getPortfolioInsights().then((v) => { if (live) { setPins(v); if (v) onInsightsChanged?.(v.generated_at); } }).catch(() => {});
+    if (rows.length > 0) api.getPortfolioInsights().then((v) => {
+      if (!live) return;
+      // newest wins: a refresh that finished while this screen was away must not be clobbered by the DB read
+      const best = freshInsights && (!v || freshInsights.generated_at >= v.generated_at) ? freshInsights : v;
+      setPins(best); if (best) onInsightsChanged?.(best.generated_at);
+    }).catch(() => {});
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, rows.length]);
