@@ -32,6 +32,11 @@ async function stCall(cid: string, key: string, method: string, path: string, ex
   return { status: r.status, data: await r.json().catch(() => null) };
 }
 
+async function stCallAccounts(cid: string, key: string, uq: string, authId: string): Promise<string[]> {
+  const r = await stCall(cid, key, "GET", `/authorizations/${authId}/accounts`, uq, null);
+  return Array.isArray(r.data) ? (r.data as Record<string, unknown>[]).map((a) => String(a.id ?? "")).filter(Boolean) : [];
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -71,11 +76,20 @@ Deno.serve(async (req) => {
     const authId = typeof body.authorization_id === "string" ? body.authorization_id : "";
     if (!authId || !row?.st_secret) return json({ ok: false, error: "missing connection" }, 400);
     const uq = `userId=${encodeURIComponent(uid)}&userSecret=${encodeURIComponent(row.st_secret)}`;
+    const keepAccts = body.keep_holdings === true ? await stCallAccounts(cid, key, uq, authId) : [];
     // SnapTrade retired DELETE /authorizations/{id} (410) for post-May-2026 accounts; /connection/{id} is the live path.
     let res = await stCall(cid, key, "DELETE", `/connection/${authId}`, uq, null);
     if (res.status === 404 || res.status === 410) res = await stCall(cid, key, "DELETE", `/authorizations/${authId}`, uq, null);
     if (res.status >= 300 || res.status === 0) return json({ ok: false, error: `brokerage refused removal (${res.status || "network"})` }, 502);
-    // sync afterwards so orphan cleanup drops that connection's holdings
+    if (body.keep_holdings === true) {
+      // detach: rows become ordinary manual holdings (no more sync), origin remembered in account_label
+      for (const acctId of keepAccts) {
+        await admin.from("holdings")
+          .update({ source: "manual", external_id: null })
+          .eq("user_id", uid).eq("source", "snaptrade").like("external_id", `st:${acctId}:%`);
+      }
+    }
+    // sync afterwards so orphan cleanup drops that connection's remaining synced holdings
     const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const pr = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/snaptrade-sync`, {
       method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" },

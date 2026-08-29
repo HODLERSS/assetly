@@ -11,7 +11,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
   const [fx, setFx] = useState<{ rate: number; asOf: string } | null>(null);
   const [st, setSt] = useState<{ connected: boolean; last_sync_at?: string | null; institutions?: string[] } | null>(null);
   const [conns, setConns] = useState<{ id: string; institution: string; disabled: boolean }[]>([]);
-  const [removing, setRemoving] = useState<string | null>(null);   // two-tap confirm per connection
+  const [removing, setRemoving] = useState<{ id: string; institution: string } | null>(null);   // keep/delete sheet
   const [removeErr, setRemoveErr] = useState<string | null>(null);
   const [stBusy, setStBusy] = useState(false);
   useEffect(() => {
@@ -89,18 +89,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
               try { await api.snaptradeSync(); await onChanged(); const r = await api.snaptrade("status"); setSt({ connected: !!r.connected, last_sync_at: r.last_sync_at, institutions: r.institutions }); }
               finally { setStBusy(false); }
             }}>Sync now</button>
-            <button className="chip" disabled={stBusy} onClick={async () => {
-              if (removing !== c.id) { setRemoving(c.id); setTimeout(() => setRemoving((v) => v === c.id ? null : v), 4000); return; }
-              setStBusy(true); setRemoveErr(null);
-              try {
-                const r = await api.snaptrade("remove_connection", { authorization_id: c.id });
-                if (!r.ok) throw new Error("Could not remove this connection. Try again in a moment.");
-                setConns((xs) => xs.filter((x) => x.id !== c.id));
-                setRemoving(null);
-                await onChanged();
-              } catch (e) { setRemoveErr(e instanceof Error ? e.message : "Could not remove this connection."); setRemoving(null); }
-              finally { setStBusy(false); }
-            }}>{removing === c.id ? "Sure? Remove" : "Remove"}</button>
+            <button className="chip" disabled={stBusy} onClick={() => { setRemoveErr(null); setRemoving({ id: c.id, institution: c.institution }); }}>Remove</button>
             </span>
           </div>
         ))}
@@ -119,6 +108,35 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
           )}
         </div>
       </div>
+      {removing && (
+        <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Remove brokerage connection">
+          <div className="sheet">
+            <h2>Disconnect {removing.institution}?</h2>
+            <p className="mutedc" style={{ marginBottom: 14 }}>
+              Assetly stops syncing with {removing.institution}. Your imported positions can stay as regular holdings you manage yourself, or be removed.
+            </p>
+            <button className="btn" disabled={stBusy} onClick={async () => {
+              setStBusy(true);
+              try {
+                const r = await api.snaptrade("remove_connection", { authorization_id: removing.id, keep_holdings: true });
+                if (!r.ok) throw new Error("Could not disconnect. Try again in a moment.");
+                setConns((xs) => xs.filter((x) => x.id !== removing.id)); setRemoving(null); await onChanged();
+              } catch (e) { setRemoveErr(e instanceof Error ? e.message : "Could not disconnect."); setRemoving(null); }
+              finally { setStBusy(false); }
+            }}>Disconnect, keep my positions</button>
+            <button className="btn danger" style={{ marginTop: 8 }} disabled={stBusy} onClick={async () => {
+              setStBusy(true);
+              try {
+                const r = await api.snaptrade("remove_connection", { authorization_id: removing.id, keep_holdings: false });
+                if (!r.ok) throw new Error("Could not disconnect. Try again in a moment.");
+                setConns((xs) => xs.filter((x) => x.id !== removing.id)); setRemoving(null); await onChanged();
+              } catch (e) { setRemoveErr(e instanceof Error ? e.message : "Could not disconnect."); setRemoving(null); }
+              finally { setStBusy(false); }
+            }}>Disconnect and remove them</button>
+            <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => setRemoving(null)}>Keep connected</button>
+          </div>
+        </div>
+      )}
       <button className="btn secondary" onClick={async () => { await api.signOut(); onSignedOut(); }}>Sign out</button>
       <p className="mutedc" style={{ fontSize: 12.5, marginTop: 14 }}>
         Deleting your account removes every holding and lot permanently. Contact support until in-app deletion ships in the next lap.
