@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertCcy, dayChangeAmount } from "./lib/format";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
@@ -30,8 +30,24 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [view, setView] = useState<View>({ kind: "tab", tab: "home" });
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [askAlert, setAskAlert] = useState(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   useEffect(() => {
+    // stale-bundle guard: the PWA can cache an old build; check the served index once per open
+    (async () => {
+      try {
+        if (sessionStorage.getItem("assetly-updated")) return;
+        const html = await (await fetch(window.location.pathname || "./", { cache: "no-store" })).text();
+        const served = html.match(/index-[A-Za-z0-9_-]+\.js/)?.[0];
+        const running = [...document.querySelectorAll("script[src]")].map((el) => el.getAttribute("src") ?? "").find((src) => src.includes("index-"))?.match(/index-[A-Za-z0-9_-]+\.js/)?.[0];
+        if (served && running && served !== running) {
+          sessionStorage.setItem("assetly-updated", "1");
+          window.location.reload();
+        }
+      } catch { /* offline or blocked: run what we have */ }
+    })();
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true); });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
@@ -118,7 +134,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     return <Onboarding api={api} onDone={load} snaptrade={obSnap} />;
   }
 
-  const go = (v: View) => { setError(null); setView(v); };
+  const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); setView(v); };
   const tab = view.kind === "tab" ? view.tab : null;
 
   return (
@@ -164,9 +180,13 @@ export function App({ api = defaultApi }: { api?: Api }) {
           <Holdings rows={rows} api={api} fxRate={fx} totalsCcy={base} dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
         {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"} />}
-        {view.kind === "tab" && view.tab === "ask" && (
-          <AskScreen api={api} />
-        )}
+        {/* Ask stays mounted so an in-flight answer keeps generating across tabs */}
+        <div style={view.kind === "tab" && view.tab === "ask" ? undefined : { display: "none" }}>
+          <AskScreen api={api} onAnswered={() => {
+            const v = viewRef.current;
+            if (!(v.kind === "tab" && v.tab === "ask")) setAskAlert(true);
+          }} />
+        </div>
         {view.kind === "tab" && view.tab === "settings" && (
           <SettingsScreen api={api} profile={profile} rows={rows} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
         )}
@@ -177,6 +197,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
           <button key={t} aria-current={tab === t ? "page" : undefined} onClick={() => go({ kind: "tab", tab: t })}>
             <span className="dot" aria-hidden="true" />
             {t === "home" ? "Home" : t === "holdings" ? "Holdings" : t === "news" ? "News" : t === "ask" ? "Ask" : "Settings"}
+            {t === "ask" && askAlert && <span className="tab-alert" aria-label="New answer ready" />}
           </button>
         ))}
       </nav>

@@ -32,12 +32,29 @@ function Md({ text }: { text: string }) {
   );
 }
 
-export function AskScreen({ api }: { api: Api }) {
+const ASK_STORE = "assetly-ask-v1";
+const todayKey = () => new Date().toLocaleDateString("en-CA");
+function loadTurns(): Turn[] {
+  try {
+    const raw = localStorage.getItem(ASK_STORE);
+    if (!raw) return [];
+    const v = JSON.parse(raw) as { date?: string; turns?: Turn[] };
+    if (v.date !== todayKey() || !Array.isArray(v.turns)) return [];   // a new day starts fresh
+    const t = v.turns.filter((x) => x && typeof x.q === "string");
+    while (t.length && t[t.length - 1].a === null) t.pop();   // drop questions that died mid-flight
+    return t;
+  } catch { return []; }
+}
+
+export function AskScreen({ api, onAnswered }: { api: Api; onAnswered?: () => void }) {
   const [q, setQ] = useState("");
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    try { localStorage.setItem(ASK_STORE, JSON.stringify({ date: todayKey(), turns: turns.slice(-30) })); } catch { /* storage unavailable */ }
+  }, [turns]);
   useEffect(() => { endRef.current?.scrollIntoView?.({ block: "end", behavior: "smooth" }); }, [turns, busy]);
 
   const submit = async (question: string) => {
@@ -51,7 +68,7 @@ export function AskScreen({ api }: { api: Api }) {
       setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: answer, followups } : x)));
     } catch (e) {
       setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: "", error: e instanceof Error ? e.message : "Something broke — try again." } : x)));
-    } finally { setBusy(false); }
+    } finally { setBusy(false); onAnswered?.(); }
   };
 
   return (
