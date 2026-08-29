@@ -12,7 +12,8 @@ Deno.serve(async (req) => {
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const kickSync = (userId: string) => {
-    const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/snaptrade-sync`, {
+    // the connect moment runs the full intelligence chain, not just the import
+    const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/brokerage-connected`, {
       method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: userId }),
     }).catch(() => null);

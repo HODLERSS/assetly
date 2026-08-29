@@ -92,6 +92,8 @@ Deno.serve(async (req) => {
 
   const results: Record<string, unknown>[] = [];
   for (const uid of targets.slice(0, 25)) {
+    const { data: got } = await admin.rpc("try_user_lock", { p_user: uid });
+    if (got === false) { results.push({ uid: uid.slice(0, 8), skipped: "sync in progress" }); continue; }
     try {
       const { data: row } = await admin.from("snaptrade_tokens").select("user_id,mode,st_secret,refresh_token,access_token,access_expires_at").eq("user_id", uid).maybeSingle();
       if (!row) { results.push({ uid: uid.slice(0, 8), error: "not connected" }); continue; }
@@ -165,9 +167,15 @@ Deno.serve(async (req) => {
           const { data: h } = await admin.from("holdings").select("id, account_label").eq("user_id", uid).eq("external_id", ext).maybeSingle();
           let hid = h?.id as string | undefined;
           if (!hid) {
+            // atomic on the (user_id, external_id) unique index: concurrent triggers converge on ONE row
             const { data: ins } = await admin.from("holdings")
-              .insert({ user_id: uid, symbol: sym, account: "brokerage", nickname, source: "snaptrade", external_id: ext, account_label: acctLabel }).select("id").single();
+              .upsert({ user_id: uid, symbol: sym, account: "brokerage", nickname, source: "snaptrade", external_id: ext, account_label: acctLabel },
+                      { onConflict: "user_id,external_id", ignoreDuplicates: false }).select("id").single();
             hid = ins?.id;
+            if (!hid) {   // lost a race: read the winner
+              const { data: again } = await admin.from("holdings").select("id").eq("user_id", uid).eq("external_id", ext).maybeSingle();
+              hid = again?.id as string | undefined;
+            }
             if (hid && !sym.startsWith("$")) {
               added.push(sym);
               (addedBy[inst] = addedBy[inst] ?? []).push(sym);
@@ -259,6 +267,7 @@ Deno.serve(async (req) => {
       await admin.from("snaptrade_tokens").update({ last_sync_at: new Date().toISOString(), institutions }).eq("user_id", uid);
       results.push({ uid: uid.slice(0, 8), accounts: accounts.length, positions, added: added.length, retries, institutions });
     } catch (e) { results.push({ uid: uid.slice(0, 8), error: e instanceof Error ? e.message : String(e) }); }
+    finally { await admin.rpc("release_user_lock", { p_user: uid }).then(() => {}, () => {}); }
   }
   return json({ ok: true, results });
 });
