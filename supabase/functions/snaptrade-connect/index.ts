@@ -57,8 +57,26 @@ Deno.serve(async (req) => {
     .select("mode, st_secret, refresh_token, connected_at, last_sync_at, institutions").eq("user_id", uid).maybeSingle();
 
   if (action === "status") {
-    const connected = !!row && ((row.institutions ?? []).length > 0 || !!row.last_sync_at);
-    return json({ ok: true, connected, pending: !!row && !connected, last_sync_at: row?.last_sync_at ?? null, institutions: row?.institutions ?? [] });
+    // Truth comes from SnapTrade, not cached columns: a removal made anywhere (app, SnapTrade, broker)
+    // must read as disconnected immediately, and stale institutions/last_sync are healed here.
+    if (!row?.st_secret) return json({ ok: true, connected: false, pending: false, last_sync_at: null, institutions: [] });
+    const uq = `userId=${encodeURIComponent(uid)}&userSecret=${encodeURIComponent(row.st_secret)}`;
+    const acc = await stCall(cid, key, "GET", "/accounts", uq, null);
+    if (Array.isArray(acc.data)) {
+      const live = [...new Set((acc.data as Record<string, unknown>[]).map((a) => String(a.institution_name ?? "")).filter(Boolean))];
+      const connected = live.length > 0;
+      const cachedInst = row.institutions ?? [];
+      if (!connected && (cachedInst.length > 0 || row.last_sync_at)) {
+        await admin.from("snaptrade_tokens").update({ institutions: [], last_sync_at: null }).eq("user_id", uid);
+        await admin.from("holdings").delete().eq("user_id", uid).eq("source", "snaptrade");   // orphans of a vanished connection
+      } else if (connected && JSON.stringify(live) !== JSON.stringify(cachedInst)) {
+        await admin.from("snaptrade_tokens").update({ institutions: live }).eq("user_id", uid);
+      }
+      return json({ ok: true, connected, pending: false, last_sync_at: connected ? row.last_sync_at ?? null : null, institutions: live });
+    }
+    // SnapTrade unreachable: fall back to cached state rather than flashing "not connected"
+    const connected = (row.institutions ?? []).length > 0 || !!row.last_sync_at;
+    return json({ ok: true, connected, pending: false, last_sync_at: row.last_sync_at ?? null, institutions: row.institutions ?? [], cached: true });
   }
   if (action === "connections") {
     if (!row?.st_secret) return json({ ok: true, connections: [] });
