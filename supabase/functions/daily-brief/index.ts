@@ -124,8 +124,8 @@ Deno.serve(async (req) => {
   const noAudio = body.noAudio === true;   // battery/test runs must not spend TTS quota
   const validEd = (x: unknown): x is "morning" | "midday" | "close" => x === "morning" || x === "midday" || x === "close";
   const edRaw = url.searchParams.get("edition") ?? (body as { edition?: unknown }).edition;
-  const utcH = new Date().getUTCHours();
-  const edition: "morning" | "midday" | "close" = validEd(edRaw) ? edRaw : utcH >= 19 ? "close" : utcH >= 15 ? "midday" : "morning";
+  const utcMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();   // close = 4:05 PM ET (20:05 UTC), never before the bell
+  const edition: "morning" | "midday" | "close" = validEd(edRaw) ? edRaw : utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
 
   let key = "";
   if (!fixture) {

@@ -32,8 +32,8 @@ Deno.serve(async (req) => {
   if (have && have.length) return json({ ok: true, skipped: "brief exists today" });
 
   // edition by the clock (mirrors daily-brief): pre-open -> morning, session -> midday, post-close -> close
-  const h = new Date().getUTCHours();
-  const edition = h >= 19 ? "close" : h >= 15 ? "midday" : "morning";
+  const utcMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
+  const edition = utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
 
   const headers = { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" };
   const work = (async () => {

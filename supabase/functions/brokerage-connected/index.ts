@@ -38,8 +38,8 @@ Deno.serve(async (req) => {
 
   const headers = { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": internalTok };
   const call = (fn: string, b: unknown) => fetch(`${base}/functions/v1/${fn}`, { method: "POST", headers, body: JSON.stringify(b) }).then((r) => r.json().catch(() => null)).catch(() => null);
-  const h = new Date().getUTCHours();
-  const edition = h >= 19 ? "close" : h >= 15 ? "midday" : "morning";
+  const utcMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
+  const edition = utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
 
   const work = (async () => {
     // 1. positions in (serialized by the per-user lock; a concurrent webhook sync just yields)
