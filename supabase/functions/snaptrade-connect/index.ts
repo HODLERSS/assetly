@@ -68,7 +68,8 @@ Deno.serve(async (req) => {
       const cachedInst = row.institutions ?? [];
       if (!connected && (cachedInst.length > 0 || row.last_sync_at)) {
         await admin.from("snaptrade_tokens").update({ institutions: [], last_sync_at: null }).eq("user_id", uid);
-        await admin.from("holdings").delete().eq("user_id", uid).eq("source", "snaptrade");   // orphans of a vanished connection
+        // connection vanished: detach (keep) the rows as the user's own; never delete from a status read
+        await admin.from("holdings").update({ source: "manual", external_id: null }).eq("user_id", uid).eq("source", "snaptrade");
       } else if (connected && JSON.stringify(live) !== JSON.stringify(cachedInst)) {
         await admin.from("snaptrade_tokens").update({ institutions: live }).eq("user_id", uid);
       }
@@ -94,11 +95,17 @@ Deno.serve(async (req) => {
     const authId = typeof body.authorization_id === "string" ? body.authorization_id : "";
     if (!authId || !row?.st_secret) return json({ ok: false, error: "missing connection" }, 400);
     const uq = `userId=${encodeURIComponent(uid)}&userSecret=${encodeURIComponent(row.st_secret)}`;
-    const keepAccts = body.keep_holdings === true ? await stCallAccounts(cid, key, uq, authId) : [];
+    const keepAccts = await stCallAccounts(cid, key, uq, authId);   // listed before the delete: the authorization vanishes after
     // SnapTrade retired DELETE /authorizations/{id} (410) for post-May-2026 accounts; /connection/{id} is the live path.
     let res = await stCall(cid, key, "DELETE", `/connection/${authId}`, uq, null);
     if (res.status === 404 || res.status === 410) res = await stCall(cid, key, "DELETE", `/authorizations/${authId}`, uq, null);
     if (res.status >= 300 || res.status === 0) return json({ ok: false, error: `brokerage refused removal (${res.status || "network"})` }, 502);
+    if (body.keep_holdings !== true) {
+      // explicit "remove them": delete this connection's synced rows here, since sync's cleanup only detaches
+      for (const acctId of keepAccts.length ? keepAccts : await stCallAccounts(cid, key, uq, authId)) {
+        await admin.from("holdings").delete().eq("user_id", uid).eq("source", "snaptrade").like("external_id", `st:${acctId}:%`);
+      }
+    }
     if (body.keep_holdings === true) {
       // detach: rows become ordinary manual holdings (no more sync), origin remembered in account_label
       for (const acctId of keepAccts) {
