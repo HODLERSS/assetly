@@ -150,3 +150,8 @@ input, select { font: inherit; }
   background: #2A3F92; animation: askblink 1.1s ease-in-out infinite; }
 @keyframes askblink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 @media (prefers-reduced-motion: reduce) { .tab-alert { animation: none; } }
+
+/* intelligence refresh: the ↻ glyph itself spins while a regeneration runs */
+.spin { display: inline-block; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; opacity: 0.6; } }

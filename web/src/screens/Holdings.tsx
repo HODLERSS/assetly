@@ -61,7 +61,7 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
           <div className="insights-head">
             <span className="insights-brand">Your portfolio</span>
             <button className="insights-toggle" onClick={() => void refreshPins()} disabled={refreshing} aria-label="Refresh portfolio assessment">
-              {refreshing ? "Refreshing…" : `${timeAgo(pins.generated_at)} · ↻`}
+              {refreshing ? <>Refreshing <span className="spin" aria-hidden="true">↻</span></> : <>{timeAgo(pins.generated_at)} · ↻</>}
             </button>
           </div>
           <ul className="insights-list">

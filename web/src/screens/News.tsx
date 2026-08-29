@@ -76,7 +76,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
           <div className="insights-head">
             <span className="insights-brand">Assetly Intelligence</span>
             <button className="insights-toggle" onClick={() => onRefreshInsights?.()} disabled={insightsRefreshing} aria-label="Refresh Assetly Intelligence">
-              {insightsRefreshing ? "Refreshing…" : `${timeAgo(top5!.generated_at)} · ↻`}
+              {insightsRefreshing ? <>Refreshing <span className="spin" aria-hidden="true">↻</span></> : <>{timeAgo(top5!.generated_at)} · ↻</>}
             </button>
           </div>
           <ul className="insights-list">
