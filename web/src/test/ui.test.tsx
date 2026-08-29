@@ -2,7 +2,7 @@
 // Covers the end-to-end user experience surface: auth, onboarding, add/edit/remove,
 // prices, news filter, errors, empty states, settings.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within, waitFor, within } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const oauthSpy = vi.fn().mockResolvedValue({ data: {}, error: null });
