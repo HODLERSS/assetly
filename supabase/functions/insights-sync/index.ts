@@ -109,7 +109,14 @@ Deno.serve(async (req) => {
   let onlyUser: string | null = typeof body.user_id === "string" ? body.user_id : null;
   if (onlyUser) {
     const isSvc = (() => { try { return JSON.parse(atob(bearerJwt2.split(".")[1] ?? "")).role === "service_role"; } catch { return false; } })();
-    if (!isSvc) { const { data: ud } = await admin.auth.getUser(bearerJwt2); if (ud?.user?.id !== onlyUser) onlyUser = null; }
+    // internal hops (orchestrator, callback) authorize with the shared token: the platform gate rejects the legacy service JWT
+    let itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
+    if (!itok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itok = data ?? ""; }
+    const isInternal = !!itok && (req.headers.get("x-internal-token") ?? "") === itok;
+    if (!isSvc && !isInternal) {
+      const { data: ud } = await admin.auth.getUser(bearerJwt2);
+      if (ud?.user?.id !== onlyUser) return json({ ok: false, error: "forbidden target" }, 403);   // never silently widen or no-op
+    }
   }
 
   let key = Deno.env.get("MARA_API_KEY") ?? "";
