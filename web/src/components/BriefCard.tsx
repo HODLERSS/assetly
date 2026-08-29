@@ -19,8 +19,14 @@ export function BriefCard({ api }: { api: Api }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    let live = true;
-    api.getDailyBriefs().then((b) => { if (live) setBriefs(b); }).catch(() => { if (live) setBriefs([]); });
+    let live = true; let tries = 0;
+    const load = () => api.getDailyBriefs().then((b) => {
+      if (!live) return;
+      setBriefs(b);
+      // a fresh account's first brief is still generating: keep looking for ~4 minutes
+      if (!b.length && tries++ < 16) setTimeout(load, 15000);
+    }).catch(() => { if (live) setBriefs([]); });
+    load();
     return () => { live = false; };
   }, [api]);
   useEffect(() => () => { audioRef.current?.pause(); }, []);

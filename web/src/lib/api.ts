@@ -235,6 +235,17 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { data } = await sb.storage.from("briefs-audio").createSignedUrl(path, 3600);
       return data?.signedUrl ?? null;
     },
+    /** First brief: fires once after onboarding so read+listen is ready within minutes. */
+    async firstBrief(): Promise<void> {
+      await sb.functions.invoke("first-brief", { body: {} }).catch(() => null);
+    },
+    /** Portfolio intelligence: refresh now (force regen for this user), then return the fresh row. */
+    async refreshPortfolioInsights(): Promise<Insight | null> {
+      const { data: u } = await sb.auth.getUser();
+      if (!u.user) return null;
+      await sb.functions.invoke("insights-sync", { body: { force: true, user_id: u.user.id } }).catch(() => null);
+      return this.getPortfolioInsights();
+    },
     /** SnapTrade: connection status / start connect / disconnect. */
     async snaptrade(action: "status" | "connect" | "disconnect" | "connections" | "remove_connection", extra?: Record<string, unknown>): Promise<{ ok: boolean; connected?: boolean; url?: string; last_sync_at?: string | null; institutions?: string[]; connections?: { id: string; institution: string; disabled: boolean }[] }> {
       const { data, error } = await sb.functions.invoke("snaptrade-connect", { body: { action, ...(extra ?? {}) } });

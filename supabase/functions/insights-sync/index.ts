@@ -105,6 +105,12 @@ Deno.serve(async (req) => {
   const fixture = url.searchParams.get("fixture") === "1";
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
   const force = url.searchParams.get("force") === "1" || body.force === true;
+  const bearerJwt2 = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+  let onlyUser: string | null = typeof body.user_id === "string" ? body.user_id : null;
+  if (onlyUser) {
+    const isSvc = (() => { try { return JSON.parse(atob(bearerJwt2.split(".")[1] ?? "")).role === "service_role"; } catch { return false; } })();
+    if (!isSvc) { const { data: ud } = await admin.auth.getUser(bearerJwt2); if (ud?.user?.id !== onlyUser) onlyUser = null; }
+  }
 
   let key = Deno.env.get("MARA_API_KEY") ?? "";
   if (!key && !fixture) {
@@ -192,6 +198,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
   const { data: pf } = await admin.from("portfolio").select("user_id, symbol, kind, account, currency, value, change_pct, nickname, name");
   const byUser = new Map<string, NonNullable<typeof pf>>();
   for (const r of pf ?? []) {
+    if (onlyUser && r.user_id !== onlyUser) continue;
     if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
     byUser.get(r.user_id)!.push(r);
   }

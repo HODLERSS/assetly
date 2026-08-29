@@ -31,6 +31,26 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [askAlert, setAskAlert] = useState(false);
+  const [holdAlert, setHoldAlert] = useState(false);
+  const seenInsightRef = useRef<string | null>(null);   // generated_at the user has already seen
+  // background watch: a newer portfolio assessment (cron/refresh) lights the Holdings tab
+  useEffect(() => {
+    if (!session) return;
+    let live = true;
+    const tick = async () => {
+      try {
+        const v = await api.getPortfolioInsights();
+        if (!live || !v) return;
+        if (seenInsightRef.current === null) { seenInsightRef.current = v.generated_at; return; }
+        if (v.generated_at !== seenInsightRef.current) {
+          const onHoldings = viewRef.current.kind === "tab" && viewRef.current.tab === "holdings";
+          if (onHoldings) seenInsightRef.current = v.generated_at; else setHoldAlert(true);
+        }
+      } catch { /* quiet */ }
+    };
+    const t = setInterval(tick, 60000);
+    return () => { live = false; clearInterval(t); };
+  }, [session, api]);
   const viewRef = useRef(view);
   viewRef.current = view;
 
@@ -134,7 +154,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     return <Onboarding api={api} onDone={load} snaptrade={obSnap} />;
   }
 
-  const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); setView(v); };
+  const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "holdings") setHoldAlert(false); setView(v); };
   const tab = view.kind === "tab" ? view.tab : null;
 
   return (
@@ -177,7 +197,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
         )}
         {view.kind === "tab" && view.tab === "holdings" && (
-          <Holdings rows={rows} api={api} fxRate={fx} totalsCcy={base} dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
+          <Holdings rows={rows} api={api} fxRate={fx} totalsCcy={base} dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
+            onInsightsChanged={(g) => { seenInsightRef.current = g; setHoldAlert(false); }} />
         )}
         {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"} />}
         {/* Ask stays mounted so an in-flight answer keeps generating across tabs */}
@@ -198,6 +219,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
             <span className="dot" aria-hidden="true" />
             {t === "home" ? "Home" : t === "holdings" ? "Holdings" : t === "news" ? "News" : t === "ask" ? "Ask" : "Settings"}
             {t === "ask" && askAlert && <span className="tab-alert" aria-label="New answer ready" />}
+            {t === "holdings" && holdAlert && <span className="tab-alert" aria-label="New portfolio assessment" />}
           </button>
         ))}
       </nav>

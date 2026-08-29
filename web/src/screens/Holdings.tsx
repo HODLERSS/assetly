@@ -6,16 +6,24 @@ import { isMarketOpen, marketOf } from "../lib/markets";
 // Canvas 2b: the table as a touch list with multi-select filter chips.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
 
-export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", dispUs = "USD", dispKr = "KRW" }: {
+export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", dispUs = "USD", dispKr = "KRW", onInsightsChanged }: {
   rows: PortfolioRow[]; onOpen: (id: string) => void; onAdd: () => void; api: Api; fxRate: number | null;
-  totalsCcy?: "USD" | "KRW"; dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
+  totalsCcy?: "USD" | "KRW"; dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW"; onInsightsChanged?: (generatedAt: string) => void;
 }) {
   const [pins, setPins] = useState<Insight | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
     let live = true;
-    if (rows.length > 0) api.getPortfolioInsights().then((v) => { if (live) setPins(v); }).catch(() => {});
+    if (rows.length > 0) api.getPortfolioInsights().then((v) => { if (live) { setPins(v); if (v) onInsightsChanged?.(v.generated_at); } }).catch(() => {});
     return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, rows.length]);
+  const refreshPins = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try { const v = await api.refreshPortfolioInsights(); if (v) { setPins(v); onInsightsChanged?.(v.generated_at); } }
+    finally { setRefreshing(false); }
+  };
   const [filter, setFilter] = useState<"all" | "US" | "KR" | "ret">("all");
   // Crypto files under the market of its pricing currency ($ -> US, \u20a9 -> KR).
   const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
@@ -51,7 +59,9 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
         <section className="card insights" data-testid="portfolio-insights-card" aria-label="Portfolio insights">
           <div className="insights-head">
             <span className="insights-brand">Your portfolio</span>
-            <span className="sub num">{timeAgo(pins.generated_at)}</span>
+            <button className="insights-toggle" onClick={() => void refreshPins()} disabled={refreshing} aria-label="Refresh portfolio assessment">
+              {refreshing ? "Refreshing…" : `${timeAgo(pins.generated_at)} · ↻`}
+            </button>
           </div>
           <ul className="insights-list">
             {pins.bullets.map((b, i) => <li key={i}>{b}</li>)}

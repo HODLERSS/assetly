@@ -59,6 +59,7 @@ export function Onboarding({ api, onDone, snaptrade = null }: {
     setBusy(true); setErr(null);
     try {
       await api.completeOnboarding(marketsOf(imported ?? []), "USD");
+      void api.firstBrief();   // read + listen within minutes, no cron wait
       await onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not save. Try again."); }
     finally { setBusy(false); }
@@ -79,6 +80,7 @@ export function Onboarding({ api, onDone, snaptrade = null }: {
       void api.refreshNews([picked.symbol]);                // stories land while the user looks around
       const m = marketOf({ symbol: picked.symbol, kind: picked.kind });   // inferred, never asked
       await api.completeOnboarding([m === "KR" ? "KR" : m === "CRYPTO" ? "Crypto" : "US"], "USD");
+      void api.firstBrief();
       await onDone();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save. Try again.");

@@ -107,6 +107,13 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const force = url.searchParams.get("force") === "1" || body.force === true;
   const onlyEmail = typeof body.user_email === "string" ? body.user_email : null;
+  // user_id targeting: a signed-in user may target only themself; service callers may target anyone.
+  const bearerJwt = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+  let onlyUserId: string | null = typeof body.user_id === "string" ? body.user_id : null;
+  if (onlyUserId) {
+    const isSvc = (() => { try { return JSON.parse(atob(bearerJwt.split(".")[1] ?? "")).role === "service_role"; } catch { return false; } })();
+    if (!isSvc) { const { data: ud } = await admin.auth.getUser(bearerJwt); if (ud?.user?.id !== onlyUserId) onlyUserId = null; }
+  }
   const noAudio = body.noAudio === true;   // battery/test runs must not spend TTS quota
   const validEd = (x: unknown): x is "morning" | "midday" | "close" => x === "morning" || x === "midday" || x === "close";
   const edRaw = url.searchParams.get("edition") ?? (body as { edition?: unknown }).edition;
@@ -159,7 +166,8 @@ Deno.serve(async (req) => {
     const testIds = new Set((au?.users ?? []).filter((u) => u.email?.endsWith("assetly.test")).map((u) => u.id));
     userIds = userIds.filter((id) => !testIds.has(id));
   }
-  if (onlyEmail) {
+  if (onlyUserId) userIds = byUser.has(onlyUserId) ? [onlyUserId] : [];
+  else if (onlyEmail) {
     const { data: us } = await admin.from("profiles").select("id, display_name").in("id", userIds);
     void us;   // profiles has no email; resolve via auth admin
     const { data: au } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
