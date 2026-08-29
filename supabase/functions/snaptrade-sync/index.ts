@@ -167,14 +167,22 @@ Deno.serve(async (req) => {
           const { data: h } = await admin.from("holdings").select("id, account_label").eq("user_id", uid).eq("external_id", ext).maybeSingle();
           let hid = h?.id as string | undefined;
           if (!hid) {
-            // atomic on the (user_id, external_id) unique index: concurrent triggers converge on ONE row
-            const { data: ins } = await admin.from("holdings")
-              .upsert({ user_id: uid, symbol: sym, account: "brokerage", nickname, source: "snaptrade", external_id: ext, account_label: acctLabel },
-                      { onConflict: "user_id,external_id", ignoreDuplicates: false }).select("id").single();
-            hid = ins?.id;
-            if (!hid) {   // lost a race: read the winner
-              const { data: again } = await admin.from("holdings").select("id").eq("user_id", uid).eq("external_id", ext).maybeSingle();
-              hid = again?.id as string | undefined;
+            // Re-adopt first: a kept/manual row for the same symbol+account+nickname (from "disconnect,
+            // keep my positions", or a manual add) blocks a fresh insert on the user/symbol/account/nick
+            // unique key. Reconnecting means that row becomes the synced one again, lots replaced by the
+            // live import. Never a duplicate, never data loss.
+            const { data: twin } = await admin.from("holdings").select("id").eq("user_id", uid).eq("symbol", sym).eq("account", "brokerage").eq("nickname", nickname).maybeSingle();
+            if (twin?.id) {
+              await admin.from("holdings").update({ source: "snaptrade", external_id: ext, account_label: acctLabel }).eq("id", twin.id);
+              hid = twin.id as string;
+            } else {
+              const { data: ins } = await admin.from("holdings")
+                .insert({ user_id: uid, symbol: sym, account: "brokerage", nickname, source: "snaptrade", external_id: ext, account_label: acctLabel }).select("id").maybeSingle();
+              hid = ins?.id as string | undefined;
+              if (!hid) {   // lost a concurrent race (the per-user lock makes this rare): read the winner
+                const { data: again } = await admin.from("holdings").select("id").eq("user_id", uid).eq("external_id", ext).maybeSingle();
+                hid = again?.id as string | undefined;
+              }
             }
             if (hid && !sym.startsWith("$")) {
               added.push(sym);
