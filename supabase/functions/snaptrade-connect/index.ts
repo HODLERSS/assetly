@@ -55,6 +55,33 @@ Deno.serve(async (req) => {
     const connected = !!row && ((row.institutions ?? []).length > 0 || !!row.last_sync_at);
     return json({ ok: true, connected, pending: !!row && !connected, last_sync_at: row?.last_sync_at ?? null, institutions: row?.institutions ?? [] });
   }
+  if (action === "connections") {
+    if (!row?.st_secret) return json({ ok: true, connections: [] });
+    const uq = `userId=${encodeURIComponent(uid)}&userSecret=${encodeURIComponent(row.st_secret)}`;
+    const res = await stCall(cid, key, "GET", "/authorizations", uq, null);
+    const list = Array.isArray(res.data) ? (res.data as Record<string, unknown>[]).map((a) => ({
+      id: String(a.id ?? ""),
+      institution: String((a.brokerage as { display_name?: string; name?: string } | undefined)?.display_name ?? (a.brokerage as { name?: string } | undefined)?.name ?? a.name ?? "Brokerage"),
+      disabled: a.disabled === true,
+      created: String(a.created_date ?? ""),
+    })) : [];
+    return json({ ok: true, connections: list });
+  }
+  if (action === "remove_connection") {
+    const authId = typeof body.authorization_id === "string" ? body.authorization_id : "";
+    if (!authId || !row?.st_secret) return json({ ok: false, error: "missing connection" }, 400);
+    const uq = `userId=${encodeURIComponent(uid)}&userSecret=${encodeURIComponent(row.st_secret)}`;
+    const res = await stCall(cid, key, "DELETE", `/authorizations/${authId}`, uq, null);
+    if (res.status >= 300) return json({ ok: false, error: "could not remove connection" }, 502);
+    // sync afterwards so orphan cleanup drops that connection's holdings
+    const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const pr = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/snaptrade-sync`, {
+      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: uid }),
+    }).catch(() => null);
+    try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(pr); } catch { /* ignore */ }
+    return json({ ok: true, removed: authId });
+  }
   if (action === "disconnect") {
     if (row?.mode === "commercial" || row?.st_secret) {
       await stCall(cid, key, "DELETE", "/snapTrade/deleteUser", `userId=${encodeURIComponent(uid)}`, null);

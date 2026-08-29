@@ -77,11 +77,18 @@ export function App({ api = defaultApi }: { api?: Api }) {
     // brokerage auto-sync deltas: greet returning users with what arrived while they were away
     api.snaptradeEvents().then(async (evs) => {
       if (!evs.length) return;
-      const added = [...new Set(evs.flatMap((e) => e.detail.added ?? []))];
       const coll = [...new Set(evs.flatMap((e) => e.detail.collisions ?? []))];
-      const inst = evs[evs.length - 1].detail.institution ?? "your brokerage";
-      if (added.length) {
-        setNotice(`Added from ${inst}: ${added.slice(0, 4).join(", ")}${added.length > 4 ? ` +${added.length - 4} more` : ""}${coll.length ? ` · ${coll.join(", ")} also exists manually` : ""}`);
+      const groups = new Map<string, Set<string>>();
+      for (const e of evs) {
+        const by = e.detail.by_institution?.length ? e.detail.by_institution : (e.detail.added?.length ? [{ institution: e.detail.institution ?? "your brokerage", symbols: e.detail.added }] : []);
+        for (const g of by) { const set = groups.get(g.institution) ?? new Set<string>(); g.symbols.forEach((x) => set.add(x)); groups.set(g.institution, set); }
+      }
+      if (groups.size) {
+        const parts = [...groups.entries()].slice(0, 3).map(([inst, syms]) => {
+          const list = [...syms];
+          return `${inst}: ${list.slice(0, 4).join(", ")}${list.length > 4 ? ` +${list.length - 4} more` : ""}`;
+        });
+        setNotice(`Added from ${parts.join(" · ")}${coll.length ? ` · ${coll.join(", ")} also exists manually` : ""}`);
         setTimeout(() => setNotice(null), 12000);
       }
       await api.snaptradeEventsSeen(evs.map((e) => e.id));

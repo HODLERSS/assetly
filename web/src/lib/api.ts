@@ -16,6 +16,7 @@ export type PortfolioRow = {
   price: number | null; change_pct: number | null; as_of: string | null;
   value: number | null; total_gl: number | null;
   source?: string | null;
+  account_label?: string | null;
 };
 export type HistoryPoint = { ts: string; price: number };
 export type Insight = {
@@ -235,13 +236,13 @@ export function makeApi(sb: SupabaseClient = supabase) {
       return data?.signedUrl ?? null;
     },
     /** SnapTrade: connection status / start connect / disconnect. */
-    async snaptrade(action: "status" | "connect" | "disconnect"): Promise<{ ok: boolean; connected?: boolean; url?: string; last_sync_at?: string | null; institutions?: string[] }> {
-      const { data, error } = await sb.functions.invoke("snaptrade-connect", { body: { action } });
+    async snaptrade(action: "status" | "connect" | "disconnect" | "connections" | "remove_connection", extra?: Record<string, unknown>): Promise<{ ok: boolean; connected?: boolean; url?: string; last_sync_at?: string | null; institutions?: string[]; connections?: { id: string; institution: string; disabled: boolean }[] }> {
+      const { data, error } = await sb.functions.invoke("snaptrade-connect", { body: { action, ...(extra ?? {}) } });
       if (error || !data?.ok) throw new Error(data?.error ?? "Brokerage link is unavailable right now.");
       return data;
     },
     /** Unseen brokerage sync events (positions auto-added later on), oldest first. */
-    async snaptradeEvents(): Promise<{ id: number; detail: { added?: string[]; collisions?: string[]; institution?: string } }[]> {
+    async snaptradeEvents(): Promise<{ id: number; detail: { added?: string[]; collisions?: string[]; institution?: string; by_institution?: { institution: string; symbols: string[] }[] } }[]> {
       const { data } = await sb.from("snaptrade_events").select("id,detail").eq("seen", false).order("created_at", { ascending: true }).limit(5);
       return (data ?? []) as { id: number; detail: { added?: string[]; collisions?: string[]; institution?: string } }[];
     },

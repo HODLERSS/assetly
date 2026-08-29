@@ -123,6 +123,7 @@ Deno.serve(async (req) => {
       const firstImport = preImported.size === 0;
       const added: string[] = [];
       const collisions: string[] = [];
+      const addedBy: Record<string, string[]> = {};
       // reconnect hygiene: drop imported rows tied to SnapTrade accounts that no longer exist
       const liveAcctIds = new Set(accounts.map((a) => String(a.id ?? "")).filter(Boolean));
       for (const r of preRows ?? []) {
@@ -136,6 +137,8 @@ Deno.serve(async (req) => {
         const acctId = String(a.id ?? "");
         if (!acctId) continue;
         const inst = String(a.institution_name ?? "Brokerage");
+        const numDigits = String(a.number ?? "").replace(/\D/g, "");
+        const acctLabel = inst + (numDigits ? ` \u2026${numDigits.slice(-4)}` : "");
         // Accounts created after May 2026 use the unified positions endpoint; older ones the legacy paths.
         const allPos = await get(`/accounts/${acctId}/positions/all`) as Record<string, unknown> | null;
         await rawSave("positions_all", acctId, allPos);
@@ -151,16 +154,19 @@ Deno.serve(async (req) => {
         if (!Array.isArray(poss)) continue;   // never delete on a failed fetch
         const seen: string[] = [];
         const ensureHolding = async (sym: string, ext: string, nickname: string, qty: number, cost: number | null) => {
-          const { data: h } = await admin.from("holdings").select("id").eq("user_id", uid).eq("external_id", ext).maybeSingle();
+          const { data: h } = await admin.from("holdings").select("id, account_label").eq("user_id", uid).eq("external_id", ext).maybeSingle();
           let hid = h?.id as string | undefined;
           if (!hid) {
             const { data: ins } = await admin.from("holdings")
-              .insert({ user_id: uid, symbol: sym, account: "brokerage", nickname, source: "snaptrade", external_id: ext }).select("id").single();
+              .insert({ user_id: uid, symbol: sym, account: "brokerage", nickname, source: "snaptrade", external_id: ext, account_label: acctLabel }).select("id").single();
             hid = ins?.id;
             if (hid && !sym.startsWith("$")) {
               added.push(sym);
+              (addedBy[inst] = addedBy[inst] ?? []).push(sym);
               if (manualSyms.has(sym)) collisions.push(sym);
             }
+          } else if (!h?.account_label) {
+            await admin.from("holdings").update({ account_label: acctLabel }).eq("id", hid);
           }
           if (!hid) return;
           await admin.from("lots").delete().eq("holding_id", hid);
@@ -239,7 +245,7 @@ Deno.serve(async (req) => {
       if (!firstImport && (added.length > 0 || collisions.length > 0)) {
         await admin.from("snaptrade_events").insert({
           user_id: uid, kind: "import_delta",
-          detail: { added, collisions, institution: institutions[0] ?? "your brokerage" },
+          detail: { added, collisions, institution: institutions[0] ?? "your brokerage", by_institution: Object.entries(addedBy).map(([institution, symbols]) => ({ institution, symbols })) },
         }).then(() => {}, () => {});
       }
       await admin.from("snaptrade_tokens").update({ last_sync_at: new Date().toISOString(), institutions }).eq("user_id", uid);

@@ -73,7 +73,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr 
         {lotsLoaded && lots.length === 0 && <p className="empty">No lots yet.</p>}
         {!lotsLoaded && <div className="row" aria-busy="true" aria-label="Loading lots"><span className="sub">Loading lots…</span></div>}
       </div>
-      {!cashish && <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 0 16px" }}>{row.source === "snaptrade" ? "⚡ Synced from your brokerage — shares and cost refresh automatically." : "The average is derived from lots — never typed."}</p>}
+      {!cashish && <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 0 16px" }}>{row.source === "snaptrade" ? `⚡ Synced from ${row.account_label ?? "your brokerage"} — shares and cost refresh automatically.` : "The average is derived from lots — never typed."}</p>}
 
       {err && <div className="error-note" role="alert">{err}</div>}
       {lots.length === 1 && (
