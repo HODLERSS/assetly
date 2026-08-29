@@ -96,7 +96,7 @@ export function Onboarding({ api, onDone, snaptrade = null }: {
         <p className="mutedc" style={{ marginBottom: 18 }}>Brokerage connected</p>
         <div className="card" data-testid="ob-import">
           {!importDone && (<>
-            <p style={{ margin: 0, fontWeight: 600 }}>Importing your positions…</p>
+            <p style={{ margin: 0, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><span className="progress-dot" aria-hidden="true" />Importing your positions</p>
             <p className="sub" style={{ margin: "6px 0 0" }}>
               {(imported?.length ?? 0) > 0
                 ? `Found so far: ${imported!.slice(-4).map((r) => r.symbol).join(" · ")}${imported!.length > 4 ? ` (+${imported!.length - 4} more)` : ""}`
@@ -104,7 +104,7 @@ export function Onboarding({ api, onDone, snaptrade = null }: {
             </p>
           </>)}
           {importDone && n > 0 && (<>
-            <p style={{ margin: 0, fontWeight: 600 }}>✓ Imported {n} position{n === 1 ? "" : "s"}</p>
+            <p style={{ margin: 0, fontWeight: 600, color: "var(--as-gain)" }}>✓ Imported {n} position{n === 1 ? "" : "s"}</p>
             <p className="sub" style={{ margin: "6px 0 0" }}>
               {imported.slice(0, 4).map((r) => r.symbol).join(" · ")}{n > 4 ? ` · +${n - 4} more` : ""}
             </p>

@@ -82,8 +82,8 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
         <div className="countdown" aria-hidden="true"><div style={{ width: "38%" }} /></div>
       </section>
       {briefBanner && (
-        <div className="error-note" role="status" style={{ borderColor: "#2A3F92", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }} data-testid="brief-banner">
-          <span>Your brief is ready{briefBanner.audio ? " · tap ▶ Listen below" : ""}</span>
+        <div className="status-note ok" role="status" data-testid="brief-banner">
+          <span className="lead"><span aria-hidden="true">✓</span>Your brief is ready{briefBanner.audio ? " · tap ▶ Listen below" : ""}</span>
           <button className="chip" onClick={onBriefBannerDone} aria-label="Dismiss">✕</button>
         </div>
       )}

@@ -85,6 +85,17 @@ input, select { font: inherit; }
 
 .error-note { background: #F7EAE8; color: var(--as-loss); border: 1px solid var(--as-loss);
   border-radius: var(--as-radius); padding: 10px 12px; font-size: 13.5px; margin: 10px 0; }
+/* neutral status: calm brand tint for "in progress" / "done" — never the error red */
+.status-note { background: #EEF1FA; color: var(--as-primary); border: 1px solid #C9D1EE;
+  border-radius: var(--as-radius); padding: 10px 12px; font-size: 13.5px; margin: 10px 0;
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.status-note.ok { background: #EAF4EE; color: var(--as-gain); border-color: #BFDCCB; }
+.status-note .lead { display: inline-flex; align-items: center; gap: 8px; }
+/* soft progress pulse: a small brand dot breathing while work runs in the background */
+.progress-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--as-primary); flex: none;
+  animation: breathe 1.4s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.75); } }
+@media (prefers-reduced-motion: reduce) { .progress-dot { animation: none; opacity: 0.7; } }
 .empty { text-align: center; padding: 44px 18px; color: var(--as-muted); }
 .h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 6px 0 4px; }
 .sr-only { position: absolute; left: -9999px; }
