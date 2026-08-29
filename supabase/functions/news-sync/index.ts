@@ -81,7 +81,7 @@ Deno.serve(async (req) => {
     .from("symbols").select("symbol, yahoo, name").eq("active", true).not("kind", "in", "(cash,debt)");
   if (error) return json({ ok: false, error: error.message }, 500);
   const only = url.searchParams.get("symbols")?.split(",") ??
-    (Array.isArray(body.symbols) && body.symbols.length ? body.symbols.map(String).slice(0, 5) : undefined);
+    (Array.isArray(body.symbols) && body.symbols.length ? body.symbols.map(String).slice(0, 25) : undefined);   // a whole book on manual refresh
   const targets = (symbols ?? []).filter((s) => (only ? only.includes(s.symbol) : held.has(s.symbol)));
 
   let items: Item[] = [];

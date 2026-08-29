@@ -243,6 +243,10 @@ export function makeApi(sb: SupabaseClient = supabase) {
     async refreshPortfolioInsights(): Promise<Insight | null> {
       const { data: u } = await sb.auth.getUser();
       if (!u.user) return null;
+      // Same pipeline as the hourly lap: pull fresh headlines for every held symbol FIRST, then assess.
+      const { data: held } = await sb.from("portfolio").select("symbol, kind").eq("user_id", u.user.id);
+      const syms = (held ?? []).map((r) => String(r.symbol)).filter((sy) => !sy.startsWith("$"));
+      if (syms.length) await sb.functions.invoke("news-sync", { body: { symbols: syms } }).catch(() => null);
       await sb.functions.invoke("insights-sync", { body: { force: true, user_id: u.user.id } }).catch(() => null);
       return this.getPortfolioInsights();
     },
