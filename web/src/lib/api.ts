@@ -238,8 +238,9 @@ export function makeApi(sb: SupabaseClient = supabase) {
     /** SnapTrade: connection status / start connect / disconnect. */
     async snaptrade(action: "status" | "connect" | "disconnect" | "connections" | "remove_connection", extra?: Record<string, unknown>): Promise<{ ok: boolean; connected?: boolean; url?: string; last_sync_at?: string | null; institutions?: string[]; connections?: { id: string; institution: string; disabled: boolean }[] }> {
       const { data, error } = await sb.functions.invoke("snaptrade-connect", { body: { action, ...(extra ?? {}) } });
-      if (error || !data?.ok) throw new Error(data?.error ?? "Brokerage link is unavailable right now.");
-      return data;
+      if (error && !data) throw new Error("Brokerage link is unavailable right now.");
+      if (!data?.ok && action !== "remove_connection") throw new Error(data?.error ?? "Brokerage link is unavailable right now.");
+      return data ?? { ok: false };
     },
     /** Unseen brokerage sync events (positions auto-added later on), oldest first. */
     async snaptradeEvents(): Promise<{ id: number; detail: { added?: string[]; collisions?: string[]; institution?: string; by_institution?: { institution: string; symbols: string[] }[] } }[]> {

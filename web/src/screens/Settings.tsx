@@ -12,6 +12,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
   const [st, setSt] = useState<{ connected: boolean; last_sync_at?: string | null; institutions?: string[] } | null>(null);
   const [conns, setConns] = useState<{ id: string; institution: string; disabled: boolean }[]>([]);
   const [removing, setRemoving] = useState<string | null>(null);   // two-tap confirm per connection
+  const [removeErr, setRemoveErr] = useState<string | null>(null);
   const [stBusy, setStBusy] = useState(false);
   useEffect(() => {
     let live = true;
@@ -78,6 +79,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
         {st?.connected && st.last_sync_at && (
           <div className="row"><span>Last import</span><span className="sub num">{timeAgo(st.last_sync_at)}</span></div>
         )}
+        {removeErr && <div className="error-note" role="alert">{removeErr}</div>}
         {conns.map((c) => (
           <div className="row" key={c.id}>
             <span>{c.institution}{c.disabled ? <span className="sub"> · needs reconnect</span> : null}</span>
@@ -89,13 +91,15 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
             }}>Sync now</button>
             <button className="chip" disabled={stBusy} onClick={async () => {
               if (removing !== c.id) { setRemoving(c.id); setTimeout(() => setRemoving((v) => v === c.id ? null : v), 4000); return; }
-              setStBusy(true);
+              setStBusy(true); setRemoveErr(null);
               try {
-                await api.snaptrade("remove_connection", { authorization_id: c.id });
+                const r = await api.snaptrade("remove_connection", { authorization_id: c.id });
+                if (!r.ok) throw new Error("Could not remove this connection. Try again in a moment.");
                 setConns((xs) => xs.filter((x) => x.id !== c.id));
                 setRemoving(null);
                 await onChanged();
-              } finally { setStBusy(false); }
+              } catch (e) { setRemoveErr(e instanceof Error ? e.message : "Could not remove this connection."); setRemoving(null); }
+              finally { setStBusy(false); }
             }}>{removing === c.id ? "Sure? Remove" : "Remove"}</button>
             </span>
           </div>

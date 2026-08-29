@@ -71,8 +71,10 @@ Deno.serve(async (req) => {
     const authId = typeof body.authorization_id === "string" ? body.authorization_id : "";
     if (!authId || !row?.st_secret) return json({ ok: false, error: "missing connection" }, 400);
     const uq = `userId=${encodeURIComponent(uid)}&userSecret=${encodeURIComponent(row.st_secret)}`;
-    const res = await stCall(cid, key, "DELETE", `/authorizations/${authId}`, uq, null);
-    if (res.status >= 300) return json({ ok: false, error: "could not remove connection" }, 502);
+    // SnapTrade retired DELETE /authorizations/{id} (410) for post-May-2026 accounts; /connection/{id} is the live path.
+    let res = await stCall(cid, key, "DELETE", `/connection/${authId}`, uq, null);
+    if (res.status === 404 || res.status === 410) res = await stCall(cid, key, "DELETE", `/authorizations/${authId}`, uq, null);
+    if (res.status >= 300 || res.status === 0) return json({ ok: false, error: `brokerage refused removal (${res.status || "network"})` }, 502);
     // sync afterwards so orphan cleanup drops that connection's holdings
     const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const pr = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/snaptrade-sync`, {

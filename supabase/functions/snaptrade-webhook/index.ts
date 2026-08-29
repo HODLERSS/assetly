@@ -32,7 +32,8 @@ Deno.serve(async (req) => {
     kind: "webhook:" + event, payload: body,
   }).then(() => {}, () => {});
 
-  const SYNC_EVENTS = ["CONNECTION_ADDED", "CONNECTION_UPDATED", "ACCOUNT_HOLDINGS_UPDATED", "INITIAL_HOLDINGS_UPDATE", "ACCOUNT_TRANSACTIONS_INITIAL_UPDATE", "NEW_ACCOUNT_AVAILABLE"];
+  // CONNECTION_DELETED / CONNECTION_BROKEN also trigger a sync: orphan cleanup drops that connection's holdings
+  const SYNC_EVENTS = ["CONNECTION_ADDED", "CONNECTION_UPDATED", "CONNECTION_DELETED", "CONNECTION_BROKEN", "ACCOUNT_HOLDINGS_UPDATED", "INITIAL_HOLDINGS_UPDATE", "ACCOUNT_TRANSACTIONS_INITIAL_UPDATE", "NEW_ACCOUNT_AVAILABLE"];
   if (/^[0-9a-f-]{36}$/.test(stUserId) && SYNC_EVENTS.includes(event)) {
     const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/snaptrade-sync`, {
