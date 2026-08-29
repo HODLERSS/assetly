@@ -19,3 +19,6 @@ select cron.schedule('assetly-brief-midday',        '0 16 * * 1-5', $$select pub
 select cron.schedule('assetly-brief-midday-sweep',  '20,40 16 * * 1-5', $$select public.invoke_edge('daily-brief')$$);
 select cron.schedule('assetly-brief-close',         '5 20 * * 1-5', $$select public.invoke_edge('daily-brief')$$);
 select cron.schedule('assetly-brief-close-sweep',   '25,45 20 * * 1-5', $$select public.invoke_edge('daily-brief')$$);
+
+-- 7-day narration/degraded-brief backfill: only acts on rows missing audio or marked compact (cheap when idle)
+select cron.schedule('assetly-brief-backfill', '*/30 * * * *', $$select public.invoke_edge('daily-brief')$$);
