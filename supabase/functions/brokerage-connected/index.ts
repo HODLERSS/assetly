@@ -18,10 +18,16 @@ Deno.serve(async (req) => {
   const admin = createClient(base, svc);
   const bearer = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
   const body = await req.json().catch(() => ({}));
+  // Internal callers (callback, webhook) present a shared secret: the platform JWT gate rejects the
+  // legacy service token, so this function is deployed public and authorizes explicitly here.
+  let internalTok = Deno.env.get("INTERNAL_TOKEN") ?? "";
+  if (!internalTok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); internalTok = data ?? ""; }
+  const hdrTok = req.headers.get("x-internal-token") ?? "";
+  const isInternal = !!internalTok && hdrTok === internalTok;
   const isSvc = (() => { try { return JSON.parse(atob(bearer.split(".")[1] ?? "")).role === "service_role"; } catch { return false; } })();
   let uid: string | null = null;
-  if (isSvc && typeof body.user_id === "string") uid = body.user_id;
-  else { const { data: ud } = await admin.auth.getUser(bearer); uid = ud?.user?.id ?? null; }
+  if ((isInternal || isSvc) && typeof body.user_id === "string") uid = body.user_id;
+  else if (bearer) { const { data: ud } = await admin.auth.getUser(bearer); uid = ud?.user?.id ?? null; }
   if (!uid) return json({ ok: false, error: "not signed in" }, 401);
 
   const headers = { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" };
@@ -41,8 +47,9 @@ Deno.serve(async (req) => {
       syms.length ? call("insights-sync", { symbols: syms.slice(0, 16) }) : Promise.resolve(null),
       call("insights-sync", { force: true, user_id: uid }),
     ]);
-    // 4. today's brief for the clock's edition, regenerated on the new book, with narration
-    await call("daily-brief", { force: true, user_id: uid, edition });
+    // 4. today's brief for the clock's edition, regenerated on the new book, with narration.
+    //    Handed off as its OWN request (not awaited): the brief chain needs its own 150s wall clock.
+    fetch(`${base}/functions/v1/daily-brief`, { method: "POST", headers, body: JSON.stringify({ force: true, user_id: uid, edition }) }).catch(() => null);
   })();
   try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(work); } catch { /* ignore */ }
   return json({ ok: true, queued: true, edition });

@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
     // CONNECTION_ADDED = the retention moment: full chain. Everything else = a plain re-sync.
     const target = event === "CONNECTION_ADDED" ? "brokerage-connected" : "snaptrade-sync";
     const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/${target}`, {
-      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" },
+      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": Deno.env.get("INTERNAL_TOKEN") ?? "" },
       body: JSON.stringify({ user_id: stUserId }),
     }).catch(() => null);
     try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(p); } catch { /* ignore */ }

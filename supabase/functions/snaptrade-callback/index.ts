@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
   const kickSync = (userId: string) => {
     // the connect moment runs the full intelligence chain, not just the import
     const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/brokerage-connected`, {
-      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" },
+      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": Deno.env.get("INTERNAL_TOKEN") ?? "" },
       body: JSON.stringify({ user_id: userId }),
     }).catch(() => null);
     try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(p); } catch { /* ignore */ }
