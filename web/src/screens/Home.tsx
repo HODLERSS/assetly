@@ -7,11 +7,12 @@ import { convertCcy, dayChangeAmount, glClass, labelParts, money, signedMoney, s
 // Canvas 2a: net worth, movers, market pulse.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
 
-export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" }: {
+export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone}: {
   api: Api; rows: PortfolioRow[];
   totals: { value: number; gl: number; cost: number; day: number; mixed: boolean; fx: number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
   dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
+  briefBanner?: { audio: boolean } | null; onBriefBannerDone?: () => void;
 }) {
   const mode = moverMode();
   const [pulse, setPulse] = useState<{ symbol: string; name: string; price: number; change_pct: number | null }[]>([]);
@@ -80,6 +81,12 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
         )}
         <div className="countdown" aria-hidden="true"><div style={{ width: "38%" }} /></div>
       </section>
+      {briefBanner && (
+        <div className="error-note" role="status" style={{ borderColor: "#2A3F92", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }} data-testid="brief-banner">
+          <span>Your brief is ready{briefBanner.audio ? " · tap ▶ Listen below" : ""}</span>
+          <button className="chip" onClick={onBriefBannerDone} aria-label="Dismiss">✕</button>
+        </div>
+      )}
       <BriefCard api={api} />
       <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {sessionLabel()}</span></h2>
       {showPulse && (

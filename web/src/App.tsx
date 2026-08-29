@@ -32,6 +32,35 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [askAlert, setAskAlert] = useState(false);
   const [holdAlert, setHoldAlert] = useState(false);
   const [newsAlert, setNewsAlert] = useState(false);
+  const [homeAlert, setHomeAlert] = useState(false);
+  const [briefBanner, setBriefBanner] = useState<{ audio: boolean } | null>(null);   // first-arrival banner on Home
+  const seenBriefRef = useRef<string | null>(null);   // latest brief generated_at the user has seen
+  // brief watcher: a new brief (first brief, or the next edition) lights Home when the user is elsewhere
+  useEffect(() => {
+    if (!session) return;
+    let live = true;
+    const tick = async () => {
+      try {
+        const bs = await api.getDailyBriefs();
+        if (!live) return;
+        // baseline on the very first look: "no brief yet" is itself a state, so a fresh account's
+        // first brief counts as NEW when it lands instead of being swallowed as the baseline
+        if (!bs.length) { if (seenBriefRef.current === null) seenBriefRef.current = "none"; return; }
+        const latest = bs[bs.length - 1];
+        const key = `${latest.brief_date}:${latest.edition}:${latest.generated_at}`;
+        if (seenBriefRef.current === null) { seenBriefRef.current = key; return; }
+        if (key !== seenBriefRef.current) {
+          const onHome = viewRef.current.kind === "tab" && viewRef.current.tab === "home";
+          if (onHome) seenBriefRef.current = key;
+          setBriefBanner({ audio: !!latest.audio_path });
+          if (!onHome) setHomeAlert(true);
+        }
+      } catch { /* quiet */ }
+    };
+    tick();
+    const t = setInterval(tick, 20000);   // a fresh account's first brief lands in 1-3 min; catch it promptly
+    return () => { live = false; clearInterval(t); };
+  }, [session, api]);
   const seenInsightRef = useRef<string | null>(null);   // generated_at the user has already seen
   const [pinsRefreshing, setPinsRefreshing] = useState(false);
   // per-stock refreshes: keyed by symbol so several can run and each survives tab changes
@@ -187,7 +216,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     return <Onboarding api={api} onDone={load} snaptrade={obSnap} />;
   }
 
-  const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "holdings") setHoldAlert(false); if (v.kind === "tab" && v.tab === "news") setNewsAlert(false); setView(v); };
+  const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "holdings") setHoldAlert(false); if (v.kind === "tab" && v.tab === "news") setNewsAlert(false); if (v.kind === "tab" && v.tab === "home") setHomeAlert(false); setView(v); };
   const tab = view.kind === "tab" ? view.tab : null;
 
   return (
@@ -224,7 +253,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
         {view.kind === "tab" && view.tab === "home" && (
           <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"}
             dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"}
-            onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })} />
+            onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
+            briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)} />
         )}
         {view.kind === "tab" && view.tab === "holdings" && (
           <Holdings rows={rows} api={api} fxRate={fx} totalsCcy={base} dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
@@ -257,6 +287,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
             {t === "ask" && askAlert && <span className="tab-alert" aria-label="New answer ready" />}
             {t === "holdings" && holdAlert && <span className="tab-alert" aria-label="New portfolio assessment" />}
             {t === "news" && newsAlert && <span className="tab-alert" aria-label="New Assetly Intelligence" />}
+            {t === "home" && homeAlert && <span className="tab-alert" aria-label="Your brief is ready" />}
           </button>
         ))}
       </nav>

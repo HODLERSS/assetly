@@ -290,6 +290,26 @@ describe("U44 intelligence refresh light", () => {
   });
 });
 
+describe("U45 brief arrival light", () => {
+  it("a brief landing while the user is on Holdings lights the Home tab and shows the banner on return", async () => {
+    const sec = { lede: "First brief lede.", overnight: "S&P500 index 6,470 (+0.4%), VIX 14.1, KOSPI 3,120 (+0.8%).",
+      positions: [{ name: "MARA", note: "Up 2.1%.", watch: "Q3 call" }], desk_view: "Structural.", calendar: [] };
+    const briefs = vi.fn().mockResolvedValue([]);
+    const api = stubApi({ getDailyBriefs: briefs });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    const tabs = () => within(screen.getByRole("navigation", { name: "Tabs" }));
+    await userEvent.click(tabs().getByRole("button", { name: /^Holdings$/ }));
+    // first poll saw nothing; now the first brief exists
+    briefs.mockResolvedValue([{ brief_date: "2026-08-28", edition: "morning", generated_at: "2026-08-28T12:40:00Z", sections: sec, audio_path: "u/2026-08-28-morning.mp3" }]);
+    // the watcher polls every 20s in production; in tests, drive one tick via the exposed interval
+    await screen.findByLabelText("Your brief is ready", {}, { timeout: 25000 });
+    await userEvent.click(tabs().getByRole("button", { name: /Your brief is ready|^Home$/ }));
+    expect((await screen.findByTestId("brief-banner")).textContent).toContain("Listen");
+    await vi.waitFor(() => expect(screen.queryByLabelText("Your brief is ready")).toBeNull());
+  });
+});
+
 describe("U39 morning brief", () => {
   it("the brief card leads with the lede and opens to the full note", async () => {
     const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([{
