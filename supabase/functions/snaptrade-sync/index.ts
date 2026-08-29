@@ -111,8 +111,10 @@ Deno.serve(async (req) => {
         admin.from("snaptrade_raw").insert({ user_id: uid, account_id: accountId, kind, payload: payload ?? null }).then(() => {}, () => {});
       const accounts = (await get("/accounts")) as Record<string, unknown>[] | null;
       if (Array.isArray(accounts) && accounts.length === 0) {
-        // every connection is gone: drop all imported rows and read as "not connected"
-        await admin.from("holdings").delete().eq("user_id", uid).eq("source", "snaptrade");
+        // every connection is gone: DETACH imported rows (they become the user's own manual positions,
+        // origin remembered) rather than delete. A user who chose "keep my positions" must never lose
+        // them to a webhook that arrives before the keep-detach runs; explicit removal is a separate path.
+        await admin.from("holdings").update({ source: "manual", external_id: null }).eq("user_id", uid).eq("source", "snaptrade");
         await admin.from("snaptrade_tokens").update({ institutions: [], last_sync_at: null }).eq("user_id", uid);
         await rawSave("accounts", null, accounts);
         results.push({ uid: uid.slice(0, 8), accounts: 0, positions: 0, cleared: true });
