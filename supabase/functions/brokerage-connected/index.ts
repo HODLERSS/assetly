@@ -56,14 +56,16 @@ Deno.serve(async (req) => {
       return data as { generated_at: string; audio_path: string | null } | null;
     };
     const t0 = Date.now();
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // budget: this request has 150s; a daily-brief attempt can take ~60-120s, so at most 2 attempts fit.
+    // Beyond that, the */30 brief-backfill and */10 narrate-backfill crons carry it home.
+    for (let attempt = 1; attempt <= 2 && Date.now() - t0 < 100000; attempt++) {
       const before = await briefState();
       const r = await fetch(`${base}/functions/v1/daily-brief`, { method: "POST", headers, body: JSON.stringify({ force: true, user_id: uid, edition }) })
         .then((x) => x.json().catch(() => null)).catch(() => null) as { wrote?: number } | null;
       const after = await briefState();
       const wrote = (r?.wrote ?? 0) > 0 || (after && (!before || after.generated_at !== before.generated_at));
       if (wrote) break;
-      if (attempt < 3) await new Promise((res) => setTimeout(res, 45000 * attempt));   // 45s, 90s: outlast a slow wave
+      if (attempt < 2) await new Promise((res) => setTimeout(res, 20000));
     }
     // narration guard: text landed but audio is missing -> one backfill request (audio-only path)
     const fin = await briefState();
