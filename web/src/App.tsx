@@ -32,6 +32,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [askAlert, setAskAlert] = useState(false);
   const [holdAlert, setHoldAlert] = useState(false);
+  const [newsAlert, setNewsAlert] = useState(false);
   const seenInsightRef = useRef<string | null>(null);   // generated_at the user has already seen
   const [pinsRefreshing, setPinsRefreshing] = useState(false);
   const [pinsFresh, setPinsFresh] = useState<Insight | null>(null);   // result of the last app-level refresh
@@ -43,8 +44,10 @@ export function App({ api = defaultApi }: { api?: Api }) {
       const v = await api.refreshPortfolioInsights();
       if (v) {
         setPinsFresh(v);
-        const onHoldings = viewRef.current.kind === "tab" && viewRef.current.tab === "holdings";
-        if (onHoldings) seenInsightRef.current = v.generated_at; else setHoldAlert(true);
+        const cur = viewRef.current.kind === "tab" ? viewRef.current.tab : null;
+        if (cur === "holdings" || cur === "news") seenInsightRef.current = v.generated_at;
+        if (cur !== "holdings") setHoldAlert(true);
+        if (cur !== "news") setNewsAlert(true);
       }
     } finally { setPinsRefreshing(false); }
   }, [api, pinsRefreshing]);
@@ -58,8 +61,10 @@ export function App({ api = defaultApi }: { api?: Api }) {
         if (!live || !v) return;
         if (seenInsightRef.current === null) { seenInsightRef.current = v.generated_at; return; }
         if (v.generated_at !== seenInsightRef.current) {
-          const onHoldings = viewRef.current.kind === "tab" && viewRef.current.tab === "holdings";
-          if (onHoldings) seenInsightRef.current = v.generated_at; else setHoldAlert(true);
+          const cur = viewRef.current.kind === "tab" ? viewRef.current.tab : null;
+          if (cur === "holdings" || cur === "news") seenInsightRef.current = v.generated_at;
+          if (cur !== "holdings") setHoldAlert(true);
+          if (cur !== "news") setNewsAlert(true);
         }
       } catch { /* quiet */ }
     };
@@ -169,7 +174,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     return <Onboarding api={api} onDone={load} snaptrade={obSnap} />;
   }
 
-  const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "holdings") setHoldAlert(false); setView(v); };
+  const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "holdings") setHoldAlert(false); if (v.kind === "tab" && v.tab === "news") setNewsAlert(false); setView(v); };
   const tab = view.kind === "tab" ? view.tab : null;
 
   return (
@@ -216,7 +221,11 @@ export function App({ api = defaultApi }: { api?: Api }) {
             onInsightsChanged={(g) => { seenInsightRef.current = g; setHoldAlert(false); }}
             onRefreshInsights={refreshInsights} insightsRefreshing={pinsRefreshing} freshInsights={pinsFresh} />
         )}
-        {view.kind === "tab" && view.tab === "news" && <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"} />}
+        {view.kind === "tab" && view.tab === "news" && (
+          <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"}
+            onRefreshInsights={refreshInsights} insightsRefreshing={pinsRefreshing} freshInsights={pinsFresh}
+            onInsightsSeen={(g) => { seenInsightRef.current = g; setNewsAlert(false); }} />
+        )}
         {/* Ask stays mounted so an in-flight answer keeps generating across tabs */}
         <div style={view.kind === "tab" && view.tab === "ask" ? undefined : { display: "none" }}>
           <AskScreen api={api} onAnswered={() => {
@@ -236,6 +245,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
             {t === "home" ? "Home" : t === "holdings" ? "Holdings" : t === "news" ? "News" : t === "ask" ? "Ask" : "Settings"}
             {t === "ask" && askAlert && <span className="tab-alert" aria-label="New answer ready" />}
             {t === "holdings" && holdAlert && <span className="tab-alert" aria-label="New portfolio assessment" />}
+            {t === "news" && newsAlert && <span className="tab-alert" aria-label="New Assetly Intelligence" />}
           </button>
         ))}
       </nav>

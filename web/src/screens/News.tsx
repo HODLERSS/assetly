@@ -4,7 +4,10 @@ import { labelParts, timeAgo } from "../lib/format";
 import { InsightsCard } from "../components/InsightsCard";
 
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
-export function NewsScreen({ api, rows, dispKr = "KRW" }: { api: Api; rows: PortfolioRow[]; dispKr?: "USD" | "KRW" }) {
+export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen }: {
+  api: Api; rows: PortfolioRow[]; dispKr?: "USD" | "KRW";
+  onRefreshInsights?: () => void; insightsRefreshing?: boolean; freshInsights?: Insight | null; onInsightsSeen?: (generatedAt: string) => void;
+}) {
   const [filter, setFilter] = useState<string | null>(null);
   const [items, setItems] = useState<NewsItem[]>([]);
   const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">("loading");
@@ -17,9 +20,14 @@ export function NewsScreen({ api, rows, dispKr = "KRW" }: { api: Api; rows: Port
 
   useEffect(() => {
     let live = true;
-    if (rows.length > 0) api.getPortfolioInsights().then((v) => { if (live) setTop5(v); }).catch(() => {});
+    if (rows.length > 0) api.getPortfolioInsights().then((v) => { if (live) { setTop5(v); if (v) onInsightsSeen?.(v.generated_at); } }).catch(() => {});
     return () => { live = false; };
   }, [api, rows.length]);
+  // an app-level refresh that finished while this screen was away (or open) lands here
+  useEffect(() => {
+    if (freshInsights && freshInsights.generated_at !== top5?.generated_at) { setTop5(freshInsights); onInsightsSeen?.(freshInsights.generated_at); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freshInsights]);
 
   useEffect(() => {
     let live = true;
@@ -67,7 +75,9 @@ export function NewsScreen({ api, rows, dispKr = "KRW" }: { api: Api; rows: Port
         <section className="card insights" data-testid="news-top5-card" aria-label="Top portfolio signals">
           <div className="insights-head">
             <span className="insights-brand">Assetly Intelligence</span>
-            <span className="sub num">{timeAgo(top5!.generated_at)}</span>
+            <button className="insights-toggle" onClick={() => onRefreshInsights?.()} disabled={insightsRefreshing} aria-label="Refresh Assetly Intelligence">
+              {insightsRefreshing ? "Refreshing…" : `${timeAgo(top5!.generated_at)} · ↻`}
+            </button>
           </div>
           <ul className="insights-list">
             {top5!.news5!.map((b, i) => <li key={i}>{b}</li>)}
