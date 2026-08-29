@@ -93,7 +93,7 @@ function stubApi(over: Partial<Api> = {}): Api {
   } as Api;
 }
 
-beforeEach(() => oauthSpy.mockClear());
+beforeEach(() => { oauthSpy.mockClear(); try { sessionStorage.clear(); localStorage.clear(); } catch { /* jsdom */ } });
 
 describe("U1 auth", () => {
   it("shows both OAuth paths and wires them (no password field anywhere)", async () => {

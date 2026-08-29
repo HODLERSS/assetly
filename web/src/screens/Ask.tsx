@@ -34,9 +34,11 @@ function Md({ text }: { text: string }) {
 
 const ASK_STORE = "assetly-ask-v1";
 const todayKey = () => new Date().toLocaleDateString("en-CA");
+// sessionStorage: the chat survives tab switches and backgrounding, but a hard refresh
+// (or killing the app) starts clean — the user's explicit "reset" gesture.
 function loadTurns(): Turn[] {
   try {
-    const raw = localStorage.getItem(ASK_STORE);
+    const raw = sessionStorage.getItem(ASK_STORE);
     if (!raw) return [];
     const v = JSON.parse(raw) as { date?: string; turns?: Turn[] };
     if (v.date !== todayKey() || !Array.isArray(v.turns)) return [];   // a new day starts fresh
@@ -53,7 +55,7 @@ export function AskScreen({ api, onAnswered }: { api: Api; onAnswered?: () => vo
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    try { localStorage.setItem(ASK_STORE, JSON.stringify({ date: todayKey(), turns: turns.slice(-30) })); } catch { /* storage unavailable */ }
+    try { sessionStorage.setItem(ASK_STORE, JSON.stringify({ date: todayKey(), turns: turns.slice(-30) })); } catch { /* storage unavailable */ }
   }, [turns]);
   useEffect(() => { endRef.current?.scrollIntoView?.({ block: "end", behavior: "smooth" }); }, [turns, busy]);
 
