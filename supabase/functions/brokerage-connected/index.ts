@@ -28,7 +28,13 @@ Deno.serve(async (req) => {
   let uid: string | null = null;
   if ((isInternal || isSvc) && typeof body.user_id === "string") uid = body.user_id;
   else if (bearer) { const { data: ud } = await admin.auth.getUser(bearer); uid = ud?.user?.id ?? null; }
-  if (!uid) return json({ ok: false, error: "not signed in" }, 401);
+  if (!uid) {
+    // diagnosable auth failure: a caller with an EMPTY token header is almost always a function deployed
+    // before INTERNAL_TOKEN existed (env is frozen at deploy time) -> redeploy that caller.
+    const why = typeof body.user_id === "string" ? (hdrTok === "" ? "internal token missing (caller env stale?)" : "internal token mismatch") : "not signed in";
+    console.error("brokerage-connected auth fail:", why);
+    return json({ ok: false, error: why }, 401);
+  }
 
   const headers = { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": internalTok };
   const call = (fn: string, b: unknown) => fetch(`${base}/functions/v1/${fn}`, { method: "POST", headers, body: JSON.stringify(b) }).then((r) => r.json().catch(() => null)).catch(() => null);

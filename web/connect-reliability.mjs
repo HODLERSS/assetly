@@ -17,8 +17,13 @@ for (let run = 1; run <= RUNS; run++) {
   const { data: held } = await c.from("holdings").select("symbol").eq("user_id", uid);
   const syms = (held ?? []).map((r) => r.symbol).filter((s) => !s.startsWith("$"));
   const startISO = new Date().toISOString();
-  // fire the orchestrator as the user (same path Settings/Add Position use)
-  const kick = await fetch(`${BASE}/functions/v1/brokerage-connected`, { method: "POST", headers: { apikey: PK, Authorization: `Bearer ${(await c.auth.getSession()).data.session.access_token}`, "Content-Type": "application/json" }, body: "{}" });
+  // fire through the CALLBACK path (what a real connect does): callback -> orchestrator via internal token.
+  // A stale-env callback (deployed before INTERNAL_TOKEN) makes this hop 401 silently; this probe catches it.
+  const state = "probe-" + run + "-" + Math.random().toString(36).slice(2, 10);
+  const admin = createClient(BASE, PK, { auth: { persistSession: false } });
+  await c.from("snaptrade_oauth_states").insert({ state, user_id: uid, verifier: "portal" });
+  const kick = await fetch(`${BASE}/functions/v1/snaptrade-callback?u=${state}`, { redirect: "manual" });
+  void admin;
   const got = { kick: kick.status, insight: null, symbols: null, brief: null };
   while (secs() < BUDGET.brief + 10) {
     await new Promise((r) => setTimeout(r, 5000));
@@ -27,7 +32,7 @@ for (let run = 1; run <= RUNS; run++) {
     if (!got.brief) { const { data } = await c.from("daily_briefs").select("generated_at").eq("user_id", uid).gt("generated_at", startISO).limit(1); if (data?.length) got.brief = secs(); }
     if (got.insight && got.symbols && got.brief) break;
   }
-  const pass = got.kick === 200 && got.insight !== null && got.insight <= BUDGET.insight && got.symbols !== null && got.brief !== null && got.brief <= BUDGET.brief;
+  const pass = (got.kick === 302 || got.kick === 200) && got.insight !== null && got.insight <= BUDGET.insight && got.symbols !== null && got.brief !== null && got.brief <= BUDGET.brief;
   results.push({ run, pass, ...got });
   console.log(`run ${run}: ${pass ? "PASS" : "FAIL"} kick=${got.kick} insight=${got.insight ?? "-"}s symbols=${got.symbols ?? "-"}s brief=${got.brief ?? "-"}s`);
   if (run < RUNS) await new Promise((r) => setTimeout(r, 20000));
