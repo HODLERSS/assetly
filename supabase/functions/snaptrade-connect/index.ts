@@ -79,6 +79,23 @@ Deno.serve(async (req) => {
     const connected = (row.institutions ?? []).length > 0 || !!row.last_sync_at;
     return json({ ok: true, connected, pending: false, last_sync_at: row.last_sync_at ?? null, institutions: row.institutions ?? [], cached: true });
   }
+  if (action === "exclusions") {
+    const { data } = await admin.from("snaptrade_exclusions").select("symbol").eq("user_id", uid).order("symbol");
+    return json({ ok: true, exclusions: (data ?? []).map((r) => String(r.symbol)) });
+  }
+  if (action === "restore") {
+    const sym = typeof body.symbol === "string" ? body.symbol : "";
+    if (sym) await admin.from("snaptrade_exclusions").delete().eq("user_id", uid).eq("symbol", sym);
+    const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    let itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
+    if (!itok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itok = data ?? ""; }
+    const pr = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/snaptrade-sync`, {
+      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": itok },
+      body: JSON.stringify({ user_id: uid }),
+    }).catch(() => null);
+    try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(pr); } catch { /* ignore */ }
+    return json({ ok: true, restored: sym });
+  }
   if (action === "connections") {
     if (!row?.st_secret) return json({ ok: true, connections: [] });
     const uq = `userId=${encodeURIComponent(uid)}&userSecret=${encodeURIComponent(row.st_secret)}`;
@@ -155,6 +172,8 @@ Deno.serve(async (req) => {
       user_id: uid, mode: "commercial", st_secret: secret, st_user_id: uid, updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
   }
+  // starting a connection is an explicit "import my positions": clear tombstones so nothing stays hidden
+  await admin.from("snaptrade_exclusions").delete().eq("user_id", uid);
   const state = b64url(crypto.getRandomValues(new Uint8Array(24)));
   await admin.from("snaptrade_oauth_states").delete().lt("created_at", new Date(Date.now() - 3600000).toISOString());
   await admin.from("snaptrade_oauth_states").insert({ state, user_id: uid, verifier: "portal" });

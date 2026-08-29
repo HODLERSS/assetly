@@ -11,6 +11,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
   const [fx, setFx] = useState<{ rate: number; asOf: string } | null>(null);
   const [st, setSt] = useState<{ connected: boolean; last_sync_at?: string | null; institutions?: string[] } | null>(null);
   const [conns, setConns] = useState<{ id: string; institution: string; disabled: boolean }[]>([]);
+  const [excluded, setExcluded] = useState<string[]>([]);
   const [removing, setRemoving] = useState<{ id: string; institution: string } | null>(null);   // keep/delete sheet
   const [removeErr, setRemoveErr] = useState<string | null>(null);
   const [stBusy, setStBusy] = useState(false);
@@ -19,7 +20,10 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
     api.snaptrade("status").then(async (r) => {
       if (!live) return;
       setSt({ connected: !!r.connected, last_sync_at: r.last_sync_at, institutions: r.institutions });
-      if (r.connected) { try { const c = await api.snaptrade("connections"); if (live) setConns(c.connections ?? []); } catch { /* list stays empty */ } }
+      if (r.connected) {
+        try { const c = await api.snaptrade("connections"); if (live) setConns(c.connections ?? []); } catch { /* list stays empty */ }
+        try { const x = await api.snaptrade("exclusions"); if (live) setExcluded(x.exclusions ?? []); } catch { /* none */ }
+      }
     }).catch(() => { if (live) setSt(null); });
     return () => { live = false; };
   }, [api]);
@@ -93,6 +97,16 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
             </span>
           </div>
         ))}
+        {excluded.length > 0 && (
+          <div className="row" data-testid="excluded-row">
+            <span>Not imported<span className="sub"> · {excluded.join(", ")}</span></span>
+            <button className="chip" disabled={stBusy} onClick={async () => {
+              setStBusy(true);
+              try { for (const sym of excluded) await api.snaptrade("restore", { symbol: sym }); setExcluded([]); await onChanged(); }
+              finally { setStBusy(false); }
+            }}>Restore</button>
+          </div>
+        )}
         <div className="chips" style={{ padding: "10px 14px 4px" }}>
           {!st?.connected && (
             <button className="chip" disabled={stBusy} onClick={async () => {
