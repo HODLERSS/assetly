@@ -4,6 +4,21 @@
 // The legacy OAuth-app path (?code&state) is kept for rows created before the commercial switch.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
+// INTERNAL_TOKEN: env first, Vault fallback. Env is frozen at deploy time, so a function deployed
+// before the secret existed would otherwise send an empty token forever.
+let _itok: string | null = null;
+async function internalToken(): Promise<string> {
+  if (_itok !== null) return _itok;
+  const e = Deno.env.get("INTERNAL_TOKEN") ?? "";
+  if (e) { _itok = e; return e; }
+  try {
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" });
+    _itok = String(data ?? "");
+  } catch { _itok = ""; }
+  return _itok;
+}
+
 const APP = "https://hodlerss.github.io/assetly/";
 const go = (q: string) => new Response(null, { status: 302, headers: { Location: APP + q } });
 
@@ -11,10 +26,10 @@ Deno.serve(async (req) => {
   const u = new URL(req.url);
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const kickSync = (userId: string) => {
+  const kickSync = async (userId: string) => {
     // the connect moment runs the full intelligence chain, not just the import
     const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/brokerage-connected`, {
-      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": Deno.env.get("INTERNAL_TOKEN") ?? "" },
+      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": await internalToken() },
       body: JSON.stringify({ user_id: userId }),
     }).catch(() => null);
     try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(p); } catch { /* ignore */ }

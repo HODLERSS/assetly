@@ -4,6 +4,21 @@
 // match the Signature header when present; the clientId in the payload must always match ours.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
+// INTERNAL_TOKEN: env first, Vault fallback. Env is frozen at deploy time, so a function deployed
+// before the secret existed would otherwise send an empty token forever.
+let _itok: string | null = null;
+async function internalToken(): Promise<string> {
+  if (_itok !== null) return _itok;
+  const e = Deno.env.get("INTERNAL_TOKEN") ?? "";
+  if (e) { _itok = e; return e; }
+  try {
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" });
+    _itok = String(data ?? "");
+  } catch { _itok = ""; }
+  return _itok;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("ok");
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -39,7 +54,7 @@ Deno.serve(async (req) => {
     // CONNECTION_ADDED = the retention moment: full chain. Everything else = a plain re-sync.
     const target = event === "CONNECTION_ADDED" ? "brokerage-connected" : "snaptrade-sync";
     const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/${target}`, {
-      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": Deno.env.get("INTERNAL_TOKEN") ?? "" },
+      method: "POST", headers: { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": await internalToken() },
       body: JSON.stringify({ user_id: stUserId }),
     }).catch(() => null);
     try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(p); } catch { /* ignore */ }
