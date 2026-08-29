@@ -66,14 +66,14 @@ export function BriefCard({ api }: { api: Api }) {
     <section className="card insights" data-testid="brief-card" aria-label={`Your ${meta.title.toLowerCase()}`}>
       <div className="insights-head">
         <span className="insights-brand">{meta.title} · {dateLabel}</span>
-        <span style={{ display: "flex", gap: 10 }}>
+        <span className="insights-actions">
           {brief.audio_path && (
             <button className="insights-toggle" onClick={() => void toggleAudio()} aria-label={playing ? "Pause narration" : "Listen to your brief"}>
-              {playing ? "❚❚ Pause" : "▶ Listen"}
+              <span className="ico" aria-hidden="true">{playing ? "❚❚" : "▶"}</span>{playing ? "Pause" : "Listen"}
             </button>
           )}
-          <button className="insights-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
-            {open ? "Close" : meta.read}
+          <button className="insights-toggle" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Close the brief" : meta.read}>
+            <span className="ico" aria-hidden="true">{open ? "✕" : "📖"}</span>{open ? "Close" : meta.read.replace("Read · ", "Read ")}
           </button>
         </span>
       </div>
