@@ -280,6 +280,10 @@ export function makeApi(sb: SupabaseClient = supabase) {
     async snaptradeSync(): Promise<void> {
       await sb.functions.invoke("snaptrade-sync", { body: {} });
     },
+    /** The connect moment: sync -> news -> all intelligence -> today's brief, regenerated on the new book. */
+    async brokerageConnected(): Promise<void> {
+      await sb.functions.invoke("brokerage-connected", { body: {} }).catch(() => null);
+    },
     /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
     async ask(question: string): Promise<{ answer: string; followups: string[] }> {
       const { data, error } = await sb.functions.invoke("ask", { body: { question } });

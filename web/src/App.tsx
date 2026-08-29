@@ -161,8 +161,12 @@ export function App({ api = defaultApi }: { api?: Api }) {
     window.history.replaceState({}, "", window.location.pathname + (q.toString() ? "?" + q.toString() : "") + window.location.hash);
     if (stp === "connected") {
       setNoticeKind("busy"); setNotice("Connected · importing your positions");
-      api.snaptradeSync().then(async () => { await load(); setNoticeKind("ok"); setNotice("Import complete"); setTimeout(() => setNotice(null), 6000); })
-        .catch(() => { setNoticeKind("ok"); setNotice("Connected · import finishing in the background"); setTimeout(() => setNotice(null), 8000); });
+      // the callback already queued the full chain server-side; here we wait for the import to land, then
+      // kick the chain again as a belt-and-braces (idempotent: the per-user lock makes a duplicate sync yield)
+      api.snaptradeSync().then(async () => {
+        await load(); void api.brokerageConnected();
+        setNoticeKind("ok"); setNotice("Import complete · fresh intelligence and your brief are on the way"); setTimeout(() => setNotice(null), 8000);
+      }).catch(() => { setNoticeKind("ok"); setNotice("Connected · import finishing in the background"); setTimeout(() => setNotice(null), 8000); });
     } else {
       setNoticeKind("warn");
       setNotice(stp === "denied" ? "Brokerage link was declined." : "Brokerage link didn't complete. Try again from Settings.");
@@ -199,17 +203,18 @@ export function App({ api = defaultApi }: { api?: Api }) {
 
   const base = profile?.base_currency ?? "USD";
   const totals = useMemo(() => {
-    let value = 0, cost = 0, day = 0, unconverted = 0, mixed = false;
+    let assets = 0, debt = 0, cost = 0, day = 0, unconverted = 0, mixed = false;
     for (const r of rows) {
       if (r.currency !== base) mixed = true;
-      const sign = r.kind === "debt" ? -1 : 1;           // consolidated view: debt subtracts
       const v = convertCcy(r.value ?? 0, r.currency, base, fx);
-      const c = convertCcy(r.cost_basis ?? 0, r.currency, base, fx);
-      const d = convertCcy(dayChangeAmount(r.value, r.change_pct) ?? 0, r.currency, base, fx);
-      if (v === null || c === null) { unconverted += 1; continue; }   // no FX rate yet: exclude, never mislabel
-      value += sign * v; cost += sign * c; day += sign * (d ?? 0);
+      if (v === null) { unconverted += 1; continue; }   // no FX rate yet: exclude, never mislabel
+      if (r.kind === "debt") { debt += v; continue; }   // debt reduces net worth only; it has no cost basis, G/L, or day move
+      const c = convertCcy(r.cost_basis ?? 0, r.currency, base, fx) ?? 0;
+      const d = convertCcy(dayChangeAmount(r.value, r.change_pct) ?? 0, r.currency, base, fx) ?? 0;
+      assets += v; cost += c; day += d;
     }
-    return { value, gl: value - cost, cost, day, mixed, fx, unconverted };
+    const value = assets - debt;
+    return { value, assets, debt, gl: assets - cost, cost, day, mixed, fx, unconverted };
   }, [rows, fx, base]);
 
   if (!authReady) return <div className="screen" aria-busy="true" />;

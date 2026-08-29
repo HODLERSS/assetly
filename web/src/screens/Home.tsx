@@ -9,7 +9,7 @@ const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401
 
 export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone}: {
   api: Api; rows: PortfolioRow[];
-  totals: { value: number; gl: number; cost: number; day: number; mixed: boolean; fx: number | null; unconverted: number };
+  totals: { value: number; assets: number; debt: number; gl: number; cost: number; day: number; mixed: boolean; fx: number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
   dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
   briefBanner?: { audio: boolean } | null; onBriefBannerDone?: () => void;
@@ -53,6 +53,11 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
         <div className={`day num ${glClass(totals.gl)}`} data-testid="total-gl" style={{ fontSize: 13.5 }}>
           {signedMoney(totals.gl, baseCurrency)} ({signedPct(totals.cost !== 0 ? (totals.gl / totals.cost) * 100 : 0)}) all time
         </div>
+        {totals.debt > 0 && (
+          <div className="status-line num" data-testid="assets-debt">
+            assets {money(totals.assets, baseCurrency)} · debt {signedMoney(-totals.debt, baseCurrency)}
+          </div>
+        )}
         {(() => {
           // Crypto folds into the market of its pricing currency ($ -> US), same as Holdings.
           const bucketOf = (r: PortfolioRow): "US" | "KR" | null => {
@@ -63,7 +68,8 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
           const buckets: ["US" | "KR", string][] = [["US", "US"], ["KR", "KRX"]];
           const held = buckets.filter(([m]) => rows.some((r) => bucketOf(r) === m));
           if (held.length < 2 || !totals.fx) return null;
-          const agg = (m: string, f: (r: PortfolioRow) => number) => rows.filter((r) => bucketOf(r) === m)
+          // debt has no market performance: keep it out of the per-market lines
+          const agg = (m: string, f: (r: PortfolioRow) => number) => rows.filter((r) => bucketOf(r) === m && r.kind !== "debt")
             .reduce((a, r) => a + (convertCcy(f(r), r.currency, baseCurrency, totals.fx) ?? 0), 0);
           const line = (f: (r: PortfolioRow) => number, base: (r: PortfolioRow) => number) => held.map(([m, label]) => {
             const d = agg(m, f), b = agg(m, base);

@@ -68,6 +68,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     snaptradeEventsSeen: vi.fn().mockResolvedValue(undefined),
     excludeImport: vi.fn().mockResolvedValue(undefined),
     snaptradeSync: vi.fn().mockResolvedValue(undefined),
+    brokerageConnected: vi.fn().mockResolvedValue(undefined),
     getDailyBriefs: vi.fn().mockResolvedValue([]),
     getBriefAudioUrl: vi.fn().mockResolvedValue(null),
     warmup: vi.fn().mockResolvedValue(undefined),
@@ -307,6 +308,26 @@ describe("U45 brief arrival light", () => {
     await userEvent.click(tabs().getByRole("button", { name: /Your brief is ready|^Home$/ }));
     expect((await screen.findByTestId("brief-banner")).textContent).toContain("Listen");
     await vi.waitFor(() => expect(screen.queryByLabelText("Your brief is ready")).toBeNull());
+  });
+});
+
+describe("U46 debt in totals", () => {
+  it("net worth = assets - debt; debt never touches cost, G/L, or the day move; assets/debt line shows", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({}),                                                                    // MARA: qty 10, value from stub price
+      { ...row({}), holding_id: "h-debt", symbol: "$DEBT", name: "Debt (USD)", kind: "debt", account: "bank", qty: 250000, price: 1, value: 250000, cost_basis: 250000, change_pct: 0, total_gl: 0 },
+    ]) });
+    render(<App api={api} />);
+    const nw = await screen.findByTestId("net-worth");
+    const eq = row({});
+    const expectedNet = (eq.value ?? 0) - 250000;
+    expect(nw.textContent!.replace(/[^0-9-]/g, "")).toBe(String(Math.round(expectedNet)).replace(/[^0-9-]/g, ""));
+    const ad = screen.getByTestId("assets-debt");
+    expect(ad.textContent).toContain("assets");
+    expect(ad.textContent).toContain("-$250,000");
+    // all-time G/L% is computed against equity cost only: no debt-driven distortion
+    const gl = screen.getByTestId("total-gl").textContent!;
+    expect(gl).not.toContain("NaN");
   });
 });
 

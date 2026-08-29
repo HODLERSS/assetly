@@ -86,6 +86,7 @@ input, select { font: inherit; }
 .error-note { background: #F7EAE8; color: var(--as-loss); border: 1px solid var(--as-loss);
   border-radius: var(--as-radius); padding: 10px 12px; font-size: 13.5px; margin: 10px 0; }
 /* neutral status: calm brand tint for "in progress" / "done" — never the error red */
+.status-line { font: 11.5px var(--as-font-num); color: var(--as-muted); }
 .status-note { background: #EEF1FA; color: var(--as-primary); border: 1px solid #C9D1EE;
   border-radius: var(--as-radius); padding: 10px 12px; font-size: 13.5px; margin: 10px 0;
   display: flex; justify-content: space-between; align-items: center; gap: 10px; }
