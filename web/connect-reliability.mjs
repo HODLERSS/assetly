@@ -10,7 +10,7 @@ const c = createClient(BASE, PK, { auth: { persistSession: false } });
 await c.auth.signInWithPassword({ email: "e2e-cloud@assetly.test", password: "Assetly-e2e-fixture-2026" });
 const { data: u } = await c.auth.getUser(); const uid = u.user.id;
 const RUNS = Number(process.env.RUNS ?? 3);
-const BUDGET = { insight: 90, symbols: 120, brief: 180 };   // seconds from chain start (fixture: no audio by design)
+const BUDGET = { insight: 90, symbols: 120, brief: 300 };   // brief-retry chains up to 4 attempts (~4-5 min worst case); fixture: no audio by design
 const results = [];
 for (let run = 1; run <= RUNS; run++) {
   const t0 = Date.now(); const secs = () => Math.round((Date.now() - t0) / 1000);
