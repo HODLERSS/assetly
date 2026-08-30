@@ -378,7 +378,7 @@ ${dataBlock}
 ${shapeA}
 lede: the verdict on this book in one breath: what kind of bet it is, and the single structural fact that matters most. <= 30 words.
 overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their weights, the concentration figure, the theme and geography mix, and cash or debt if present. At least THREE numbers copied from PORTFOLIO or THEME EXPOSURE, quoted EXACTLY as given: never add themes together into a new percentage, never relabel a theme (MARA-style miners and MSTR are "crypto beta" equities, not "crypto"); never state the same weight twice (if a theme is one holding, name it once). Three or four short sentences, none over 20 words. <= 60 words.
-positions: the 2-4 largest equity, fund, or crypto holdings by weight, largest first; every such holding above 20% of assets MUST appear; cash and debt are NEVER positions (they belong in YOUR BOOK and STRUCTURE only). note <= 34 words of flowing prose: what the business is, the quality verdict (for a company: moat, growth, balance sheet; for a fund: what it holds, concentration, cost; for a coin: adoption, supply, custody), and its role in this book; a strength AND a risk or condition, written as sentences, NEVER as "Strength:" / "Risk:" labels: the LAST sentence of every note must be the risk, and must start with "The risk:" or "But" (never a positive clause after "while"); at most two numbers, from the data only. watch 5-10 words, no padding words: the thesis TRIPWIRE, MEASURABLE (a metric with a threshold, a guidance item, or a dated event); vague words like "significantly", "sharply", "weakens" are forbidden; NEVER verbs like monitor, watch, track, keep an eye.
+positions: the 3-4 largest equity, fund, or crypto holdings by weight (2 only if the book has two), largest first; every such holding above 20% of assets MUST appear; cash and debt are NEVER positions (they belong in YOUR BOOK and STRUCTURE only). note <= 34 words of flowing prose: what the business is, the quality verdict (for a company: moat, growth, balance sheet; for a fund: what it holds, concentration, cost; for a coin: adoption, supply, custody), and its role in this book; a strength AND a risk or condition, written as sentences, NEVER as "Strength:" / "Risk:" labels: the LAST sentence of every note must be the risk, and must start with "The risk:" or "But" (never a positive clause after "while"); at most two numbers, from the data only. watch 5-10 words, no padding words: the thesis TRIPWIRE, MEASURABLE (a metric with a threshold, a guidance item, or a dated event); vague words like "significantly", "sharply", "weakens" are forbidden; NEVER verbs like monitor, watch, track, keep an eye.
 desk_view: STRUCTURE AND RISK: the concentration, correlation, currency, or leverage fact the owner probably does not see, with its percentage from the data, and what it means for them (a shared driver, a single point of failure, an FX exposure). <= 50 words. No single-day numbers. Never invent a hypothetical loss or drawdown percentage; the only percentages allowed are weights and performance figures from the data.
 horizon: exactly two labeled clauses in this shape: "Next 3 months: ... Next 3 years: ..." The first names what actually decides the coming quarter for THIS book (a print, a cycle, a macro number); any date you write must be AFTER today and come from NEXT EARNINGS ESTIMATES, otherwise say "the next earnings print" without a date. The second names what must be true for it to compound. 36-46 words total.
 ideas: 2-3 items, <= 14 words each, each about a GAP in this book (not about the names already held): name the gap, then the specific theme or instrument type worth researching to fill it (e.g. "No income sleeve: dividend-growth ETFs", "All-US book: developed-market ex-US index funds"). Never start with Add, Buy, Consider, or Allocate (write "No income sleeve: dividend-growth ETFs" or "All-US book: developed-market ex-US index funds"; after the colon name the instrument type directly, never a verb); never a price target.
@@ -431,7 +431,8 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           const grown = await askModel(key, "You are the editor. Keep every fact and number exactly as given; add depth, not new claims.",
             `This assessment is too thin at ${wcA(sections)} words; it must reach ${floor + 25}-420 words. Expand it toward these floors WITHOUT adding any number, number-word, or new factual claim that is not already in it: keep every existing number verbatim, never describe a hypothetical loss or drawdown; elaborate on what the existing facts mean for the owner (shared drivers, what must hold, what the tripwires signal): each position note ${holdings.length <= 2 ? "44-55" : "30-33"} words (business, quality verdict, role, ending with the risk sentence), desk_view 42-48 words, horizon 42-46 words ("Next 3 months: ... Next 3 years: ..."), overnight 48-58 words. Keep lede, watch items and ideas as they are. Sentences of at most 22 words. Never use the words today, overnight, yesterday, session, futures. Never em dashes.\n\n${JSON.stringify(sections)}\n\nReturn the SAME JSON shape.`, 8000, 25000, FAST_MODEL);
           // the expansion may only elaborate: every original number survives, nothing numeric is added, no loss talk
-          const nums = (o: Sections) => new Set((JSON.stringify(o).match(/\d[\d,.]*%?|\b(half|third|thirds|quarter|quarters|double|triple|majority)\b/gi) ?? []).map((x) => x.toLowerCase()));
+          // numbers compared by VALUE (so "$9,900" vs "9,900 dollars" or "60.2%" vs "60.2 percent" still match), plus number-words
+          const nums = (o: Sections) => new Set((JSON.stringify(o).match(/\d[\d,.]*|\b(half|third|thirds|quarter|quarters|double|triple|majority)\b/gi) ?? []).map((x) => /^\d/.test(x) ? String(Number(x.replace(/,/g, "").replace(/\.$/, ""))) : x.toLowerCase()));
           const LOSS = /\b(erod\w*|wipe\w*|los(e|es|ing|t)\b|loss of|drawdown|evaporat\w*|halv\w*)/i;
           if (grown && validAssessment(grown) && wcA(grown as Sections) > wcA(sections)) {
             const before = nums(sections), after = nums(grown as Sections);
@@ -449,6 +450,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           const wcS2 = (t: string) => t.split(/\s+/).filter(Boolean).length;
           let rest = sections.desk_view.trim();
           while (wcS2(skStructure) + wcS2(rest) > 50 && /[.!?]\s+[^.!?]+[.!?]?$/.test(rest)) rest = rest.replace(/\s+[^.!?]+[.!?]?$/, "").trim();   // drop trailing sentences to fit
+          if (wcS2(skStructure) + wcS2(rest) > 50) rest = rest.split(/\s+/).slice(0, Math.max(0, 50 - wcS2(skStructure))).join(" ").replace(/[,;:]?$/, ".");   // last resort: a hard cut
           sections.desk_view = `${skStructure} ${rest}`.trim();
         }
         sections.calendar = [];
@@ -465,6 +467,16 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           return y ? y[0].toUpperCase() + y.slice(1) : x;
         });
         sections = ensureRisk(sections);
+        // note cap guaranteed in code: an over-long note loses its second sentence if a risk clause survives
+        const noteCapF = holdings.length <= 2 ? 56 : 35;
+        sections.positions = sections.positions.map((p) => {
+          const wcN = (t: string) => t.split(/\s+/).filter(Boolean).length;
+          if (wcN(p.note) <= noteCapF) return p;
+          const sents = p.note.split(/(?<=[.!?])\s+/);
+          if (sents.length < 3) return p;
+          const trimmed = [sents[0], ...sents.slice(2)].join(" ");
+          return RISK.test(trimmed) && wcN(trimmed) >= 22 ? { ...p, note: trimmed } : p;
+        });
         // the card already labels the tripwire; a model-written "Tripwire:" / "Watch:" prefix would double it
         sections.positions = sections.positions.map((p) => ({ ...p, watch: p.watch
           .replace(/^\s*(tripwire|watch|trigger)\s*[:\-]\s*/i, "")
