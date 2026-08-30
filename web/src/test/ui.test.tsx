@@ -1291,6 +1291,7 @@ describe("U49 investor quiz at sign-up", () => {
     await screen.findByTestId("investor-quiz");
     await userEvent.click(screen.getByRole("button", { name: "Value" }));
     await userEvent.click(screen.getByRole("button", { name: "AI & tech" }));
+    await userEvent.click(screen.getByRole("button", { name: "Crypto" }));   // three lenses: no cap on selections
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     await userEvent.click(await screen.findByRole("button", { name: "Find my next investment" }));
     await userEvent.click(await screen.findByRole("button", { name: "10+ years" }));
@@ -1305,7 +1306,7 @@ describe("U49 investor quiz at sign-up", () => {
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD",
-      { styles: ["value", "ai_tech"], purpose: "ideas", horizon: "10y+", target: "12-25%", risk: "buy_more", level: "intermediate" }));
+      { styles: ["value", "ai_tech", "crypto"], purpose: "ideas", horizon: "10y+", target: "12-25%", risk: "buy_more", level: "intermediate" }));
   });
   it("skip = novice value investor defaults", async () => {
     const api = stubApi({ getProfile: vi.fn().mockResolvedValue(freshProfile), getPortfolio: vi.fn().mockResolvedValue([]) });

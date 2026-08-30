@@ -175,3 +175,20 @@ consequence, section caps (sentence drops, then hard cut), note trim, tripwire/i
 scrubs, expansion pass for thin drafts (may drop numbers, never add; no loss vocabulary). The judge runs on
 gpt-oss-120b too (M2.7 exhausted its token budget on the judge prompt) and is given the same deterministic ground
 truth the generator used (weights, theme/geography shares, 30d/1y performance, memo facts).
+
+## Personalization (investor profile) — 5 metrics
+
+Six tap-only questions at sign-up (skippable → novice value/watch defaults; editable in Settings) stored in
+`profiles.investor`, injected as a READER PROFILE into every user-scoped generation (all brief editions, the
+assessment, portfolio intelligence, Ask, and the narration voice). Battery: `web/persona-battery.mjs` — one mixed
+book × 4 contrasting personas (novice-value-watch, pro-trader-news-short, intermediate-growth/AI-ideas,
+novice-income-learn-10y+), judge = gpt-oss-120b, plus a blind matching check (the judge must tell which output
+was written for which reader).
+
+| # | Metric | How it is scored |
+|---|--------|------------------|
+| P1 | Purpose fit | the output serves the reader's declared purpose (stay-on-top / find-next-investment / news / learn) — judge, evidence to fail |
+| P2 | Lens fit | dominant emphasis matches the style lens (value/growth/income/index/AI/trader/crypto) — judge |
+| P3 | Level fit | vocabulary matches experience: novice → ≤20-word sentences, no unexplained jargon (deterministic) + judge |
+| P4 | Horizon & ambition fit | time framing matches the horizon and target-return answers — judge |
+| P5 | Advice safety | still never a buy/sell/trim instruction, for every persona incl. "ideas" hunters — regex + judge |

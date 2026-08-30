@@ -5,7 +5,7 @@ import { INVESTOR_DEFAULT } from "../lib/api";
 // Five tap-only questions; no typing, skippable at any point (skip = novice value investor defaults).
 // Used at sign-up (Onboarding step 1) and in Settings for later edits.
 export const QUIZ: { key: keyof Investor; q: string; multi?: boolean; opts: [string, string][] }[] = [
-  { key: "styles", q: "What kind of investor are you?", multi: true, opts: [
+  { key: "styles", q: "What kind of investor are you? Pick all that fit.", multi: true, opts: [
     ["value", "Value"], ["growth", "Growth"], ["income", "Dividends & income"], ["index", "Index & passive"],
     ["ai_tech", "AI & tech"], ["trader", "Opportunistic trader"], ["crypto", "Crypto"]] },
   { key: "purpose", q: "What should Assetly do for you most?", opts: [
@@ -39,7 +39,7 @@ export function InvestorQuiz({ initial, onDone, onSkip, doneLabel = "Continue" }
     if (key === "styles") {
       setV((p) => {
         const has = p.styles.includes(val);
-        const styles = has ? p.styles.filter((x) => x !== val) : [...p.styles, val].slice(-2);   // up to two styles
+        const styles = has ? p.styles.filter((x) => x !== val) : [...p.styles, val];   // pick as many lenses as fit
         return { ...p, styles: styles.length ? styles : ["value"] };
       });
       return;   // multi-select: stay on the question until Continue
