@@ -357,12 +357,12 @@ Candid, specific, no filler. Never em dashes.`;
         const skMissing = [geoTop && geoTop[1] > 85 ? `${geoTop[1].toFixed(0)}% in ${geoTop[0]} only` : "", cashPct < 3 ? "no cash ballast" : "", !holdings.some((r) => themeOf(r.symbol, r.kind).includes("index") || themeOf(r.symbol, r.kind) === "bonds") ? "no index or bond ballast" : ""].filter(Boolean).join("; ");
 
         // ---- editor: the assessment ----
-        const dataBlock = `PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
+        const dataBlock = `PORTFOLIO (deterministic; the ONLY source of portfolio numbers; every percentage below is a share of TOTAL ASSETS, so write "of assets", never "of equity" or "of holdings"):
 ${bookLine}
 ${structLines}
 THEME EXPOSURE (deterministic): ${themeLine}
 GEOGRAPHY (share of total assets; cash and debt excluded, so it sums to the invested share): ${geoLine}
-PERFORMANCE: ${perfLine}
+PERFORMANCE (30d = trailing 30 days, 1y = trailing 12 months; never call either "YTD"): ${perfLine}
 NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
 ${dateLaw}
 
@@ -377,7 +377,7 @@ ${dataBlock}
 
 ${shapeA}
 lede: the verdict on this book in one breath: what kind of bet it is, and the single structural fact that matters most. <= 30 words.
-overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their weights, the concentration figure, the theme and geography mix, and cash or debt if present. At least THREE numbers copied from PORTFOLIO or THEME EXPOSURE, quoted EXACTLY as given: never add themes together into a new percentage, never relabel a theme (MARA-style miners and MSTR are "crypto beta" equities, not "crypto"); never state the same weight twice (if a theme is one holding, name it once). Three or four short sentences, none over 20 words. <= 60 words.
+overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their weights, the concentration figure, the theme and geography mix, and cash or debt if present. At least THREE numbers copied from PORTFOLIO or THEME EXPOSURE, quoted EXACTLY as given: never add themes together into a new percentage, never relabel a theme (MARA-style miners and MSTR are "crypto beta" equities, not "crypto"); never state the same weight twice (if a theme is one holding, name it once). Three or four short sentences, none over 20 words. No performance figures here (they belong in the notes). <= 60 words.
 positions: the 3-4 largest equity, fund, or crypto holdings by weight (2 only if the book has two), largest first; every such holding above 20% of assets MUST appear; cash and debt are NEVER positions (they belong in YOUR BOOK and STRUCTURE only). note <= 34 words of flowing prose: what the business is, the quality verdict (for a company: moat, growth, balance sheet; for a fund: what it holds, concentration, cost; for a coin: adoption, supply, custody), and its role in this book; a strength AND a risk or condition, written as sentences, NEVER as "Strength:" / "Risk:" labels: the LAST sentence of every note must be the risk, and must start with "The risk:" or "But" (never a positive clause after "while"); at most two numbers, from the data only. watch 5-10 words, no padding words: the thesis TRIPWIRE, MEASURABLE (a metric with a threshold, a guidance item, or a dated event); vague words like "significantly", "sharply", "weakens" are forbidden; NEVER verbs like monitor, watch, track, keep an eye.
 desk_view: STRUCTURE AND RISK, exactly two or three sentences: first the concentration, correlation, currency, or leverage fact the owner probably does not see, with its percentage from the data; then a sentence starting "This means" that says what it does to them (a shared driver, a single point of failure, an FX exposure, leverage on a thin equity base). No performance figures here (they belong in the notes), no list of returns, no single-day numbers. <= 50 words. Never invent a hypothetical loss or drawdown percentage.
 horizon: exactly two labeled clauses in this shape: "Next 3 months: ... Next 3 years: ..." The first names what actually decides the coming quarter for THIS book (a print, a cycle, a macro number); any date you write must be AFTER today and come from NEXT EARNINGS ESTIMATES, otherwise say "the next earnings print" without a date. The second names what must be true for it to compound. 36-46 words total.
@@ -485,6 +485,8 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         sections.ideas = (sections.ideas ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
         // filler phrases guaranteed out in code (the fast model still slips one in occasionally)
         const deFill = (t: string) => t
+          .replace(/\b(YTD|year[- ]to[- ]date)\b/g, "over the past year")   // the only year figure in the data is trailing 12 months
+          .replace(/(\d+(?:\.\d+)?\s?%) of (equity|equities|the equity book|the equity sleeve|stock holdings|holdings|the invested portfolio)\b/gi, "$1 of assets")   // every weight is a share of total assets
           .replace(/\bit'?s important to (note|remember|watch|monitor)( that)?\s*/gi, "").replace(/\bit'?s important\b/gi, "it matters")
           .replace(/\bkeep (a close |an )?eye on\b/gi, "the thing to follow is").replace(/\bworth watching\b/gi, "the thing to follow")
           .replace(/\bremains to be seen\b/gi, "is unproven").replace(/\btime will tell\b/gi, "is unproven")
