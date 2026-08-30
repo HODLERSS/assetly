@@ -103,7 +103,7 @@ function readerBlock(inv: Investor | null | undefined): string {
     learn: "They want to LEARN as they go: give one short line of reasoning behind each conclusion.",
   };
   const lvlG: Record<string, string> = {
-    novice: "BEGINNER reader: plain words, short sentences. NO bare acronyms or jargon ANYWHERE, including watch items and bullets: say profit growth, not ROE; cash flow, not FCF; operating profit, not EBITDA. If a term is unavoidable, gloss it in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
+    novice: "BEGINNER reader: plain words, short sentences. NO bare acronyms or jargon ANYWHERE, including watch items and bullets. Banned for this reader: ROE, ROIC, EBITDA, FCF, P/E, EPS, capex, basis points, net flows, and the bare word moat (say: a lasting edge over competitors). Use the plain phrase instead: profit growth not ROE, cash flow not FCF, operating profit not EBITDA. If a term is unavoidable, gloss it in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
     intermediate: "Informed reader: plain language, common financial terms need no explanation.",
     advanced: "Advanced reader: precise financial vocabulary welcome, no hand-holding.",
     pro: "Professional reader: dense, technical, desk-note register.",
@@ -121,7 +121,7 @@ function readerBlock(inv: Investor | null | undefined): string {
   const st = (Array.isArray(v.styles) && v.styles.length ? v.styles : ["value"]).map((x) => styleG[x] ?? "").filter(Boolean).join("; also ");
   return `READER PROFILE (personalize EMPHASIS, VOCABULARY and FRAMING for this one reader; facts and numbers stay identical):
 - ${lvlG[v.level] ?? lvlG.novice}
-- Lens: ${st || styleG.value}. Apply the lens TO this book: judge the book through it even when the book does not match it (an income lens on a growth book asks what income it actually produces and how safe that is).
+- Lens: ${st || styleG.value}. Apply the lens TO this book in EVERY position note and the structure section: the first judgment in each comes through this lens (value: what it is worth versus its price and the downside; income: what it pays and how safely), even when the book does not match the lens. The one-line verdict may still name what kind of book it is.
 - ${purpG[v.purpose] ?? purpG.watch}
 - ${horG[v.horizon] ?? horG["3-10y"]}; target return ${v.target}/yr; ${riskG[v.risk] ?? riskG.hold}.`;
 }

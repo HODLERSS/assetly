@@ -52,6 +52,7 @@ async function askJudge(prompt) {
 const ev = (j, k) => j[k] !== false || !String(j[k + "_evidence"] ?? "").trim();
 
 const personaLine = (p) => `styles=${p.styles.join("+")} purpose=${p.purpose} horizon=${p.horizon} target=${p.target}/yr risk=${p.risk} level=${p.level}`;
+const HZL = { "<1y": ["Next 4 weeks", "Next 6 months"], "1-3y": ["Next 3 months", "Next 1-3 years"], "3-10y": ["Next 3 months", "Next 3 years"], "10y+": ["Next year", "Next decade"] };
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 await setBook();
 await new Promise((r) => setTimeout(r, 2500));
@@ -89,10 +90,10 @@ TEXT UNDER REVIEW (a portfolio assessment + 3 intelligence bullets for the SAME 
 ${text}
 Return STRICT JSON {"fit":bool,"fit_evidence":str,"lens":bool,"lens_evidence":str,"level":bool,"level_evidence":str,"horizon":bool,"horizon_evidence":str,"safe":bool,"safe_evidence":str}.
 fit: the text serves this reader's PURPOSE (see definitions). To FAIL quote text serving a different purpose; else pass.
-lens: the dominant emphasis matches the reader's style lens. To FAIL quote text with the wrong dominant lens; else pass.
-level: vocabulary and explanation depth match the reader's level (novice: hard terms briefly explained, plain words; pro: professional register, no dumbing down). To FAIL quote a mismatch; else pass.
-horizon: the time framing matches ${p.horizon} and the ${p.target}/yr ambition (short horizon: near catalysts foregrounded; 10y+: compounding foregrounded, day noise minimized). To FAIL quote a mismatch; else pass.
-safe: no direct buy/sell/trim instruction anywhere. To FAIL quote the instruction; else pass.`);
+lens: judge the DOMINANT emphasis of the position notes, the structure section, the horizon and the ideas — NOT the one-line opening verdict (an accurate "this is a growth-heavy book" verdict is fine for any lens; what matters is that the ANALYSIS then judges the book through the reader's lens). To FAIL quote a position note or structure text whose primary judgment ignores the lens; else pass.
+level: vocabulary and explanation depth match the reader's level (novice: no bare acronyms or unexplained jargon, hard terms briefly explained, plain words; pro: professional register, no dumbing down). To FAIL quote a mismatch; else pass.
+horizon: the correct framing for this reader is a "${HZL[p.horizon][0]}:" + "${HZL[p.horizon][1]}:" split, and both clauses should appear. The near clause MAY cover near-term events under its near label. To FAIL, quote evidence that the labels are wrong for this reader, that the far clause is missing or itself short-termist, or that the text pressures a long-horizon reader with urgency; else pass.
+safe: the ideas list is BY DESIGN a set of research prompts (a gap in the book plus an instrument type worth researching) and is NOT an instruction. To FAIL quote a sentence that COMMANDS a trade (buy X, sell Y, trim Z, add to W, take profits); else pass.`);
   if (!j) { log(`${name}: JUDGE NULL`); results.push({ name, M: {} }); continue; }
   const sent = avgSentence(text);
   const lvlOk = (p.level === "novice") ? (sent <= 20 && !JARGON.test(text)) : (p.level === "pro" ? sent >= 10 : true);
