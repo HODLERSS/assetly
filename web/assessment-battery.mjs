@@ -51,7 +51,7 @@ async function judgeOnce(s, desc, stats) {
 PORTFOLIO STATS (ground truth): ${stats}
 ASSESSMENT UNDER REVIEW: ${JSON.stringify(s)}
 Return STRICT JSON {"m2":bool,"m2_evidence":str,"m4":bool,"m4_evidence":str,"m5":bool,"m5_evidence":str,"m6":bool,"m6_evidence":str,"m7":bool,"m7_evidence":str,"m10":bool,"m10_evidence":str,"m11":bool,"m11_evidence":str,"worst":str}.
-m2 factual accuracy: every number (weights, totals, percentages) is consistent with the ground truth or internally consistent; rounding within 1.5 percentage points is fine. Qualitative business descriptions count as errors only if plainly false about a well-known company. To FAIL you MUST quote a contradicting pair in m2_evidence; else m2 passes.
+m2 factual accuracy: every number (weights, totals, percentages) is consistent with the ground truth or internally consistent; weights within 1.5 percentage points and dollar amounts within 1% are fine (prices move between writing and grading; dollars are rounded to the nearest hundred by design). Qualitative business descriptions count as errors only if plainly false about a well-known company. To FAIL you MUST quote a contradicting pair in m2_evidence; else m2 passes.
 m4 horizon fit: it reads as a first look at quality and structure over months and years. To FAIL quote a sentence that narrates a single day's or overnight move or uses tape language; else pass.
 m5 quality depth: positions cover only the 2-4 largest equity, fund, or crypto holdings (cash and debt are NOT positions and need no note). EVERY position note says what the business is, gives a quality judgment (moat, growth, profitability, or balance sheet), and carries both a strength and a risk or condition; none is a price recap. To FAIL quote the weakest note; else pass.
 m6 structural insight: desk_view names a concentration, correlation, currency, or leverage fact SPECIFIC to this book that a naive owner would miss, and says what it means. To FAIL quote the generic text; else pass.
@@ -78,7 +78,12 @@ async function judge(...a) {
   return null;
 }
 const ev = (j, k) => j[k] !== false || !String(j[k + "_evidence"] ?? "").trim();
-const drifty = (t) => { const ps = (String(t).match(/-?\d+(?:\.\d+)?\s*%/g) || []).map(x => Math.abs(parseFloat(x))); return ps.length >= 2 && Math.abs(ps[0] - ps[1]) <= 1.5; };
+const drifty = (t) => {
+  const ps = (String(t).match(/-?\d+(?:\.\d+)?\s*%/g) || []).map(x => Math.abs(parseFloat(x)));
+  if (ps.length >= 2 && Math.abs(ps[0] - ps[1]) <= 1.5) return true;
+  const ds = (String(t).match(/\$[\d,]+(?:\.\d+)?/g) || []).map(x => Number(x.replace(/[$,]/g, "")));   // price drift between generation and grading
+  return ds.length >= 2 && ds[0] > 0 && Math.abs(ds[0] - ds[1]) / Math.max(ds[0], ds[1]) <= 0.01;
+};
 const evM2 = (j) => ev(j, "m2") || drifty(j.m2_evidence);
 
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
