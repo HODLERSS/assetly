@@ -95,10 +95,27 @@ Deno.serve(async (req) => {
     return lvl + (inv.purpose === "learn" ? " They like understanding the why, so give a short reason with each point." : "");
   };
   if (!isInternal && !isSvc) { const { data: ud } = await admin.auth.getUser(bearer); if (!ud?.user?.id) return json({ ok: false, error: "not signed in" }, 401); uid = ud.user.id; }
-  // internal utility: hand back a 7-day signed URL for a narration file (demo/showcase capture)
+  // internal operator utilities (internal token only): showcase capture + demo profile switching.
   if (typeof body.sign_path === "string" && (isInternal || isSvc)) {
     const { data: signed } = await admin.storage.from("briefs-audio").createSignedUrl(body.sign_path, 604800);
     return json({ ok: !!signed?.signedUrl, url: signed?.signedUrl ?? null });
+  }
+  if (body.fetch_brief && (isInternal || isSvc)) {
+    const f = body.fetch_brief as { user_id: string; edition: string };
+    const { data } = await admin.from("daily_briefs").select("brief_date, edition, sections, generated_at, audio_path")
+      .eq("user_id", f.user_id).eq("edition", f.edition).order("generated_at", { ascending: false }).limit(1);
+    return json({ ok: true, row: data?.[0] ?? null });
+  }
+  if (body.fetch_insight && (isInternal || isSvc)) {
+    const f = body.fetch_insight as { user_id: string };
+    const { data } = await admin.from("portfolio_insights").select("bullets, news5, generated_at")
+      .eq("user_id", f.user_id).order("generated_at", { ascending: false }).limit(1);
+    return json({ ok: true, row: data?.[0] ?? null });
+  }
+  if (body.set_investor && (isInternal || isSvc)) {
+    const f = body.set_investor as { user_id: string; investor: unknown };
+    const { error } = await admin.from("profiles").update({ investor: f.investor }).eq("id", f.user_id);
+    return json({ ok: !error, error: error?.message ?? null });
   }
   const briefDate = typeof body.brief_date === "string" ? body.brief_date : null;
   const edition = typeof body.edition === "string" ? body.edition : null;
