@@ -4,7 +4,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-token", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
-const MAX = 4;
+const MAX = 6;   // ~15 min of coverage across a text-API slow wave; each attempt is its own request
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
     const wrote = (r?.wrote ?? 0) > 0 || (after && (!before || after.generated_at !== before.generated_at));
     if (wrote) return;
     if (attempt < MAX) {
-      await new Promise((res) => setTimeout(res, 15000 * attempt));   // 15s, 30s, 45s: outlast a wave
+      await new Promise((res) => setTimeout(res, Math.min(120000, 15000 * Math.pow(2, attempt - 1))));   // 15s, 30s, 60s, 120s, 120s
       await fetch(`${base}/functions/v1/brief-retry`, { method: "POST", headers, body: JSON.stringify({ user_id: uid, edition, attempt: attempt + 1 }) }).catch(() => null);
     }
   })();
