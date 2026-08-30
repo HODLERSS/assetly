@@ -18,6 +18,14 @@ type Quote = {
   currency: string; market_state: string; as_of: string; source: string;
 };
 
+// Yahoo quotes some venues in MINOR units (LSE in pence "GBp"/"GBX", JSE in cents "ZAc", TASE in agorot "ILA"):
+// normalise to the major unit so a 72p share is stored as £0.72, never £72.
+const MINOR: Record<string, string> = { GBp: "GBP", GBX: "GBP", ZAc: "ZAR", ZAC: "ZAR", ILA: "ILS" };
+const deMinor = (q: Quote): Quote => {
+  const major = MINOR[q.currency];
+  if (!major) return q;
+  return { ...q, currency: major, price: q.price / 100, prev_close: q.prev_close === null ? null : q.prev_close / 100 };
+};
 async function yahooBatch(pairs: { symbol: string; yahoo: string }[]): Promise<Map<string, Quote>> {
   const out = new Map<string, Quote>();
   const syms = pairs.map((p) => p.yahoo).join(",");
@@ -31,7 +39,7 @@ async function yahooBatch(pairs: { symbol: string; yahoo: string }[]): Promise<M
     const symbol = byYahoo.get(q.symbol);
     if (!symbol || !(q.regularMarketPrice > 0)) continue;
     const prev = plausiblePrev(q.regularMarketPrice, q.regularMarketPreviousClose ?? null);
-    out.set(symbol, {
+    out.set(symbol, deMinor({
       symbol,
       price: q.regularMarketPrice,
       prev_close: prev,
@@ -40,7 +48,7 @@ async function yahooBatch(pairs: { symbol: string; yahoo: string }[]): Promise<M
       market_state: (q.marketState ?? "unknown").toLowerCase(),
       as_of: new Date((q.regularMarketTime ?? Date.now() / 1000) * 1000).toISOString(),
       source: "yahoo-v7",
-    });
+    }));
   }
   return out;
 }
@@ -53,7 +61,7 @@ async function yahooChart(symbol: string, yahoo: string): Promise<Quote | null> 
   const meta = body?.chart?.result?.[0]?.meta;
   if (!meta || !(meta.regularMarketPrice > 0)) return null;
   const prev = plausiblePrev(meta.regularMarketPrice, meta.chartPreviousClose ?? meta.previousClose ?? null);
-  return {
+  return deMinor({
     symbol,
     price: meta.regularMarketPrice,
     prev_close: prev,
@@ -62,7 +70,7 @@ async function yahooChart(symbol: string, yahoo: string): Promise<Quote | null> 
     market_state: "unknown",
     as_of: new Date((meta.regularMarketTime ?? Date.now() / 1000) * 1000).toISOString(),
     source: "yahoo-v8-chart",
-  };
+  });
 }
 
 Deno.serve(async (req) => {
