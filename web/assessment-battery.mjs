@@ -60,7 +60,7 @@ m5 quality depth: positions cover only the 2-4 largest equity, fund, or crypto h
 m6 structural insight: desk_view names a concentration, correlation, currency, or leverage fact SPECIFIC to this book that a naive owner would miss, and says what it means. To FAIL quote the generic text; else pass.
 m7 actionability: every watch item is a concrete, observable tripwire or catalyst (a metric, an event, a guidance item), and every idea names a specific theme, sector, geography, or instrument type worth researching (not a bare "diversify"). To FAIL quote the vague item; else pass.
 m10 voice: reads like a sharp, candid human strategist writing to one client (varied sentences, confident, zero AI boilerplate, no hype). To FAIL quote the robotic or boilerplate sentence; else pass.
-m11 balance and advice law: strengths AND risks both get real words, and it never instructs the reader to buy, sell, trim, add, or take profits. To FAIL quote the one-sided or instructing sentence; else pass.
+m11 balance and advice law: strengths AND risks both get real words, and it never instructs the reader to buy, sell, trim, add, or take profits. The ideas list is BY DESIGN a set of research prompts (a gap in the book plus an instrument type or theme to look into); naming a gap and an instrument is NOT an instruction. To FAIL quote a sentence that commands a trade (buy X, sell Y, add to Z, take profits); else pass.
 worst: the single weakest sentence, quoted. Be harsh but evidence-bound.`;
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -144,7 +144,7 @@ for (const name of subset) {
       A4: pct([!HORIZON_BAN.test(text), ev(jj, "m4"), /next 3 months/i.test(s.horizon ?? "") && /next 3 years/i.test(s.horizon ?? "")]),
       A5: ev(jj, "m5") ? 100 : 0,
       A6: pct([ev(jj, "m6"), /\d+(\.\d+)?\s?%/.test(s.desk_view)]),
-      A7: pct([watchOk, ideas.length >= 2 && ideas.length <= 3 && ideas.every(x => wc(x) <= 16) && !ideas.some(x => /^diversif/i.test(x.trim()) || IDEA_BAN.test(x.trim())), ev(jj, "m7")]),
+      A7: pct([watchOk, ideas.length >= 2 && ideas.length <= 3 && ideas.every(x => wc(x) <= 16) && !ideas.some(x => /^diversify\b/i.test(x.trim()) || IDEA_BAN.test(x.trim())), ev(jj, "m7")]),
       A8: pct([wc(s.lede) <= CAP.lede, wc(s.overnight) <= CAP.book, s.positions.every(p => wc(p.note) <= noteCap), s.positions.every(p => wc(p.watch) <= CAP.watch), wc(s.desk_view) <= CAP.desk, wc(s.horizon) <= CAP.horizon, ideas.every(x => wc(x) <= CAP.idea), totalWords(s) >= totalMin && totalWords(s) <= CAP.total && totalWords(s) / 145 <= 3.05]),
       A9: pct([!all.includes("—"), !/[0-9]{6}\.(KS|KQ)/.test(all), !/KRW\s?[0-9]/.test(all), !FILLER.test(all), !PROCESS.test(all), roundOk(all), avgSentence(s) <= 26, !/\*\*|^#|\n#/.test(all)]),
       A10: pct([!TRADE_BAN.test(text), ev(jj, "m10"), ev(jj, "m11")]),
