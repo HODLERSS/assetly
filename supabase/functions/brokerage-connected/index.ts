@@ -50,10 +50,15 @@ Deno.serve(async (req) => {
     const syms = (rows ?? []).map((r) => String(r.symbol)).filter((sy) => !sy.startsWith("$"));
     if (syms.length) await call("news-sync", { symbols: syms });
     // 3. per-stock + portfolio intelligence, forced fresh (the hourly pipeline, targeted)
-    await Promise.all([
+    const [, pf1] = await Promise.all([
       syms.length ? call("insights-sync", { symbols: syms.slice(0, 16) }) : Promise.resolve(null),
       call("insights-sync", { force: true, user_id: uid }),
     ]);
+    // the portfolio-level insight is what lights the tabs: a transient model failure here must not end the moment
+    if (!(pf1 as { portfolioWrote?: number } | null)?.portfolioWrote) {
+      await new Promise((res) => setTimeout(res, 8000));
+      await call("insights-sync", { force: true, user_id: uid });
+    }
     // 4. the assessment: handed to brief-retry, which owns its own wall clock per attempt (up to 6 attempts
     //    with backoff) and narrates via daily-brief -> narrate. The orchestrator's clock is never spent here.
     await fetch(`${base}/functions/v1/brief-retry`, { method: "POST", headers, body: JSON.stringify({ user_id: uid, edition, attempt: 1 }) })
