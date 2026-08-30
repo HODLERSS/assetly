@@ -43,7 +43,8 @@ const TRADE_BAN = /\b(you should (buy|sell|trim|add)|buy more|buy the dip|sell (
 const pct = (subs) => Math.round(subs.filter(Boolean).length / subs.length * 100);
 const roundOk = (all) => (all.match(/\$[\d,]+(?:\.\d+)?/g) ?? []).every((m) => { const v = Number(m.replace(/[$,]/g, "")); return v < 1000 || (m.includes(",") && v % 100 === 0); });
 const avgSentence = (s) => { const txt = [s.lede, s.overnight, ...s.positions.map((p) => p.note), s.desk_view, s.horizon].join(" "); const ss = txt.split(/(?<=[.!?])\s+/).filter((x) => x.trim().length > 3); return ss.reduce((a, x) => a + wc(x), 0) / Math.max(1, ss.length); };
-const nameHit = (hay, name) => { const first = String(name).split(/\s+/)[0].replace(/[^A-Za-z0-9가-힣]/g, ""); return first.length >= 2 && new RegExp(first.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(hay); };
+const esc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const nameHit = (hay, h) => { const first = String(h.name).split(/\s+/)[0].replace(/[^A-Za-z0-9가-힣]/g, ""); const sym = String(h.sym).replace(/\.(KS|KQ)$/, ""); return (first.length >= 2 && new RegExp(esc(first), "i").test(hay)) || new RegExp("\\b" + esc(sym) + "\\b", "i").test(hay); };
 
 async function judgeOnce(s, desc, stats) {
   const prompt = `Grade this PORTFOLIO ASSESSMENT (the first brief after an investor adds their positions: quality of the book, structure and risk, next-quarter vs next-years horizons, gaps worth researching; NOT a daily tape note). Portfolio: ${desc}.
@@ -52,7 +53,7 @@ ASSESSMENT UNDER REVIEW: ${JSON.stringify(s)}
 Return STRICT JSON {"m2":bool,"m2_evidence":str,"m4":bool,"m4_evidence":str,"m5":bool,"m5_evidence":str,"m6":bool,"m6_evidence":str,"m7":bool,"m7_evidence":str,"m10":bool,"m10_evidence":str,"m11":bool,"m11_evidence":str,"worst":str}.
 m2 factual accuracy: every number (weights, totals, percentages) is consistent with the ground truth or internally consistent; rounding within 1.5 percentage points is fine. Qualitative business descriptions count as errors only if plainly false about a well-known company. To FAIL you MUST quote a contradicting pair in m2_evidence; else m2 passes.
 m4 horizon fit: it reads as a first look at quality and structure over months and years. To FAIL quote a sentence that narrates a single day's or overnight move or uses tape language; else pass.
-m5 quality depth: EVERY position note says what the business is, gives a quality judgment (moat, growth, profitability, or balance sheet), and carries both a strength and a risk or condition; none is a price recap. To FAIL quote the weakest note; else pass.
+m5 quality depth: positions cover only the 2-4 largest equity, fund, or crypto holdings (cash and debt are NOT positions and need no note). EVERY position note says what the business is, gives a quality judgment (moat, growth, profitability, or balance sheet), and carries both a strength and a risk or condition; none is a price recap. To FAIL quote the weakest note; else pass.
 m6 structural insight: desk_view names a concentration, correlation, currency, or leverage fact SPECIFIC to this book that a naive owner would miss, and says what it means. To FAIL quote the generic text; else pass.
 m7 actionability: every watch item is a concrete, observable tripwire or catalyst (a metric, an event, a guidance item), and every idea names a specific theme, sector, geography, or instrument type worth researching (not a bare "diversify"). To FAIL quote the vague item; else pass.
 m10 voice: reads like a sharp, candid human strategist writing to one client (varied sentences, confident, zero AI boilerplate, no hype). To FAIL quote the robotic or boilerplate sentence; else pass.
@@ -116,6 +117,7 @@ for (const name of subset) {
     const s = b.sections;
     const compact = String(b.model ?? "").includes("compact");
     const all = JSON.stringify(s);
+    const text = [s.lede, s.overnight, ...s.positions.flatMap(p => [p.name, p.note, p.watch]), s.desk_view, s.horizon, ...(s.ideas ?? [])].join("\n");
     const { stats, hold } = await truth();
     const jj = await judge(s, name + " " + list.map(x => x[0]).join(","), stats);
     if (!jj) { log(`${name}: JUDGE-NULL (${secs}s)`); results.push({ name, M: { A1: secs <= 180 && attempts === 1 ? 100 : 0 }, judgeNull: true, sections: s }); continue; }
@@ -126,23 +128,23 @@ for (const name of subset) {
     const M = {
       A1: secs <= 180 && attempts === 1 ? 100 : secs <= 300 ? 70 : 0,
       A2: evM2(jj) ? 100 : 0,
-      A3: pct([hold[0] ? nameHit(posText, hold[0].name) : true, big.every(h => nameHit(posText, h.name)), hold[0] ? nameHit(s.overnight, hold[0].name) : true, (s.overnight.match(/\d[\d,.]*/g) ?? []).length >= 3]),
-      A4: pct([!HORIZON_BAN.test(all), ev(jj, "m4"), /next 3 months/i.test(s.horizon ?? "") && /next 3 years/i.test(s.horizon ?? "")]),
+      A3: pct([hold[0] ? nameHit(posText, hold[0]) : true, big.every(h => nameHit(posText, h)), hold[0] ? nameHit(s.overnight, hold[0]) : true, (s.overnight.match(/\d[\d,.]*/g) ?? []).length >= 3]),
+      A4: pct([!HORIZON_BAN.test(text), ev(jj, "m4"), /next 3 months/i.test(s.horizon ?? "") && /next 3 years/i.test(s.horizon ?? "")]),
       A5: ev(jj, "m5") ? 100 : 0,
       A6: pct([ev(jj, "m6"), /\d+(\.\d+)?\s?%/.test(s.desk_view)]),
       A7: pct([watchOk, ideas.length >= 2 && ideas.length <= 3 && ideas.every(x => wc(x) <= 16) && !ideas.some(x => /^diversif/i.test(x.trim())), ev(jj, "m7")]),
       A8: pct([wc(s.lede) <= CAP.lede, wc(s.overnight) <= CAP.book, s.positions.every(p => wc(p.note) <= CAP.note), s.positions.every(p => wc(p.watch) <= CAP.watch), wc(s.desk_view) <= CAP.desk, wc(s.horizon) <= CAP.horizon, ideas.every(x => wc(x) <= CAP.idea), totalWords(s) >= CAP.totalMin && totalWords(s) <= CAP.total && totalWords(s) / 145 <= 3.05]),
       A9: pct([!all.includes("—"), !/[0-9]{6}\.(KS|KQ)/.test(all), !/KRW\s?[0-9]/.test(all), !FILLER.test(all), !PROCESS.test(all), roundOk(all), avgSentence(s) <= 26, !/\*\*|^#|\n#/.test(all)]),
-      A10: pct([!TRADE_BAN.test(all), ev(jj, "m10"), ev(jj, "m11")]),
+      A10: pct([!TRADE_BAN.test(text), ev(jj, "m10"), ev(jj, "m11")]),
     };
     const bad = Object.entries(M).filter(([, v]) => v < 95).map(([k, v]) => `${k}=${v}`);
     const evid = ["m2","m4","m5","m6","m7","m10","m11"].filter(k => k === "m2" ? !evM2(jj) : !ev(jj, k)).map(k => `${k}: ${String(jj[k + "_evidence"]).slice(0, 90)}`);
     const det = [];
     if (M.A3 < 100) det.push(`A3 top=${hold[0]?.name} big=${big.map(h => h.name).join("/")} pos=${posText}`);
-    if (M.A4 < 100 && HORIZON_BAN.test(all)) det.push(`A4 word=${all.match(HORIZON_BAN)[0]}`);
+    if (M.A4 < 100 && HORIZON_BAN.test(text)) det.push(`A4 word=${text.match(HORIZON_BAN)[0]}`);
     if (M.A8 < 100) det.push(`A8 lede${wc(s.lede)} book${wc(s.overnight)} notes${s.positions.map(p => wc(p.note)).join("/")} watch${s.positions.map(p => wc(p.watch)).join("/")} desk${wc(s.desk_view)} hz${wc(s.horizon)} ideas${ideas.map(x => wc(x)).join("/")} total${totalWords(s)}`);
     if (M.A9 < 100) det.push(`A9 sent=${avgSentence(s).toFixed(1)} em=${all.includes("—")} round=${roundOk(all)} filler=${FILLER.test(all)}`);
-    if (M.A10 < 100 && TRADE_BAN.test(all)) det.push(`A10 trade=${all.match(TRADE_BAN)[0]}`);
+    if (M.A10 < 100 && TRADE_BAN.test(text)) det.push(`A10 trade=${text.match(TRADE_BAN)[0]}`);
     log(`${name}: ${bad.length ? "BELOW " + bad.join(",") : "ALL 95+"} (${secs}s, ${totalWords(s)}w, try${attempts}${compact ? ", COMPACT" : ""})${evid.length ? " | " + evid.join(" || ") : ""}${det.length ? " | " + det.join(" | ") : ""}`);
     results.push({ name, M, evid, det, worst: jj.worst, secs, attempts, compact, sections: s });
   } catch (e) { log(`${name}: ERROR ${e.message}`); results.push({ name, M: { A1: 0 } }); }

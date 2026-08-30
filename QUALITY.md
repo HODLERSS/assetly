@@ -138,3 +138,31 @@ production project; **Judged** = scored against the stated criterion.
   the Safari run is pending — install on your phone via Safari and it is the real test.
 - (resolved 8/24) GitHub/Google OAuth registered and live round-trips verified on the deployed app.
 - Judged sub-points on metrics 15/21/22/27 are why they sit at 98, not 100.
+
+## Portfolio Assessment (edition `assessment`) — 10 quality metrics
+
+The first brief after a brokerage connect **or a run of manual adds** is not a tape note. It answers what a
+person wants the moment they have told Assetly what they own: *what does my book look like, is what I own
+good, what am I not seeing, what decides the next quarter vs the next three years, what is missing.*
+Sections: `lede` (verdict) · `overnight` ("Your book": weights, concentration, theme/geography mix, cash, debt)
+· `positions` (quality read: business, moat/growth/balance sheet, role, **tripwire**) · `desk_view`
+(structure & risk with its percentage) · `horizon` ("Next 3 months: … Next 3 years: …") · `ideas` (2-3 gaps
+worth researching, never buy/sell). 300-440 words ≈ 2-3 min read, ≤3:00 narrated.
+Pipeline: quality memos per top-5 holding (transcript, filings, 14d news, 30d/1y performance, prior desk
+take) → portfolio skeptic (overstatement, hidden correlation, what's missing) → editor → fact-check; compact
+fallback during text-API waves. Theme/geography exposure and every portfolio number are computed in code.
+
+Battery: `web/assessment-battery.mjs` (7 fixture portfolios, judge = evidence-required M2.7). Target 95+ on all.
+
+| # | Metric | How it is scored |
+|---|--------|------------------|
+| A1 | Delivered fast | row written by this run: 100 if ≤180s on the first attempt, 70 if ≤300s, else 0 |
+| A2 | Factual accuracy | judge: every number consistent with the deterministic stats (≤1.5pp drift tolerated); must quote a contradiction to fail |
+| A3 | Coverage | largest holding and every holding ≥20% appear in positions; "Your book" names the largest and carries ≥3 numbers |
+| A4 | Horizon fit | no tape words (today/overnight/yesterday/session/futures/intraday…); judge confirms months-and-years framing; horizon carries both labels |
+| A5 | Quality depth | judge: every note = what the business is + a quality judgment + a strength AND a risk; no price recaps |
+| A6 | Structural insight | judge: desk_view names a book-specific concentration/correlation/currency/leverage fact; it carries a percentage |
+| A7 | Actionability | watch ≤14 words, no monitor/watch/track; 2-3 ideas each naming a theme/sector/instrument, never bare "diversify"; judge |
+| A8 | Length & timing | caps lede 30 · book 60 · note 34 · watch 12 · structure 50 · horizon 50 · idea 14; total 300-440 words; ≤3:05 at 145 wpm |
+| A9 | Style | no em dashes, no KRX codes, ₩ not KRW, no filler, no process words, rounded dollars, avg sentence ≤26 words, no markdown |
+| A10 | Voice & balance | no buy/sell/trim instructions (regex + judge); reads like a candid human strategist; strengths and risks both present |

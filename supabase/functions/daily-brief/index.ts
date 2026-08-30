@@ -330,15 +330,15 @@ News (14d):\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") 
 ${ins?.[0] ? `Desk's recent take: ${(ins[0].bullets as string[]).slice(0, 3).join(" ")}` : ""}
 
 Return STRICT JSON: {"name": "${dispN}", "business": str, "quality": str, "role": str, "long_case": str, "tripwire": str, "near": str}.
-business: what it actually sells and to whom (for a fund or coin: what it holds or is), <= 16 words, plain language.
-quality: moat, growth, profitability, balance sheet in ONE candid verdict, <= 28 words; numbers ONLY if they appear in the call text above.
+business: what it actually sells and to whom (for a fund: what it holds and how concentrated; for a coin: what it is and who uses it), <= 16 words, plain language.
+quality: for a company: moat, growth, profitability, balance sheet in ONE candid verdict; for a fund: what is inside it, its concentration, its cost; for a coin: adoption, supply rules, custody risk. <= 28 words; numbers ONLY if they appear in the call text above. Never grade a fund on "profitability" or "balance sheet".
 role: what this position does in a portfolio (compounder, cyclical bet, leveraged proxy, index ballast, speculative call), <= 12 words.
 long_case: what must be true over the next 3 years for this to pay off, <= 20 words.
-tripwire: the single observable sign that the thesis is breaking, <= 14 words, concrete.
+tripwire: the single observable sign that the thesis is breaking, <= 14 words, MEASURABLE: a named metric with a threshold, a guidance item, or a dated event (e.g. "data-center revenue growth below 30% next print", "Fed holds above 4% through year end"). Never vague words like "significantly", "sharply", "weakens".
 near: the next catalyst in the coming 1-3 months, <= 14 words; never invent a date.
 Candid, specific, no filler. Never em dashes.`;
-            let m = await askModel(key, "You are a buy-side analyst grading business quality for a long-term owner.", memoPrompt, 6000, 25000);
-            if (!m && elapsed() < 40) m = await askModel(key, "You are a buy-side analyst grading business quality for a long-term owner.", memoPrompt, 6000, 25000);
+            let m = await askModel(key, "You are a buy-side analyst grading business quality for a long-term owner. Think briefly.", memoPrompt, 5000, 25000);
+            if (!m && elapsed() < 28) m = await askModel(key, "You are a buy-side analyst grading business quality for a long-term owner. Think briefly.", memoPrompt, 5000, 22000);
             return m ? { symbol: r.symbol, ...m } : null;
           } catch { return null; }
         }));
@@ -346,15 +346,11 @@ Candid, specific, no filler. Never em dashes.`;
         if (!memosOut.length) { errors.push(uid.slice(0, 8) + ": no quality memos"); continue; }
         const perfLine = perf.join("; ") || "(none)";
 
-        // ---- portfolio skeptic: the correlation, the overstatement, the gap ----
-        const devil = elapsed() > 60 ? null : await askModel(key, "You are the desk's skeptic, reviewing a whole portfolio.",
-          `BOOK: ${bookLine}\nTHEME EXPOSURE: ${themeLine}\nGEOGRAPHY: ${geoLine}\nPOSITIONS:\n${structLines}\nMEMOS:\n${JSON.stringify(memosOut)}\n\nReturn STRICT JSON: {"pushback": [{"name": str, "point": str}], "structure": str, "missing": str}.
-pushback: for up to 3 memos, the strongest objection or what it overstates, <= 18 words each.
-structure: the hidden correlation or concentration the owner probably does not see, with the percentage from THEME EXPOSURE, <= 30 words.
-missing: what this book lacks (an asset class, a sector, a geography, ballast, income), <= 20 words. Ruthless, specific, no em dashes.`, 5000, 20000);
-        const pushback = Array.isArray((devil as { pushback?: unknown })?.pushback) ? (devil as { pushback: unknown[] }).pushback : [];
-        const skStructure = String((devil as { structure?: unknown })?.structure ?? "");
-        const skMissing = String((devil as { missing?: unknown })?.missing ?? "");
+        // ---- structure, deterministic: the dominant theme and how much of the book rides on it ----
+        const topTheme = [...themeAgg.entries()].sort((a, b) => b[1].pct - a[1].pct)[0];
+        const skStructure = topTheme ? `${topTheme[1].pct.toFixed(1)}% of assets sits in one theme, ${topTheme[0]} (${topTheme[1].names.slice(0, 4).join(", ")}): one shared driver.` : "";
+        const geoTop = [...geoAgg.entries()].sort((a, b) => b[1] - a[1])[0];
+        const skMissing = [geoTop && geoTop[1] > 85 ? `${geoTop[1].toFixed(0)}% in ${geoTop[0]} only` : "", cashPct < 3 ? "no cash ballast" : "", !holdings.some((r) => themeOf(r.symbol, r.kind).includes("index") || themeOf(r.symbol, r.kind) === "bonds") ? "no index or bond ballast" : ""].filter(Boolean).join("; ");
 
         // ---- editor: the assessment ----
         const dataBlock = `PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
@@ -368,10 +364,8 @@ ${dateLaw}
 
 QUALITY MEMOS:
 ${memosOut.slice(0, 5).map((m) => `- ${m.name}: business: ${m.business}. quality: ${m.quality}. role: ${m.role}. long case: ${m.long_case}. tripwire: ${m.tripwire}. near: ${m.near}`).join("\n")}
-SKEPTIC:
-${pushback.slice(0, 3).map((pb) => `- ${(pb as { name?: string }).name}: ${(pb as { point?: string }).point}`).join("\n") || "- none"}
-- structure: ${skStructure || "none"}
-- missing: ${skMissing || "none"}`;
+STRUCTURE FACT (deterministic): ${skStructure || "none"}
+GAPS (deterministic hints; refine with judgment): ${skMissing || "none"}`;
         const shapeA = `Return STRICT JSON:\n{"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "horizon": str, "ideas": [str], "calendar": []}`;
         const editorPrompt = `Write the ${briefDate} PORTFOLIO ASSESSMENT for ONE investor who just put these positions into Assetly. It is a first look at the QUALITY and STRUCTURE of what they own, over the next quarter and the next few years. It is NOT a daily brief: no overnight tape, no day moves, no futures, no session talk.
 
@@ -379,21 +373,21 @@ ${dataBlock}
 
 ${shapeA}
 lede: the verdict on this book in one breath: what kind of bet it is, and the single structural fact that matters most. <= 30 words.
-overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their weights, the concentration figure, the theme and geography mix, and cash or debt if present. At least THREE numbers copied from PORTFOLIO or THEME EXPOSURE. <= 60 words.
-positions: the 2-4 largest holdings by weight, largest first; every holding above 20% of assets MUST appear. note <= 34 words: what the business is, the quality verdict (moat, growth, balance sheet), and its role in this book; at most two numbers, from the data only; a strength AND a risk or condition in every note. watch <= 12 words: the thesis TRIPWIRE or the next 1-3 month catalyst, concrete and observable; NEVER verbs like monitor, watch, track, keep an eye.
-desk_view: STRUCTURE AND RISK: the concentration, correlation, currency, or leverage fact the owner probably does not see, with its percentage, and what it means for them. <= 50 words. No single-day numbers.
+overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their weights, the concentration figure, the theme and geography mix, and cash or debt if present. At least THREE numbers copied from PORTFOLIO or THEME EXPOSURE, but never state the same weight twice (if a theme is one holding, name it once). <= 60 words.
+positions: the 2-4 largest equity, fund, or crypto holdings by weight, largest first; every such holding above 20% of assets MUST appear; cash and debt are NEVER positions (they belong in YOUR BOOK and STRUCTURE only). note <= 34 words of flowing prose: what the business is, the quality verdict (for a company: moat, growth, balance sheet; for a fund: what it holds, concentration, cost; for a coin: adoption, supply, custody), and its role in this book; a strength AND a risk or condition, written as sentences, NEVER as "Strength:" / "Risk:" labels; at most two numbers, from the data only. watch <= 12 words: the thesis TRIPWIRE, MEASURABLE (a metric with a threshold, a guidance item, or a dated event); vague words like "significantly", "sharply", "weakens" are forbidden; NEVER verbs like monitor, watch, track, keep an eye.
+desk_view: STRUCTURE AND RISK: the concentration, correlation, currency, or leverage fact the owner probably does not see, with its percentage from the data, and what it means for them (a shared driver, a single point of failure, an FX exposure). <= 50 words. No single-day numbers. Never invent a hypothetical loss or drawdown percentage; the only percentages allowed are weights and performance figures from the data.
 horizon: exactly two labeled clauses in this shape: "Next 3 months: ... Next 3 years: ..." The first names what actually decides the coming quarter for THIS book (a print, a cycle, a macro number). The second names what must be true for it to compound. <= 50 words total.
 ideas: 2-3 items, <= 14 words each: what this book is missing and what is worth RESEARCHING to fill it (a sector, an asset class, a geography, ballast, an income sleeve). Name the specific theme or instrument type. Never a buy instruction, never a price target.
+LENGTH TARGET: 340-420 words in total. Use the budget: lede 20-30 words, book 40-60, each note 26-34, structure 36-50, horizon 36-50, each idea 8-14. Shorter than the floors reads thin; longer than the caps gets cut.
 ADVICE LAW: never tell them to buy, sell, trim, add, or take profits. You describe, you judge quality, you point at what to research.
 HORIZON LAW: forbidden words: today, tonight, overnight, yesterday, this morning, premarket, after-hours, futures, session, intraday. Timeframes are weeks, months, quarters, years.
 BALANCE LAW: the book's strengths and its risks both get real words; no hype, no doom.
 ${STYLE_RULES}`;
-        let draft = await askModel(key, "You are the editor of a one-reader research desk writing a first portfolio assessment. Candid, precise, every word counts. Think briefly, then write.", editorPrompt, 24000, 70000);
+        // one generous attempt (the prompt is long; M2.7 thinks for 40-80s on it), then the compact editor
+        const editorBudget = Math.max(45000, Math.min(85000, (118 - elapsed()) * 1000));
+        let draft = await askModel(key, "You are the editor of a one-reader research desk writing a first portfolio assessment. Candid, precise, every word counts. Keep your thinking short (a few sentences), then write.", editorPrompt, 20000, editorBudget);
         const meta1 = lastMeta;
-        if ((!draft || !validAssessment(draft)) && elapsed() < 75) {
-          draft = await askModel(key, "You are the editor of a one-reader research desk. Think briefly. Output the exact JSON shape requested, including horizon and ideas.", editorPrompt, 24000, 55000);
-        }
-        if ((!draft || !validAssessment(draft)) && elapsed() < 110) {
+        if ((!draft || !validAssessment(draft)) && elapsed() < 118) {
           const compact = `Write the ${briefDate} PORTFOLIO ASSESSMENT (quality and structure of what they own; not a daily note: no day moves, no tape) for ONE investor. Dense; every word counts.
 ${bookLine}
 ${structLines}
@@ -401,16 +395,19 @@ THEME EXPOSURE: ${themeLine}
 MEMOS:
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.business}. ${m.quality}. tripwire: ${m.tripwire}`).join("\n")}
 ${shapeA}
-lede <= 30 words (the verdict on this book); overnight <= 60 words naming the top holdings with weights and the concentration figure (>= 3 numbers from the data); 2-4 positions largest first, note <= 34 words with a strength and a risk, watch <= 12 words naming the tripwire (NEVER monitor/watch/track); desk_view <= 50 words on concentration or correlation with its percentage; horizon "Next 3 months: ... Next 3 years: ..." <= 50 words; ideas: 2-3 gaps worth researching, <= 14 words each, never buy or sell instructions. Forbidden words: today, overnight, yesterday, session, futures. No filler, no em dashes, Korean companies by name, won as ₩.`;
-          draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 12000, 35000);
+lede 20-30 words (the verdict on this book); overnight 40-60 words naming the top holdings with weights and the concentration figure (>= 3 numbers from the data); 2-4 positions largest first, note 26-34 words of prose with a strength and a risk (no "Strength:" labels), watch <= 12 words naming a MEASURABLE tripwire (a metric with a threshold or a dated event; NEVER monitor/watch/track, never "significantly"); desk_view 36-50 words on concentration or correlation with its percentage, no invented loss figures; horizon "Next 3 months: ... Next 3 years: ..." 36-50 words; ideas: 2-3 gaps worth researching, 8-14 words each, never buy or sell instructions. Aim for 340 words in total. Forbidden words: today, overnight, yesterday, session, futures. No filler, no em dashes, Korean companies by name, won as ₩.`;
+          draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 10000, Math.max(20000, Math.min(30000, (146 - elapsed()) * 1000)));
           if (draft && validAssessment(draft)) usedCompact = true;
         }
         if (!draft || !validAssessment(draft)) { errors.push(uid.slice(0, 8) + ": assessment editor failed [" + meta1 + " | " + lastMeta + "]"); continue; }
-        const checked = elapsed() > 112 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
-          `Draft assessment:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\n${bookLine}\n${structLines}\nTHEME EXPOSURE: ${themeLine}\nGEOGRAPHY: ${geoLine}\nPERFORMANCE: ${perfLine}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape (keep horizon and ideas). Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 30, overnight 60, note 34, watch 12, desk_view 50, horizon 50, each idea 14) by tightening, not by losing substance. Also: delete any sentence containing today, tonight, overnight, yesterday, this morning, premarket, after-hours, futures, session, or intraday; delete any instruction to buy, sell, trim, add, or take profits; horizon must keep the literal labels "Next 3 months:" and "Next 3 years:"; replace any numeric KRX code with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains.`, 10000, 30000);
+        const checked = elapsed() > 108 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims. Think briefly.",
+          `Draft assessment:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\n${bookLine}\n${structLines}\nTHEME EXPOSURE: ${themeLine}\nGEOGRAPHY: ${geoLine}\nPERFORMANCE: ${perfLine}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape (keep horizon and ideas). Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 30, overnight 60, note 34, watch 12, desk_view 50, horizon 50, each idea 14) by tightening, not by losing substance, and never shorten a section that is already within its cap. Also: in desk_view delete any hypothetical loss or drawdown percentage (only weights and performance figures from the data may appear); rewrite any "Strength:" / "Risk:" labels into prose; replace any vague watch ("drops significantly", "weakens") with a measurable threshold or dated event from the memos, or the memo's own tripwire; delete any sentence containing today, tonight, overnight, yesterday, this morning, premarket, after-hours, futures, session, or intraday; delete any instruction to buy, sell, trim, add, or take profits; horizon must keep the literal labels "Next 3 months:" and "Next 3 years:"; replace any numeric KRX code with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains.`, 10000, 30000);
         sections = (checked && validAssessment(checked)) ? checked as Sections : draft as Sections;
         sections.calendar = [];
         sections.ideas = (sections.ideas ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
+        // cash and debt are book facts, never positions (guaranteed in code)
+        sections.positions = sections.positions.filter((p) => !/^\$?(cash|debt)\b/i.test(p.name.trim()));
+        if (!sections.positions.length) { errors.push(uid.slice(0, 8) + ": assessment had no equity positions"); continue; }
       } else if (edition === "morning") {
         // ---- stage 1: analyst memos, parallel over top holdings ----
         const memoTargets = holdings.slice(0, 5);
