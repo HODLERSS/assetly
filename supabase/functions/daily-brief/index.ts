@@ -415,7 +415,10 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           const m = memosOut.find((x) => String(x.name).toLowerCase() === p.name.toLowerCase() || String(x.symbol).toLowerCase() === p.name.toLowerCase());
           const q = String(m?.quality ?? ""); const parts = q.split(/;|\bbut\b|\byet\b|\bthough\b|\bwhile\b/i).map((x) => x.trim()).filter((x) => x.split(/\s+/).length >= 3);
           const riskSeg = [...parts].reverse().find((x) => NEG.test(x));
-          let phrase = (riskSeg ?? String(m?.tripwire ?? "")).replace(/[.\s]+$/, "");
+          // keep the clause that actually carries the risk (a comma list can open with praise and end with the caveat)
+          const negClause = riskSeg ? riskSeg.split(/,\s*/).find((c) => NEG.test(c)) : undefined;
+          let phrase = (negClause ?? riskSeg ?? String(m?.tripwire ?? "")).replace(/[.\s]+$/, "");
+          if (!NEG.test(phrase) && m?.tripwire) phrase = String(m.tripwire).replace(/[.\s]+$/, "");
           // keep the note near its cap: a long note gets a short risk clause
           phrase = phrase.split(/\s+/).slice(0, p.note.split(/\s+/).length > 24 ? 8 : 11).join(" ");   // the memo segment can be long
           return phrase ? { ...p, note: p.note.replace(/[.\s]+$/, "") + `. The risk: ${phrase[0].toLowerCase() + phrase.slice(1)}.` } : p;

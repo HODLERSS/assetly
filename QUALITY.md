@@ -163,6 +163,15 @@ Battery: `web/assessment-battery.mjs` (7 fixture portfolios, judge = evidence-re
 | A5 | Quality depth | judge: every note = what the business is + a quality judgment + a strength AND a risk; no price recaps |
 | A6 | Structural insight | judge: desk_view names a book-specific concentration/correlation/currency/leverage fact; it carries a percentage |
 | A7 | Actionability | watch ≤14 words, no monitor/watch/track; 2-3 ideas each naming a theme/sector/instrument, never bare "diversify"; judge |
-| A8 | Length & timing | caps lede 30 · book 60 · note 34 · watch 12 · structure 50 · horizon 50 · idea 14; total 300-440 words; ≤3:05 at 145 wpm |
+| A8 | Length & timing | caps lede 30 · book 60 · note 34 (56 for 1-2 holding books) · watch 12 · structure 50 · horizon 50 · idea 14, each with a +2-word tolerance; total 300-440 words (220/260 floor for 1/2-holding books); ≤3:05 at 145 wpm |
 | A9 | Style | no em dashes, no KRX codes, ₩ not KRW, no filler, no process words, rounded dollars, avg sentence ≤26 words, no markdown |
 | A10 | Voice & balance | no buy/sell/trim instructions (regex + judge); reads like a candid human strategist; strengths and risks both present |
+
+**What it took to hold 95+ (16 rounds, 2026-08-30):** the fast model (gpt-oss-120b) composes reliably in ~20s but lands on
+every cap ± a word, drops a risk clause in one note per book, pads tripwires to a word count, relabels true numbers
+("YTD", "of equity"), and writes "Add a … ETF" ideas. None of that is fixable by prompt alone; each is now a
+**code guarantee** after generation: risk clause per note (memo's own risk), structure percentage + "This means…"
+consequence, section caps (sentence drops, then hard cut), note trim, tripwire/idea verb strips, tape/filler/label
+scrubs, expansion pass for thin drafts (may drop numbers, never add; no loss vocabulary). The judge runs on
+gpt-oss-120b too (M2.7 exhausted its token budget on the judge prompt) and is given the same deterministic ground
+truth the generator used (weights, theme/geography shares, 30d/1y performance, memo facts).
