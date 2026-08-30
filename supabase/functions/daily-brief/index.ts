@@ -341,7 +341,8 @@ tripwire: the single observable sign that the thesis is breaking, <= 14 words, M
 near: the next catalyst in the coming 1-3 months, <= 14 words; never invent a date.
 Candid, specific, no filler. Never em dashes.`;
             let m = await askModel(key, "You are a buy-side analyst grading business quality for a long-term owner. Think briefly.", memoPrompt, 5000, 25000);
-            if (!m && elapsed() < 28) m = await askModel(key, "You are a buy-side analyst grading business quality for a long-term owner. Think briefly.", memoPrompt, 5000, 22000);
+            // M2.7 wave or token exhaustion: the fast model writes the memo instead of the whole attempt failing
+            if (!m && elapsed() < 40) m = await askModel(key, "You are a buy-side analyst grading business quality for a long-term owner.", memoPrompt, 5000, 22000, FAST_MODEL);
             return m ? { symbol: r.symbol, ...m } : null;
           } catch { return null; }
         }));
@@ -426,8 +427,17 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         const floor = holdings.length <= 2 ? 240 : 315;
         if (wcA(sections) < floor && elapsed() < 118) {
           const grown = await askModel(key, "You are the editor. Keep every fact and number exactly as given; add depth, not new claims.",
-            `This assessment is too thin at ${wcA(sections)} words; it must reach ${floor + 25}-420 words. Expand it toward these floors WITHOUT adding any number or any new factual claim that is not already in it (elaborate on the facts present, explain what they mean for the owner): each position note ${holdings.length <= 2 ? "44-55" : "30-33"} words (business, quality verdict, role, ending with the risk sentence), desk_view 42-48 words, horizon 42-46 words ("Next 3 months: ... Next 3 years: ..."), overnight 48-58 words. Keep lede, watch items and ideas as they are. Sentences of at most 22 words. Never use the words today, overnight, yesterday, session, futures. Never em dashes.\n\n${JSON.stringify(sections)}\n\nReturn the SAME JSON shape.`, 8000, 25000, FAST_MODEL);
-          if (grown && validAssessment(grown) && wcA(grown as Sections) > wcA(sections)) sections = ensureRisk(grown as Sections);
+            `This assessment is too thin at ${wcA(sections)} words; it must reach ${floor + 25}-420 words. Expand it toward these floors WITHOUT adding any number, number-word, or new factual claim that is not already in it: keep every existing number verbatim, never describe a hypothetical loss or drawdown; elaborate on what the existing facts mean for the owner (shared drivers, what must hold, what the tripwires signal): each position note ${holdings.length <= 2 ? "44-55" : "30-33"} words (business, quality verdict, role, ending with the risk sentence), desk_view 42-48 words, horizon 42-46 words ("Next 3 months: ... Next 3 years: ..."), overnight 48-58 words. Keep lede, watch items and ideas as they are. Sentences of at most 22 words. Never use the words today, overnight, yesterday, session, futures. Never em dashes.\n\n${JSON.stringify(sections)}\n\nReturn the SAME JSON shape.`, 8000, 25000, FAST_MODEL);
+          // the expansion may only elaborate: every original number survives, nothing numeric is added, no loss talk
+          const nums = (o: Sections) => new Set((JSON.stringify(o).match(/\d[\d,.]*%?|\b(half|third|thirds|quarter|quarters|double|triple|majority)\b/gi) ?? []).map((x) => x.toLowerCase()));
+          const LOSS = /\b(erod\w*|wipe\w*|los(e|es|ing|t)\b|loss of|drawdown|evaporat\w*|halv\w*)/i;
+          if (grown && validAssessment(grown) && wcA(grown as Sections) > wcA(sections)) {
+            const before = nums(sections), after = nums(grown as Sections);
+            const kept = [...before].every((n) => after.has(n)), noNew = [...after].every((n) => before.has(n));
+            const g = grown as Sections;
+            const lossy = LOSS.test([g.desk_view, g.horizon ?? "", ...g.positions.map((p) => p.note)].join(" ")) && !LOSS.test([sections.desk_view, sections.horizon ?? "", ...sections.positions.map((p) => p.note)].join(" "));
+            if (kept && noNew && !lossy) sections = ensureRisk(g);
+          }
         }
         sections.calendar = [];
         sections.ideas = (sections.ideas ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
