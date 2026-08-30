@@ -114,7 +114,10 @@ Deno.serve(async (req) => {
       let get: (path: string) => Promise<unknown>;
       if (fixture) {
         const { data: fu } = await admin.auth.admin.getUserById(uid);
-        if (!fu?.user?.email?.endsWith("assetly.test")) { results.push({ uid: uid.slice(0, 8), error: "fixture only for test users" }); continue; }
+        // fixture stays operator-only: @assetly.test users, or (for live demos on an owned account) an explicit
+        // opt-in where the caller must NAME the account's email while holding the internal token
+        const okReal = body.fixture_user_ok === fu?.user?.email;
+        if (!fu?.user?.email?.endsWith("assetly.test") && !okReal) { results.push({ uid: uid.slice(0, 8), error: "fixture only for test users" }); continue; }
         get = async (path: string) => {
           if (path === "/accounts") return fixture.accounts;
           const m = path.match(/^\/accounts\/([^/]+)\/(positions\/all|balances|positions|holdings)$/);
