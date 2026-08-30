@@ -415,7 +415,9 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           const m = memosOut.find((x) => String(x.name).toLowerCase() === p.name.toLowerCase() || String(x.symbol).toLowerCase() === p.name.toLowerCase());
           const q = String(m?.quality ?? ""); const parts = q.split(/;|\bbut\b|\byet\b|\bthough\b|\bwhile\b/i).map((x) => x.trim()).filter((x) => x.split(/\s+/).length >= 3);
           const riskSeg = [...parts].reverse().find((x) => NEG.test(x));
-          const phrase = (riskSeg ?? String(m?.tripwire ?? "")).replace(/[.\s]+$/, "");
+          let phrase = (riskSeg ?? String(m?.tripwire ?? "")).replace(/[.\s]+$/, "");
+          // keep the note near its cap: a long note gets a short risk clause
+          if (p.note.split(/\s+/).length > 24) phrase = phrase.split(/\s+/).slice(0, 8).join(" ");
           return phrase ? { ...p, note: p.note.replace(/[.\s]+$/, "") + `. The risk: ${phrase[0].toLowerCase() + phrase.slice(1)}.` } : p;
         }) });
         draft = ensureRisk(draft as Sections);   // before the fact-check, so a lengthened note gets tightened to its cap
@@ -436,8 +438,18 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
             const kept = [...before].every((n) => after.has(n)), noNew = [...after].every((n) => before.has(n));
             const g = grown as Sections;
             const lossy = LOSS.test([g.desk_view, g.horizon ?? "", ...g.positions.map((p) => p.note)].join(" ")) && !LOSS.test([sections.desk_view, sections.horizon ?? "", ...sections.positions.map((p) => p.note)].join(" "));
-            if (kept && noNew && !lossy) sections = ensureRisk(g);
+            const wcS = (t: string) => t.split(/\s+/).filter(Boolean).length;
+            const noteCapX = holdings.length <= 2 ? 55 : 34;
+            const withinCaps = wcS(g.overnight) <= 60 && wcS(g.desk_view) <= 50 && wcS(g.horizon ?? "") <= 50 && g.positions.every((p) => wcS(p.note) <= noteCapX && wcS(p.watch) <= 12);
+            if (kept && noNew && !lossy && withinCaps) sections = ensureRisk(g);
           }
+        }
+        // STRUCTURE must carry its percentage (guaranteed in code): a desk_view that lost it gets the deterministic structure fact up front
+        if (!/\d+(?:\.\d+)?\s?%/.test(sections.desk_view) && skStructure) {
+          const wcS2 = (t: string) => t.split(/\s+/).filter(Boolean).length;
+          let rest = sections.desk_view.trim();
+          while (wcS2(skStructure) + wcS2(rest) > 50 && /[.!?]\s+[^.!?]+[.!?]?$/.test(rest)) rest = rest.replace(/\s+[^.!?]+[.!?]?$/, "").trim();   // drop trailing sentences to fit
+          sections.desk_view = `${skStructure} ${rest}`.trim();
         }
         sections.calendar = [];
         sections.ideas = (sections.ideas ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
@@ -449,7 +461,14 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         sections.ideas = sections.ideas.map((x) => { const y = x.replace(/^(add|buy|consider|allocate|explore|introduce|include|hold|own|put|use|pair|layer)(ing)?\s+(adding\s+|an?\s+|some\s+|the\s+)?/i, "").trim(); return y ? y[0].toUpperCase() + y.slice(1) : x; });
         sections = ensureRisk(sections);
         // the card already labels the tripwire; a model-written "Tripwire:" / "Watch:" prefix would double it
-        sections.positions = sections.positions.map((p) => ({ ...p, watch: p.watch.replace(/^\s*(tripwire|watch|trigger)\s*[:\-]\s*/i, "").trim() }));
+        sections.positions = sections.positions.map((p) => ({ ...p, watch: p.watch
+          .replace(/^\s*(tripwire|watch|trigger)\s*[:\-]\s*/i, "")
+          // padding the fast model adds to reach a word count ("... triggers watch condition for the quarter")
+          .replace(/[,;\s]*\b(which |that |and )?(triggers?|would trigger|trips?|breaks?)\s+(the\s+|a\s+)?(watch|tripwire|trigger|thesis)(\s+condition|\s+trigger)?\b.*$/i, "")
+          .replace(/[,;\s]*\b(watch|tripwire)\s+condition\b.*$/i, "")
+          .replace(/\s+for the (quarter|period|portfolio)\s*$/i, "")
+          .replace(/[,;\s]*\b(triggers?|would trigger|trips?)\s*[.]?\s*$/i, "")
+          .trim() }));
         // cash and debt are book facts, never positions (guaranteed in code)
         sections.positions = sections.positions.filter((p) => !/^\$?(cash|debt)\b/i.test(p.name.trim()));
         if (!sections.positions.length) { errors.push(uid.slice(0, 8) + ": assessment had no equity positions"); continue; }
