@@ -406,6 +406,26 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           if (draft && validAssessment(draft)) usedCompact = true;
         }
         if (!draft || !validAssessment(draft)) { errors.push(uid.slice(0, 8) + ": assessment editor failed [" + meta1 + " | " + lastMeta + "]"); continue; }
+        // BALANCE LAW guaranteed in code: a note with no risk clause gets the memo's own risk (from its quality verdict, else its tripwire)
+        const RISK = /\b(but|though|although|yet|risk|risks|however|unless|could|downside|threat|pressure|stretched|uncertain|concern|exposed|depends|if)\b/i;
+        const NEG = /\b(risk|below|declin|slow|cut|weak|loss|debt|leverage|competit|dependen|concentrat|regulat|cyclical|volatil|stretched|expensive|valuation|uncertain|pressure|margin (compression|squeeze)|dilut|custody|export)\w*/i;
+        const ensureRisk = (o: Sections): Sections => ({ ...o, positions: o.positions.map((p) => {
+          if (RISK.test(p.note)) return p;
+          const m = memosOut.find((x) => String(x.name).toLowerCase() === p.name.toLowerCase() || String(x.symbol).toLowerCase() === p.name.toLowerCase());
+          const q = String(m?.quality ?? ""); const parts = q.split(/;|\bbut\b|\byet\b|\bthough\b|\bwhile\b/i).map((x) => x.trim()).filter((x) => x.split(/\s+/).length >= 3);
+          const riskSeg = [...parts].reverse().find((x) => NEG.test(x));
+          const phrase = (riskSeg ?? String(m?.tripwire ?? "")).replace(/[.\s]+$/, "");
+          return phrase ? { ...p, note: p.note.replace(/[.\s]+$/, "") + `. The risk: ${phrase[0].toLowerCase() + phrase.slice(1)}.` } : p;
+        }) });
+        draft = ensureRisk(draft as Sections);   // before the fact-check, so a lengthened note gets tightened to its cap
+        // LENGTH floor guaranteed by a pass, not by hoping: a thin draft is expanded toward the section floors (no new numbers)
+        const wcA = (o: Sections) => [o.lede, o.overnight, o.desk_view, o.horizon ?? "", ...(o.ideas ?? []), ...o.positions.flatMap((p) => [p.name, p.note, p.watch])].join(" ").split(/\s+/).filter(Boolean).length;
+        const floor = holdings.length <= 2 ? 240 : 315;
+        if (wcA(draft as Sections) < floor && elapsed() < 98) {
+          const grown = await askModel(key, "You are the editor. Keep every fact and number exactly as given; add depth, not new claims.",
+            `This assessment is too thin at ${wcA(draft as Sections)} words; it must reach ${floor + 25}-420 words. Expand it toward these floors WITHOUT adding any number that is not already in it: each position note ${holdings.length <= 2 ? "44-55" : "30-33"} words (business, quality verdict, role, ending with the risk sentence), desk_view 42-48 words, horizon 42-46 words ("Next 3 months: ... Next 3 years: ..."), overnight 48-58 words. Keep lede, watch items and ideas as they are. Sentences of at most 22 words. Never use the words today, overnight, yesterday, session, futures. Never em dashes.\n\n${JSON.stringify(draft)}\n\nReturn the SAME JSON shape.`, 8000, 25000, FAST_MODEL);
+          if (grown && validAssessment(grown) && wcA(grown as Sections) > wcA(draft as Sections)) draft = grown;
+        }
         const checked = elapsed() > 112 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims. Think briefly.",
           `Draft assessment:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\n${bookLine}\n${structLines}\nTHEME EXPOSURE: ${themeLine}\nGEOGRAPHY: ${geoLine}\nPERFORMANCE: ${perfLine}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape (keep horizon and ideas). Fix any number that contradicts the data; delete any claim you cannot trace to it; if a position note has no risk or condition, append one short clause taken from that memo's quality or tripwire; enforce the word caps (lede 30, overnight 60, note ${holdings.length <= 2 ? 56 : 34}, watch 12, desk_view 50, horizon 50, each idea 14) by tightening, not by losing substance, and never shorten a section that is already within its cap. Also: in desk_view delete any hypothetical loss or drawdown percentage (only weights and performance figures from the data may appear); rewrite any "Strength:" / "Risk:" labels into prose; replace any vague watch ("drops significantly", "weakens") with a measurable threshold or dated event from the memos, or the memo's own tripwire; delete any sentence containing today, tonight, overnight, yesterday, this morning, premarket, after-hours, after market close, at the bell, futures, session, or intraday; delete any instruction to buy, sell, trim, add, or take profits, and rewrite any idea that starts with Add/Buy/Consider adding as a research gap; horizon must keep the literal labels "Next 3 months:" and "Next 3 years:"; replace any numeric KRX code with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains.`, 8000, 30000, FAST_MODEL);
         sections = (checked && validAssessment(checked)) ? checked as Sections : draft as Sections;
@@ -417,15 +437,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         sections.horizon = deTape(sections.horizon ?? ""); sections.positions = sections.positions.map((p) => ({ ...p, note: deTape(p.note), watch: deTape(p.watch) }));
         // ideas are research gaps, never instructions (guaranteed in code): strip a leading Add/Buy/Consider/Allocate
         sections.ideas = sections.ideas.map((x) => { const y = x.replace(/^(add|buy|consider|allocate|explore|introduce|include|hold|own|put|use|pair|layer)(ing)?\s+(adding\s+|an?\s+|some\s+|the\s+)?/i, "").trim(); return y ? y[0].toUpperCase() + y.slice(1) : x; });
-        // BALANCE LAW guaranteed in code: a note with no risk clause gets the memo's own risk (from its quality verdict, else its tripwire)
-        const RISK = /\b(but|though|although|yet|risk|risks|however|unless|could|downside|threat|pressure|stretched|uncertain|concern|exposed|depends|if)\b/i;
-        sections.positions = sections.positions.map((p) => {
-          if (RISK.test(p.note)) return p;
-          const m = memosOut.find((x) => String(x.name).toLowerCase() === p.name.toLowerCase() || String(x.symbol).toLowerCase() === p.name.toLowerCase());
-          const q = String(m?.quality ?? ""); const parts = q.split(/;|\bbut\b|\byet\b|\bthough\b|\bwhile\b/i).map((x) => x.trim()).filter(Boolean);
-          const phrase = (parts.length > 1 && parts[parts.length - 1].split(/\s+/).length >= 3 ? parts[parts.length - 1] : String(m?.tripwire ?? "")).replace(/[.\s]+$/, "");
-          return phrase ? { ...p, note: p.note.replace(/[.\s]+$/, "") + `. The risk: ${phrase[0].toLowerCase() + phrase.slice(1)}.` } : p;
-        });
+        sections = ensureRisk(sections);
         // the card already labels the tripwire; a model-written "Tripwire:" / "Watch:" prefix would double it
         sections.positions = sections.positions.map((p) => ({ ...p, watch: p.watch.replace(/^\s*(tripwire|watch|trigger)\s*[:\-]\s*/i, "").trim() }));
         // cash and debt are book facts, never positions (guaranteed in code)
