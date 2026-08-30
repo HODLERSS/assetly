@@ -38,7 +38,8 @@ const totalWords = (s) => wc(s.lede) + wc(s.overnight) + s.positions.reduce((a, 
 const CAP = { lede: 30, book: 60, note: 34, watch: 12, desk: 50, horizon: 50, idea: 14, total: 440, totalMin: 300 };
 const FILLER = /(investors should|keep an eye|monitor closely|time will tell|stay tuned|it'?s important to|as always|remains to be seen|worth watching|demands scrutiny|warrants attention)/i;
 const PROCESS = /(skeptic|the memo|pushback|analyst note)/i;
-const HORIZON_BAN = /\b(today|tonight|overnight|yesterday|this morning|premarket|pre-market|after-hours|futures|session|intraday)\b/i;
+const HORIZON_BAN = /\b(today|tonight|overnight|yesterday|this morning|premarket|pre-market|after-hours|after (the )?market close|at the bell|futures|session|intraday)\b/i;
+const IDEA_BAN = /^(add|buy|consider|allocate)\b/i;
 const TRADE_BAN = /\b(you should (buy|sell|trim|add)|buy more|buy the dip|sell (your|the|it|now|half)|trim (your|the|it|back)|take profits|add to (your|the) position|dump)\b/i;
 const pct = (subs) => Math.round(subs.filter(Boolean).length / subs.length * 100);
 const roundOk = (all) => (all.match(/\$[\d,]+(?:\.\d+)?/g) ?? []).every((m) => { const v = Number(m.replace(/[$,]/g, "")); return v < 1000 || (m.includes(",") && v % 100 === 0); });
@@ -137,7 +138,7 @@ for (const name of subset) {
       A4: pct([!HORIZON_BAN.test(text), ev(jj, "m4"), /next 3 months/i.test(s.horizon ?? "") && /next 3 years/i.test(s.horizon ?? "")]),
       A5: ev(jj, "m5") ? 100 : 0,
       A6: pct([ev(jj, "m6"), /\d+(\.\d+)?\s?%/.test(s.desk_view)]),
-      A7: pct([watchOk, ideas.length >= 2 && ideas.length <= 3 && ideas.every(x => wc(x) <= 16) && !ideas.some(x => /^diversif/i.test(x.trim())), ev(jj, "m7")]),
+      A7: pct([watchOk, ideas.length >= 2 && ideas.length <= 3 && ideas.every(x => wc(x) <= 16) && !ideas.some(x => /^diversif/i.test(x.trim()) || IDEA_BAN.test(x.trim())), ev(jj, "m7")]),
       A8: pct([wc(s.lede) <= CAP.lede, wc(s.overnight) <= CAP.book, s.positions.every(p => wc(p.note) <= CAP.note), s.positions.every(p => wc(p.watch) <= CAP.watch), wc(s.desk_view) <= CAP.desk, wc(s.horizon) <= CAP.horizon, ideas.every(x => wc(x) <= CAP.idea), totalWords(s) >= CAP.totalMin && totalWords(s) <= CAP.total && totalWords(s) / 145 <= 3.05]),
       A9: pct([!all.includes("—"), !/[0-9]{6}\.(KS|KQ)/.test(all), !/KRW\s?[0-9]/.test(all), !FILLER.test(all), !PROCESS.test(all), roundOk(all), avgSentence(s) <= 26, !/\*\*|^#|\n#/.test(all)]),
       A10: pct([!TRADE_BAN.test(text), ev(jj, "m10"), ev(jj, "m11")]),

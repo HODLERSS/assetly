@@ -46,14 +46,17 @@ function parseJsonBlock(raw: string): Record<string, unknown> | null {
 }
 
 let lastMeta = "";   // finish_reason + content length of the most recent call (diagnostics)
-async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs = 30000): Promise<Record<string, unknown> | null> {
+// FAST model for composition steps (editor, compact, fact-check) of the assessment: M2.7 burns its whole token
+// budget thinking on that prompt shape (HTTP 400 "truncated" after ~85s); gpt-oss-120b writes it validly in ~20s.
+const FAST_MODEL = "gpt-oss-120b";
+async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs = 30000, model?: string): Promise<Record<string, unknown> | null> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
     signal: ac.signal,
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7",
+      model: model ?? Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7",
       messages: [
         { role: "system", content: system + " Respond with the JSON object ONLY, first character '{'. Never write prose outside the JSON." },
         { role: "user", content: prompt },
@@ -377,16 +380,18 @@ overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their 
 positions: the 2-4 largest equity, fund, or crypto holdings by weight, largest first; every such holding above 20% of assets MUST appear; cash and debt are NEVER positions (they belong in YOUR BOOK and STRUCTURE only). note <= 34 words of flowing prose: what the business is, the quality verdict (for a company: moat, growth, balance sheet; for a fund: what it holds, concentration, cost; for a coin: adoption, supply, custody), and its role in this book; a strength AND a risk or condition, written as sentences, NEVER as "Strength:" / "Risk:" labels; at most two numbers, from the data only. watch <= 12 words: the thesis TRIPWIRE, MEASURABLE (a metric with a threshold, a guidance item, or a dated event); vague words like "significantly", "sharply", "weakens" are forbidden; NEVER verbs like monitor, watch, track, keep an eye.
 desk_view: STRUCTURE AND RISK: the concentration, correlation, currency, or leverage fact the owner probably does not see, with its percentage from the data, and what it means for them (a shared driver, a single point of failure, an FX exposure). <= 50 words. No single-day numbers. Never invent a hypothetical loss or drawdown percentage; the only percentages allowed are weights and performance figures from the data.
 horizon: exactly two labeled clauses in this shape: "Next 3 months: ... Next 3 years: ..." The first names what actually decides the coming quarter for THIS book (a print, a cycle, a macro number). The second names what must be true for it to compound. <= 50 words total.
-ideas: 2-3 items, <= 14 words each: what this book is missing and what is worth RESEARCHING to fill it (a sector, an asset class, a geography, ballast, an income sleeve). Name the specific theme or instrument type. Never a buy instruction, never a price target.
+ideas: 2-3 items, <= 14 words each, each about a GAP in this book (not about the names already held): name the gap, then the specific theme or instrument type worth researching to fill it (e.g. "No income sleeve: dividend-growth ETFs", "All-US book: developed-market ex-US index funds"). Never start with Add, Buy, Consider, or Allocate (write "No income sleeve: ..." or "All-US book: ..."); never a price target.
 LENGTH TARGET: 340-420 words in total. Use the budget: lede 20-30 words, book 40-60, each note 26-34, structure 36-50, horizon 36-50, each idea 8-14. Shorter than the floors reads thin; longer than the caps gets cut.
 ADVICE LAW: never tell them to buy, sell, trim, add, or take profits. You describe, you judge quality, you point at what to research.
-HORIZON LAW: forbidden words: today, tonight, overnight, yesterday, this morning, premarket, after-hours, futures, session, intraday. Timeframes are weeks, months, quarters, years.
+HORIZON LAW: forbidden words and phrases: today, tonight, overnight, yesterday, this morning, premarket, after-hours, after market close, at the bell, futures, session, intraday. Timeframes are weeks, months, quarters, years.
 BALANCE LAW: the book's strengths and its risks both get real words; no hype, no doom.
 ${STYLE_RULES}`;
-        // one generous attempt (the prompt is long; M2.7 thinks for 40-80s on it), then the compact editor
-        const editorBudget = Math.max(45000, Math.min(85000, (118 - elapsed()) * 1000));
-        let draft = await askModel(key, "You are the editor of a one-reader research desk writing a first portfolio assessment. Candid, precise, every word counts. Keep your thinking short (a few sentences), then write.", editorPrompt, 20000, editorBudget);
+        // composition on the FAST model (~20s): one attempt, one retry, then the compact editor
+        let draft = await askModel(key, "You are the editor of a one-reader research desk writing a first portfolio assessment. Candid, precise, every word counts. Keep your thinking short, then write.", editorPrompt, 12000, 50000, FAST_MODEL);
         const meta1 = lastMeta;
+        if ((!draft || !validAssessment(draft)) && elapsed() < 95) {
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Output the exact JSON shape requested, including horizon and ideas.", editorPrompt, 12000, 40000, FAST_MODEL);
+        }
         if ((!draft || !validAssessment(draft)) && elapsed() < 118) {
           const compact = `Write the ${briefDate} PORTFOLIO ASSESSMENT (quality and structure of what they own; not a daily note: no day moves, no tape) for ONE investor. Dense; every word counts.
 ${bookLine}
@@ -396,12 +401,12 @@ MEMOS:
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.business}. ${m.quality}. tripwire: ${m.tripwire}`).join("\n")}
 ${shapeA}
 lede 20-30 words (the verdict on this book); overnight 40-60 words naming the top holdings with weights and the concentration figure (>= 3 numbers from the data); 2-4 positions largest first, note 26-34 words of prose with a strength and a risk (no "Strength:" labels), watch <= 12 words naming a MEASURABLE tripwire (a metric with a threshold or a dated event; NEVER monitor/watch/track, never "significantly"); desk_view 36-50 words on concentration or correlation with its percentage, no invented loss figures; horizon "Next 3 months: ... Next 3 years: ..." 36-50 words; ideas: 2-3 gaps worth researching, 8-14 words each, never buy or sell instructions. Aim for 340 words in total. Forbidden words: today, overnight, yesterday, session, futures. No filler, no em dashes, Korean companies by name, won as ₩.`;
-          draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 10000, Math.max(20000, Math.min(30000, (146 - elapsed()) * 1000)));
+          draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 8000, Math.max(20000, Math.min(30000, (146 - elapsed()) * 1000)), FAST_MODEL);
           if (draft && validAssessment(draft)) usedCompact = true;
         }
         if (!draft || !validAssessment(draft)) { errors.push(uid.slice(0, 8) + ": assessment editor failed [" + meta1 + " | " + lastMeta + "]"); continue; }
-        const checked = elapsed() > 108 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims. Think briefly.",
-          `Draft assessment:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\n${bookLine}\n${structLines}\nTHEME EXPOSURE: ${themeLine}\nGEOGRAPHY: ${geoLine}\nPERFORMANCE: ${perfLine}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape (keep horizon and ideas). Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 30, overnight 60, note 34, watch 12, desk_view 50, horizon 50, each idea 14) by tightening, not by losing substance, and never shorten a section that is already within its cap. Also: in desk_view delete any hypothetical loss or drawdown percentage (only weights and performance figures from the data may appear); rewrite any "Strength:" / "Risk:" labels into prose; replace any vague watch ("drops significantly", "weakens") with a measurable threshold or dated event from the memos, or the memo's own tripwire; delete any sentence containing today, tonight, overnight, yesterday, this morning, premarket, after-hours, futures, session, or intraday; delete any instruction to buy, sell, trim, add, or take profits; horizon must keep the literal labels "Next 3 months:" and "Next 3 years:"; replace any numeric KRX code with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains.`, 10000, 30000);
+        const checked = elapsed() > 112 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims. Think briefly.",
+          `Draft assessment:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\n${bookLine}\n${structLines}\nTHEME EXPOSURE: ${themeLine}\nGEOGRAPHY: ${geoLine}\nPERFORMANCE: ${perfLine}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape (keep horizon and ideas). Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 30, overnight 60, note 34, watch 12, desk_view 50, horizon 50, each idea 14) by tightening, not by losing substance, and never shorten a section that is already within its cap. Also: in desk_view delete any hypothetical loss or drawdown percentage (only weights and performance figures from the data may appear); rewrite any "Strength:" / "Risk:" labels into prose; replace any vague watch ("drops significantly", "weakens") with a measurable threshold or dated event from the memos, or the memo's own tripwire; delete any sentence containing today, tonight, overnight, yesterday, this morning, premarket, after-hours, after market close, at the bell, futures, session, or intraday; delete any instruction to buy, sell, trim, add, or take profits, and rewrite any idea that starts with Add/Buy/Consider adding as a research gap; horizon must keep the literal labels "Next 3 months:" and "Next 3 years:"; replace any numeric KRX code with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains.`, 8000, 30000, FAST_MODEL);
         sections = (checked && validAssessment(checked)) ? checked as Sections : draft as Sections;
         sections.calendar = [];
         sections.ideas = (sections.ideas ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
@@ -603,7 +608,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const scrub = (t: string) => {
         let x = t;
         for (const [code, nm] of codeToName) if (code.endsWith(".KS") || code.endsWith(".KQ")) x = x.split(code).join(nm);
-        x = x.replace(/KRW\s?(?=[0-9₩])/g, "₩").replace(/₩\s+(?=[0-9])/g, "₩");
+        x = x.replace(/KRW\s?(?=[0-9₩])/g, "₩").replace(/₩\s+(?=[0-9])/g, "₩").replace(/\u2011/g, "-");   // non-breaking hyphens read badly in TTS
         // NUMBER STYLE is guaranteed in code: dollar amounts >= 1,000 rounded to the nearest hundred, comma-grouped
         return x.replace(/\$([\d,]+)(\.\d+)?/g, (m, d, dec) => {
           const v = Number(String(d).replace(/,/g, "") + (dec ?? ""));
