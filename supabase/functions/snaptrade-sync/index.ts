@@ -198,14 +198,23 @@ Deno.serve(async (req) => {
             // keep my positions", or a manual add) blocks a fresh insert on the user/symbol/account/nick
             // unique key. Reconnecting means that row becomes the synced one again, lots replaced by the
             // live import. Never a duplicate, never data loss.
-            const { data: twin } = await admin.from("holdings").select("id").eq("user_id", uid).eq("symbol", sym).eq("account", "brokerage").eq("nickname", nickname).maybeSingle();
-            if (twin?.id) {
+            const { data: twin } = await admin.from("holdings").select("id, external_id").eq("user_id", uid).eq("symbol", sym).eq("account", "brokerage").eq("nickname", nickname).maybeSingle();
+            if (twin?.id && !twin.external_id) {
+              // only a MANUAL or kept row is re-adopted; a row synced to ANOTHER account keeps its own identity
               await admin.from("holdings").update({ source: "snaptrade", external_id: ext, account_label: acctLabel }).eq("id", twin.id);
               hid = twin.id as string;
             } else {
               const { data: ins } = await admin.from("holdings")
                 .insert({ user_id: uid, symbol: sym, account: "brokerage", nickname, source: "snaptrade", external_id: ext, account_label: acctLabel }).select("id").maybeSingle();
               hid = ins?.id as string | undefined;
+              if (!hid && twin?.id) {
+                // same ticker held in a SECOND account of the brokerage (taxable + IRA): the account suffix becomes the
+                // nickname so the unique key (user, symbol, account, nickname) tells the two rows apart
+                const nick2 = acctLabel.includes("…") ? acctLabel.slice(acctLabel.indexOf("…")) : acctLabel;
+                const { data: ins2 } = await admin.from("holdings")
+                  .insert({ user_id: uid, symbol: sym, account: "brokerage", nickname: nick2, source: "snaptrade", external_id: ext, account_label: acctLabel }).select("id").maybeSingle();
+                hid = ins2?.id as string | undefined;
+              }
               if (!hid) {   // lost a concurrent race (the per-user lock makes this rare): read the winner
                 const { data: again } = await admin.from("holdings").select("id").eq("user_id", uid).eq("external_id", ext).maybeSingle();
                 hid = again?.id as string | undefined;
