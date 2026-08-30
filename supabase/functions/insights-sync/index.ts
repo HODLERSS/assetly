@@ -114,10 +114,24 @@ function readerBlock(inv: Investor | null | undefined): string {
   const st = (Array.isArray(v.styles) && v.styles.length ? v.styles : ["value"]).map((x) => styleG[x] ?? "").filter(Boolean).join("; also ");
   return `READER PROFILE (personalize EMPHASIS, VOCABULARY and FRAMING for this one reader; facts and numbers stay identical):
 - ${lvlG[v.level] ?? lvlG.novice}
-- Lens: ${st || styleG.value}. Apply the lens TO this book in EVERY position note and the structure section: the first judgment in each comes through this lens (value: what it is worth versus its price and the downside; income: state in EVERY position note whether and roughly how well that holding pays the owner, dividend or yield posture included, and in the structure section how much income the whole book actually produces), even when the book does not match the lens. The one-line verdict may still name what kind of book it is.
+- Lens: ${st || styleG.value}. Apply the lens TO this book in EVERY position note and the structure section: the first judgment in each comes through this lens (value: what it is worth versus its price and the downside; income: state in EVERY position note whether and roughly how well that holding pays the owner, dividend or yield posture included, and in the structure section how much income the whole book actually produces), even when the book does not match the lens. Even the one-line verdict must carry the lens: name what kind of book it is AND what that means through this lens (for income: what the book pays its owner; for value: what it costs versus what it earns).
 - ${purpG[v.purpose] ?? purpG.watch}
 - ${horG[v.horizon] ?? horG["3-10y"]}; target return ${v.target}/yr; ${riskG[v.risk] ?? riskG.hold}.`;
 }
+
+
+// deterministic plain-language pass for BEGINNER readers: the recurring terms the model keeps leaking, mapped in code
+const NOVICE_MAP: [RegExp, string][] = [
+  [/\bshort interest\b/gi, "bets against the stock"], [/\bof float\b/gi, "of its tradable shares"],
+  [/\bleverage(d)?\b/gi, "borrowed money"], [/\bhigh[- ]beta\b/gi, "sharper-moving-than-the-market"],
+  [/\bbeta\b/gi, "sensitivity to market swings"], [/\bvaluation multiple(s)?\b/gi, "price tag relative to earnings"],
+  [/\bmultiple compression\b/gi, "a shrinking price tag relative to earnings"], [/\bnet interest margin\b/gi, "lending profit margin"],
+  [/\bAUM\b/g, "assets under management"], [/\bROE\b/g, "return on the owners' money"], [/\bROIC\b/g, "return on invested money"],
+  [/\bEBITDA\b/g, "operating profit"], [/\bFCF\b/g, "spare cash flow"], [/\bP\/E\b/g, "price-to-earnings ratio"],
+  [/\bEPS\b/g, "earnings per share"], [/\bcapex\b/gi, "spending on equipment and buildout"], [/\bbasis points\b/gi, "hundredths of a percent"],
+  [/\bmoat\b/gi, "lasting edge over competitors"], [/\bdrawdown(s)?\b/gi, "drop from the top"], [/\bDAU\b/g, "daily users"],
+];
+const noviceScrub = (t: string): string => { let x = t; for (const [re, plain] of NOVICE_MAP) x = x.replace(re, plain); return x; };
 
 function parseInsight(raw: string): { bullets: string[]; windows: Record<string, string>; news5: string[] | null } | null {
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
@@ -327,7 +341,9 @@ Respect the session notes: never present the last session's move as happening to
       }
       const parsed = content ? parseInsight(content) : null;
       if (!parsed) { errors.push("user " + uid.slice(0, 8) + ": unparseable"); continue; }
-      const { error: piErr } = await admin.from("portfolio_insights").insert({ user_id: uid, bullets: parsed.bullets.slice(0, 3), news5: parsed.news5, model });
+      const isNovice = String((invRow?.investor as { level?: string } | null | undefined)?.level ?? "novice") === "novice";
+      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => isNovice ? noviceScrub(x) : x);
+      const { error: piErr } = await admin.from("portfolio_insights").insert({ user_id: uid, bullets: scrubB(parsed.bullets).slice(0, 3), news5: parsed.news5 ? scrubB(parsed.news5) : parsed.news5, model });
       if (piErr) errors.push("user " + uid.slice(0, 8) + ": " + piErr.message); else pWrote++;
     } catch (e) { errors.push("user: " + (e instanceof Error ? e.message : String(e))); }
   }
