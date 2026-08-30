@@ -22,11 +22,11 @@ function parseJsonBlock(raw: string): Record<string, unknown> | null {
   if (end < 0) return null;
   try { return JSON.parse(cleaned.slice(start, end)); } catch { return null; }
 }
-async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs: number): Promise<Record<string, unknown> | null> {
+async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs: number, model?: string): Promise<Record<string, unknown> | null> {
   const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), timeoutMs);
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
     signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7", temperature: 0.25, max_tokens: maxTokens, response_format: { type: "json_object" },
+    body: JSON.stringify({ model: model ?? Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7", temperature: 0.25, max_tokens: maxTokens, response_format: { type: "json_object" },
       messages: [{ role: "system", content: system + " Respond with the JSON object ONLY, first character '{'." }, { role: "user", content: prompt }] }),
   }).catch(() => null);
   clearTimeout(timer);
@@ -103,7 +103,8 @@ spoken: ${spec.len} spoken script of this exact portfolio assessment for express
           : `Brief:\n${JSON.stringify(s)}\n\nReturn STRICT JSON {"spoken": str}.
 spoken: ${spec.len} spoken radio script of this exact brief for expressive text-to-speech. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} analyst speaking to ONE client they know well. Short sentences. Contractions. Spell numbers for the ear ("up five point eight percent"). Vary rhythm; one earned exclamation at most. Structure, all REQUIRED: greeting with the date, the lede, the tape, each position with what to watch, the desk view, and a closing sign-off that says goodbye ("That's your brief. Talk soon."). The script MUST end with that sign-off. Insert <break time="0.7s" /> between sections. Use ONLY facts from the brief. No ticker codes, company names only. Never mention that this is generated.`;
         for (let a = 0; a < 2 && !spoken; a++) {
-          const out = await askModel(key, "You turn a written investment brief into a vivid spoken radio script. Output only the JSON.", prompt, 9000, 35000);
+          // the assessment script is written by the fast model: M2.7 over-thinks the longer assessment shape and times out
+          const out = await askModel(key, "You turn a written investment brief into a vivid spoken radio script. Output only the JSON.", prompt, 9000, 35000, isAssess ? "gpt-oss-120b" : undefined);
           const sp = out && typeof (out as { spoken?: unknown }).spoken === "string" ? String((out as { spoken: string }).spoken) : null;
           if (sp) { const t = sp.replace(/(?:\s*<break[^>]*\/>\s*)+$/g, "").trim(); if (t.split(/\s+/).length >= spec.floor && /[.!?]$/.test(t)) spoken = t; }
         }
