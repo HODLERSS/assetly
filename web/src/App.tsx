@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertCcy, dayChangeAmount } from "./lib/format";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
-import { api as defaultApi, type Api, type Insight, type PortfolioRow, type Profile } from "./lib/api";
+import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
 import { AuthScreen } from "./screens/Auth";
 import { Onboarding } from "./screens/Onboarding";
 import { Home } from "./screens/Home";
@@ -33,7 +33,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [holdAlert, setHoldAlert] = useState(false);
   const [newsAlert, setNewsAlert] = useState(false);
   const [homeAlert, setHomeAlert] = useState(false);
-  const [briefBanner, setBriefBanner] = useState<{ audio: boolean } | null>(null);   // first-arrival banner on Home
+  const [briefBanner, setBriefBanner] = useState<{ audio: boolean; edition: BriefEdition } | null>(null);   // first-arrival banner on Home
   const [autoAsk, setAutoAsk] = useState<{ question: string; key: string } | null>(null);
   const connectPendingRef = useRef<string | null>(null);   // set at the connect moment; consumed when fresh intelligence lands
   const seenBriefRef = useRef<string | null>(null);   // latest brief generated_at the user has seen
@@ -54,7 +54,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         if (key !== seenBriefRef.current) {
           const onHome = viewRef.current.kind === "tab" && viewRef.current.tab === "home";
           if (onHome) seenBriefRef.current = key;
-          setBriefBanner({ audio: !!latest.audio_path });
+          setBriefBanner({ audio: !!latest.audio_path, edition: latest.edition });
           if (!onHome) setHomeAlert(true);
         }
       } catch { /* quiet */ }
@@ -228,6 +228,35 @@ export function App({ api = defaultApi }: { api?: Api }) {
     return () => clearInterval(t);
   }, [session, load, api]);
 
+  // Book-changed pipeline for MANUAL adds: a run of adds (one after another) is coalesced into ONE
+  // orchestrator call, the same chain a brokerage connect runs (sync -> news -> intelligence -> assessment).
+  // Trailing 25s debounce; flushed early when the user leaves the Add screen or backgrounds the app.
+  const bookChangeRef = useRef<{ timer: number | null; pending: boolean }>({ timer: null, pending: false });
+  const runBookPipeline = useCallback(() => {
+    const b = bookChangeRef.current;
+    if (b.timer) { clearTimeout(b.timer); b.timer = null; }
+    if (!b.pending) return;
+    b.pending = false;
+    connectPendingRef.current = String(Date.now());
+    try { sessionStorage.setItem("assetly-connect-at", new Date().toISOString()); } catch { /* storage unavailable */ }
+    setNoticeKind("busy"); setNotice("Updating your intelligence and portfolio assessment");
+    void api.brokerageConnected().finally(() => {
+      setNoticeKind("ok"); setNotice("Fresh intelligence and your assessment are on the way"); setTimeout(() => setNotice(null), 7000);
+    });
+  }, [api]);
+  const scheduleBookChange = useCallback(() => {
+    const b = bookChangeRef.current;
+    b.pending = true;
+    if (b.timer) clearTimeout(b.timer);
+    b.timer = window.setTimeout(runBookPipeline, 25000);
+  }, [runBookPipeline]);
+  useEffect(() => { if (view.kind !== "add") runBookPipeline(); }, [view.kind, runBookPipeline]);   // leaving Add = the run is over
+  useEffect(() => {
+    const h = () => { if (document.visibilityState === "hidden") runBookPipeline(); };
+    document.addEventListener("visibilitychange", h);
+    return () => document.removeEventListener("visibilitychange", h);
+  }, [runBookPipeline]);
+
   const base = profile?.base_currency ?? "USD";
   const totals = useMemo(() => {
     let assets = 0, debt = 0, cost = 0, day = 0, unconverted = 0, mixed = false;
@@ -247,7 +276,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   if (!authReady) return <div className="screen" aria-busy="true" />;
   if (!session) return <AuthScreen />;
   if (profile && !profile.onboarded_at) {
-    return <Onboarding api={api} onDone={load} snaptrade={obSnap} />;
+    return <Onboarding api={api} onDone={load} snaptrade={obSnap} onBookChanged={() => { bookChangeRef.current.pending = true; runBookPipeline(); }} />;
   }
 
   const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "holdings") setHoldAlert(false); if (v.kind === "tab" && v.tab === "news") setNewsAlert(false); if (v.kind === "tab" && v.tab === "home") setHomeAlert(false); setView(v); };
@@ -279,7 +308,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       <main className="screen">
         <h1 className="sr-only">Assetly</h1>
         {view.kind === "add" && (
-          <AddPosition api={api} onRefresh={load}
+          <AddPosition api={api} onRefresh={load} onAdded={scheduleBookChange}
             onDone={() => go({ kind: "tab", tab: "holdings" })}
             onCancel={() => go({ kind: "tab", tab: "holdings" })} />
         )}

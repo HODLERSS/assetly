@@ -1,6 +1,6 @@
-// Brokerage-connected orchestrator: the retention moment. Every connect path (onboarding,
-// Settings, Add Position, webhook CONNECTION_ADDED) runs ONE chain so the user sees a full,
-// fresh set of intelligence within minutes: sync -> news -> symbol + portfolio insights -> brief.
+// Book-changed orchestrator: the retention moment. Every connect path (onboarding, Settings, Add Position,
+// webhook CONNECTION_ADDED) AND a run of manual adds run ONE chain so the user sees a full, fresh set of
+// intelligence within minutes: sync -> news -> symbol + portfolio insights -> portfolio assessment.
 // Callable by the signed-in user (self) or service callers (user_id). Returns immediately.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -38,8 +38,9 @@ Deno.serve(async (req) => {
 
   const headers = { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": internalTok };
   const call = (fn: string, b: unknown) => fetch(`${base}/functions/v1/${fn}`, { method: "POST", headers, body: JSON.stringify(b) }).then((r) => r.json().catch(() => null)).catch(() => null);
-  const utcMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
-  const edition = utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
+  // The first brief after a connect (or a run of manual adds) is the PORTFOLIO ASSESSMENT: quality, structure,
+  // horizons, gaps. The clock editions (morning / midday / close) keep arriving on their cron cadence.
+  const edition = "assessment";
 
   const work = (async () => {
     // 1. positions in (serialized by the per-user lock; a concurrent webhook sync just yields)
@@ -53,7 +54,7 @@ Deno.serve(async (req) => {
       syms.length ? call("insights-sync", { symbols: syms.slice(0, 16) }) : Promise.resolve(null),
       call("insights-sync", { force: true, user_id: uid }),
     ]);
-    // 4. today's brief: handed to brief-retry, which owns its own wall clock per attempt (up to 4 attempts
+    // 4. the assessment: handed to brief-retry, which owns its own wall clock per attempt (up to 6 attempts
     //    with backoff) and narrates via daily-brief -> narrate. The orchestrator's clock is never spent here.
     await fetch(`${base}/functions/v1/brief-retry`, { method: "POST", headers, body: JSON.stringify({ user_id: uid, edition, attempt: 1 }) })
       .then((r) => r.text().catch(() => "")).catch(() => null);

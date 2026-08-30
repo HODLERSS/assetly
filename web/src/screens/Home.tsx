@@ -12,7 +12,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
   totals: { value: number; assets: number; debt: number; gl: number; cost: number; day: number; mixed: boolean; fx: number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
   dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
-  briefBanner?: { audio: boolean } | null; onBriefBannerDone?: () => void;
+  briefBanner?: { audio: boolean; edition?: string } | null; onBriefBannerDone?: () => void;
 }) {
   const mode = moverMode();
   const [pulse, setPulse] = useState<{ symbol: string; name: string; price: number; change_pct: number | null }[]>([]);
@@ -89,7 +89,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
       </section>
       {briefBanner && (
         <div className="status-note ok" role="status" data-testid="brief-banner">
-          <span className="lead"><span aria-hidden="true">✓</span>Your brief is ready{briefBanner.audio ? " · tap ▶ Listen below" : ""}</span>
+          <span className="lead"><span aria-hidden="true">✓</span>{briefBanner.edition === "assessment" ? "Your portfolio assessment is ready" : "Your brief is ready"}{briefBanner.audio ? " · tap ▶ Listen below" : ""}</span>
           <button className="chip" onClick={onBriefBannerDone} aria-label="Dismiss">✕</button>
         </div>
       )}

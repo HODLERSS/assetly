@@ -27,8 +27,9 @@ export type BriefSections = {
   lede: string; overnight: string;
   positions: { name: string; note: string; watch: string }[];
   desk_view: string; calendar: string[];
+  horizon?: string; ideas?: string[];   // assessment only: "Next 3 months: ... Next 3 years: ..." + gaps worth researching
 };
-export type BriefEdition = "morning" | "midday" | "close";
+export type BriefEdition = "morning" | "midday" | "close" | "assessment";
 export type DailyBrief = { brief_date: string; edition: BriefEdition; sections: BriefSections; generated_at: string; audio_path?: string | null };
 export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
 
@@ -216,19 +217,25 @@ export function makeApi(sb: SupabaseClient = supabase) {
         if (error || !data?.ok) warmupFired.delete(symbol);   // transient model hiccup: the post-add call retries
       } catch { warmupFired.delete(symbol); }
     },
-    /** All editions of the most recent brief day (morning, midday pulse, closing note), oldest first. */
+    /** The most recent brief day's editions (morning, midday pulse, closing note) plus the latest
+     *  Portfolio Assessment from the last 14 days, oldest first by generation time. */
     async getDailyBriefs(): Promise<DailyBrief[]> {
-      const { data } = await sb.from("daily_briefs").select("brief_date,edition,sections,generated_at,audio_path")
-        .order("brief_date", { ascending: false }).order("generated_at", { ascending: true }).limit(6);
-      const rows = data ?? [];
-      if (!rows.length) return [];
-      const day = String(rows[0].brief_date);
-      const order = { morning: 0, midday: 1, close: 2 } as const;
-      return rows.filter((r) => String(r.brief_date) === day)
+      type R = { brief_date: string; edition: string | null; sections: unknown; generated_at: string; audio_path: string | null };
+      const [{ data: d1 }, { data: d2 }] = await Promise.all([
+        sb.from("daily_briefs").select("brief_date,edition,sections,generated_at,audio_path").neq("edition", "assessment")
+          .order("brief_date", { ascending: false }).order("generated_at", { ascending: true }).limit(6),
+        sb.from("daily_briefs").select("brief_date,edition,sections,generated_at,audio_path").eq("edition", "assessment")
+          .order("generated_at", { ascending: false }).limit(1),
+      ]);
+      const daily = (d1 ?? []) as R[];
+      const day = daily.length ? String(daily[0].brief_date) : null;
+      const a = ((d2 ?? []) as R[])[0];
+      const fresh = a && Date.now() - +new Date(String(a.generated_at)) < 14 * 86400000 ? [a] : [];
+      return [...daily.filter((r) => String(r.brief_date) === day), ...fresh]
         .map((r) => ({ brief_date: String(r.brief_date), edition: (r.edition ?? "morning") as BriefEdition,
                        sections: r.sections as BriefSections, generated_at: String(r.generated_at),
                        audio_path: (r.audio_path as string | null) ?? null }))
-        .sort((a, b) => order[a.edition] - order[b.edition]);
+        .sort((x, y) => (x.generated_at < y.generated_at ? -1 : x.generated_at > y.generated_at ? 1 : 0));
     },
     /** Short-lived playback URL for a brief's narration. */
     async getBriefAudioUrl(path: string): Promise<string | null> {
@@ -280,7 +287,7 @@ export function makeApi(sb: SupabaseClient = supabase) {
     async snaptradeSync(): Promise<void> {
       await sb.functions.invoke("snaptrade-sync", { body: {} });
     },
-    /** The connect moment: sync -> news -> all intelligence -> today's brief, regenerated on the new book. */
+    /** The book-changed moment (brokerage connect, or a run of manual adds): sync -> news -> all intelligence -> Portfolio Assessment. */
     async brokerageConnected(): Promise<void> {
       await sb.functions.invoke("brokerage-connected", { body: {} }).catch(() => null);
     },

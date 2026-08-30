@@ -1,6 +1,9 @@
 // Assetly Daily Brief — three personal research notes per trading day: morning (pre-open,
 // full 4-stage chain), midday pulse (11am CT, live tape vs the morning view), closing note
 // (post-close, day tally + next-session setup). Edition resolves from the clock or body.edition.
+// Plus the PORTFOLIO ASSESSMENT (edition "assessment"): the first brief after a connect or a run of
+// manual adds. Not a tape note: quality of the book, structure and risk, next-quarter vs next-years
+// horizons, and gaps worth researching. Never produced by the clock; only on request (orchestrator).
 // Four-stage chain, token-maximalist by design:
 //   1 analyst memos  (parallel, one per top holding: full transcript + news + filings)
 //   2 devil's advocate (attacks the memos: what's overstated, what's missing)
@@ -90,7 +93,38 @@ function futureDated(text: string, briefDate: string): boolean {
   return +d >= +today - 86400000;
 }
 
-type Sections = { lede: string; overnight: string; positions: { name: string; note: string; watch: string }[]; desk_view: string; calendar: string[]; spoken?: string };
+type Sections = { lede: string; overnight: string; positions: { name: string; note: string; watch: string }[]; desk_view: string; calendar: string[]; horizon?: string; ideas?: string[]; spoken?: string };
+// the assessment carries two extra sections: horizon ("Next 3 months: ... Next 3 years: ...") and ideas (gaps worth researching)
+function validAssessment(o: unknown): o is Sections {
+  const s = o as Sections;
+  return validSections(o) && typeof s.horizon === "string" && /next 3 months/i.test(s.horizon) && /next 3 years/i.test(s.horizon)
+    && Array.isArray(s.ideas) && s.ideas.filter((x) => typeof x === "string" && x.trim()).length >= 2;
+}
+// deterministic theme + geography tags: the assessment's concentration and correlation numbers come from code, never the model
+const THEMES: Record<string, string> = {
+  NVDA: "AI semiconductors", AMD: "AI semiconductors", ARM: "AI semiconductors", INTC: "AI semiconductors", AVGO: "AI semiconductors", TSM: "AI semiconductors", MU: "AI semiconductors", QCOM: "AI semiconductors", MRVL: "AI semiconductors",
+  "000660.KS": "AI semiconductors", "005930.KS": "AI semiconductors", "005935.KS": "AI semiconductors",
+  SMCI: "AI infrastructure", DELL: "AI infrastructure", VRT: "AI infrastructure", ANET: "AI infrastructure", IREN: "AI infrastructure", CIFR: "AI infrastructure", WULF: "AI infrastructure", APLD: "AI infrastructure", NBIS: "AI infrastructure", CRWV: "AI infrastructure",
+  MARA: "crypto beta", MSTR: "crypto beta", COIN: "crypto beta", RIOT: "crypto beta", CLSK: "crypto beta", HOOD: "crypto beta",
+  BTC: "crypto", ETH: "crypto", SOL: "crypto", "BTC-USD": "crypto", "ETH-USD": "crypto", "SOL-USD": "crypto",
+  MSFT: "mega-cap platforms", META: "mega-cap platforms", AAPL: "mega-cap platforms", GOOGL: "mega-cap platforms", GOOG: "mega-cap platforms", AMZN: "mega-cap platforms", NFLX: "mega-cap platforms",
+  TSLA: "EV and autos", RIVN: "EV and autos", "005380.KS": "EV and autos", "000270.KS": "EV and autos",
+  RDDT: "consumer internet", SNAP: "consumer internet", PINS: "consumer internet", UBER: "consumer internet", SPOT: "consumer internet", DUOL: "consumer internet", "035420.KS": "consumer internet", "035720.KS": "consumer internet",
+  PLTR: "software", CRM: "software", NOW: "software", ORCL: "software", SNOW: "software", FIG: "software", CRWD: "software", ADBE: "software",
+  JPM: "financials", BAC: "financials", GS: "financials", COF: "financials", V: "financials", MA: "financials", "024110.KS": "financials", "105560.KS": "financials",
+  "BRK.B": "diversified conglomerate", "BRK-B": "diversified conglomerate",
+  JNJ: "healthcare", UNH: "healthcare", LLY: "healthcare", PFE: "healthcare", "068270.KS": "healthcare", "207940.KS": "healthcare",
+  XOM: "energy", CVX: "energy", "373220.KS": "batteries", "006400.KS": "batteries", "003690.KS": "consumer staples", KO: "consumer staples", PG: "consumer staples", COST: "consumer staples", WMT: "consumer staples",
+  "012450.KS": "defense", LMT: "defense", RTX: "defense", "042660.KS": "shipbuilding", "009540.KS": "shipbuilding", "329180.KS": "shipbuilding",
+  SPY: "broad US index", VOO: "broad US index", VTI: "broad US index", IVV: "broad US index", FXAIX: "broad US index", QQQ: "Nasdaq 100 index", QQQM: "Nasdaq 100 index",
+  VXUS: "international index", BND: "bonds", TLT: "bonds", AGG: "bonds", GLD: "gold", IAU: "gold", SCHD: "dividend equity", VYM: "dividend equity", JEPI: "income equity",
+};
+const themeOf = (sym: string, kind: string | null) => THEMES[sym] ?? (kind === "crypto" ? "crypto" : kind === "etf" || kind === "fund" ? "funds" : "other");
+const geoOf = (sym: string, kind: string | null) => kind === "crypto" || sym.endsWith("-USD") ? "crypto" : (sym.endsWith(".KS") || sym.endsWith(".KQ")) ? "Korea" : "US";
+const STYLE_RULES = `BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching", "demands scrutiny", "warrants attention".
+NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
+NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
+RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as \u20a9 (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
 function validSections(o: unknown): o is Sections {
   const s = o as Sections;
   return !!s && typeof s.lede === "string" && !!s.lede.trim() && typeof s.overnight === "string"
@@ -122,10 +156,13 @@ Deno.serve(async (req) => {
     }
   }
   const noAudio = body.noAudio === true;   // battery/test runs must not spend TTS quota
-  const validEd = (x: unknown): x is "morning" | "midday" | "close" => x === "morning" || x === "midday" || x === "close";
+  type Edition = "morning" | "midday" | "close" | "assessment";
+  const validEd = (x: unknown): x is Edition => x === "morning" || x === "midday" || x === "close" || x === "assessment";
   const edRaw = url.searchParams.get("edition") ?? (body as { edition?: unknown }).edition;
   const utcMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();   // close = 4:05 PM ET (20:05 UTC), never before the bell
-  const edition: "morning" | "midday" | "close" = validEd(edRaw) ? edRaw : utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
+  // "assessment" is never chosen by the clock: it is requested explicitly (orchestrator / brief-retry) and always forced
+  const edition: Edition = validEd(edRaw) ? edRaw : utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
+  if (edition === "assessment" && !force && !fixture) return json({ ok: false, error: "assessment requires force" }, 400);
 
   let key = "";
   if (!fixture) {
@@ -247,6 +284,133 @@ Deno.serve(async (req) => {
           positions: [{ name: "FixtureCo", note: "Fixture note 1", watch: "fixture watch" }, { name: "FixtureCo2", note: "Fixture note 2", watch: "fixture watch 2" }],
           desk_view: "Fixture desk view.", calendar: [],
         };
+      } else if (edition === "assessment") {
+        // ---- PORTFOLIO ASSESSMENT: quality memos (parallel) -> portfolio skeptic -> editor -> fact-check ----
+        const w = (r: { value: unknown; currency: string }) => usd(Number(r.value ?? 0), r.currency) / total * 100;
+        const cashRows = assets.filter((r) => r.symbol.startsWith("$"));
+        const cashPct = cashRows.reduce((a, r) => a + w(r), 0);
+        const debtUsd = rows.filter((r) => r.kind === "debt").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
+        const themeAgg = new Map<string, { pct: number; names: string[] }>();
+        const geoAgg = new Map<string, number>();
+        for (const r of holdings) {
+          const th = themeOf(r.symbol, r.kind), g = geoOf(r.symbol, r.kind);
+          const cur = themeAgg.get(th) ?? { pct: 0, names: [] };
+          cur.pct += w(r); cur.names.push(krName(r.symbol, r.nickname, r.name)); themeAgg.set(th, cur);
+          geoAgg.set(g, (geoAgg.get(g) ?? 0) + w(r));
+        }
+        const themeLine = [...themeAgg.entries()].sort((a, b) => b[1].pct - a[1].pct).slice(0, 6)
+          .map(([th, v]) => `${th} ${v.pct.toFixed(1)}% (${v.names.slice(0, 4).join(", ")})`).join(" · ") || "(no equity positions)";
+        const geoLine = [...geoAgg.entries()].sort((a, b) => b[1] - a[1]).map(([g, p]) => `${g} ${p.toFixed(1)}%`).join(" · ");
+        const top1 = holdings[0] ? `${krName(holdings[0].symbol, holdings[0].nickname, holdings[0].name)} ${w(holdings[0]).toFixed(1)}%` : "n/a";
+        const top3 = holdings.slice(0, 3).reduce((a, r) => a + w(r), 0).toFixed(1) + "%";
+        const bookLine = `Total assets $${Math.round(total)}. ${holdings.length} equity or crypto positions. Largest ${top1}; top three ${top3}. Cash ${cashPct.toFixed(1)}%.${debtUsd > 0 ? ` Debt $${Math.round(debtUsd)} (${(debtUsd / total * 100).toFixed(1)}% of assets).` : " No debt recorded."}`;
+        const structLines = rows.map((r) => {
+          const sign = r.kind === "debt" ? -1 : 1;
+          return `${krName(r.symbol, r.nickname, r.name)}: $${Math.round(sign * usd(Number(r.value ?? 0), r.currency))} (${w(r).toFixed(1)}% of assets), total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
+        }).join("\n");
+        const memoTargets = holdings.slice(0, 5);
+        const perf: string[] = [];
+        const memos = await Promise.all(memoTargets.map(async (r) => {
+          try {
+            const dispN = krName(r.symbol, r.nickname, r.name);
+            const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
+            const [{ data: news }, { data: fils }, { data: tr }, { data: hist }, { data: ins }] = await Promise.all([
+              admin.from("news").select("title,source,published_at").eq("symbol", r.symbol).gte("published_at", since14).order("published_at", { ascending: false }).limit(8),
+              admin.from("filings").select("form,filed_at").eq("symbol", r.symbol).order("filed_at", { ascending: false }).limit(4),
+              admin.from("transcripts").select("title,content,published_at").eq("symbol", r.symbol).order("published_at", { ascending: false, nullsFirst: false }).limit(1),
+              admin.from("price_history").select("ts,price").eq("symbol", r.symbol).gte("ts", new Date(Date.now() - 400 * 86400000).toISOString()).order("ts", { ascending: true }).limit(1200),
+              admin.from("insights").select("bullets").eq("symbol", r.symbol).order("generated_at", { ascending: false }).limit(1),
+            ]);
+            const h = (hist ?? []).map((x) => ({ ts: String(x.ts), price: Number(x.price) }));
+            perf.push(`${dispN} 30d ${pctOver(h, 30)}, 1y ${pctOver(h, 365)}`);
+            const memoPrompt = `Quality memo on ${dispN} (${r.symbol}), ${w(r).toFixed(1)}% of a private investor's assets. Performance: 30d ${pctOver(h, 30)}, 1y ${pctOver(h, 365)}.
+${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}):\n${String(tr[0].content).slice(0, 4000)}` : "No earnings call on file."}
+${(fils ?? []).length ? `Filings: ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}
+News (14d):\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- none"}
+${ins?.[0] ? `Desk's recent take: ${(ins[0].bullets as string[]).slice(0, 3).join(" ")}` : ""}
+
+Return STRICT JSON: {"name": "${dispN}", "business": str, "quality": str, "role": str, "long_case": str, "tripwire": str, "near": str}.
+business: what it actually sells and to whom (for a fund or coin: what it holds or is), <= 16 words, plain language.
+quality: moat, growth, profitability, balance sheet in ONE candid verdict, <= 28 words; numbers ONLY if they appear in the call text above.
+role: what this position does in a portfolio (compounder, cyclical bet, leveraged proxy, index ballast, speculative call), <= 12 words.
+long_case: what must be true over the next 3 years for this to pay off, <= 20 words.
+tripwire: the single observable sign that the thesis is breaking, <= 14 words, concrete.
+near: the next catalyst in the coming 1-3 months, <= 14 words; never invent a date.
+Candid, specific, no filler. Never em dashes.`;
+            let m = await askModel(key, "You are a buy-side analyst grading business quality for a long-term owner.", memoPrompt, 6000, 25000);
+            if (!m && elapsed() < 40) m = await askModel(key, "You are a buy-side analyst grading business quality for a long-term owner.", memoPrompt, 6000, 25000);
+            return m ? { symbol: r.symbol, ...m } : null;
+          } catch { return null; }
+        }));
+        memosOut = memos.filter(Boolean) as Record<string, unknown>[];
+        if (!memosOut.length) { errors.push(uid.slice(0, 8) + ": no quality memos"); continue; }
+        const perfLine = perf.join("; ") || "(none)";
+
+        // ---- portfolio skeptic: the correlation, the overstatement, the gap ----
+        const devil = elapsed() > 60 ? null : await askModel(key, "You are the desk's skeptic, reviewing a whole portfolio.",
+          `BOOK: ${bookLine}\nTHEME EXPOSURE: ${themeLine}\nGEOGRAPHY: ${geoLine}\nPOSITIONS:\n${structLines}\nMEMOS:\n${JSON.stringify(memosOut)}\n\nReturn STRICT JSON: {"pushback": [{"name": str, "point": str}], "structure": str, "missing": str}.
+pushback: for up to 3 memos, the strongest objection or what it overstates, <= 18 words each.
+structure: the hidden correlation or concentration the owner probably does not see, with the percentage from THEME EXPOSURE, <= 30 words.
+missing: what this book lacks (an asset class, a sector, a geography, ballast, income), <= 20 words. Ruthless, specific, no em dashes.`, 5000, 20000);
+        const pushback = Array.isArray((devil as { pushback?: unknown })?.pushback) ? (devil as { pushback: unknown[] }).pushback : [];
+        const skStructure = String((devil as { structure?: unknown })?.structure ?? "");
+        const skMissing = String((devil as { missing?: unknown })?.missing ?? "");
+
+        // ---- editor: the assessment ----
+        const dataBlock = `PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
+${bookLine}
+${structLines}
+THEME EXPOSURE (deterministic): ${themeLine}
+GEOGRAPHY: ${geoLine}
+PERFORMANCE: ${perfLine}
+NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
+${dateLaw}
+
+QUALITY MEMOS:
+${memosOut.slice(0, 5).map((m) => `- ${m.name}: business: ${m.business}. quality: ${m.quality}. role: ${m.role}. long case: ${m.long_case}. tripwire: ${m.tripwire}. near: ${m.near}`).join("\n")}
+SKEPTIC:
+${pushback.slice(0, 3).map((pb) => `- ${(pb as { name?: string }).name}: ${(pb as { point?: string }).point}`).join("\n") || "- none"}
+- structure: ${skStructure || "none"}
+- missing: ${skMissing || "none"}`;
+        const shapeA = `Return STRICT JSON:\n{"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "horizon": str, "ideas": [str], "calendar": []}`;
+        const editorPrompt = `Write the ${briefDate} PORTFOLIO ASSESSMENT for ONE investor who just put these positions into Assetly. It is a first look at the QUALITY and STRUCTURE of what they own, over the next quarter and the next few years. It is NOT a daily brief: no overnight tape, no day moves, no futures, no session talk.
+
+${dataBlock}
+
+${shapeA}
+lede: the verdict on this book in one breath: what kind of bet it is, and the single structural fact that matters most. <= 30 words.
+overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their weights, the concentration figure, the theme and geography mix, and cash or debt if present. At least THREE numbers copied from PORTFOLIO or THEME EXPOSURE. <= 60 words.
+positions: the 2-4 largest holdings by weight, largest first; every holding above 20% of assets MUST appear. note <= 34 words: what the business is, the quality verdict (moat, growth, balance sheet), and its role in this book; at most two numbers, from the data only; a strength AND a risk or condition in every note. watch <= 12 words: the thesis TRIPWIRE or the next 1-3 month catalyst, concrete and observable; NEVER verbs like monitor, watch, track, keep an eye.
+desk_view: STRUCTURE AND RISK: the concentration, correlation, currency, or leverage fact the owner probably does not see, with its percentage, and what it means for them. <= 50 words. No single-day numbers.
+horizon: exactly two labeled clauses in this shape: "Next 3 months: ... Next 3 years: ..." The first names what actually decides the coming quarter for THIS book (a print, a cycle, a macro number). The second names what must be true for it to compound. <= 50 words total.
+ideas: 2-3 items, <= 14 words each: what this book is missing and what is worth RESEARCHING to fill it (a sector, an asset class, a geography, ballast, an income sleeve). Name the specific theme or instrument type. Never a buy instruction, never a price target.
+ADVICE LAW: never tell them to buy, sell, trim, add, or take profits. You describe, you judge quality, you point at what to research.
+HORIZON LAW: forbidden words: today, tonight, overnight, yesterday, this morning, premarket, after-hours, futures, session, intraday. Timeframes are weeks, months, quarters, years.
+BALANCE LAW: the book's strengths and its risks both get real words; no hype, no doom.
+${STYLE_RULES}`;
+        let draft = await askModel(key, "You are the editor of a one-reader research desk writing a first portfolio assessment. Candid, precise, every word counts. Think briefly, then write.", editorPrompt, 24000, 70000);
+        const meta1 = lastMeta;
+        if ((!draft || !validAssessment(draft)) && elapsed() < 75) {
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Think briefly. Output the exact JSON shape requested, including horizon and ideas.", editorPrompt, 24000, 55000);
+        }
+        if ((!draft || !validAssessment(draft)) && elapsed() < 110) {
+          const compact = `Write the ${briefDate} PORTFOLIO ASSESSMENT (quality and structure of what they own; not a daily note: no day moves, no tape) for ONE investor. Dense; every word counts.
+${bookLine}
+${structLines}
+THEME EXPOSURE: ${themeLine}
+MEMOS:
+${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.business}. ${m.quality}. tripwire: ${m.tripwire}`).join("\n")}
+${shapeA}
+lede <= 30 words (the verdict on this book); overnight <= 60 words naming the top holdings with weights and the concentration figure (>= 3 numbers from the data); 2-4 positions largest first, note <= 34 words with a strength and a risk, watch <= 12 words naming the tripwire (NEVER monitor/watch/track); desk_view <= 50 words on concentration or correlation with its percentage; horizon "Next 3 months: ... Next 3 years: ..." <= 50 words; ideas: 2-3 gaps worth researching, <= 14 words each, never buy or sell instructions. Forbidden words: today, overnight, yesterday, session, futures. No filler, no em dashes, Korean companies by name, won as ₩.`;
+          draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 12000, 35000);
+          if (draft && validAssessment(draft)) usedCompact = true;
+        }
+        if (!draft || !validAssessment(draft)) { errors.push(uid.slice(0, 8) + ": assessment editor failed [" + meta1 + " | " + lastMeta + "]"); continue; }
+        const checked = elapsed() > 112 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
+          `Draft assessment:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\n${bookLine}\n${structLines}\nTHEME EXPOSURE: ${themeLine}\nGEOGRAPHY: ${geoLine}\nPERFORMANCE: ${perfLine}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape (keep horizon and ideas). Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 30, overnight 60, note 34, watch 12, desk_view 50, horizon 50, each idea 14) by tightening, not by losing substance. Also: delete any sentence containing today, tonight, overnight, yesterday, this morning, premarket, after-hours, futures, session, or intraday; delete any instruction to buy, sell, trim, add, or take profits; horizon must keep the literal labels "Next 3 months:" and "Next 3 years:"; replace any numeric KRX code with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains.`, 10000, 30000);
+        sections = (checked && validAssessment(checked)) ? checked as Sections : draft as Sections;
+        sections.calendar = [];
+        sections.ideas = (sections.ideas ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
       } else if (edition === "morning") {
         // ---- stage 1: analyst memos, parallel over top holdings ----
         const memoTargets = holdings.slice(0, 5);
@@ -367,10 +531,7 @@ Return STRICT JSON {"name": "${dispN}", "changed": str, "watch": str}. changed: 
         const morningCtx = mSec ? `THIS MORNING'S BRIEF (build on it, never repeat a sentence from it): lede "${mSec.lede}" \u00b7 tape "${mSec.overnight}" \u00b7 desk view "${mSec.desk_view}" \u00b7 watches: ${mSec.positions.map((p) => `${p.name}: ${p.watch}`).join("; ")}` : "(no morning brief today; write standalone, no references to an earlier note)";
         const isFri = new Date(briefDate + "T12:00:00Z").getUTCDay() === 5;
         const krHeld = holdings.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"));
-        const STYLE_RULES = `BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching", "demands scrutiny", "warrants attention".
-NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
-NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
-RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as \u20a9 (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
+        // STYLE_RULES hoisted to module scope (shared with the assessment)
         const dataBlock = `MARKET NOW: ${mktLive || "(no market data)"}
 LEADERS: ${leaderLines || "(none tracked)"}
 FRESH HEADLINES (8h):

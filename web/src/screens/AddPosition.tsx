@@ -4,9 +4,11 @@ import { InsightsCard } from "../components/InsightsCard";
 
 // Canvas 3c/3d applied post-onboarding: search, then the two required fields.
 // Serial adds: after each save the form resets for the next ticker while the
-// just-added stock's intelligence card fades in right below the search.
-export function AddPosition({ api, onDone, onRefresh, onCancel }: {
-  api: Api; onDone: () => Promise<void> | void; onRefresh: () => Promise<void> | void; onCancel: () => void;
+// just-added stock's intelligence card fades in right below the search. Each add is
+// reported via onAdded; the app coalesces a run of adds into ONE book-changed pipeline
+// (news -> intelligence -> Portfolio Assessment), the same chain a brokerage connect runs.
+export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded }: {
+  api: Api; onDone: () => Promise<void> | void; onRefresh: () => Promise<void> | void; onCancel: () => void; onAdded?: () => void;
 }) {
   const [added, setAdded] = useState<string[]>([]);          // newest first, this session
   const [q, setQ] = useState("");
@@ -141,7 +143,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel }: {
               await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "", note.trim());
               if (!sym.startsWith("$")) void api.warmup(sym);   // first-look intelligence, fire-and-forget
               if (!isCash) void api.refreshNews([picked.symbol]);        // stories land while the user looks around
-              if (!isCash) void api.refreshPortfolioInsights();          // the portfolio view must reflect the new name now, not at the next stale lap
+              onAdded?.();                                               // the app batches this run of adds into one pipeline (intelligence + assessment)
               await onRefresh();
               // stay here for the next add; the fresh card renders below the search
               setAdded((a) => [sym, ...a]);

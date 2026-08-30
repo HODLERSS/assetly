@@ -308,7 +308,7 @@ describe("U45 brief arrival light", () => {
     await userEvent.click(tabs().getByRole("button", { name: /Your brief is ready|^Home$/ }));
     expect((await screen.findByTestId("brief-banner")).textContent).toContain("Listen");
     await vi.waitFor(() => expect(screen.queryByLabelText("Your brief is ready")).toBeNull());
-  });
+  }, 40000);   // the brief watcher polls every 20s; this test waits for one real tick
 });
 
 describe("U46 debt in totals", () => {
@@ -1214,5 +1214,62 @@ describe("U10 settings", () => {
     expect(screen.getByText("Minjae")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: /sign out/i }));
     await waitFor(() => expect(api.signOut).toHaveBeenCalled());
+  });
+});
+
+describe("U47 series of manual adds", () => {
+  it("adds in a row are coalesced into ONE book-changed pipeline (the connect chain), flushed when the user taps Done", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add position/i }));
+    for (const qty of ["5", "3"]) {
+      await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
+      await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
+      await userEvent.type(screen.getByLabelText(/^shares$/i), qty);
+      await userEvent.type(screen.getByLabelText(/cost per share/i), "15");
+      await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+      await screen.findByTestId("added-strip");
+    }
+    // still inside the run: nothing has fired, and no per-add portfolio refresh either
+    expect(api.brokerageConnected).not.toHaveBeenCalled();
+    expect(api.refreshPortfolioInsights).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: /done/i }));
+    await waitFor(() => expect(api.brokerageConnected).toHaveBeenCalledTimes(1));
+    expect(sessionStorage.getItem("assetly-connect-at")).toBeTruthy();   // lights + auto-ask arm exactly like a connect
+    expect((await screen.findByTestId("brokerage-notice")).textContent).toMatch(/assessment/i);
+  });
+});
+
+describe("U48 portfolio assessment card", () => {
+  it("the newest edition leads; the assessment shows quality read, structure, horizons and gaps", async () => {
+    const daily = { lede: "Morning lede here.", overnight: "S&P500 index 6,470 (+0.4%), VIX 14.1, KOSPI 3,120 (+0.8%).",
+      positions: [{ name: "MARA", note: "Up 2.1% into the print.", watch: "Q3 call tonight" }], desk_view: "Concentration unchanged.", calendar: [] };
+    const assess = { lede: "A two-bet book: AI semiconductors and crypto beta are 83% of your assets.",
+      overnight: "Total $48,200. NVDA 41.5%, MARA 22.3%, AMD 19.1%; top three 82.9%. All US, no cash.",
+      positions: [{ name: "NVDA", note: "Sells the accelerators every AI data center is built on; pricing power intact, customer concentration is the risk.", watch: "Hyperscaler capex guidance cut" }],
+      desk_view: "Three names, one factor: AI capex. 82.9% of assets move on the same news.",
+      horizon: "Next 3 months: NVDA's print decides the quarter. Next 3 years: AI capex must keep compounding.",
+      ideas: ["A non-tech ballast sleeve: healthcare or staples", "Short-duration bonds as dry powder"], calendar: [] };
+    const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([
+      { brief_date: "2026-08-29", edition: "morning", generated_at: "2026-08-29T12:35:00Z", sections: daily, audio_path: null },
+      { brief_date: "2026-08-29", edition: "assessment", generated_at: "2026-08-29T15:10:00Z", sections: assess, audio_path: "u/2026-08-29-assessment.mp3" },
+    ]) });
+    render(<App api={api} />);
+    const card = await screen.findByTestId("brief-card");
+    expect(card.textContent).toContain("Portfolio Assessment");
+    expect(card.textContent).toContain("two-bet book");
+    expect(screen.getByRole("button", { name: /listen to your brief/i })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /read · 3 min/i }));
+    const body = await screen.findByTestId("brief-body");
+    expect(body.textContent).toContain("Your book");
+    expect(body.textContent).toContain("Quality read");
+    expect(body.textContent).toContain("Tripwire: Hyperscaler capex guidance cut");
+    expect(body.textContent).toContain("Structure & risk");
+    expect(screen.getByTestId("brief-horizon").textContent).toContain("Next 3 years");
+    expect(screen.getAllByTestId("brief-idea")).toHaveLength(2);
+    await userEvent.click(screen.getByRole("button", { name: "Morning" }));
+    expect((await screen.findByTestId("brief-card")).textContent).toContain("Morning Brief");
   });
 });

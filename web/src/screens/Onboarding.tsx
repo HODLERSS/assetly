@@ -5,8 +5,8 @@ import { marketOf } from "../lib/markets";
 // Setup: connect a brokerage (positions import in seconds) OR add the first
 // position manually. After the OAuth return, this screen shows the live import
 // and finishes onboarding in one tap — markets are inferred, never asked.
-export function Onboarding({ api, onDone, snaptrade = null }: {
-  api: Api; onDone: () => Promise<void> | void; snaptrade?: string | null;
+export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
+  api: Api; onDone: () => Promise<void> | void; snaptrade?: string | null; onBookChanged?: () => void;
 }) {
   const [step, setStep] = useState(1);
   const [q, setQ] = useState("");
@@ -59,7 +59,7 @@ export function Onboarding({ api, onDone, snaptrade = null }: {
     setBusy(true); setErr(null);
     try {
       await api.completeOnboarding(marketsOf(imported ?? []), "USD");
-      void api.firstBrief();   // read + listen within minutes, no cron wait
+      // the connect callback already queued the book-changed chain (sync -> news -> intelligence -> assessment)
       await onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not save. Try again."); }
     finally { setBusy(false); }
@@ -80,7 +80,7 @@ export function Onboarding({ api, onDone, snaptrade = null }: {
       void api.refreshNews([picked.symbol]);                // stories land while the user looks around
       const m = marketOf({ symbol: picked.symbol, kind: picked.kind });   // inferred, never asked
       await api.completeOnboarding([m === "KR" ? "KR" : m === "CRYPTO" ? "Crypto" : "US"], "USD");
-      void api.firstBrief();
+      onBookChanged?.();   // same pipeline as a brokerage connect: intelligence + Portfolio Assessment within minutes
       await onDone();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save. Try again.");

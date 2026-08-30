@@ -12,7 +12,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
-type Sections = { lede: string; overnight: string; positions: { name: string; note: string; watch: string }[]; desk_view: string; calendar?: string[] };
+type Sections = { lede: string; overnight: string; positions: { name: string; note: string; watch: string }[]; desk_view: string; calendar?: string[]; horizon?: string; ideas?: string[] };
 
 function parseJsonBlock(raw: string): Record<string, unknown> | null {
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
@@ -39,10 +39,12 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
 // fallback keeps digits but spaces them so TTS reads them cleanly ("107,300 dollars", "5.8 percent")
 const earNumbers = (t: string) => t.replace(/\$([\d,]+(?:\.\d+)?)/g, "$1 dollars").replace(/(\d+(?:\.\d+)?)%/g, "$1 percent").replace(/₩([\d,]+)/g, "$1 won");
 function fallbackScript(s: Sections, dayLine: string, edition: string): string {
-  const greet = edition === "close" ? `Good evening, it's ${dayLine}. Here's your closing note.` : edition === "midday" ? `It's ${dayLine}, midday. Here's your pulse.` : `Good morning, it's ${dayLine}. Here's your brief.`;
+  const greet = edition === "assessment" ? `Hi, it's ${dayLine}. Here's your portfolio assessment.` : edition === "close" ? `Good evening, it's ${dayLine}. Here's your closing note.` : edition === "midday" ? `It's ${dayLine}, midday. Here's your pulse.` : `Good morning, it's ${dayLine}. Here's your brief.`;
   const parts = [greet, earNumbers(s.lede), earNumbers(s.overnight),
-    ...s.positions.map((p) => `${p.name}. ${earNumbers(p.note)} What to watch: ${earNumbers(p.watch)}.`),
-    earNumbers(s.desk_view), "That's your brief. Talk soon."];
+    ...s.positions.map((p) => `${p.name}. ${earNumbers(p.note)} ${edition === "assessment" ? "The tripwire:" : "What to watch:"} ${earNumbers(p.watch)}.`),
+    earNumbers(s.desk_view),
+    ...(edition === "assessment" ? [earNumbers(s.horizon ?? ""), (s.ideas ?? []).length ? "Worth researching: " + earNumbers((s.ideas ?? []).join(". ")) + "." : ""] : []),
+    edition === "assessment" ? "That's your assessment. Talk soon." : "That's your brief. Talk soon."];
   return parts.filter(Boolean).join(' <break time="0.7s" /> ');
 }
 
@@ -89,11 +91,16 @@ Deno.serve(async (req) => {
       const ed = String(row.edition);
       const spec = ed === "midday" ? { len: "a 60-to-90 second (150-220 word)", who: "midday-desk", floor: 120 }
         : ed === "close" ? { len: "a 90-second-to-2-minute (200-290 word)", who: "end-of-day", floor: 170 }
+        : ed === "assessment" ? { len: "a 2-to-3 minute (330-420 word)", who: "portfolio-strategist", floor: 260 }
         : { len: "a 2-to-3 minute (340-430 word)", who: "morning-desk", floor: 280 };
+      const isAssess = ed === "assessment";
       // ---- script: tight-budget model call, else deterministic fallback ----
       let spoken: string | null = null;
       if (key) {
-        const prompt = `Brief:\n${JSON.stringify(s)}\n\nReturn STRICT JSON {"spoken": str}.
+        const prompt = isAssess
+          ? `Assessment:\n${JSON.stringify(s)}\n\nReturn STRICT JSON {"spoken": str}.
+spoken: ${spec.len} spoken script of this exact portfolio assessment for expressive text-to-speech. It is the FIRST look at a client's newly added portfolio: its quality, its structure, the next quarter versus the next few years, and gaps worth researching. Not a daily tape note. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} speaking to ONE client they are just getting to know. Short sentences. Contractions. Spell numbers for the ear ("thirty eight percent of your assets"). Vary rhythm; one earned exclamation at most. Structure, all REQUIRED: greeting with the date, the verdict (lede), what they own (overnight), each position with its tripwire (watch), structure and risk (desk_view), the horizons (horizon), what is worth researching (ideas), and a closing sign-off that says goodbye ("That's your assessment. Talk soon."). The script MUST end with that sign-off. Insert <break time="0.7s" /> between sections. Use ONLY facts from the assessment. Never tell them to buy or sell. No ticker codes, company names only. Never mention that this is generated.`
+          : `Brief:\n${JSON.stringify(s)}\n\nReturn STRICT JSON {"spoken": str}.
 spoken: ${spec.len} spoken radio script of this exact brief for expressive text-to-speech. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} analyst speaking to ONE client they know well. Short sentences. Contractions. Spell numbers for the ear ("up five point eight percent"). Vary rhythm; one earned exclamation at most. Structure, all REQUIRED: greeting with the date, the lede, the tape, each position with what to watch, the desk view, and a closing sign-off that says goodbye ("That's your brief. Talk soon."). The script MUST end with that sign-off. Insert <break time="0.7s" /> between sections. Use ONLY facts from the brief. No ticker codes, company names only. Never mention that this is generated.`;
         for (let a = 0; a < 2 && !spoken; a++) {
           const out = await askModel(key, "You turn a written investment brief into a vivid spoken radio script. Output only the JSON.", prompt, 9000, 35000);
@@ -103,7 +110,7 @@ spoken: ${spec.len} spoken radio script of this exact brief for expressive text-
       }
       let usedFallback = false;
       if (!spoken) { spoken = fallbackScript(s, dayLine, ed); usedFallback = true; }
-      if (!/(talk soon|see you|that's your|that’s your)/i.test(spoken.slice(-120))) spoken += ` <break time="0.6s" /> That's your brief. Talk soon.`;
+      if (!/(talk soon|see you|that's your|that’s your)/i.test(spoken.slice(-120))) spoken += ` <break time="0.6s" /> ${isAssess ? "That's your assessment." : "That's your brief."} Talk soon.`;
       // ---- TTS: 3 attempts with backoff ----
       let audio: Uint8Array | null = null;
       for (let a = 0; a < 3 && !audio; a++) {
