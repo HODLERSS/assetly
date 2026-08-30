@@ -100,8 +100,15 @@ Deno.serve(async (req) => {
 
   const results: Record<string, unknown>[] = [];
   for (const uid of targets.slice(0, 25)) {
-    const { data: got } = await admin.rpc("try_user_lock", { p_user: uid });
-    if (got === false) { results.push({ uid: uid.slice(0, 8), skipped: "sync in progress" }); continue; }
+    // the lease lives on the user's snaptrade_tokens row; fixture runs (test users, synthetic payloads) have no row and no lease
+    if (!fixture) {
+      const { data: got } = await admin.rpc("try_user_lock", { p_user: uid });
+      if (got === false) {
+        const { data: exists } = await admin.from("snaptrade_tokens").select("user_id").eq("user_id", uid).maybeSingle();
+        results.push({ uid: uid.slice(0, 8), ...(exists ? { skipped: "sync in progress" } : { error: "not connected" }) });
+        continue;
+      }
+    }
     try {
       const { data: row } = await admin.from("snaptrade_tokens").select("user_id,mode,st_secret,refresh_token,access_token,access_expires_at").eq("user_id", uid).maybeSingle();
       let get: (path: string) => Promise<unknown>;
@@ -274,7 +281,7 @@ Deno.serve(async (req) => {
         try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(kick); } catch { /* ignore */ }
       }
     } catch (e) { results.push({ uid: uid.slice(0, 8), error: e instanceof Error ? e.message : String(e) }); }
-    finally { await admin.rpc("release_user_lock", { p_user: uid }).then(() => {}, () => {}); }
+    finally { if (!fixture) await admin.rpc("release_user_lock", { p_user: uid }).then(() => {}, () => {}); }
   }
   return json({ ok: true, results });
 });
