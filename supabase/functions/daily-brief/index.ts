@@ -95,7 +95,7 @@ function readerBlock(inv: Investor | null | undefined): string {
     learn: "They want to LEARN as they go: give one short line of reasoning behind each conclusion.",
   };
   const lvlG: Record<string, string> = {
-    novice: "BEGINNER reader: plain words, short sentences; briefly explain any term a newcomer may not know, in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
+    novice: "BEGINNER reader: plain words, short sentences. NO bare acronyms or jargon ANYWHERE, including watch items and bullets: say profit growth, not ROE; cash flow, not FCF; operating profit, not EBITDA. If a term is unavoidable, gloss it in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
     intermediate: "Informed reader: plain language, common financial terms need no explanation.",
     advanced: "Advanced reader: precise financial vocabulary welcome, no hand-holding.",
     pro: "Professional reader: dense, technical, desk-note register.",
@@ -113,7 +113,7 @@ function readerBlock(inv: Investor | null | undefined): string {
   const st = (Array.isArray(v.styles) && v.styles.length ? v.styles : ["value"]).map((x) => styleG[x] ?? "").filter(Boolean).join("; also ");
   return `READER PROFILE (personalize EMPHASIS, VOCABULARY and FRAMING for this one reader; facts and numbers stay identical):
 - ${lvlG[v.level] ?? lvlG.novice}
-- Lens: ${st || styleG.value}.
+- Lens: ${st || styleG.value}. Apply the lens TO this book: judge the book through it even when the book does not match it (an income lens on a growth book asks what income it actually produces and how safe that is).
 - ${purpG[v.purpose] ?? purpG.watch}
 - ${horG[v.horizon] ?? horG["3-10y"]}; target return ${v.target}/yr; ${riskG[v.risk] ?? riskG.hold}.`;
 }

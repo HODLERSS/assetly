@@ -154,7 +154,7 @@ for (const name of subset) {
       A1: secs <= 180 && attempts === 1 ? 100 : secs <= 300 ? 70 : 0,
       A2: evM2(jj) ? 100 : 0,
       A3: pct([hold[0] ? nameHit(posText, hold[0]) : true, big.every(h => nameHit(posText, h)), hold[0] ? nameHit(s.overnight, hold[0]) : true, (s.overnight.match(/\d[\d,.]*/g) ?? []).length >= 3]),
-      A4: pct([!HORIZON_BAN.test(text), ev(jj, "m4"), /next 3 months/i.test(s.horizon ?? "") && /next 3 years/i.test(s.horizon ?? "")]),
+      A4: pct([!HORIZON_BAN.test(text), ev(jj, "m4"), ((s.horizon ?? "").match(/next [^:]{1,14}:/gi) ?? []).length >= 2]),
       A5: ev(jj, "m5") ? 100 : 0,
       A6: pct([ev(jj, "m6"), /\d+(\.\d+)?\s?%/.test(s.desk_view)]),
       A7: pct([watchOk, ideas.length >= 2 && ideas.length <= 3 && ideas.every(x => wc(x) <= 16) && !ideas.some(x => /^diversify\b/i.test(x.trim()) || IDEA_BAN.test(x.trim())), ev(jj, "m7")]),

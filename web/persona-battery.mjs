@@ -71,7 +71,8 @@ for (const name of subset) {
   if (!rows?.length) { log(`${name}: GEN FAIL ${JSON.stringify(w?.data ?? w?.error).slice(0, 120)}`); continue; }
   const pi0 = Date.now();
   await c.functions.invoke("insights-sync", { body: { force: true } });
-  const { data: pins } = await c.from("portfolio_insights").select("bullets, generated_at").eq("user_id", u.user.id).gte("generated_at", new Date(pi0).toISOString()).order("generated_at", { ascending: false }).limit(1);
+  let { data: pins } = await c.from("portfolio_insights").select("bullets, generated_at").eq("user_id", u.user.id).gte("generated_at", new Date(pi0).toISOString()).order("generated_at", { ascending: false }).limit(1);
+  if (!pins?.length) { await c.functions.invoke("insights-sync", { body: { force: true } }); ({ data: pins } = await c.from("portfolio_insights").select("bullets, generated_at").eq("user_id", u.user.id).gte("generated_at", new Date(pi0).toISOString()).order("generated_at", { ascending: false }).limit(1)); }
   outputs[name] = { sections: rows[0].sections, bullets: pins?.[0]?.bullets ?? [], persona: p };
   log(`${name}: generated (${Math.round((Date.now() - t0) / 1000)}s, bullets ${outputs[name].bullets.length})`);
 }
