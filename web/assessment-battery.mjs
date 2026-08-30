@@ -118,7 +118,8 @@ for (const name of subset) {
       new Promise((res) => setTimeout(() => res({ error: { message: "invoke timeout 200s" } }), 200000)),
     ]);
     let w = await invoke(); let attempts = 1;
-    const fresh = async () => { const { data: b } = await c.from("daily_briefs").select("sections, model, generated_at, memos").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", "assessment").maybeSingle(); return b && +new Date(b.generated_at) >= t0 ? b : null; };
+    // by generation time, not by date: the ET trading date can roll over mid-run
+    const fresh = async () => { const { data } = await c.from("daily_briefs").select("sections, model, generated_at, memos").eq("user_id", u.user.id).eq("edition", "assessment").gte("generated_at", new Date(t0).toISOString()).order("generated_at", { ascending: false }).limit(1); const b = data?.[0]; return b ? b : null; };
     let b = await fresh();
     if (!b) { log(`  (${name} attempt 1 miss: ${w?.error?.message ?? JSON.stringify(w?.data?.errors ?? w?.data).slice(0, 200)})`); await new Promise(r => setTimeout(r, 30000)); w = await invoke(); attempts = 2; b = await fresh(); }
     if (!b) { await new Promise(r => setTimeout(r, 60000)); w = await invoke(); attempts = 3; b = await fresh(); }
