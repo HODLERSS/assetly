@@ -24,8 +24,11 @@ Deno.serve(async (req) => {
 
   const work = (async () => {
     const { data: before } = await admin.from("daily_briefs").select("generated_at").eq("user_id", uid).eq("brief_date", today).eq("edition", edition).maybeSingle();
+    let dbStatus = "none"; let dbBody = "";
     const r = await fetch(`${base}/functions/v1/daily-brief`, { method: "POST", headers, body: JSON.stringify({ force: true, user_id: uid, edition }) })
-      .then((x) => x.json().catch(() => null)).catch(() => null) as { wrote?: number } | null;
+      .then(async (x) => { dbStatus = String(x.status); const t = await x.text().catch(() => ""); dbBody = t.slice(0, 200); try { return JSON.parse(t); } catch { return null; } })
+      .catch((e) => { dbStatus = "fetcherr"; dbBody = String(e).slice(0, 200); return null; }) as { wrote?: number } | null;
+    await admin.from("snaptrade_events").insert({ user_id: uid, kind: "brief_trace", seen: true, detail: { attempt, edition, dbStatus, dbBody } }).then(() => {}, () => {});
     const { data: after } = await admin.from("daily_briefs").select("generated_at, model").eq("user_id", uid).eq("brief_date", today).eq("edition", edition).maybeSingle();
     const wrote = (r?.wrote ?? 0) > 0 || (after && (!before || after.generated_at !== before.generated_at));
     if (wrote) return;
