@@ -75,6 +75,50 @@ function sessNote(mkt: "US" | "KR", now = new Date()): string {
   return `${name} finished today's session. Day changes are today's final moves.`;
 }
 
+
+// ---- reader profile: the 6 sign-up answers steer VOICE, EMPHASIS and PURPOSE, never the facts ----
+type Investor = { styles?: string[]; purpose?: string; horizon?: string; target?: string; risk?: string; level?: string };
+function readerBlock(inv: Investor | null | undefined): string {
+  const v = { styles: ["value"], purpose: "watch", horizon: "3-10y", target: "8-12%", risk: "hold", level: "novice", ...(inv ?? {}) };
+  const styleG: Record<string, string> = {
+    value: "valuation, moat, margin of safety and downside first",
+    growth: "revenue growth, market size and execution first",
+    income: "yield, payout safety and income stability first",
+    index: "diversification, costs and factor tilts first",
+    ai_tech: "AI and technology-cycle positioning first",
+    trader: "catalysts, momentum and actionable levels first",
+    crypto: "crypto cycles, flows and custody risk first",
+  };
+  const purpG: Record<string, string> = {
+    watch: "They mainly want to STAY ON TOP of what they already own: lead with what changed and what it means for their book.",
+    ideas: "They are hunting their NEXT investment in the coming weeks: emphasize research directions, screening angles and gaps worth exploring (still never a direct buy or sell instruction).",
+    news: "They mainly want the SIGNAL STREAM: lead with the freshest material development and why it matters.",
+    learn: "They want to LEARN as they go: give one short line of reasoning behind each conclusion.",
+  };
+  const lvlG: Record<string, string> = {
+    novice: "BEGINNER reader: plain words, short sentences; briefly explain any term a newcomer may not know, in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
+    intermediate: "Informed reader: plain language, common financial terms need no explanation.",
+    advanced: "Advanced reader: precise financial vocabulary welcome, no hand-holding.",
+    pro: "Professional reader: dense, technical, desk-note register.",
+  };
+  const horG: Record<string, string> = {
+    "<1y": "SHORT horizon: near-term catalysts and levels matter most",
+    "1-3y": "1-3 year horizon: balance near catalysts with the medium-term case",
+    "3-10y": "3-10 year horizon: structural quality and compounding outweigh weekly noise",
+    "10y+": "10+ year horizon: long-run compounding is everything; day-to-day noise barely matters",
+  };
+  const riskG: Record<string, string> = {
+    buy_more: "treats drawdowns as buying opportunities", hold: "holds through drawdowns",
+    trim: "trims into weakness", sell: "is quick to cut losses; flag risk early and clearly",
+  };
+  const st = (Array.isArray(v.styles) && v.styles.length ? v.styles : ["value"]).map((x) => styleG[x] ?? "").filter(Boolean).join("; also ");
+  return `READER PROFILE (personalize EMPHASIS, VOCABULARY and FRAMING for this one reader; facts and numbers stay identical):
+- ${lvlG[v.level] ?? lvlG.novice}
+- Lens: ${st || styleG.value}.
+- ${purpG[v.purpose] ?? purpG.watch}
+- ${horG[v.horizon] ?? horG["3-10y"]}; target return ${v.target}/yr; ${riskG[v.risk] ?? riskG.hold}.`;
+}
+
 function parseInsight(raw: string): { bullets: string[]; windows: Record<string, string>; news5: string[] | null } | null {
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   const start = cleaned.indexOf('{"bullets"') >= 0 ? cleaned.indexOf('{"bullets"') : cleaned.indexOf("{");
@@ -241,6 +285,8 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       if (total < 100) continue;                                   // nothing meaningful to say
       const desc = assets.sort((a, b) => usd(b) - usd(a)).slice(0, 15)
         .map((r) => `${nOf(r.symbol)} (${r.kind}${r.account !== "brokerage" ? ", " + r.account : ""}): $${Math.round(usd(r))} = ${(usd(r) / total * 100).toFixed(1)}% of assets, day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}`).join("\n");
+      const { data: invRow } = await admin.from("profiles").select("investor").eq("id", uid).maybeSingle();
+      const READER = readerBlock(invRow?.investor as Investor | null);
       const { data: symIns } = await admin.from("insights").select("symbol, bullets, generated_at")
         .in("symbol", assets.map((r) => r.symbol)).order("generated_at", { ascending: false }).limit(30);
       const latestBySym = new Map<string, string>();
@@ -274,6 +320,8 @@ Bullet 2: the most decision-relevant company signal right now: an earnings call 
 Bullet 3: a mid-term signal a value investor should note: valuation, fundamentals trend, or upcoming catalyst.
 Each bullet 15 words MAX. Spread coverage across different holdings when the signals warrant it.
 news5: the top 5 signals from this week across their holdings, RANKED by importance to THIS portfolio (weight by position size and decision impact). Each 10 words MAX, names the company (US ticker OK; Korean companies by NAME), no two about the same story.
+${READER}
+Bullet 3 must speak to THIS reader's lens, purpose and horizon (see the profile above).
 Respect the session notes: never present the last session's move as happening today. Refer to Korean companies by NAME, never numeric KRX codes like 005930.KS. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons. No generic advice.`;
         content = await askMara(key, model, prompt, 14000);
       }

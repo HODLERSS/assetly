@@ -48,10 +48,15 @@ const row = (over: Partial<PortfolioRow>): PortfolioRow => ({
   as_of: new Date().toISOString(), value: 4800, total_gl: 779, ...over,
 });
 
+async function skipQuiz() {
+  await screen.findByTestId("investor-quiz");
+  await userEvent.click(screen.getByTestId("quiz-skip"));
+}
 function stubApi(over: Partial<Api> = {}): Api {
   return {
     getProfile: vi.fn().mockResolvedValue(profile),
     completeOnboarding: vi.fn().mockResolvedValue(undefined),
+    updateInvestor: vi.fn().mockResolvedValue(undefined),
     searchSymbols: vi.fn().mockResolvedValue([{ symbol: "MARA", name: "MARA Holdings", exchange: "NASDAQ", currency: "USD", kind: "equity" }]),
     ensureSymbol: vi.fn().mockResolvedValue(undefined),
     refreshNews: vi.fn().mockResolvedValue(true),
@@ -127,6 +132,7 @@ describe("U2 onboarding", () => {
       .mockResolvedValue(profile) });
     render(<App api={api} />);
     await screen.findByText(/set up assetly/i);
+    await skipQuiz();
     await userEvent.type(screen.getByRole("textbox", { name: /find your first position/i }), "MARA");
     await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
     await userEvent.type(screen.getByLabelText(/^shares$/i), "100");
@@ -246,6 +252,7 @@ describe("U43 connect-first onboarding", () => {
   it("step 1 offers brokerage connect above manual search", async () => {
     const api = stubApi({ getProfile: vi.fn().mockResolvedValue({ id: "u1", display_name: "T", base_currency: "USD", display_us: "USD", display_kr: "KRW", markets: ["US"], onboarded_at: null }) });
     render(<App api={api} />);
+    await skipQuiz();
     const btn = await screen.findByTestId("ob-connect");
     expect(btn.textContent).toContain("Connect your brokerage");
     expect(screen.getByLabelText(/find your first position/i)).toBeTruthy();
@@ -254,6 +261,7 @@ describe("U43 connect-first onboarding", () => {
     const api = stubApi({
       getProfile: vi.fn().mockResolvedValue({ id: "u1", display_name: "T", base_currency: "USD", display_us: "USD", display_kr: "KRW", markets: ["US"], onboarded_at: null }),
       completeOnboarding: vi.fn().mockResolvedValue(undefined),
+    updateInvestor: vi.fn().mockResolvedValue(undefined),
     });
     window.history.replaceState({}, "", "/?snaptrade=connected");
     render(<App api={api} />);
@@ -261,7 +269,7 @@ describe("U43 connect-first onboarding", () => {
     await screen.findByText(/imported 1 position/i, {}, { timeout: 4000 });
     expect(card.textContent).toContain("RDDT");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    await vi.waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD"));
+    await vi.waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD", expect.objectContaining({ level: "novice", styles: ["value"] })));
     window.history.replaceState({}, "", "/");
   });
 });
@@ -1272,5 +1280,67 @@ describe("U48 portfolio assessment card", () => {
     expect(screen.getAllByTestId("brief-idea")).toHaveLength(2);
     await userEvent.click(screen.getByRole("button", { name: "Morning" }));
     expect((await screen.findByTestId("brief-card")).textContent).toContain("Morning Brief");
+  });
+});
+
+describe("U49 investor quiz at sign-up", () => {
+  const freshProfile = { ...profile, onboarded_at: null };
+  it("five tap-only questions land in completeOnboarding; a two-style pick survives", async () => {
+    const api = stubApi({ getProfile: vi.fn().mockResolvedValue(freshProfile), getPortfolio: vi.fn().mockResolvedValue([]) });
+    render(<App api={api} />);
+    await screen.findByTestId("investor-quiz");
+    await userEvent.click(screen.getByRole("button", { name: "Value" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI & tech" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Find my next investment" }));
+    await userEvent.click(await screen.findByRole("button", { name: "10+ years" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Aggressive 12/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Buy more" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Intermediate" }));
+    // quiz done -> the holdings step; add one manual position to finish onboarding
+    await screen.findByTestId("ob-connect");
+    await userEvent.type(screen.getByLabelText(/find your first position/i), "MARA");
+    await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
+    await userEvent.type(await screen.findByLabelText(/^shares$/i), "5");
+    await userEvent.type(screen.getByLabelText(/cost per share/i), "15");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD",
+      { styles: ["value", "ai_tech"], purpose: "ideas", horizon: "10y+", target: "12-25%", risk: "buy_more", level: "intermediate" }));
+  });
+  it("skip = novice value investor defaults", async () => {
+    const api = stubApi({ getProfile: vi.fn().mockResolvedValue(freshProfile), getPortfolio: vi.fn().mockResolvedValue([]) });
+    render(<App api={api} />);
+    await screen.findByTestId("investor-quiz");
+    await userEvent.click(screen.getByTestId("quiz-skip"));
+    await screen.findByTestId("ob-connect");
+    await userEvent.type(screen.getByLabelText(/find your first position/i), "MARA");
+    await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
+    await userEvent.type(await screen.findByLabelText(/^shares$/i), "1");
+    await userEvent.type(screen.getByLabelText(/cost per share/i), "10");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD",
+      { styles: ["value"], purpose: "watch", horizon: "3-10y", target: "8-12%", risk: "hold", level: "novice" }));
+  });
+});
+
+describe("U50 investor profile in settings", () => {
+  it("shows the current profile and saves an edit", async () => {
+    const api = stubApi();
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    const tabs = within(screen.getByRole("navigation", { name: "Tabs" }));
+    await userEvent.click(tabs.getByRole("button", { name: /settings/i }));
+    const card = await screen.findByTestId("investor-card");
+    expect(card.textContent).toContain("Just starting · Value");
+    await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
+    await userEvent.click(screen.getByRole("button", { name: "Growth" }));   // styles: value + growth
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Stay on top of what I own" }));
+    await userEvent.click(await screen.findByRole("button", { name: "1–3 years" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Market-like/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Trim a bit" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Advanced" }));
+    await waitFor(() => expect(api.updateInvestor).toHaveBeenCalledWith(
+      { styles: ["value", "growth"], purpose: "watch", horizon: "1-3y", target: "8-12%", risk: "trim", level: "advanced" }));
   });
 });

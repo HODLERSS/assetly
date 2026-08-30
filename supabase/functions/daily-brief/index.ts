@@ -74,6 +74,50 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
   return c ? parseJsonBlock(String(c)) : null;
 }
 
+
+// ---- reader profile: the 6 sign-up answers steer VOICE, EMPHASIS and PURPOSE, never the facts ----
+type Investor = { styles?: string[]; purpose?: string; horizon?: string; target?: string; risk?: string; level?: string };
+function readerBlock(inv: Investor | null | undefined): string {
+  const v = { styles: ["value"], purpose: "watch", horizon: "3-10y", target: "8-12%", risk: "hold", level: "novice", ...(inv ?? {}) };
+  const styleG: Record<string, string> = {
+    value: "valuation, moat, margin of safety and downside first",
+    growth: "revenue growth, market size and execution first",
+    income: "yield, payout safety and income stability first",
+    index: "diversification, costs and factor tilts first",
+    ai_tech: "AI and technology-cycle positioning first",
+    trader: "catalysts, momentum and actionable levels first",
+    crypto: "crypto cycles, flows and custody risk first",
+  };
+  const purpG: Record<string, string> = {
+    watch: "They mainly want to STAY ON TOP of what they already own: lead with what changed and what it means for their book.",
+    ideas: "They are hunting their NEXT investment in the coming weeks: emphasize research directions, screening angles and gaps worth exploring (still never a direct buy or sell instruction).",
+    news: "They mainly want the SIGNAL STREAM: lead with the freshest material development and why it matters.",
+    learn: "They want to LEARN as they go: give one short line of reasoning behind each conclusion.",
+  };
+  const lvlG: Record<string, string> = {
+    novice: "BEGINNER reader: plain words, short sentences; briefly explain any term a newcomer may not know, in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
+    intermediate: "Informed reader: plain language, common financial terms need no explanation.",
+    advanced: "Advanced reader: precise financial vocabulary welcome, no hand-holding.",
+    pro: "Professional reader: dense, technical, desk-note register.",
+  };
+  const horG: Record<string, string> = {
+    "<1y": "SHORT horizon: near-term catalysts and levels matter most",
+    "1-3y": "1-3 year horizon: balance near catalysts with the medium-term case",
+    "3-10y": "3-10 year horizon: structural quality and compounding outweigh weekly noise",
+    "10y+": "10+ year horizon: long-run compounding is everything; day-to-day noise barely matters",
+  };
+  const riskG: Record<string, string> = {
+    buy_more: "treats drawdowns as buying opportunities", hold: "holds through drawdowns",
+    trim: "trims into weakness", sell: "is quick to cut losses; flag risk early and clearly",
+  };
+  const st = (Array.isArray(v.styles) && v.styles.length ? v.styles : ["value"]).map((x) => styleG[x] ?? "").filter(Boolean).join("; also ");
+  return `READER PROFILE (personalize EMPHASIS, VOCABULARY and FRAMING for this one reader; facts and numbers stay identical):
+- ${lvlG[v.level] ?? lvlG.novice}
+- Lens: ${st || styleG.value}.
+- ${purpG[v.purpose] ?? purpG.watch}
+- ${horG[v.horizon] ?? horG["3-10y"]}; target return ${v.target}/yr; ${riskG[v.risk] ?? riskG.hold}.`;
+}
+
 const krName = (sy: string, nick?: string | null, nm?: string | null) =>
   (nick || ((sy.endsWith(".KS") || sy.endsWith(".KQ")) && nm ? nm : sy));
 
@@ -204,6 +248,8 @@ Deno.serve(async (req) => {
 
   // ---- users ----
   const { data: pf } = await admin.from("portfolio").select("user_id, symbol, kind, account, currency, value, change_pct, nickname, name, cost_basis, total_gl");
+  const { data: invRows } = await admin.from("profiles").select("id, investor");
+  const invBy = new Map<string, Investor | null>((invRows ?? []).map((r) => [String(r.id), r.investor as Investor | null]));
   const byUser = new Map<string, NonNullable<typeof pf>>();
   for (const r of pf ?? []) { if (!byUser.has(r.user_id)) byUser.set(r.user_id, []); byUser.get(r.user_id)!.push(r); }
   const fxNum = px.get("USDKRW")?.price ?? 1380;
@@ -248,6 +294,7 @@ Deno.serve(async (req) => {
           else continue;
         }
       }
+      const READER = readerBlock(invBy.get(uid));
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
         .sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
       const statsLines = rows.map((r) => {
@@ -392,7 +439,7 @@ ADVICE LAW: never tell them to buy, sell, trim, add, or take profits. You descri
 HORIZON LAW: forbidden words and phrases: today, tonight, overnight, yesterday, this morning, premarket, after-hours, after market close, at the bell, futures, session, intraday. Timeframes are weeks, months, quarters, years.
 BALANCE LAW: the book's strengths and its risks both get real words; no hype, no doom.
 SENTENCE LAW: short sentences everywhere, at most 22 words each; split any list of holdings or numbers into two sentences.
-${STYLE_RULES}`;
+${STYLE_RULES}\n${READER}`;
         // composition on the FAST model (~20s): one attempt, one retry, then the compact editor
         let draft = await askModel(key, "You are the editor of a one-reader research desk writing a first portfolio assessment. Candid, precise, every word counts. Keep your thinking short, then write.", editorPrompt, 12000, 50000, FAST_MODEL);
         const meta1 = lastMeta;
@@ -407,7 +454,7 @@ THEME EXPOSURE: ${themeLine}
 MEMOS:
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.business}. ${m.quality}. tripwire: ${m.tripwire}`).join("\n")}
 ${shapeA}
-lede 20-30 words (the verdict on this book); overnight 40-60 words naming the top holdings with weights and the concentration figure (>= 3 numbers from the data); 2-4 positions largest first, note 26-34 words of prose with a strength and a risk (no "Strength:" labels), watch <= 12 words naming a MEASURABLE tripwire (a metric with a threshold or a dated event; NEVER monitor/watch/track, never "significantly"); desk_view 36-50 words on concentration or correlation with its percentage, no invented loss figures; horizon "Next 3 months: ... Next 3 years: ..." 36-50 words; ideas: 2-3 gaps worth researching, 8-14 words each, never buy or sell instructions. Aim for 340 words in total. Forbidden words: today, overnight, yesterday, session, futures. A total G/L figure may only be phrased as "up/down $X since purchase", never as a move or a delivery. No filler, no em dashes, Korean companies by name, won as ₩.`;
+lede 20-30 words (the verdict on this book); overnight 40-60 words naming the top holdings with weights and the concentration figure (>= 3 numbers from the data); 2-4 positions largest first, note 26-34 words of prose with a strength and a risk (no "Strength:" labels), watch <= 12 words naming a MEASURABLE tripwire (a metric with a threshold or a dated event; NEVER monitor/watch/track, never "significantly"); desk_view 36-50 words on concentration or correlation with its percentage, no invented loss figures; horizon "Next 3 months: ... Next 3 years: ..." 36-50 words; ideas: 2-3 gaps worth researching, 8-14 words each, never buy or sell instructions. Aim for 340 words in total. Forbidden words: today, overnight, yesterday, session, futures. A total G/L figure may only be phrased as "up/down $X since purchase", never as a move or a delivery. No filler, no em dashes, Korean companies by name, won as ₩.\n${READER}`;
           draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 8000, Math.max(20000, Math.min(30000, (146 - elapsed()) * 1000)), FAST_MODEL);
           if (draft && validAssessment(draft)) usedCompact = true;
         }
@@ -437,7 +484,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         const floor = holdings.length <= 2 ? 240 : 315;
         for (let ga = 0; ga < 2 && wcA(sections) < floor && elapsed() < 118; ga++) {
           const grown = await askModel(key, "You are the editor. Keep every fact and number exactly as given; add depth, not new claims.",
-            `This assessment is too thin at ${wcA(sections)} words; it must reach ${floor + 25}-420 words. Expand it toward these floors WITHOUT adding any number, number-word, or new factual claim that is not already in it: keep every existing number verbatim, never describe a hypothetical loss or drawdown; elaborate on what the existing facts mean for the owner (shared drivers, what must hold, what the tripwires signal): each position note ${holdings.length <= 2 ? "44-55" : "30-33"} words (business, quality verdict, role, ending with the risk sentence), desk_view 42-48 words, horizon 42-46 words ("Next 3 months: ... Next 3 years: ..."), overnight 48-58 words. Keep lede, watch items and ideas as they are. Sentences of at most 22 words. Never use the words today, overnight, yesterday, session, futures. Never em dashes.\n\n${JSON.stringify(sections)}\n\nReturn the SAME JSON shape.`, 8000, 25000, FAST_MODEL);
+            `This assessment is too thin at ${wcA(sections)} words; it must reach ${floor + 25}-420 words. Expand it toward these floors WITHOUT adding any number, number-word, or new factual claim that is not already in it: keep every existing number verbatim, never describe a hypothetical loss or drawdown; elaborate on what the existing facts mean for the owner (shared drivers, what must hold, what the tripwires signal): each position note ${holdings.length <= 2 ? "44-55" : "30-33"} words (business, quality verdict, role, ending with the risk sentence), desk_view 42-48 words, horizon 42-46 words ("Next 3 months: ... Next 3 years: ..."), overnight 48-58 words. Keep lede, watch items and ideas as they are. Sentences of at most 22 words. Never use the words today, overnight, yesterday, session, futures. Never em dashes.\n${READER}\n\n${JSON.stringify(sections)}\n\nReturn the SAME JSON shape.`, 8000, 25000, FAST_MODEL);
           // the expansion may only elaborate: every original number survives, nothing numeric is added, no loss talk
           // numbers compared by VALUE (so "$9,900" vs "9,900 dollars" or "60.2%" vs "60.2 percent" still match), plus number-words
           const nums = (o: Sections) => new Set((JSON.stringify(o).match(/\d[\d,.]*|\b(half|third|thirds|quarter|quarters|double|triple|majority)\b/gi) ?? []).map((x) => /^\d/.test(x) ? String(Number(x.replace(/,/g, "").replace(/\.$/, ""))) : x.toLowerCase()));
@@ -608,7 +655,7 @@ calendar: 0-3 items <= 10 words each; EVERY item must carry an explicit FUTURE d
 BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching", "demands scrutiny", "warrants attention".
 NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
-RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as ₩ (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
+RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as ₩ (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.\n${READER}`;
         let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly, then write.", editorPrompt, 24000, 75000);
         const meta1 = lastMeta;
         if ((!draft || !validSections(draft)) && elapsed() < 70) {
@@ -694,7 +741,7 @@ desk_view: what today's action changes about the morning view, or the specific l
 QUIET-BOOK LAW: if no holding moved more than 1.5% and there is no fresh news, SAY the session is quiet in one clause and make the afternoon catalyst the centerpiece. Never manufacture drama, never invent price levels: any level you cite must be within 20% of a price that appears in the data above.
 CONTINUITY LAW: a claim already made in the morning brief may only reappear if you ADVANCE it with new evidence from today's session; restating it in different words is a failure. Cover what the morning could not know.
 calendar: 0-3 items for this afternoon or tonight, <= 10 words each.
-${STYLE_RULES}`
+${STYLE_RULES}\n${READER}`
           : `Write the ${briefDate} CLOSING NOTE (published minutes after the 4:00 PM Eastern close${isFri ? "; it is FRIDAY, so set up the WEEK AHEAD" : ""}) for ONE investor. Your job: settle what today meant for their money and arm them for the next session.
 
 ${dataBlock}
@@ -706,7 +753,7 @@ positions: the 1-4 holdings that defined the day, ordered by importance to THIS 
 desk_view: the setup for ${isFri ? "next week" : "tomorrow"}: the one structural risk or opportunity to sleep on. No single-day numbers. <= 40 words.
 CONTINUITY LAW: a claim already made in the morning brief may only reappear if you ADVANCE it (resolved, worsened, confirmed by the close); restating it in different words is a failure.
 calendar: 0-3 items: tonight's after-hours reports, ${isFri ? "next week's" : "tomorrow's"} data or earnings. <= 10 words each.${krHeld ? `\nTheir Korean holdings trade TONIGHT (KRX opens 9:00 PM Eastern). If a Korean name has a catalyst, put it in positions or calendar.` : ""}
-${STYLE_RULES}`;
+${STYLE_RULES}\n${READER}`;
         let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly, then write.", writerPrompt, 20000, 60000);
         if ((!draft || !validSections(draft)) && elapsed() < 70) {
           draft = await askModel(key, "You are the editor of a one-reader research desk. Think briefly. Output the exact JSON shape requested.", writerPrompt, 20000, 45000);

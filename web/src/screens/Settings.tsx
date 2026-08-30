@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Api, PortfolioRow, Profile } from "../lib/api";
+import { INVESTOR_DEFAULT } from "../lib/api";
+import { InvestorQuiz, investorLabel } from "../components/InvestorQuiz";
 import { timeAgo } from "../lib/format";
 
 // Gap screen g2: account, currency matrix, markets, sign out. The matrix (totals / US assets /
@@ -28,6 +30,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
     return () => { live = false; };
   }, [api]);
   const [busy, setBusy] = useState(false);
+  const [editInv, setEditInv] = useState(false);
   const base = profile?.base_currency ?? "USD";
   const dispUs = profile?.display_us ?? "USD";
   const dispKr = profile?.display_kr ?? "KRW";
@@ -76,6 +79,19 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
         )}
         <div className="row"><span>Markets</span><span className="sub">{(profile?.markets ?? []).join(" · ") || "—"}</span></div>
         <div className="row"><span>Price cadence</span><span className="sub num">every 60s market hours</span></div>
+      </div>
+      <div className="card" style={{ marginBottom: 14 }} data-testid="investor-card">
+        <div className="row" style={{ alignItems: "center" }}>
+          <span>Investor profile<br /><span className="sub">{investorLabel(profile?.investor ?? INVESTOR_DEFAULT)}</span></span>
+          <button className="chip" onClick={() => setEditInv(!editInv)}>{editInv ? "Close" : "Edit"}</button>
+        </div>
+        {editInv && (
+          <div style={{ padding: "10px 14px 14px" }}>
+            <InvestorQuiz initial={profile?.investor ?? INVESTOR_DEFAULT} doneLabel="Save"
+              onDone={async (v) => { await api.updateInvestor(v); setEditInv(false); await onChanged(); }} />
+            <p className="mutedc" style={{ fontSize: 12, margin: "10px 0 0" }}>Your next briefs, assessment and answers are written for this profile.</p>
+          </div>
+        )}
       </div>
       <div className="card" style={{ marginBottom: 14 }} data-testid="snaptrade-card">
         <div className="row"><span>Brokerage sync</span>

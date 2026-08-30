@@ -31,7 +31,10 @@ export type BriefSections = {
 };
 export type BriefEdition = "morning" | "midday" | "close" | "assessment";
 export type DailyBrief = { brief_date: string; edition: BriefEdition; sections: BriefSections; generated_at: string; audio_path?: string | null };
-export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null };
+/** Five tap-only answers from sign-up (or Settings). null/missing = the defaults below. */
+export type Investor = { styles: string[]; purpose: string; horizon: string; target: string; risk: string; level: string };
+export const INVESTOR_DEFAULT: Investor = { styles: ["value"], purpose: "watch", horizon: "3-10y", target: "8-12%", risk: "hold", level: "novice" };
+export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null; investor?: Investor | null };
 
 const nm = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 const warmupFired = new Set<string>();
@@ -45,12 +48,19 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error) throw error;
       return data as Profile;
     },
-    async completeOnboarding(markets: string[], base_currency: "USD" | "KRW") {
+    async completeOnboarding(markets: string[], base_currency: "USD" | "KRW", investor?: Investor | null) {
       const { data: u } = await sb.auth.getUser();
       if (!u.user) throw new Error("not signed in");
       const { error } = await sb.from("profiles")
-        .update({ markets, base_currency, onboarded_at: new Date().toISOString() })
+        .update({ markets, base_currency, onboarded_at: new Date().toISOString(), ...(investor !== undefined ? { investor } : {}) })
         .eq("id", u.user.id);
+      if (error) throw error;
+    },
+    /** Investor profile (the 5 quiz answers): editable any time from Settings. */
+    async updateInvestor(investor: Investor) {
+      const { data: u } = await sb.auth.getUser();
+      if (!u.user) throw new Error("not signed in");
+      const { error } = await sb.from("profiles").update({ investor }).eq("id", u.user.id);
       if (error) throw error;
     },
     async searchSymbols(q: string): Promise<SymbolRow[]> {

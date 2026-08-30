@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { Api, PortfolioRow, SymbolRow } from "../lib/api";
+import type { Api, Investor, PortfolioRow, SymbolRow } from "../lib/api";
+import { INVESTOR_DEFAULT } from "../lib/api";
+import { InvestorQuiz } from "../components/InvestorQuiz";
 import { marketOf } from "../lib/markets";
 
 // Setup: connect a brokerage (positions import in seconds) OR add the first
@@ -9,6 +11,9 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   api: Api; onDone: () => Promise<void> | void; snaptrade?: string | null; onBookChanged?: () => void;
 }) {
   const [step, setStep] = useState(1);
+  // the 5-question tap quiz answered (or skipped) before holdings; a brokerage return skips straight to the import
+  const [inv, setInv] = useState<Investor | null>(null);
+  const [quizDone, setQuizDone] = useState(snaptrade === "connected");
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SymbolRow[]>([]);
   const [picked, setPicked] = useState<SymbolRow | null>(null);
@@ -58,7 +63,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   const finishImported = async () => {
     setBusy(true); setErr(null);
     try {
-      await api.completeOnboarding(marketsOf(imported ?? []), "USD");
+      await api.completeOnboarding(marketsOf(imported ?? []), "USD", inv ?? INVESTOR_DEFAULT);
       // the connect callback already queued the book-changed chain (sync -> news -> intelligence -> assessment)
       await onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not save. Try again."); }
@@ -79,7 +84,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
       await api.addPosition(picked.symbol, nQty, nCost);
       void api.refreshNews([picked.symbol]);                // stories land while the user looks around
       const m = marketOf({ symbol: picked.symbol, kind: picked.kind });   // inferred, never asked
-      await api.completeOnboarding([m === "KR" ? "KR" : m === "CRYPTO" ? "Crypto" : "US"], "USD");
+      await api.completeOnboarding([m === "KR" ? "KR" : m === "CRYPTO" ? "Crypto" : "US"], "USD", inv ?? INVESTOR_DEFAULT);
       onBookChanged?.();   // same pipeline as a brokerage connect: intelligence + Portfolio Assessment within minutes
       await onDone();
     } catch (e) {
@@ -122,10 +127,22 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
     );
   }
 
+  if (!quizDone) {
+    return (
+      <main className="screen" style={{ paddingTop: 28 }}>
+        <h1 className="h1">Set up Assetly</h1>
+        <p className="mutedc" style={{ marginBottom: 18 }}>30 seconds, all taps — it shapes every insight you get</p>
+        <InvestorQuiz
+          onDone={(v) => { setInv(v); setQuizDone(true); }}
+          onSkip={() => { setInv(INVESTOR_DEFAULT); setQuizDone(true); }} />
+      </main>
+    );
+  }
+
   return (
     <main className="screen" style={{ paddingTop: 28 }}>
       <h1 className="h1">Set up Assetly</h1>
-      <p className="mutedc" style={{ marginBottom: 18 }}>Step {step} of 2</p>
+      <p className="mutedc" style={{ marginBottom: 18 }}>Step {step + 1} of 3</p>
 
       {step === 1 && (
         <section aria-label="Add your holdings">

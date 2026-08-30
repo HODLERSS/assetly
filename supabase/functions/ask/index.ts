@@ -82,6 +82,50 @@ function trimAnswer(a: string): string {
   return joined;
 }
 
+
+// ---- reader profile: the 6 sign-up answers steer VOICE, EMPHASIS and PURPOSE, never the facts ----
+type Investor = { styles?: string[]; purpose?: string; horizon?: string; target?: string; risk?: string; level?: string };
+function readerBlock(inv: Investor | null | undefined): string {
+  const v = { styles: ["value"], purpose: "watch", horizon: "3-10y", target: "8-12%", risk: "hold", level: "novice", ...(inv ?? {}) };
+  const styleG: Record<string, string> = {
+    value: "valuation, moat, margin of safety and downside first",
+    growth: "revenue growth, market size and execution first",
+    income: "yield, payout safety and income stability first",
+    index: "diversification, costs and factor tilts first",
+    ai_tech: "AI and technology-cycle positioning first",
+    trader: "catalysts, momentum and actionable levels first",
+    crypto: "crypto cycles, flows and custody risk first",
+  };
+  const purpG: Record<string, string> = {
+    watch: "They mainly want to STAY ON TOP of what they already own: lead with what changed and what it means for their book.",
+    ideas: "They are hunting their NEXT investment in the coming weeks: emphasize research directions, screening angles and gaps worth exploring (still never a direct buy or sell instruction).",
+    news: "They mainly want the SIGNAL STREAM: lead with the freshest material development and why it matters.",
+    learn: "They want to LEARN as they go: give one short line of reasoning behind each conclusion.",
+  };
+  const lvlG: Record<string, string> = {
+    novice: "BEGINNER reader: plain words, short sentences; briefly explain any term a newcomer may not know, in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
+    intermediate: "Informed reader: plain language, common financial terms need no explanation.",
+    advanced: "Advanced reader: precise financial vocabulary welcome, no hand-holding.",
+    pro: "Professional reader: dense, technical, desk-note register.",
+  };
+  const horG: Record<string, string> = {
+    "<1y": "SHORT horizon: near-term catalysts and levels matter most",
+    "1-3y": "1-3 year horizon: balance near catalysts with the medium-term case",
+    "3-10y": "3-10 year horizon: structural quality and compounding outweigh weekly noise",
+    "10y+": "10+ year horizon: long-run compounding is everything; day-to-day noise barely matters",
+  };
+  const riskG: Record<string, string> = {
+    buy_more: "treats drawdowns as buying opportunities", hold: "holds through drawdowns",
+    trim: "trims into weakness", sell: "is quick to cut losses; flag risk early and clearly",
+  };
+  const st = (Array.isArray(v.styles) && v.styles.length ? v.styles : ["value"]).map((x) => styleG[x] ?? "").filter(Boolean).join("; also ");
+  return `READER PROFILE (personalize EMPHASIS, VOCABULARY and FRAMING for this one reader; facts and numbers stay identical):
+- ${lvlG[v.level] ?? lvlG.novice}
+- Lens: ${st || styleG.value}.
+- ${purpG[v.purpose] ?? purpG.watch}
+- ${horG[v.horizon] ?? horG["3-10y"]}; target return ${v.target}/yr; ${riskG[v.risk] ?? riskG.hold}.`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const auth = req.headers.get("Authorization") ?? "";
@@ -98,6 +142,8 @@ Deno.serve(async (req) => {
 
   // ---- deterministic portfolio math (the model never invents numbers) ----
   const { data: rows } = await admin.from("portfolio").select("symbol,nickname,kind,account,currency,qty,value,change_pct,avg_cost,total_gl").eq("user_id", u.user.id);
+  const { data: invRow } = await admin.from("profiles").select("investor").eq("id", u.user.id).maybeSingle();
+  const READER = readerBlock(invRow?.investor as Investor | null);
   const { data: fxRow } = await admin.from("prices").select("price").eq("symbol", "USDKRW").maybeSingle();
   const fx = fxRow ? Number(fxRow.price) : 1380;
   const { data: fxRows } = await admin.from("prices").select("symbol,price").like("symbol", "USD___");
@@ -188,7 +234,8 @@ ${context}
 
 Question: "${question}"
 
-Answer as their analyst: direct, specific, tight. Ground qualitative answers in the signals, headlines, filings, and earnings-call material above, not just prices. Numbers must come only from the stats block. Earnings-call titles and dates listed are reliable even when the excerpt is partial. HARD LIMIT: 80 words total, 3-5 short bullets max, readable on a phone in under 20 seconds. No preamble, no repetition. If the question needs data you truly don't have, one line saying exactly what's missing.`;
+${READER}
+Answer as THEIR analyst (see the reader profile): direct, specific, tight. Ground qualitative answers in the signals, headlines, filings, and earnings-call material above, not just prices. Numbers must come only from the stats block. Earnings-call titles and dates listed are reliable even when the excerpt is partial. HARD LIMIT: 80 words total, 3-5 short bullets max, readable on a phone in under 20 seconds. No preamble, no repetition. If the question needs data you truly don't have, one line saying exactly what's missing.`;
 
   if (fixture) return json({ ok: true, answer: "FIXTURE\n" + "TOTAL:" + Math.round(totNow) + "\n" + totalLines, followups: ["Fixture follow-up one?", "Fixture follow-up two?"], mentioned });
 
