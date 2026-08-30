@@ -471,7 +471,10 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
             if (mustKeep && !mustKeep.test(shorter)) break;
             out = shorter;
           }
-          if (wcT(out) > cap && !mustKeep) out = out.split(/\s+/).slice(0, cap).join(" ").replace(/[,;:]?$/, ".");
+          if (wcT(out) > cap) {
+            const cut = out.split(/\s+/).slice(0, cap).join(" ").replace(/[,;:]?$/, ".");
+            if (!mustKeep || mustKeep.test(cut)) out = cut;   // last resort: a hard cut, but never one that loses the required clause
+          }
           return out;
         };
         sections.lede = fitCap(sections.lede, 30);
@@ -515,7 +518,8 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           }
           // two long sentences: keep the first (business + quality) and let ensureRisk re-attach a short risk clause
           if (sents.length >= 2 && wcN(sents[0]) <= noteCapF - 9 && wcN(sents[0]) >= 14) return { ...p, note: sents[0] };
-          return { ...p, note: p.note.split(/\s+/).slice(0, noteCapF).join(" ").replace(/[,;:]?$/, ".") };
+          const cutN = p.note.split(/\s+/).slice(0, noteCapF - 11).join(" ").replace(/[,;:]?$/, ".");   // room for the re-attached risk clause
+          return { ...p, note: cutN };
         });
         sections = ensureRisk(sections);   // re-attach a short risk clause where the trim removed it
         // the card already labels the tripwire; a model-written "Tripwire:" / "Watch:" prefix would double it
