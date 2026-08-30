@@ -4,7 +4,10 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-token", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
-const MAX = 6;   // ~15 min of coverage across a text-API slow wave; each attempt is its own request
+const MAX = 6;   // ~8-10 min of coverage across a text-API slow wave; each attempt is its own request
+// the backoff runs at the START of the next attempt's own request (its own wall clock): a sleep inside this
+// request's waitUntil can be reaped silently, and then no retry ever fires (bit the connect demo on 08-30)
+const DELAY = [0, 15000, 30000, 45000, 60000, 60000];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -23,6 +26,7 @@ Deno.serve(async (req) => {
   const headers = { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": itok };
 
   const work = (async () => {
+    await new Promise((res) => setTimeout(res, DELAY[Math.min(attempt - 1, DELAY.length - 1)]));
     const { data: before } = await admin.from("daily_briefs").select("generated_at").eq("user_id", uid).eq("brief_date", today).eq("edition", edition).maybeSingle();
     let dbStatus = "none"; let dbBody = "";
     const r = await fetch(`${base}/functions/v1/daily-brief`, { method: "POST", headers, body: JSON.stringify({ force: true, user_id: uid, edition }) })
@@ -33,7 +37,7 @@ Deno.serve(async (req) => {
     const wrote = (r?.wrote ?? 0) > 0 || (after && (!before || after.generated_at !== before.generated_at));
     if (wrote) return;
     if (attempt < MAX) {
-      await new Promise((res) => setTimeout(res, Math.min(120000, 15000 * Math.pow(2, attempt - 1))));   // 15s, 30s, 60s, 120s, 120s
+      // hand off IMMEDIATELY; the next request sleeps its own backoff on its own clock
       await fetch(`${base}/functions/v1/brief-retry`, { method: "POST", headers, body: JSON.stringify({ user_id: uid, edition, attempt: attempt + 1 }) }).catch(() => null);
     }
   })();
