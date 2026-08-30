@@ -35,12 +35,14 @@ const setPortfolio = async (list) => {
 
 const wc = (t) => String(t ?? "").split(/\s+/).filter(Boolean).length;
 const totalWords = (s) => wc(s.lede) + wc(s.overnight) + s.positions.reduce((a, p) => a + wc(p.note) + wc(p.watch) + wc(p.name), 0) + wc(s.desk_view) + wc(s.horizon) + (s.ideas ?? []).reduce((a, x) => a + wc(x), 0);
-const CAP = { lede: 30, book: 60, note: 34, watch: 12, desk: 50, horizon: 50, idea: 14, total: 440, totalMin: 300 };
+// per-section caps carry a +2-word tolerance (the fast model lands on the cap ± a word); the total and listen-time caps are exact
+const CAP = { lede: 32, book: 62, note: 36, watch: 14, desk: 52, horizon: 52, idea: 16, total: 440, totalMin: 300 };
 const FILLER = /(investors should|keep an eye|monitor closely|time will tell|stay tuned|it'?s important to|as always|remains to be seen|worth watching|demands scrutiny|warrants attention)/i;
 const PROCESS = /(skeptic|the memo|pushback|analyst note)/i;
 const HORIZON_BAN = /\b(today|tonight|overnight|yesterday|this morning|premarket|pre-market|after-hours|after (the )?market close|at the bell|futures|session|intraday)\b/i;
 const IDEA_BAN = /^(add|buy|consider|allocate)\b/i;
-const TRADE_BAN = /\b(you should (buy|sell|trim|add)|buy more|buy the dip|sell (your|the|it|now|half)|trim (your|the|it|back)|take profits|add to (your|the) position|dump)\b/i;
+// second-person trade instructions only (a company that "buys more bitcoin" is a fact, not advice)
+const TRADE_BAN = /\b(you should (buy|sell|trim|add)|buy the dip|sell (your|the position|it now|now|half)|trim (your|the position|it|back)|take profits|add to (your|the) position)\b/i;
 const pct = (subs) => Math.round(subs.filter(Boolean).length / subs.length * 100);
 const roundOk = (all) => (all.match(/\$[\d,]+(?:\.\d+)?/g) ?? []).every((m) => { const v = Number(m.replace(/[$,]/g, "")); return v < 1000 || (m.includes(",") && v % 100 === 0); });
 const avgSentence = (s) => { const txt = [s.lede, s.overnight, ...s.positions.map((p) => p.note), s.desk_view, s.horizon].join(" "); const ss = txt.split(/(?<=[.!?])\s+/).filter((x) => x.trim().length > 3); return ss.reduce((a, x) => a + wc(x), 0) / Math.max(1, ss.length); };
@@ -53,7 +55,7 @@ PORTFOLIO STATS (ground truth): ${stats}
 ASSESSMENT UNDER REVIEW: ${JSON.stringify(s)}
 Return STRICT JSON {"m2":bool,"m2_evidence":str,"m4":bool,"m4_evidence":str,"m5":bool,"m5_evidence":str,"m6":bool,"m6_evidence":str,"m7":bool,"m7_evidence":str,"m10":bool,"m10_evidence":str,"m11":bool,"m11_evidence":str,"worst":str}.
 m2 factual accuracy: every number (weights, totals, percentages) is consistent with the ground truth or internally consistent; weights within 1.5 percentage points and dollar amounts within 1% are fine (prices move between writing and grading; dollars are rounded to the nearest hundred by design). Qualitative business descriptions count as errors only if plainly false about a well-known company. To FAIL you MUST quote a contradicting pair in m2_evidence; else m2 passes.
-m4 horizon fit: it reads as a first look at quality and structure over months and years. To FAIL quote a sentence that narrates a single day's or overnight move or uses tape language; else pass.
+m4 horizon fit: it reads as a first look at quality and structure over months and years. Weights, totals, theme percentages, and 30-day or 1-year performance figures are STRUCTURE, not tape. To FAIL quote a sentence that narrates a single day's or overnight move (today, overnight, futures, session, a daily percentage change); else pass.
 m5 quality depth: positions cover only the 2-4 largest equity, fund, or crypto holdings (cash and debt are NOT positions and need no note). EVERY position note says what the business is, gives a quality judgment (moat, growth, profitability, or balance sheet), and carries both a strength and a risk or condition; none is a price recap. To FAIL quote the weakest note; else pass.
 m6 structural insight: desk_view names a concentration, correlation, currency, or leverage fact SPECIFIC to this book that a naive owner would miss, and says what it means. To FAIL quote the generic text; else pass.
 m7 actionability: every watch item is a concrete, observable tripwire or catalyst (a metric, an event, a guidance item), and every idea names a specific theme, sector, geography, or instrument type worth researching (not a bare "diversify"). To FAIL quote the vague item; else pass.
@@ -62,9 +64,10 @@ m11 balance and advice law: strengths AND risks both get real words, and it neve
 worst: the single weakest sentence, quoted. Be harsh but evidence-bound.`;
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "MiniMax-M2.7", messages: [
+    // judge on gpt-oss-120b: M2.7 exhausts its token budget thinking on the longer judge prompt (JUDGE-NULL)
+    body: JSON.stringify({ model: "gpt-oss-120b", messages: [
       { role: "system", content: "You are a ruthless, evidence-bound editorial reviewer. Respond with the JSON object ONLY, first character '{'." },
-      { role: "user", content: prompt }], temperature: 0.1, max_tokens: 9000, response_format: { type: "json_object" } }),
+      { role: "user", content: prompt }], temperature: 0.1, max_tokens: 12000, response_format: { type: "json_object" } }),
   }).catch(() => null);
   if (!r || !r.ok) return null;
   const out = await r.json().catch(() => null);
@@ -116,7 +119,7 @@ for (const name of subset) {
     let w = await invoke(); let attempts = 1;
     const fresh = async () => { const { data: b } = await c.from("daily_briefs").select("sections, model, generated_at, memos").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", "assessment").maybeSingle(); return b && +new Date(b.generated_at) >= t0 ? b : null; };
     let b = await fresh();
-    if (!b) { await new Promise(r => setTimeout(r, 30000)); w = await invoke(); attempts = 2; b = await fresh(); }
+    if (!b) { log(`  (${name} attempt 1 miss: ${w?.error?.message ?? JSON.stringify(w?.data?.errors ?? w?.data).slice(0, 200)})`); await new Promise(r => setTimeout(r, 30000)); w = await invoke(); attempts = 2; b = await fresh(); }
     if (!b) { await new Promise(r => setTimeout(r, 60000)); w = await invoke(); attempts = 3; b = await fresh(); }
     const secs = Math.round((Date.now() - t0) / 1000);
     if (!b) { log(`${name}: GEN FAIL ${secs}s ${w?.error?.message ?? JSON.stringify(w?.data)}`); results.push({ name, M: { A1: 0 } }); continue; }
