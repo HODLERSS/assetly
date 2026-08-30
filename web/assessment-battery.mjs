@@ -129,7 +129,9 @@ for (const name of subset) {
     const text = [s.lede, s.overnight, ...s.positions.flatMap(p => [p.name, p.note, p.watch]), s.desk_view, s.horizon, ...(s.ideas ?? [])].join("\n");
     const { stats, hold } = await truth();
     const memoFacts = (b.memos ?? []).map(m => `${m.name}: ${m.business ?? ""} ${m.quality ?? ""} ${m.long_case ?? ""} ${m.tripwire ?? ""}`).join(" | ");
-    const jj = await judge(s, name + " " + list.map(x => x[0]).join(","), stats + (memoFacts ? `\nCOMPANY FACTS (from each company's latest earnings call; numbers here are accepted as true): ${memoFacts}` : ""));
+    const geo = {}; for (const h of hold) { const g = /-USD$|^(BTC|ETH|SOL)$/.test(h.sym) ? "crypto" : /\.(KS|KQ)$/.test(h.sym) ? "Korea" : "US"; geo[g] = (geo[g] ?? 0) + h.w; }
+    const geoLine = Object.entries(geo).map(([g, p]) => `${g} ${p.toFixed(1)}%`).join(" · ");
+    const jj = await judge(s, name + " " + list.map(x => x[0]).join(","), stats + `\nGEOGRAPHY (share of total assets, cash excluded; ground truth): ${geoLine}` + (memoFacts ? `\nCOMPANY FACTS (from each company's latest earnings call; numbers here are accepted as true): ${memoFacts}` : ""));
     if (!jj) { log(`${name}: JUDGE-NULL (${secs}s)`); results.push({ name, M: { A1: secs <= 180 && attempts === 1 ? 100 : 0 }, judgeNull: true, sections: s }); continue; }
     const posText = s.positions.map(p => p.name).join(" | ");
     const small = hold.length <= 2;                       // 1-2 holding books: deeper notes, lower total floor

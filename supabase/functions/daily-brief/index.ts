@@ -361,7 +361,7 @@ Candid, specific, no filler. Never em dashes.`;
 ${bookLine}
 ${structLines}
 THEME EXPOSURE (deterministic): ${themeLine}
-GEOGRAPHY: ${geoLine}
+GEOGRAPHY (share of total assets; cash and debt excluded, so it sums to the invested share): ${geoLine}
 PERFORMANCE: ${perfLine}
 NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
 ${dateLaw}
@@ -379,7 +379,7 @@ ${shapeA}
 lede: the verdict on this book in one breath: what kind of bet it is, and the single structural fact that matters most. <= 30 words.
 overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their weights, the concentration figure, the theme and geography mix, and cash or debt if present. At least THREE numbers copied from PORTFOLIO or THEME EXPOSURE, quoted EXACTLY as given: never add themes together into a new percentage, never relabel a theme (MARA-style miners and MSTR are "crypto beta" equities, not "crypto"); never state the same weight twice (if a theme is one holding, name it once). Three or four short sentences, none over 20 words. <= 60 words.
 positions: the 3-4 largest equity, fund, or crypto holdings by weight (2 only if the book has two), largest first; every such holding above 20% of assets MUST appear; cash and debt are NEVER positions (they belong in YOUR BOOK and STRUCTURE only). note <= 34 words of flowing prose: what the business is, the quality verdict (for a company: moat, growth, balance sheet; for a fund: what it holds, concentration, cost; for a coin: adoption, supply, custody), and its role in this book; a strength AND a risk or condition, written as sentences, NEVER as "Strength:" / "Risk:" labels: the LAST sentence of every note must be the risk, and must start with "The risk:" or "But" (never a positive clause after "while"); at most two numbers, from the data only. watch 5-10 words, no padding words: the thesis TRIPWIRE, MEASURABLE (a metric with a threshold, a guidance item, or a dated event); vague words like "significantly", "sharply", "weakens" are forbidden; NEVER verbs like monitor, watch, track, keep an eye.
-desk_view: STRUCTURE AND RISK: the concentration, correlation, currency, or leverage fact the owner probably does not see, with its percentage from the data, and what it means for them (a shared driver, a single point of failure, an FX exposure). <= 50 words. No single-day numbers. Never invent a hypothetical loss or drawdown percentage; the only percentages allowed are weights and performance figures from the data.
+desk_view: STRUCTURE AND RISK, exactly two or three sentences: first the concentration, correlation, currency, or leverage fact the owner probably does not see, with its percentage from the data; then a sentence starting "This means" that says what it does to them (a shared driver, a single point of failure, an FX exposure, leverage on a thin equity base). No performance figures here (they belong in the notes), no list of returns, no single-day numbers. <= 50 words. Never invent a hypothetical loss or drawdown percentage.
 horizon: exactly two labeled clauses in this shape: "Next 3 months: ... Next 3 years: ..." The first names what actually decides the coming quarter for THIS book (a print, a cycle, a macro number); any date you write must be AFTER today and come from NEXT EARNINGS ESTIMATES, otherwise say "the next earnings print" without a date. The second names what must be true for it to compound. 36-46 words total.
 ideas: 2-3 items, <= 14 words each, each about a GAP in this book (not about the names already held): name the gap, then the specific theme or instrument type worth researching to fill it (e.g. "No income sleeve: dividend-growth ETFs", "All-US book: developed-market ex-US index funds"). Never start with Add, Buy, Consider, or Allocate (write "No income sleeve: dividend-growth ETFs" or "All-US book: developed-market ex-US index funds"; after the colon name the instrument type directly, never a verb); never a price target.
 LENGTH TARGET: ${holdings.length <= 2 ? `260-380 words in total. This book has only ${holdings.length} holding${holdings.length > 1 ? "s" : ""}: give each note a deeper quality read of 40-55 words, and use the full budgets for the book, structure and horizon.` : "340-420 words in total."} Use the budget: lede 20-30 words, book 40-58, ${holdings.length <= 2 ? "each note 40-55" : "each note 26-33"}, structure 36-48, horizon 36-46, each idea 8-13. Shorter than the floors reads thin; longer than the caps gets cut.
@@ -445,6 +445,15 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
             if (kept && noNew && !lossy && withinCaps) sections = ensureRisk(g);
           }
         }
+        // STRUCTURE must say what the fact MEANS (guaranteed in code): a bare data dump gets the deterministic consequence sentence
+        const MEANS = /\b(means|meaning|implies|leaves|makes|exposes|depends|lockstep|same driver|shared driver|single point|one bet|at once|together|amplif\w*|so the book|which is why)\b/i;
+        if (!MEANS.test(sections.desk_view) && topTheme) {
+          const wcD = (t: string) => t.split(/\s+/).filter(Boolean).length;
+          const consequence = `This means ${topTheme[1].names.slice(0, 3).join(", ")} rise and fall on the same driver, so ${topTheme[1].pct.toFixed(1)}% of the book moves at once.`;
+          let base = sections.desk_view.trim().replace(/\s*(recent )?(30|1)[- ]?(day|year) returns?:[^.]*\.?/gi, "").trim();   // returns belong in the notes
+          while (wcD(base) + wcD(consequence) > 50 && /[.!?]\s+[^.!?]+[.!?]?$/.test(base)) base = base.replace(/\s+[^.!?]+[.!?]?$/, "").trim();
+          sections.desk_view = `${base} ${consequence}`.trim();
+        }
         // STRUCTURE must carry its percentage (guaranteed in code): a desk_view that lost it gets the deterministic structure fact up front
         if (!/\d+(?:\.\d+)?\s?%/.test(sections.desk_view) && skStructure) {
           const wcS2 = (t: string) => t.split(/\s+/).filter(Boolean).length;
@@ -453,6 +462,22 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           if (wcS2(skStructure) + wcS2(rest) > 50) rest = rest.split(/\s+/).slice(0, Math.max(0, 50 - wcS2(skStructure))).join(" ").replace(/[,;:]?$/, ".");   // last resort: a hard cut
           sections.desk_view = `${skStructure} ${rest}`.trim();
         }
+        // section caps guaranteed in code: trailing sentences go first, a hard cut only as the last resort
+        const fitCap = (t: string, cap: number, mustKeep?: RegExp): string => {
+          const wcT = (x: string) => x.split(/\s+/).filter(Boolean).length;
+          let out = t.trim();
+          while (wcT(out) > cap && /[.!?]\s+[^.!?]+[.!?]?$/.test(out)) {
+            const shorter = out.replace(/\s+[^.!?]+[.!?]?$/, "").trim();
+            if (mustKeep && !mustKeep.test(shorter)) break;
+            out = shorter;
+          }
+          if (wcT(out) > cap && !mustKeep) out = out.split(/\s+/).slice(0, cap).join(" ").replace(/[,;:]?$/, ".");
+          return out;
+        };
+        sections.lede = fitCap(sections.lede, 30);
+        sections.overnight = fitCap(sections.overnight, 60);
+        sections.desk_view = fitCap(sections.desk_view, 50);
+        sections.horizon = fitCap(sections.horizon ?? "", 50, /next 3 years/i);
         sections.calendar = [];
         sections.ideas = (sections.ideas ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
         // horizon law, guaranteed in code for the two words the fast model still slips in
