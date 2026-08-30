@@ -480,6 +480,17 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         sections.horizon = fitCap(sections.horizon ?? "", 50, /next 3 years/i);
         sections.calendar = [];
         sections.ideas = (sections.ideas ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
+        // filler phrases guaranteed out in code (the fast model still slips one in occasionally)
+        const deFill = (t: string) => t
+          .replace(/\bit'?s important to (note|remember|watch|monitor)( that)?\s*/gi, "").replace(/\bit'?s important\b/gi, "it matters")
+          .replace(/\bkeep (a close |an )?eye on\b/gi, "the thing to follow is").replace(/\bworth watching\b/gi, "the thing to follow")
+          .replace(/\bremains to be seen\b/gi, "is unproven").replace(/\btime will tell\b/gi, "is unproven")
+          .replace(/\binvestors should\b/gi, "the owner can").replace(/\bmonitor closely\b/gi, "matters most")
+          .replace(/\b(stay tuned|as always)[,.]?\s*/gi, "").replace(/\b(demands scrutiny|warrants attention)\b/gi, "matters")
+          .replace(/\s{2,}/g, " ").trim();
+        sections.lede = deFill(sections.lede); sections.overnight = deFill(sections.overnight); sections.desk_view = deFill(sections.desk_view);
+        sections.horizon = deFill(sections.horizon ?? ""); sections.positions = sections.positions.map((p) => ({ ...p, note: deFill(p.note), watch: deFill(p.watch) }));
+        sections.ideas = (sections.ideas ?? []).map(deFill);
         // horizon law, guaranteed in code for the two words the fast model still slips in
         const deTape = (t: string) => t.replace(/\btoday's\b/gi, "current").replace(/\btoday\b/gi, "now").replace(/\btonight\b/gi, "soon");
         sections.lede = deTape(sections.lede); sections.overnight = deTape(sections.overnight); sections.desk_view = deTape(sections.desk_view);
@@ -498,10 +509,15 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           const wcN = (t: string) => t.split(/\s+/).filter(Boolean).length;
           if (wcN(p.note) <= noteCapF) return p;
           const sents = p.note.split(/(?<=[.!?])\s+/);
-          if (sents.length < 3) return p;
-          const trimmed = [sents[0], ...sents.slice(2)].join(" ");
-          return RISK.test(trimmed) && wcN(trimmed) >= 22 ? { ...p, note: trimmed } : p;
+          if (sents.length >= 3) {
+            const trimmed = [sents[0], ...sents.slice(2)].join(" ");
+            if (RISK.test(trimmed) && wcN(trimmed) >= 22 && wcN(trimmed) <= noteCapF) return { ...p, note: trimmed };
+          }
+          // two long sentences: keep the first (business + quality) and let ensureRisk re-attach a short risk clause
+          if (sents.length >= 2 && wcN(sents[0]) <= noteCapF - 9 && wcN(sents[0]) >= 14) return { ...p, note: sents[0] };
+          return { ...p, note: p.note.split(/\s+/).slice(0, noteCapF).join(" ").replace(/[,;:]?$/, ".") };
         });
+        sections = ensureRisk(sections);   // re-attach a short risk clause where the trim removed it
         // the card already labels the tripwire; a model-written "Tripwire:" / "Watch:" prefix would double it
         sections.positions = sections.positions.map((p) => ({ ...p, watch: p.watch
           .replace(/^\s*(tripwire|watch|trigger)\s*[:\-]\s*/i, "")

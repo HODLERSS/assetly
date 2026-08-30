@@ -129,9 +129,18 @@ for (const name of subset) {
     const text = [s.lede, s.overnight, ...s.positions.flatMap(p => [p.name, p.note, p.watch]), s.desk_view, s.horizon, ...(s.ideas ?? [])].join("\n");
     const { stats, hold } = await truth();
     const memoFacts = (b.memos ?? []).map(m => `${m.name}: ${m.business ?? ""} ${m.quality ?? ""} ${m.long_case ?? ""} ${m.tripwire ?? ""}`).join(" | ");
+    // 30d / 1y performance, computed exactly as the generator does (first point at/after the cutoff vs the last point)
+    const pctOver = (h, days) => { if (!h.length) return "n/a"; const cut = Date.now() - days * 86400000; const st = h.find(x => +new Date(x.ts) >= cut); const last = h[h.length - 1]; return !st || st === last ? "n/a" : (((last.price / st.price) - 1) * 100).toFixed(1) + "%"; };
+    const perfParts = [];
+    for (const h of hold.slice(0, 5)) {
+      const { data: ph } = await c.from("price_history").select("ts,price").eq("symbol", h.sym).gte("ts", new Date(Date.now() - 400 * 86400000).toISOString()).order("ts", { ascending: true }).limit(1200);
+      const hh = (ph ?? []).map(x => ({ ts: String(x.ts), price: Number(x.price) }));
+      perfParts.push(`${h.name} 30d ${pctOver(hh, 30)}, 1y ${pctOver(hh, 365)}`);
+    }
+    const perfLine = perfParts.join("; ");
     const geo = {}; for (const h of hold) { const g = /-USD$|^(BTC|ETH|SOL)$/.test(h.sym) ? "crypto" : /\.(KS|KQ)$/.test(h.sym) ? "Korea" : "US"; geo[g] = (geo[g] ?? 0) + h.w; }
     const geoLine = Object.entries(geo).map(([g, p]) => `${g} ${p.toFixed(1)}%`).join(" · ");
-    const jj = await judge(s, name + " " + list.map(x => x[0]).join(","), stats + `\nGEOGRAPHY (share of total assets, cash excluded; ground truth): ${geoLine}` + (memoFacts ? `\nCOMPANY FACTS (from each company's latest earnings call; numbers here are accepted as true): ${memoFacts}` : ""));
+    const jj = await judge(s, name + " " + list.map(x => x[0]).join(","), stats + `\nGEOGRAPHY (share of total assets, cash excluded; ground truth): ${geoLine}\nPERFORMANCE (ground truth, 30-day and 1-year price change): ${perfLine}` + (memoFacts ? `\nCOMPANY FACTS (from each company's latest earnings call; numbers here are accepted as true): ${memoFacts}` : ""));
     if (!jj) { log(`${name}: JUDGE-NULL (${secs}s)`); results.push({ name, M: { A1: secs <= 180 && attempts === 1 ? 100 : 0 }, judgeNull: true, sections: s }); continue; }
     const posText = s.positions.map(p => p.name).join(" | ");
     const small = hold.length <= 2;                       // 1-2 holding books: deeper notes, lower total floor
