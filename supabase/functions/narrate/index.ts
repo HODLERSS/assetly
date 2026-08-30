@@ -35,6 +35,32 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
   const c = out?.choices?.[0]?.message?.content;
   return c ? parseJsonBlock(String(c)) : null;
 }
+// tickers for the ear: "NVDA" must be spoken as "NVIDIA", never N-V-D-A. Names come from the symbols table, trimmed of
+// corporate suffixes; applied to the model script AND the fallback, whole-word, longest ticker first.
+const speechName = (name: string) => {
+  let n = name.trim();
+  for (let i = 0; i < 3; i++) n = n.replace(/[,\s]*\b(Incorporated|Inc\.?|Corporation|Corp\.?|Company|Co\.?|Limited|Ltd\.?|PLC|N\.V\.|S\.A\.|AG|SE|Holdings?|Group|Trust|Fund|ETF|Class [A-C]( Shares)?|Common Stock|Ordinary Shares|ADR|\(.*?\))\s*$/i, "").trim();
+  return n || name;
+};
+async function tickerNames(admin: ReturnType<typeof createClient>, userId: string, text: string): Promise<[string, string][]> {
+  const { data: held } = await admin.from("portfolio").select("symbol, name, nickname").eq("user_id", userId);
+  const cands = new Set<string>((held ?? []).map((r) => String(r.symbol)).filter((x) => !x.startsWith("$")));
+  for (const m of text.match(/\b[A-Z]{2,5}(?:\.[A-Z]{1,2})?\b/g) ?? []) cands.add(m);
+  const { data: syms } = await admin.from("symbols").select("symbol, name").in("symbol", [...cands]);
+  const out = new Map<string, string>();
+  for (const r of syms ?? []) if (r.name) out.set(String(r.symbol), speechName(String(r.name)));
+  for (const r of held ?? []) if (r.nickname && !out.has(String(r.symbol))) out.set(String(r.symbol), String(r.nickname));
+  return [...out.entries()].sort((a, b) => b[0].length - a[0].length);
+}
+const sayNames = (t: string, names: [string, string][]) => {
+  let x = t;
+  for (const [sym, nm] of names) {
+    const bare = sym.replace(/\.(KS|KQ)$/, "");
+    x = x.replace(new RegExp("(^|[^A-Za-z0-9$])" + sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9])", "g"), `$1${nm}`);
+    if (/^[A-Z]{2,5}$/.test(bare)) x = x.replace(new RegExp("(^|[^A-Za-z0-9$])" + bare + "(?![A-Za-z0-9])", "g"), `$1${nm}`);
+  }
+  return x;
+};
 // numbers for the ear: $107,300 -> "a hundred and seven thousand three hundred dollars" is model work; the
 // fallback keeps digits but spaces them so TTS reads them cleanly ("107,300 dollars", "5.8 percent")
 const earNumbers = (t: string) => t.replace(/\$([\d,]+(?:\.\d+)?)/g, "$1 dollars").replace(/(\d+(?:\.\d+)?)%/g, "$1 percent").replace(/₩([\d,]+)/g, "$1 won");
@@ -94,14 +120,16 @@ Deno.serve(async (req) => {
         : ed === "assessment" ? { len: "a 2-to-3 minute (330-420 word)", who: "portfolio-strategist", floor: 260 }
         : { len: "a 2-to-3 minute (340-430 word)", who: "morning-desk", floor: 280 };
       const isAssess = ed === "assessment";
+      const names = await tickerNames(admin, String(row.user_id), JSON.stringify(s));
+      const nameLine = names.length ? `\nSPEECH NAMES (say these, never spell a ticker letter by letter): ${names.map(([k, v]) => `${k} = ${v}`).join("; ")}` : "";
       // ---- script: tight-budget model call, else deterministic fallback ----
       let spoken: string | null = null;
       if (key) {
         const prompt = isAssess
           ? `Assessment:\n${JSON.stringify(s)}\n\nReturn STRICT JSON {"spoken": str}.
-spoken: ${spec.len} spoken script of this exact portfolio assessment for expressive text-to-speech. It is the FIRST look at a client's newly added portfolio: its quality, its structure, the next quarter versus the next few years, and gaps worth researching. Not a daily tape note. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} speaking to ONE client they are just getting to know. Short sentences. Contractions. Spell numbers for the ear ("thirty eight percent of your assets"). Vary rhythm; one earned exclamation at most. Structure, all REQUIRED: greeting with the date, the verdict (lede), what they own (overnight), each position with its tripwire (watch), structure and risk (desk_view), the horizons (horizon), what is worth researching (ideas), and a closing sign-off that says goodbye ("That's your assessment. Talk soon."). The script MUST end with that sign-off. Insert <break time="0.7s" /> between sections. Use ONLY facts from the assessment. Never tell them to buy or sell. No ticker codes, company names only. Never mention that this is generated.`
+spoken: ${spec.len} spoken script of this exact portfolio assessment for expressive text-to-speech. It is the FIRST look at a client's newly added portfolio: its quality, its structure, the next quarter versus the next few years, and gaps worth researching. Not a daily tape note. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} speaking to ONE client they are just getting to know. Short sentences. Contractions. Spell numbers for the ear ("thirty eight percent of your assets"). Vary rhythm; one earned exclamation at most. Structure, all REQUIRED: greeting with the date, the verdict (lede), what they own (overnight), each position with its tripwire (watch), structure and risk (desk_view), the horizons (horizon), what is worth researching (ideas), and a closing sign-off that says goodbye ("That's your assessment. Talk soon."). The script MUST end with that sign-off. Insert <break time="0.7s" /> between sections. Use ONLY facts from the assessment. Never tell them to buy or sell. No ticker codes, company names only.${nameLine} Never mention that this is generated.`
           : `Brief:\n${JSON.stringify(s)}\n\nReturn STRICT JSON {"spoken": str}.
-spoken: ${spec.len} spoken radio script of this exact brief for expressive text-to-speech. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} analyst speaking to ONE client they know well. Short sentences. Contractions. Spell numbers for the ear ("up five point eight percent"). Vary rhythm; one earned exclamation at most. Structure, all REQUIRED: greeting with the date, the lede, the tape, each position with what to watch, the desk view, and a closing sign-off that says goodbye ("That's your brief. Talk soon."). The script MUST end with that sign-off. Insert <break time="0.7s" /> between sections. Use ONLY facts from the brief. No ticker codes, company names only. Never mention that this is generated.`;
+spoken: ${spec.len} spoken radio script of this exact brief for expressive text-to-speech. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} analyst speaking to ONE client they know well. Short sentences. Contractions. Spell numbers for the ear ("up five point eight percent"). Vary rhythm; one earned exclamation at most. Structure, all REQUIRED: greeting with the date, the lede, the tape, each position with what to watch, the desk view, and a closing sign-off that says goodbye ("That's your brief. Talk soon."). The script MUST end with that sign-off. Insert <break time="0.7s" /> between sections. Use ONLY facts from the brief. No ticker codes, company names only.${nameLine} Never mention that this is generated.`;
         for (let a = 0; a < 2 && !spoken; a++) {
           // the assessment script is written by the fast model: M2.7 over-thinks the longer assessment shape and times out
           const out = await askModel(key, "You turn a written investment brief into a vivid spoken radio script. Output only the JSON.", prompt, 9000, 35000, isAssess ? "gpt-oss-120b" : undefined);
@@ -111,6 +139,7 @@ spoken: ${spec.len} spoken radio script of this exact brief for expressive text-
       }
       let usedFallback = false;
       if (!spoken) { spoken = fallbackScript(s, dayLine, ed); usedFallback = true; }
+      spoken = sayNames(spoken, names);   // guaranteed in code: whatever the model left as a ticker is spoken as the company
       if (!/(talk soon|see you|that's your|that’s your)/i.test(spoken.slice(-120))) spoken += ` <break time="0.6s" /> ${isAssess ? "That's your assessment." : "That's your brief."} Talk soon.`;
       // ---- TTS: 3 attempts with backoff ----
       let audio: Uint8Array | null = null;
