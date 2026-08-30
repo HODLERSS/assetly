@@ -12,7 +12,7 @@ await c.auth.signInWithPassword({ email: "e2e-cloud@assetly.test", password: "As
 const { data: u } = await c.auth.getUser();
 
 // one mixed book that every lens can bite into: mega-cap tech, a value bank, a dividend payer, an index sleeve, crypto
-const BOOK = [["NVDA", 5, 200], ["JPM", 10, 250], ["KO", 40, 62], ["QQQM", 20, 210], ["MARA", 200, 14], ["$CASH", 8000, 1]];
+const BOOK = [["NVDA", 5, 200], ["JPM", 10, 250], ["BLK", 2, 900], ["QQQM", 20, 210], ["MARA", 200, 14], ["$CASH", 8000, 1]];   // all symbols known to exist; JPM/BLK carry the dividend angle
 const PERSONAS = {
   novice_value:  { styles: ["value"],           purpose: "watch", horizon: "3-10y", target: "8-12%",  risk: "hold",     level: "novice" },
   pro_trader:    { styles: ["trader"],          purpose: "news",  horizon: "<1y",   target: "25%+",   risk: "sell",     level: "pro" },
@@ -26,7 +26,8 @@ const setBook = async () => {
   for (const r of cur ?? []) await c.from("holdings").delete().eq("id", r.holding_id);
   for (const [sym, qty, cost] of BOOK) {
     const acct = sym.startsWith("$") ? "bank" : "brokerage";
-    const { data: h } = await c.from("holdings").upsert({ user_id: u.user.id, symbol: sym, account: acct, nickname: "" }, { onConflict: "user_id,symbol,account,nickname" }).select("id").single();
+    const { data: h, error } = await c.from("holdings").upsert({ user_id: u.user.id, symbol: sym, account: acct, nickname: "" }, { onConflict: "user_id,symbol,account,nickname" }).select("id").maybeSingle();
+    if (!h) { log(`  (setBook skip ${sym}: ${error?.message ?? "no row"})`); continue; }
     await c.from("lots").delete().eq("holding_id", h.id);
     await c.from("lots").insert({ holding_id: h.id, qty, cost_per_share: cost });
   }
