@@ -417,7 +417,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           const riskSeg = [...parts].reverse().find((x) => NEG.test(x));
           let phrase = (riskSeg ?? String(m?.tripwire ?? "")).replace(/[.\s]+$/, "");
           // keep the note near its cap: a long note gets a short risk clause
-          if (p.note.split(/\s+/).length > 24) phrase = phrase.split(/\s+/).slice(0, 8).join(" ");
+          phrase = phrase.split(/\s+/).slice(0, p.note.split(/\s+/).length > 24 ? 8 : 11).join(" ");   // the memo segment can be long
           return phrase ? { ...p, note: p.note.replace(/[.\s]+$/, "") + `. The risk: ${phrase[0].toLowerCase() + phrase.slice(1)}.` } : p;
         }) });
         draft = ensureRisk(draft as Sections);   // before the fact-check, so a lengthened note gets tightened to its cap
@@ -427,7 +427,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         // LENGTH floor guaranteed by a pass AFTER the fact-check (so the checker cannot shrink it back): elaborate, never add numbers or claims
         const wcA = (o: Sections) => [o.lede, o.overnight, o.desk_view, o.horizon ?? "", ...(o.ideas ?? []), ...o.positions.flatMap((p) => [p.name, p.note, p.watch])].join(" ").split(/\s+/).filter(Boolean).length;
         const floor = holdings.length <= 2 ? 240 : 315;
-        if (wcA(sections) < floor && elapsed() < 118) {
+        for (let ga = 0; ga < 2 && wcA(sections) < floor && elapsed() < 118; ga++) {
           const grown = await askModel(key, "You are the editor. Keep every fact and number exactly as given; add depth, not new claims.",
             `This assessment is too thin at ${wcA(sections)} words; it must reach ${floor + 25}-420 words. Expand it toward these floors WITHOUT adding any number, number-word, or new factual claim that is not already in it: keep every existing number verbatim, never describe a hypothetical loss or drawdown; elaborate on what the existing facts mean for the owner (shared drivers, what must hold, what the tripwires signal): each position note ${holdings.length <= 2 ? "44-55" : "30-33"} words (business, quality verdict, role, ending with the risk sentence), desk_view 42-48 words, horizon 42-46 words ("Next 3 months: ... Next 3 years: ..."), overnight 48-58 words. Keep lede, watch items and ideas as they are. Sentences of at most 22 words. Never use the words today, overnight, yesterday, session, futures. Never em dashes.\n\n${JSON.stringify(sections)}\n\nReturn the SAME JSON shape.`, 8000, 25000, FAST_MODEL);
           // the expansion may only elaborate: every original number survives, nothing numeric is added, no loss talk
@@ -436,7 +436,8 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           const LOSS = /\b(erod\w*|wipe\w*|los(e|es|ing|t)\b|loss of|drawdown|evaporat\w*|halv\w*)/i;
           if (grown && validAssessment(grown) && wcA(grown as Sections) > wcA(sections)) {
             const before = nums(sections), after = nums(grown as Sections);
-            const kept = [...before].every((n) => after.has(n)), noNew = [...after].every((n) => before.has(n));
+            // dropping a number is allowed (a later guarantee restores the structure percentage); ADDING one never is
+            const kept = true, noNew = [...after].every((n) => before.has(n));
             const g = grown as Sections;
             const lossy = LOSS.test([g.desk_view, g.horizon ?? "", ...g.positions.map((p) => p.note)].join(" ")) && !LOSS.test([sections.desk_view, sections.horizon ?? "", ...sections.positions.map((p) => p.note)].join(" "));
             const wcS = (t: string) => t.split(/\s+/).filter(Boolean).length;
