@@ -114,7 +114,7 @@ for (const name of subset) {
       new Promise((res) => setTimeout(() => res({ error: { message: "invoke timeout 200s" } }), 200000)),
     ]);
     let w = await invoke(); let attempts = 1;
-    const fresh = async () => { const { data: b } = await c.from("daily_briefs").select("sections, model, generated_at").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", "assessment").maybeSingle(); return b && +new Date(b.generated_at) >= t0 ? b : null; };
+    const fresh = async () => { const { data: b } = await c.from("daily_briefs").select("sections, model, generated_at, memos").eq("user_id", u.user.id).eq("brief_date", today).eq("edition", "assessment").maybeSingle(); return b && +new Date(b.generated_at) >= t0 ? b : null; };
     let b = await fresh();
     if (!b) { await new Promise(r => setTimeout(r, 30000)); w = await invoke(); attempts = 2; b = await fresh(); }
     if (!b) { await new Promise(r => setTimeout(r, 60000)); w = await invoke(); attempts = 3; b = await fresh(); }
@@ -125,9 +125,12 @@ for (const name of subset) {
     const all = JSON.stringify(s);
     const text = [s.lede, s.overnight, ...s.positions.flatMap(p => [p.name, p.note, p.watch]), s.desk_view, s.horizon, ...(s.ideas ?? [])].join("\n");
     const { stats, hold } = await truth();
-    const jj = await judge(s, name + " " + list.map(x => x[0]).join(","), stats);
+    const memoFacts = (b.memos ?? []).map(m => `${m.name}: ${m.business ?? ""} ${m.quality ?? ""} ${m.long_case ?? ""} ${m.tripwire ?? ""}`).join(" | ");
+    const jj = await judge(s, name + " " + list.map(x => x[0]).join(","), stats + (memoFacts ? `\nCOMPANY FACTS (from each company's latest earnings call; numbers here are accepted as true): ${memoFacts}` : ""));
     if (!jj) { log(`${name}: JUDGE-NULL (${secs}s)`); results.push({ name, M: { A1: secs <= 180 && attempts === 1 ? 100 : 0 }, judgeNull: true, sections: s }); continue; }
     const posText = s.positions.map(p => p.name).join(" | ");
+    const small = hold.length <= 2;                       // 1-2 holding books: deeper notes, lower total floor
+    const noteCap = small ? 56 : CAP.note, totalMin = hold.length === 1 ? 220 : hold.length === 2 ? 260 : CAP.totalMin;
     const big = hold.filter(h => h.w >= 20);
     const watchOk = s.positions.every(p => wc(p.watch) <= 14 && !/\b(monitor|watch|track|keep an eye)\b/i.test(p.watch));
     const ideas = s.ideas ?? [];
@@ -139,7 +142,7 @@ for (const name of subset) {
       A5: ev(jj, "m5") ? 100 : 0,
       A6: pct([ev(jj, "m6"), /\d+(\.\d+)?\s?%/.test(s.desk_view)]),
       A7: pct([watchOk, ideas.length >= 2 && ideas.length <= 3 && ideas.every(x => wc(x) <= 16) && !ideas.some(x => /^diversif/i.test(x.trim()) || IDEA_BAN.test(x.trim())), ev(jj, "m7")]),
-      A8: pct([wc(s.lede) <= CAP.lede, wc(s.overnight) <= CAP.book, s.positions.every(p => wc(p.note) <= CAP.note), s.positions.every(p => wc(p.watch) <= CAP.watch), wc(s.desk_view) <= CAP.desk, wc(s.horizon) <= CAP.horizon, ideas.every(x => wc(x) <= CAP.idea), totalWords(s) >= CAP.totalMin && totalWords(s) <= CAP.total && totalWords(s) / 145 <= 3.05]),
+      A8: pct([wc(s.lede) <= CAP.lede, wc(s.overnight) <= CAP.book, s.positions.every(p => wc(p.note) <= noteCap), s.positions.every(p => wc(p.watch) <= CAP.watch), wc(s.desk_view) <= CAP.desk, wc(s.horizon) <= CAP.horizon, ideas.every(x => wc(x) <= CAP.idea), totalWords(s) >= totalMin && totalWords(s) <= CAP.total && totalWords(s) / 145 <= 3.05]),
       A9: pct([!all.includes("—"), !/[0-9]{6}\.(KS|KQ)/.test(all), !/KRW\s?[0-9]/.test(all), !FILLER.test(all), !PROCESS.test(all), roundOk(all), avgSentence(s) <= 26, !/\*\*|^#|\n#/.test(all)]),
       A10: pct([!TRADE_BAN.test(text), ev(jj, "m10"), ev(jj, "m11")]),
     };
