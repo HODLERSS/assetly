@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import type { Api, PortfolioRow } from "../lib/api";
 import { BriefCard } from "../components/BriefCard";
 import { isMarketOpen, marketOf, moverEligible, moverMode, sessionLabel } from "../lib/markets";
-import { convertCcy, dayChangeAmount, glClass, labelParts, money, signedMoney, signedMoneyCompact, signedPct } from "../lib/format";
+import { convertCcy, dayChangeAmount, glClass, labelParts, money, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
 
 // Canvas 2a: net worth, movers, market pulse.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
 
 export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone}: {
   api: Api; rows: PortfolioRow[];
-  totals: { value: number; assets: number; debt: number; gl: number; cost: number; day: number; mixed: boolean; fx: number | null; unconverted: number };
+  totals: { value: number; assets: number; debt: number; gl: number; cost: number; day: number; mixed: boolean; fx: FxRates | number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
   dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
   briefBanner?: { audio: boolean; edition?: string } | null; onBriefBannerDone?: () => void;
@@ -22,7 +22,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
     return () => { live = false; };
   }, [api, mode.kind]);
   // Per-market display currency (Settings matrix).
-  const show = (v: number | null, r: PortfolioRow): [number | null, "USD" | "KRW"] => {
+  const show = (v: number | null, r: PortfolioRow): [number | null, string] => {
     const target = r.currency === "KRW" ? dispKr : dispUs;
     if (target === r.currency || v === null) return [v, r.currency];
     const c = convertCcy(v, r.currency, target, totals.fx);

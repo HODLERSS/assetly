@@ -1,22 +1,27 @@
 // Money and percent formatting. Sign always travels with color (never color alone).
-export function money(v: number | null | undefined, currency: "USD" | "KRW" = "USD", compactKrw = false): string {
+export type FxRates = Record<string, number>;   // units of currency per USD (USD: 1, KRW: 1380, CAD: 1.36 ...)
+const SYM: Record<string, string> = { USD: "$", KRW: "₩", CAD: "C$", GBP: "£", EUR: "€", JPY: "¥", AUD: "A$", HKD: "HK$", INR: "₹", CHF: "CHF ", SGD: "S$", NZD: "NZ$", SEK: "kr ", NOK: "kr ", DKK: "kr ", MXN: "MX$", BRL: "R$", ZAR: "R ", TWD: "NT$", CNY: "¥" };
+const ZERO_DP = new Set(["KRW", "JPY", "TWD"]);   // currencies quoted without decimals
+export const ccySymbol = (c: string) => SYM[c] ?? c + " ";
+export function money(v: number | null | undefined, currency: string = "USD", compactKrw = false): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
   if (currency === "KRW") {
     const n = Math.round(v);
     if (compactKrw && Math.abs(n) >= 1e8) return `₩${(n / 1e8).toFixed(1)}억`;
     return `₩${n.toLocaleString("en-US")}`;
   }
-  return `$${v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const dp = ZERO_DP.has(currency) ? 0 : 0;
+  return `${ccySymbol(currency)}${v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 }
 
 /** Per-share amounts (price, avg cost, lot cost): always 2 decimals in USD, whole won in KRW. */
-export function moneyExact(v: number | null | undefined, currency: "USD" | "KRW" = "USD"): string {
+export function moneyExact(v: number | null | undefined, currency: string = "USD"): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  if (currency === "KRW") return `₩${Math.round(v).toLocaleString("en-US")}`;
-  return `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (ZERO_DP.has(currency)) return `${ccySymbol(currency)}${Math.round(v).toLocaleString("en-US")}`;
+  return `${ccySymbol(currency)}${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function signedMoney(v: number | null | undefined, currency: "USD" | "KRW" = "USD"): string {
+export function signedMoney(v: number | null | undefined, currency: string = "USD"): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
   const sign = v > 0 ? "+" : v < 0 ? "-" : "";
   return sign + money(Math.abs(v), currency);
@@ -53,10 +58,13 @@ export function timeAgo(iso: string | null): string {
 }
 
 /** Convert v between USD and KRW using the won-per-dollar rate; null rate = no conversion possible. */
-export function convertCcy(v: number, from_: "USD" | "KRW", base: "USD" | "KRW", krwPerUsd: number | null): number | null {
+/** Convert through USD with a rates map (units per USD). A bare number is accepted as the legacy won-per-dollar rate. */
+export function convertCcy(v: number, from_: string, base: string, rates: FxRates | number | null): number | null {
   if (from_ === base) return v;
-  if (!krwPerUsd || krwPerUsd <= 0) return null;
-  return from_ === "KRW" ? v / krwPerUsd : v * krwPerUsd;
+  const map: FxRates = typeof rates === "number" ? { USD: 1, KRW: rates } : { USD: 1, ...(rates ?? {}) };
+  const rf = map[from_], rb = map[base];
+  if (!rf || rf <= 0 || !rb || rb <= 0) return null;   // unknown pair: caller shows "awaiting FX rate", never a wrong number
+  return (v / rf) * rb;
 }
 
 /** Dollar (or won) change implied by today's percent move on the current value. */
@@ -80,7 +88,7 @@ export function labelParts(r: { symbol: string; name?: string | null; name_kr?: 
 }
 
 /** Compact signed money for tight row lines: +$28.1K, -\u20a99.3M. */
-export function signedMoneyCompact(v: number | null, ccy: "USD" | "KRW"): string {
+export function signedMoneyCompact(v: number | null, ccy: string): string {
   if (v === null) return "\u2014";
   const sign = v > 0 ? "+" : v < 0 ? "-" : "";
   const num = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: Math.abs(v) < 1000 ? 0 : 1 }).format(Math.abs(v));

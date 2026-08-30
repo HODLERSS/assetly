@@ -56,6 +56,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     ensureSymbol: vi.fn().mockResolvedValue(undefined),
     refreshNews: vi.fn().mockResolvedValue(true),
     getFxRate: vi.fn().mockResolvedValue(1380),
+    getFxRates: vi.fn().mockResolvedValue({ USD: 1, KRW: 1380 }),
     getFxInfo: vi.fn().mockResolvedValue({ rate: 1381, asOf: new Date(Date.now() - 60000).toISOString() }),
     updateBaseCurrency: vi.fn().mockResolvedValue(undefined),
     updateDisplayCcy: vi.fn().mockResolvedValue(undefined),

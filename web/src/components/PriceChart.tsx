@@ -56,7 +56,7 @@ function thin(pts: HistoryPoint[], n = 180): HistoryPoint[] {
 }
 
 export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost }: {
-  api: Api; symbol: string; currency: "USD" | "KRW"; livePrice: number | null; liveAsOf: string | null;
+  api: Api; symbol: string; currency: string; livePrice: number | null; liveAsOf: string | null;
   avgCost?: number | null;
 }) {
   const [range, setRange] = useState<RangeKey>("1M");

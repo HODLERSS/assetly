@@ -100,7 +100,10 @@ Deno.serve(async (req) => {
   const { data: rows } = await admin.from("portfolio").select("symbol,nickname,kind,account,currency,qty,value,change_pct,avg_cost,total_gl").eq("user_id", u.user.id);
   const { data: fxRow } = await admin.from("prices").select("price").eq("symbol", "USDKRW").maybeSingle();
   const fx = fxRow ? Number(fxRow.price) : 1380;
-  const usd = (v: number, c: string) => (c === "KRW" ? v / fx : v);
+  const { data: fxRows } = await admin.from("prices").select("symbol,price").like("symbol", "USD___");
+  const fxMap = new Map<string, number>([["USD", 1], ["KRW", fx]]);
+  for (const r of fxRows ?? []) { const v = Number(r.price); if (v > 0) fxMap.set(String(r.symbol).slice(3), v); }
+  const usd = (v: number, c: string) => v / (fxMap.get(c) ?? 1);
   const held = (rows ?? []).filter((r) => !r.symbol.startsWith("$"));
   const windows = [7, 30, 90];
   const stats: string[] = [];

@@ -211,6 +211,9 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
   }
   const { data: fxRow } = await admin.from("prices").select("price").eq("symbol", "USDKRW").maybeSingle();
   const fx = fxRow ? Number(fxRow.price) : 1380;
+  const { data: fxRows } = await admin.from("prices").select("symbol,price").like("symbol", "USD___");
+  const fxMap = new Map<string, number>([["USD", 1], ["KRW", fx]]);
+  for (const r of fxRows ?? []) { const v = Number(r.price); if (v > 0) fxMap.set(String(r.symbol).slice(3), v); }
   // Korean tickers are opaque numbers; the model reads and writes NAMES for them.
   const dispName = (sy: string, nick?: string | null, nm?: string | null) =>
     (nick || ((sy.endsWith(".KS") || sy.endsWith(".KQ")) && nm ? nm : sy));
@@ -231,7 +234,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       // Same session-aware staleness as symbols: skip only while genuinely current.
       if (!fixture && !force && !userMkts.some((mk) => staleInsight(lastPi.get(uid) ?? 0, mk))
           && Date.now() - (lastPi.get(uid) ?? 0) <= 50 * 60000) continue;
-      const usd = (r: (typeof rows)[number]) => (r.currency === "KRW" ? Number(r.value ?? 0) / fx : Number(r.value ?? 0));
+      const usd = (r: (typeof rows)[number]) => Number(r.value ?? 0) / (fxMap.get(String(r.currency)) ?? 1);
       const assets = rows.filter((r) => r.kind !== "debt");
       const debt = rows.filter((r) => r.kind === "debt").reduce((a, r) => a + usd(r), 0);
       const total = assets.reduce((a, r) => a + usd(r), 0);

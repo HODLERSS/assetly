@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
 
   const work = (async () => {
     // 1. positions in (serialized by the per-user lock; a concurrent webhook sync just yields)
-    await call("snaptrade-sync", { user_id: uid });
+    await call("snaptrade-sync", { user_id: uid, no_kick: true });   // this chain IS the kick
     // 2. fresh headlines for everything now held
     const { data: rows } = await admin.from("portfolio").select("symbol").eq("user_id", uid);
     const syms = (rows ?? []).map((r) => String(r.symbol)).filter((sy) => !sy.startsWith("$"));

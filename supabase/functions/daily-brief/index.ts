@@ -207,6 +207,10 @@ Deno.serve(async (req) => {
   const byUser = new Map<string, NonNullable<typeof pf>>();
   for (const r of pf ?? []) { if (!byUser.has(r.user_id)) byUser.set(r.user_id, []); byUser.get(r.user_id)!.push(r); }
   const fxNum = px.get("USDKRW")?.price ?? 1380;
+  // every FX pair the price pipeline keeps (USDxxx = units per USD): brokerage imports arrive in CAD, GBP, EUR, JPY ...
+  const { data: fxRows } = await admin.from("prices").select("symbol,price").like("symbol", "USD___");
+  const fxMap = new Map<string, number>([["USD", 1], ["KRW", fxNum]]);
+  for (const r of fxRows ?? []) { const v = Number(r.price); if (v > 0) fxMap.set(String(r.symbol).slice(3), v); }
   let userIds = [...byUser.keys()];
   if (!onlyEmail && !fixture) {
     // cron runs never touch test accounts (no token spend, no interference with battery fixtures)
@@ -231,7 +235,7 @@ Deno.serve(async (req) => {
     const elapsed = () => (Date.now() - tStart) / 1000;
     try {
       const rows = byUser.get(uid)!;
-      const usd = (v: number, c: string) => (c === "KRW" ? v / fxNum : v);
+      const usd = (v: number, c: string) => v / (fxMap.get(c) ?? 1);
       const assets = rows.filter((r) => r.kind !== "debt");
       const total = assets.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
       if (total < 100) continue;

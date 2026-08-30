@@ -73,15 +73,17 @@ Deno.serve(async (req) => {
   // Track what matters: symbols someone holds, plus anything registered in the last 36h
   // (a just-added ticker stays live while the user finishes setting it up).
   const cutoff = new Date(Date.now() - 36 * 3600 * 1000).toISOString();
-  const [held, recent] = await Promise.all([
+  const [held, recent, fxSyms] = await Promise.all([
     admin.from("holdings").select("symbol"),
     admin.from("symbols").select("symbol").eq("active", true).gte("created_at", cutoff),
+    admin.from("symbols").select("symbol").eq("active", true).like("symbol", "USD___"),
   ]);
   if (held.error) return Response.json({ ok: false, error: held.error.message }, { status: 500 });
   const wanted = new Set([
     ...(held.data ?? []).map((h) => h.symbol),
     ...(recent.data ?? []).map((r) => r.symbol),
     "USDKRW",                                       // FX rate for cross-currency totals: always fresh
+    ...(fxSyms.data ?? []).map((r) => r.symbol),    // every USDxxx pair (CAD, GBP, EUR, JPY, AUD, HKD, INR ...) for brokerage imports in those currencies
     "ES=F", "NQ=F",                                 // US index futures: the pre-open pulse card
     "^VIX", "^KS11", "^GSPC",                       // market context for the Daily Brief
   ]);

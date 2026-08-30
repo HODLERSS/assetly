@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import type { Api, Insight, PortfolioRow } from "../lib/api";
-import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyExact, signedMoney, signedMoneyCompact, signedPct, timeAgo } from "../lib/format";
+import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyExact, signedMoney, signedMoneyCompact, signedPct, timeAgo, type FxRates } from "../lib/format";
 import { isMarketOpen, marketOf } from "../lib/markets";
 
 // Canvas 2b: the table as a touch list with multi-select filter chips.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
 
 export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", dispUs = "USD", dispKr = "KRW", onInsightsChanged, onRefreshInsights, insightsRefreshing = false, freshInsights = null }: {
-  rows: PortfolioRow[]; onOpen: (id: string) => void; onAdd: () => void; api: Api; fxRate: number | null;
+  rows: PortfolioRow[]; onOpen: (id: string) => void; onAdd: () => void; api: Api; fxRate: FxRates | number | null;
   totalsCcy?: "USD" | "KRW"; dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW"; onInsightsChanged?: (generatedAt: string) => void;
   onRefreshInsights?: () => void; insightsRefreshing?: boolean; freshInsights?: Insight | null;
 }) {
@@ -44,7 +44,7 @@ export function Holdings({ rows, onOpen, onAdd, api, fxRate, totalsCcy = "USD", 
   const shown = rows.filter((r) => (filter === "all" ? true : filter === "ret" ? isRet(r) : mktFor(r) === filter));
   const isLive = (r: PortfolioRow) => { const m = marketOf(r); return m !== null && r.change_pct !== null && isMarketOpen(m); };
   // Per-market display currency (Settings matrix): KRW rows follow dispKr, everything else dispUs.
-  const show = (v: number | null, r: PortfolioRow): [number | null, "USD" | "KRW"] => {
+  const show = (v: number | null, r: PortfolioRow): [number | null, string] => {
     const target = r.currency === "KRW" ? dispKr : dispUs;
     if (target === r.currency || v === null) return [v, r.currency];
     const c = convertCcy(v, r.currency, target, fxRate);

@@ -131,7 +131,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr 
 }
 
 function LotSheet({ currency, cashish = false, lot, onClose, onSave, onDelete }: {
-  currency: "USD" | "KRW"; cashish?: boolean; lot: Lot | null; onClose: () => void;
+  currency: string; cashish?: boolean; lot: Lot | null; onClose: () => void;
   onSave: (qty: number, cost: number, date: string, note: string) => void; onDelete?: () => void;
 }) {
   const [qty, setQty] = useState(lot ? String(lot.qty) : "");

@@ -3,6 +3,7 @@
 // Callable by the signed-in user, by a sibling function (service role + user_id),
 // or by cron (service role, no body -> all connected users).
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { normalizePosition, normalizeBalance, accountLabel } from "./map.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -51,7 +52,14 @@ Deno.serve(async (req) => {
 
   // resolve targets
   let targets: string[] = [];
-  const isService = (() => { try { return JSON.parse(atob(bearer.split(".")[1] ?? "")).role === "service_role"; } catch { return false; } })();
+  let itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
+  if (!itok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itok = data ?? ""; }
+  const isInternal = !!itok && (req.headers.get("x-internal-token") ?? "") === itok;
+  const isService = isInternal || (() => { try { return JSON.parse(atob(bearer.split(".")[1] ?? "")).role === "service_role"; } catch { return false; } })();
+  // FIXTURE mode (service/internal callers, @assetly.test users only): the SnapTrade payloads come from the body, so the
+  // whole import path (mapper -> symbols -> prices -> holdings -> lots -> kick) can be exercised for any brokerage
+  // shape without an account there. body.fixture = { accounts: [...], positions: {acctId: <positions/all payload>}, balances: {acctId: [...]} }
+  const fixture = isService && body.fixture && typeof body.fixture === "object" ? body.fixture as { accounts: Record<string, unknown>[]; positions?: Record<string, unknown>; balances?: Record<string, unknown> } : null;
   if (isService) {
     if (typeof body.user_id === "string") targets = [body.user_id];
     else { const { data } = await admin.from("snaptrade_tokens").select("user_id"); targets = (data ?? []).map((r) => r.user_id); }
@@ -96,10 +104,20 @@ Deno.serve(async (req) => {
     if (got === false) { results.push({ uid: uid.slice(0, 8), skipped: "sync in progress" }); continue; }
     try {
       const { data: row } = await admin.from("snaptrade_tokens").select("user_id,mode,st_secret,refresh_token,access_token,access_expires_at").eq("user_id", uid).maybeSingle();
-      if (!row) { results.push({ uid: uid.slice(0, 8), error: "not connected" }); continue; }
-      const commercial = (row as TokenRow).mode === "commercial" || !!(row as TokenRow).st_secret;
       let get: (path: string) => Promise<unknown>;
-      if (commercial) {
+      if (fixture) {
+        const { data: fu } = await admin.auth.admin.getUserById(uid);
+        if (!fu?.user?.email?.endsWith("assetly.test")) { results.push({ uid: uid.slice(0, 8), error: "fixture only for test users" }); continue; }
+        get = async (path: string) => {
+          if (path === "/accounts") return fixture.accounts;
+          const m = path.match(/^\/accounts\/([^/]+)\/(positions\/all|balances|positions|holdings)$/);
+          if (!m) return null;
+          if (m[2] === "positions/all") return (fixture.positions as Record<string, unknown> | undefined)?.[m[1]] ?? null;
+          if (m[2] === "balances") return (fixture.balances as Record<string, unknown> | undefined)?.[m[1]] ?? [];
+          return null;
+        };
+      } else if (!row) { results.push({ uid: uid.slice(0, 8), error: "not connected" }); continue; }
+      else if ((row as TokenRow).mode === "commercial" || !!(row as TokenRow).st_secret) {
         const uq = `userId=${encodeURIComponent(uid)}&userSecret=${encodeURIComponent((row as TokenRow).st_secret ?? "")}`;
         get = (path: string) => signedGet(path, uq);
       } else {
@@ -136,6 +154,7 @@ Deno.serve(async (req) => {
       const added: string[] = [];
       const collisions: string[] = [];
       const addedBy: Record<string, string[]> = {};
+      const skipped: Record<string, number> = {};   // option/future/cfd/cash/short/zero/unsupported/excluded: reported, never silent
       // reconnect hygiene: drop imported rows tied to SnapTrade accounts that no longer exist
       const liveAcctIds = new Set(accounts.map((a) => String(a.id ?? "")).filter(Boolean));
       for (const r of preRows ?? []) {
@@ -149,8 +168,7 @@ Deno.serve(async (req) => {
         const acctId = String(a.id ?? "");
         if (!acctId) continue;
         const inst = String(a.institution_name ?? "Brokerage");
-        const numDigits = String(a.number ?? "").replace(/\D/g, "");
-        const acctLabel = inst + (numDigits ? ` \u2026${numDigits.slice(-4)}` : "");
+        const acctLabel = accountLabel(a);
         // Accounts created after May 2026 use the unified positions endpoint; older ones the legacy paths.
         const allPos = await get(`/accounts/${acctId}/positions/all`) as Record<string, unknown> | null;
         await rawSave("positions_all", acctId, allPos);
@@ -200,55 +218,24 @@ Deno.serve(async (req) => {
           seen.push(ext);
         };
         for (const p of poss) {
-          // unified shape: { instrument: {kind, symbol, description, currency, exchange}, units, price, cost_basis }
-          // legacy shape:  { symbol: { symbol: {symbol, description, currency:{code}, exchange:{code}} }, units, price, average_purchase_price }
-          const inst = p.instrument as Record<string, unknown> | undefined;
-          const kindRaw = String(inst?.kind ?? "stock");
-          if (["option", "future", "cfd"].includes(kindRaw)) continue;   // out of scope for the holdings book
-          const descProbe = String((inst as { description?: string } | undefined)?.description ?? "");
-          const symProbe = String((inst as { symbol?: string } | undefined)?.symbol ?? "");
-          // cash-equivalent sweep positions (FCASH/SPAXX/CORE...) duplicate the balances endpoint
-          if (kindRaw === "other" && (/^cash$/i.test(descProbe.trim()) || /cash|spaxx|fdrxx|core/i.test(symProbe))) continue;
-          if (kindRaw === "cash" || (p as { cash_equivalent?: boolean }).cash_equivalent === true) continue;
-          let sym = "", desc = "", ccy = "USD", exch = "US";
-          if (inst) {
-            sym = String(inst.symbol ?? inst.raw_symbol ?? "");
-            desc = String(inst.description ?? sym);
-            ccy = String((p.currency as string | undefined) ?? (inst.currency as string | undefined) ?? "USD");
-            exch = String((inst.exchange as string | undefined) ?? "US");
-          } else {
-            const symObj = (p.symbol as Record<string, unknown> | undefined)?.symbol as Record<string, unknown> | string | undefined;
-            sym = typeof symObj === "string" ? symObj : String((symObj as Record<string, unknown> | undefined)?.symbol ?? (symObj as Record<string, unknown> | undefined)?.raw_symbol ?? "");
-            const meta = typeof symObj === "object" && symObj ? symObj as Record<string, unknown> : {};
-            desc = String((meta as { description?: string }).description ?? sym);
-            ccy = String(((meta as { currency?: { code?: string } }).currency?.code) ?? "USD");
-            exch = String(((meta as { exchange?: { code?: string } }).exchange?.code) ?? "US");
-          }
-          const units = Number(p.units ?? p.fractional_units ?? 0);
-          if (!sym || !(units > 0)) continue;
-          if (excluded.has(sym)) continue;   // user chose to keep this out of Assetly
-          const kind = kindRaw === "crypto" ? "crypto" : "equity";
-          // class shares: SnapTrade "BRKB" -> Yahoo "BRK-B"
-          const cls = sym.match(/^([A-Z]{2,})([AB])$/);
-          const yahoo = cls && /class [ab]/i.test(desc) ? `${cls[1]}-${cls[2]}` : null;
-          await admin.from("symbols").upsert({ symbol: sym, name: desc, exchange: exch, currency: ccy, kind, ...(yahoo ? { yahoo } : {}) }, { onConflict: "symbol", ignoreDuplicates: true });
-          const price = p.price === null || p.price === undefined ? null : Number(p.price);
-          if (price !== null && Number.isFinite(price)) {
+          const m = normalizePosition(p, excluded);
+          if ("skip" in m) { skipped[m.skip] = (skipped[m.skip] ?? 0) + 1; continue; }
+          await admin.from("symbols").upsert({ symbol: m.sym, name: m.desc, exchange: m.exch, currency: m.ccy, kind: m.kind, ...(m.yahoo ? { yahoo: m.yahoo } : {}) }, { onConflict: "symbol", ignoreDuplicates: true });
+          if (m.price !== null) {
             await admin.from("prices").upsert(
-              { symbol: sym, price, currency: ccy, as_of: new Date().toISOString(), source: "snaptrade", updated_at: new Date().toISOString() },
+              { symbol: m.sym, price: m.price, currency: m.ccy, as_of: new Date().toISOString(), source: "snaptrade", updated_at: new Date().toISOString() },
               { onConflict: "symbol", ignoreDuplicates: true });   // price-sync owns existing rows
           }
-          const avgRaw = p.cost_basis ?? p.average_purchase_price;
-          const avg = avgRaw === null || avgRaw === undefined ? null : Number(avgRaw);
-          await ensureHolding(sym, `st:${acctId}:${sym}`, "", units, avg);
+          await ensureHolding(m.sym, `st:${acctId}:${m.sym}`, "", m.units, m.avg);
           positions++;
         }
         for (const b of Array.isArray(bals) ? bals : []) {
-          const code = String((b.currency as { code?: string } | undefined)?.code ?? "USD");
-          const cash = Number(b.cash ?? 0);
-          if (!Number.isFinite(cash) || cash === 0) continue;
-          const sym = cash > 0 ? (code === "KRW" ? "$CASH.KRW" : "$CASH") : (code === "KRW" ? "$DEBT.KRW" : "$DEBT");
-          await ensureHolding(sym, `st:${acctId}:cash:${code}`, inst, Math.abs(cash), 1);
+          const c = normalizeBalance(b);
+          if (!c) continue;
+          // cash / debt rows exist for the majors (migration 27); any other currency gets its symbol + pinned price on the fly
+          await admin.from("symbols").upsert({ symbol: c.sym, name: `${c.debt ? "Debt" : "Cash"} (${c.ccy})`, exchange: c.debt ? "DEBT" : "CASH", currency: c.ccy, kind: c.debt ? "debt" : "cash" }, { onConflict: "symbol", ignoreDuplicates: true });
+          await admin.from("prices").upsert({ symbol: c.sym, price: 1, prev_close: 1, change_pct: 0, currency: c.ccy, market_state: "regular", as_of: new Date().toISOString(), source: "pinned", updated_at: new Date().toISOString() }, { onConflict: "symbol", ignoreDuplicates: true });
+          await ensureHolding(c.sym, `st:${acctId}:cash:${c.ccy}`, inst, c.amount, 1);
         }
         // remove positions that left this account
         const { data: mine } = await admin.from("holdings").select("id,external_id").eq("user_id", uid).eq("source", "snaptrade").like("external_id", `st:${acctId}:%`);
@@ -271,11 +258,21 @@ Deno.serve(async (req) => {
       if (!firstImport && (added.length > 0 || collisions.length > 0)) {
         await admin.from("snaptrade_events").insert({
           user_id: uid, kind: "import_delta",
-          detail: { added, collisions, institution: institutions[0] ?? "your brokerage", by_institution: Object.entries(addedBy).map(([institution, symbols]) => ({ institution, symbols })) },
+          detail: { added, collisions, skipped, institution: institutions[0] ?? "your brokerage", by_institution: Object.entries(addedBy).map(([institution, symbols]) => ({ institution, symbols })) },
         }).then(() => {}, () => {});
       }
       await admin.from("snaptrade_tokens").update({ last_sync_at: new Date().toISOString(), institutions }).eq("user_id", uid);
-      results.push({ uid: uid.slice(0, 8), accounts: accounts.length, positions, added: added.length, retries, institutions });
+      results.push({ uid: uid.slice(0, 8), accounts: accounts.length, positions, added: added.length, skipped, retries, institutions });
+      // Late-arriving holdings (Daily-plan brokerages deliver the first positions by webhook minutes after the connect,
+      // sometimes after the assessment already ran on an empty book): a sync that ADDED positions and was not started by
+      // the orchestrator itself re-runs the book-changed chain, exactly like a run of manual adds.
+      if (added.length > 0 && body.no_kick !== true && itok) {
+        const kick = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/brokerage-connected`, {
+          method: "POST", headers: { "Content-Type": "application/json", apikey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, "x-internal-token": itok },
+          body: JSON.stringify({ user_id: uid }),
+        }).then((r) => r.text().catch(() => "")).catch(() => null);
+        try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(kick); } catch { /* ignore */ }
+      }
     } catch (e) { results.push({ uid: uid.slice(0, 8), error: e instanceof Error ? e.message : String(e) }); }
     finally { await admin.rpc("release_user_lock", { p_user: uid }).then(() => {}, () => {}); }
   }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { convertCcy, dayChangeAmount } from "./lib/format";
+import { convertCcy, dayChangeAmount, type FxRates } from "./lib/format";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
@@ -26,7 +26,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [authReady, setAuthReady] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [rows, setRows] = useState<PortfolioRow[]>([]);
-  const [fx, setFx] = useState<number | null>(null);
+  const [fx, setFx] = useState<FxRates | null>(null);   // units per USD, every currency the price pipeline tracks
   const [view, setView] = useState<View>({ kind: "tab", tab: "home" });
   const [error, setError] = useState<string | null>(null);
   const [askAlert, setAskAlert] = useState(false);
@@ -154,7 +154,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setProfile(p);
       setRows(r);
       setError(null);
-      api.getFxRate().then((v) => setFx(v)).catch(() => {});
+      api.getFxRates().then((v) => setFx(v)).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "The feed missed a handoff. Pull to retry.");
     }

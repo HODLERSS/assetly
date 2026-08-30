@@ -4,14 +4,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
 export type SymbolRow = {
-  symbol: string; name: string; exchange: string; currency: "USD" | "KRW"; kind: string;
+  symbol: string; name: string; exchange: string; currency: string; kind: string;
   yahoo?: string | null;
   remote?: boolean;      // came from the universal search; must be ensured before first use
 };
 export type Lot = { id: string; holding_id: string; qty: number; cost_per_share: number; acquired_on: string | null; note: string | null };
 export type Account = "brokerage" | "bank" | "401k" | "ira" | "crypto";
 export type PortfolioRow = {
-  holding_id: string; symbol: string; account: Account; nickname: string; name: string; name_kr?: string | null; currency: "USD" | "KRW"; kind: string;
+  holding_id: string; symbol: string; account: Account; nickname: string; name: string; name_kr?: string | null; currency: string; kind: string;
   qty: number | null; cost_basis: number | null; avg_cost: number | null;
   price: number | null; change_pct: number | null; as_of: string | null;
   value: number | null; total_gl: number | null;
@@ -166,6 +166,13 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { data } = await sb.from("prices").select("price,updated_at").eq("symbol", "USDKRW").maybeSingle();
       const rate = data ? Number(data.price) : NaN;
       return Number.isFinite(rate) && rate > 0 ? { rate, asOf: String(data!.updated_at) } : null;
+    },
+    /** Every FX rate the price pipeline maintains (USDxxx rows): units of currency per USD, USD itself = 1. */
+    async getFxRates(): Promise<Record<string, number>> {
+      const { data } = await sb.from("prices").select("symbol,price").like("symbol", "USD___");
+      const out: Record<string, number> = { USD: 1 };
+      for (const r of data ?? []) { const v = Number(r.price); if (v > 0) out[String(r.symbol).slice(3)] = v; }
+      return out;
     },
     /** Won-per-dollar rate maintained by the price pipeline (symbol USDKRW). */
     async getFxRate(): Promise<number | null> {
