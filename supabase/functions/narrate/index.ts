@@ -55,9 +55,10 @@ async function tickerNames(admin: ReturnType<typeof createClient>, userId: strin
 const sayNames = (t: string, names: [string, string][]) => {
   let x = t;
   for (const [sym, nm] of names) {
+    if (nm.toUpperCase() === sym) continue;   // the company IS called by its ticker (MARA): nothing to say differently
     const bare = sym.replace(/\.(KS|KQ)$/, "");
     x = x.replace(new RegExp("(^|[^A-Za-z0-9$])" + sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9])", "g"), `$1${nm}`);
-    if (/^[A-Z]{2,5}$/.test(bare)) x = x.replace(new RegExp("(^|[^A-Za-z0-9$])" + bare + "(?![A-Za-z0-9])", "g"), `$1${nm}`);
+    if (bare !== sym && /^[A-Z]{2,5}$/.test(bare)) x = x.replace(new RegExp("(^|[^A-Za-z0-9$])" + bare + "(?![A-Za-z0-9])", "g"), `$1${nm}`);
   }
   return x;
 };
