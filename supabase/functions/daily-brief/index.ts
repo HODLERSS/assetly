@@ -20,7 +20,8 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 
 const LEADERS = ["NVDA", "AAPL", "MSFT", "TSLA", "META", "AMZN", "GOOGL"];
 
-const deDash = (v: string) => v.replace(/\s*—\s*/g, ", ").replace(/\s*–\s*/g, ", ");
+// a dash glued to a digit is a MINUS SIGN (−32.8%, –5%): normalize it before the dash-to-comma rewrite, or the sign is lost
+const deDash = (v: string) => v.replace(/[\u2212\u2013\u2014]\s?(?=\d)/g, "-").replace(/\s*—\s*/g, ", ").replace(/\s*–\s*/g, ", ");
 function deepDeDash<T>(v: T): T {
   if (typeof v === "string") return deDash(v) as unknown as T;
   if (Array.isArray(v)) return v.map(deepDeDash) as unknown as T;
