@@ -95,6 +95,11 @@ Deno.serve(async (req) => {
     return lvl + (inv.purpose === "learn" ? " They like understanding the why, so give a short reason with each point." : "");
   };
   if (!isInternal && !isSvc) { const { data: ud } = await admin.auth.getUser(bearer); if (!ud?.user?.id) return json({ ok: false, error: "not signed in" }, 401); uid = ud.user.id; }
+  // internal utility: hand back a 7-day signed URL for a narration file (demo/showcase capture)
+  if (typeof body.sign_path === "string" && (isInternal || isSvc)) {
+    const { data: signed } = await admin.storage.from("briefs-audio").createSignedUrl(body.sign_path, 604800);
+    return json({ ok: !!signed?.signedUrl, url: signed?.signedUrl ?? null });
+  }
   const briefDate = typeof body.brief_date === "string" ? body.brief_date : null;
   const edition = typeof body.edition === "string" ? body.edition : null;
 
