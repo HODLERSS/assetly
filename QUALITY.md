@@ -218,7 +218,12 @@ per section; risks framed constructively with a next step, never doom.
 | B9 | Opinion & framing | ≥1 fact-backed judgment; no hedge phrases; constructive risk framing with a next step; no doom vocabulary | both artifacts |
 | B10 | Delivery | generated ≤180s first attempt | script exists, signs off, zero bare tickers |
 
-**Status (2026-08-31, daily-brief v89 / narrate v22 / insights-sync v29 / ask v20).**
+**Last measured matrix on the shipped build (daily-brief v90 / narrate v25):**
+B1 100 · B2 84 · B3 75 · B4 75 · B5 100 · B6 88 · B7 100 · B8 100 · B9 94 · B10 100.
+Caveat: two battery runs briefly overlapped on the same fixture account during this round, so these may be
+slightly pessimistic. Reported as measured rather than re-run for a friendlier number.
+
+**Status (2026-08-31, daily-brief v90 / narrate v25 / insights-sync v29 / ask v20).**
 Grid: 2 personas (novice55, pro) x 2 editions (assessment, close) x read+listen = 8 artifacts, 4 scored cells.
 
 **The 95+ gate is NOT met and was never met across two consecutive rounds.** Individual rounds reached 100 on
