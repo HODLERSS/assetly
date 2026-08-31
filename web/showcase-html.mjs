@@ -29,7 +29,7 @@ const cards = Object.entries(D).map(([tag, rec], i) => {
     : `<p class="miss">narration pending</p>`;
   return `<details class="card" ${i === 0 ? "open" : ""}><summary><strong>${i + 1}. ${esc(rec.label)}</strong></summary>
   <p class="chips">${[inv.styles.join(" + "), inv.purpose, inv.horizon, inv.target + "/yr", inv.risk, inv.level].map(chip).join(" ")}</p>
-  <h3>▶ 2-minute audio briefing</h3>${audio}
+  <h3>▶ 90-second audio briefing</h3>${audio}
   <h3>Portfolio Assessment</h3>${briefHtml(rec.assessment, true)}
   <h3>Daily brief (${esc(rec.daily?.edition ?? "—")})</h3>${briefHtml(rec.daily, false)}
   <h3>Portfolio intelligence &amp; news</h3>${insightHtml(rec.insight)}
@@ -48,7 +48,7 @@ audio{width:100%}p{margin:6px 0;font-size:14px}
 .note{font-size:12.5px;color:#6b7690}
 </style></head><body>
 <h1>Assetly · one portfolio, five investors</h1>
-<p class="note">The same real portfolio (minjae.m.lee@gmail.com, ${new Date().toISOString().slice(0, 10)}), run through the live Assetly pipeline five times — once per investor profile. Everything below (assessments, briefs, intelligence, narration) was generated and narrated by the production system; only the reader profile changed between runs. Not financial advice.</p>
+<p class="note">The same real portfolio (minjae.m.lee@gmail.com, ${new Date().toISOString().slice(0, 10)}), run through the live Assetly pipeline five times — once per investor profile, on the BLUF generation stack (conclusion-first sections, a number diet, plain language through intermediate, ~90-second narration with spoken numbers rounded). Everything below was generated and narrated by the production system; only the reader profile changed between runs. Not financial advice.</p>
 ${cards}
 <p class="note">Your own profile (Advanced · Growth + AI · stay on top) was restored after the run and your live in-app artifacts were regenerated with it.</p>
 </body></html>`;
