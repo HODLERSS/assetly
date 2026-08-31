@@ -195,6 +195,13 @@ const NOVICE_MAP: [RegExp, string][] = [
   [/\bleverage(d)?\b/gi, "borrowed money"], [/\bhigh[- ]beta\b/gi, "sharper-moving-than-the-market"],
   [/\bbeta\b/gi, "sensitivity to market swings"], [/\bvaluation multiple(s)?\b/gi, "price tag relative to earnings"],
   [/\bmultiple compression\b/gi, "a shrinking price tag relative to earnings"], [/\b(net interest margin|lending profit margin|net interest income)\b/gi, "profit on lending"],
+  // caught by the B4 tier check: a 55-year-old first-time investor was handed "net new money negative for two
+  // consecutive quarters" and "core capital ratio drops below twelve percent" as things to WATCH
+  [/\b(?:negative\s+)?(?:net new money|net new assets|net (?:out)?flows?)\s+(?:is\s+|turning\s+|going\s+)?negative\b/gi, "customers pulling money out"],
+  [/\b(net new money|net new assets|net flows?)\b/gi, "money coming in from customers"],
+  [/\b(core capital ratio|capital ratio|CET1(?: ratio)?|tier 1(?: capital)?(?: ratio)?)\b/gi, "its safety cushion of capital"],
+  [/\bassets? under management\b/gi, "the money it manages for clients"],
+  [/\b(deposit betas?|funding costs?)\b/gi, "what it pays for deposits"],
   [/\bAUM\b/g, "assets under management"], [/\bROE\b/g, "return on the owners' money"], [/\bROIC\b/g, "return on invested money"],
   [/\bEBITDA\b/g, "operating profit"], [/\bFCF\b/g, "spare cash flow"], [/\bP\/E\b/g, "price-to-earnings ratio"],
   [/\bEPS\b/g, "earnings per share"], [/\bcapex\b/gi, "spending on equipment and buildout"], [/\bbasis points\b/gi, "hundredths of a percent"],
