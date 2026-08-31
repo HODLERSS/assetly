@@ -886,6 +886,12 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // starve a brief back below it. Snapshot first and keep the trim only if the brief stays long enough.
       const wcAll = (o: Sections) => [o.lede, o.overnight, o.desk_view, o.horizon ?? "", ...(o.ideas ?? []), ...o.positions.flatMap((q) => [q.name, q.note, q.watch])].join(" ").split(/\s+/).filter(Boolean).length;
       const preDiet = JSON.parse(JSON.stringify(sections)) as Sections;
+      // POST-PROCESSING SAFETY NET. Every number-corrupting bug in this pipeline shared one signature: the
+      // text came out carrying a figure the model never wrote ($23,000 -> $23, +51.2% -> -51.2%). Removing a
+      // figure is legitimate (that is what the diet does); INVENTING or ALTERING one never is. If the scrubs
+      // produce a figure that was not in the text they started from, the scrubs lose and the original stands.
+      const figSet = (o: unknown) => new Set((JSON.stringify(o ?? "").match(/-?\d[\d,]*(?:\.\d+)?%?/g) ?? []));
+      const figsBefore = figSet(sections);
       const dietFloor = edition === "assessment" ? (holdings.length <= 2 ? 180 : 240) : 120;
       // ---- NUMBER DIET (deterministic): weight enumerations are the exact anti-BLUF pattern the reader
       // objected to ("this stock -2.3%, that stock -4.4%"). Narrative sections state the conclusion and name
@@ -991,6 +997,11 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         ? "No dated catalyst before the next open" : String(w ?? "");
       sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(p.note, capNote), watch: fitCap(fixWatch(p.watch), 14) }));
       sections.ideas = (sections.ideas ?? []).map((x) => fitCap(String(x), 16));
+      const invented = [...figSet(sections)].filter((f) => !figsBefore.has(f));
+      if (invented.length) {
+        console.log("post-processing altered figures " + invented.slice(0, 5).join(",") + " - reverting to pre-scrub text");
+        sections = preDiet;
+      }
       const { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
         audio_path: null,   // new text => stale audio; narrate re-runs for this row
