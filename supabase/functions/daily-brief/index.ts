@@ -905,6 +905,17 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // ONLY an allocation list collapses. A percent-first run can just as easily be a RETURNS list
       // ("30-day returns are 24.4% for Bitcoin, 33.5% for Ethereum"), where collapsing deletes real figures
       // and leaves weight-language nonsense.
+      // A bare chain of name-and-move ("Recent moves: QQQM up 1.5%, JPM down 0.5%, BLK down 1.0%") is the
+      // exact laundry list the BLUF law forbids. It is not collapsed (that would rewrite real figures) but
+      // DROPPED whole, which the figure-integrity net permits because deletion never invents a number.
+      const NAME_MOVE = /\b[A-Z][A-Za-z.]{1,6}\b\s*(?:up|down|rose|fell|gained|lost)?\s*[+-]?\d[\d.]*\s?%/g;
+      const dropMoveChain = (t: string, minWords = 12) => {   // dropping a pure move chain is always a gain
+        const sents = String(t ?? "").split(/(?<=[.;])\s+/).filter(Boolean);
+        if (sents.length <= 1) return t;
+        const keep = sents.filter((x) => (x.match(NAME_MOVE) ?? []).length < 3);
+        const words = (a: string[]) => a.join(" ").split(/\s+/).filter(Boolean).length;
+        return keep.length && words(keep) >= minWords ? keep.join(" ") : sents.join(" ");
+      };
       const RETURNY = /\b(return|returns|gain|gains|loss|losses|performance|rose|fell|climbed|dropped|up|down|yield|yields)\b/i;
       const ALLOCY = /\b(assets|book|portfolio|weight|allocation|holdings|exposure)\b/i;
       const collapsePctFirst = (t: string) => String(t ?? "").split(/(?<=[.;])\s+/).map((sent) =>
@@ -975,8 +986,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const tidy = (t: string) => undangle((t ?? "").replace(/\s+([,.;])/g, "$1").replace(/\s{2,}/g, " ").trim());
       // the close/morning tape line is instructed to carry three market quotes plus the day P&L, so it gets 8
       const bookCap = edition === "assessment" ? 6 : 8;
-      sections.overnight = safeField(sections.overnight, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.overnight, 1))), bookCap)))));
-      sections.desk_view = safeField(sections.desk_view, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.desk_view, 0))), edition === "assessment" ? 5 : 3, 30)))));   // structural section
+      sections.overnight = safeField(sections.overnight, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.overnight, 1)))), bookCap)))));
+      sections.desk_view = safeField(sections.desk_view, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.desk_view, 0)))), edition === "assessment" ? 5 : 3, 30)))));   // structural section
       sections.lede = safeField(sections.lede, tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1)))));
       // in a DAILY note the weight is structural, not news, and the book line already states it: dropping the
       // "on a 9.3% weight" clause leaves the move and its dollar impact, which is what the day is about
