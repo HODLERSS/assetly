@@ -106,7 +106,7 @@ function readerBlock(inv: Investor | null | undefined): string {
     learn: "They want to LEARN as they go: give one short line of reasoning behind each conclusion.",
   };
   const lvlG: Record<string, string> = {
-    novice: "BEGINNER reader: plain words, short sentences. Sentences of at most 14 words. NO bare acronyms or jargon ANYWHERE, including watch items and bullets. Banned for this reader: EVERY financial acronym and term of art, including ROE, ROIC, EBITDA, FCF, P/E, EPS, AUM, NIM, capex, basis points, net flows, net interest margin (say: profit on lending), tilt (say: focus), cash drag (say: idle cash), growth premium and valuation (say: price tag), an economic print (say: report), and the bare word moat (say: a lasting edge over competitors). Use the plain phrase instead: profit growth not ROE, cash flow not FCF, operating profit not EBITDA. Ticker symbols with weights (like QQQM 25.6%) are fine, they are names, not jargon. If a term is unavoidable, gloss it in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
+    novice: "BEGINNER reader: plain words, short sentences. Sentences of at most 14 words. NO bare acronyms or jargon ANYWHERE, including watch items and bullets. Banned for this reader: EVERY financial acronym and term of art, including ROE, ROIC, EBITDA, FCF, P/E, EPS, AUM, NIM, capex, basis points, net flows, net interest margin (say: profit on lending), tilt (say: focus), cash drag (say: idle cash), growth premium and valuation (say: price tag), an economic print (say: report), P&L (say: gain or loss), VIX (say: the market\u2019s fear gauge), and the bare word moat (say: a lasting edge over competitors). Use the plain phrase instead: profit growth not ROE, cash flow not FCF, operating profit not EBITDA. Ticker symbols with weights (like QQQM 25.6%) are fine, they are names, not jargon. If a term is unavoidable, gloss it in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
     intermediate: "Informed reader: plain everyday language with as little financial jargon as possible; everyday investing words (dividend, earnings, revenue, valuation) are fine without explanation, but avoid acronyms and terms of art the same way you would for a beginner, minus the in-line explanations.",
     advanced: "Advanced reader: precise financial vocabulary welcome, no hand-holding.",
     pro: "Professional reader: dense, technical, desk-note register.",
@@ -204,6 +204,7 @@ const NOVICE_MAP: [RegExp, string][] = [
   // replacements must be drop-in NOUN PHRASES: swapping in a verb phrase ("hurts lean toward fast-growing
   // companies") reads worse than the jargon it replaced
   [/\bvalue tilt\b/gi, "value focus"], [/\bgrowth tilt\b/gi, "growth focus"], [/\btilt\b/gi, "focus"],
+  [/\bday P&L\b/gi, "day's gain or loss"], [/\bP&L\b/g, "gain or loss"], [/\bVIX\b/g, "the market's fear gauge"],
   [/\bYoY\b/g, "year over year"], [/\bQoQ\b/g, "quarter over quarter"], [/\bY\/Y\b/g, "year over year"],
   [/\b(the |a )?quiet tape\b/gi, "$1quiet market"], [/\btape\b/gi, "market"], [/\bhash ?power\b/gi, "mining power"], [/\bhash ?rate\b/gi, "mining speed"], [/\bcash drag\b/gi, "idle cash"], [/\brebalancing\b/gi, "reshuffle"], [/\brebalance\b/gi, "reshuffle"],
   [/\bgrowth premium\b/gi, "high price tag"], [/\bvaluation(s)?\b/gi, "price tag$1"],
