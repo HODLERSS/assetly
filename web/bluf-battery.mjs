@@ -113,10 +113,14 @@ const spokenValues = (script) => {
     ...[...t.matchAll(new RegExp(`(${seq})\\s+percent`, "gi"))].map((m) => wordVal(m[1])),
     ...[...t.matchAll(/(-?\d[\d.]*)\s?%/g)].map((m) => Math.abs(parseFloat(m[1]))),
   ].filter((v) => v !== null);
+  const SUF = { k: 1e3, m: 1e6, b: 1e9 };
   const usd = [
     ...[...t.matchAll(new RegExp(`(${seq})\\s+dollars`, "gi"))].map((m) => wordVal(m[1])),
-    ...[...t.matchAll(/\$\s?([\d,]+(?:\.\d+)?)/g)].map((m) => parseFloat(m[1].replace(/,/g, ""))),
-  ].filter((v) => v !== null);
+    // "$70k" / "$1.2m" carry their magnitude in a suffix; reading them as 70 and 1.2 made real figures look absent
+    ...[...t.matchAll(/\$\s?([\d,]+(?:\.\d+)?)\s?([kKmMbB])\b/g)].map((m) => parseFloat(m[1].replace(/,/g, "")) * SUF[m[2].toLowerCase()]),
+    // suffixed amounts are consumed above; blanking them first stops "$1.2m" from also yielding a stray 1
+    ...[...t.replace(/\$\s?[\d,]+(?:\.\d+)?\s?[kKmMbB]\b/g, " ").matchAll(/\$\s?([\d,]+(?:\.\d+)?)/g)].map((m) => parseFloat(m[1].replace(/,/g, ""))),
+  ].filter((v) => v !== null && !Number.isNaN(v));
   const frac = Object.entries(FRACW).filter(([w]) => new RegExp(`\\b${w}\\b`, "i").test(t)).map(([, v]) => v);
   // a brief may state a price WITHOUT its unit ("bitcoin below seventy thousand"); keep those as candidates
   // so the same figure spoken as "seventy thousand dollars" still traces
