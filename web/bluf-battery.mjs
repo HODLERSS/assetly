@@ -66,6 +66,50 @@ const roundedOk = (raw) => {
   const badUsd = (script.match(/\b\d{4,}\b(?=\s?(dollars|won))/g) ?? []).filter((d) => Number(d) % (Math.pow(10, String(d).length - 2)) !== 0);
   return badPct.length === 0 && badUsd.length === 0;
 };
+// ---- B7 FIDELITY: the ear version may round, it may not change the fact. Every quantity the listener
+// hears must trace to a figure in the read brief (a real miss found in round 3: the brief said QQQM is
+// "one quarter of assets" at 25.6% while the script said "about half").
+const W1 = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16, seventeen:17, eighteen:18, nineteen:19 };
+const W10 = { twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90 };
+const wordVal = (phrase) => {
+  let total = 0, cur = 0, seen = false;
+  for (const t of String(phrase).toLowerCase().replace(/-/g, " ").split(/\s+/).filter(Boolean)) {
+    if (t in W1) { cur += W1[t]; seen = true; }
+    else if (t in W10) { cur += W10[t]; seen = true; }
+    else if (t === "hundred") { cur = (cur || 1) * 100; seen = true; }
+    else if (t === "thousand") { total += (cur || 1) * 1000; cur = 0; seen = true; }
+    else if (t === "million") { total += (cur || 1) * 1e6; cur = 0; seen = true; }
+    else if (t === "billion") { total += (cur || 1) * 1e9; cur = 0; seen = true; }
+  }
+  return seen ? total + cur : null;
+};
+const FRACW = { "half": 50, "a third": 33, "one third": 33, "two thirds": 67, "a quarter": 25, "one quarter": 25, "three quarters": 75, "a fifth": 20 };
+// what the listener hears as a quantity, in numbers
+const spokenValues = (script) => {
+  const t = strip(script).replace(NAMEY, "INDEX");
+  const words = "(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion)";
+  const seq = `(?:${words}(?:[\\s-]${words})*)`;
+  const pct = [
+    ...[...t.matchAll(new RegExp(`(${seq})\\s+percent`, "gi"))].map((m) => wordVal(m[1])),
+    ...[...t.matchAll(/(-?\d[\d.]*)\s?%/g)].map((m) => Math.abs(parseFloat(m[1]))),
+  ].filter((v) => v !== null);
+  const usd = [
+    ...[...t.matchAll(new RegExp(`(${seq})\\s+dollars`, "gi"))].map((m) => wordVal(m[1])),
+    ...[...t.matchAll(/\$\s?([\d,]+(?:\.\d+)?)/g)].map((m) => parseFloat(m[1].replace(/,/g, ""))),
+  ].filter((v) => v !== null);
+  const frac = Object.entries(FRACW).filter(([w]) => new RegExp(`\\b${w}\\b`, "i").test(t)).map(([, v]) => v);
+  return { pct, usd, frac };
+};
+// the brief spells numbers out for beginners too, so both sides use the same parser
+const readValues = (read) => spokenValues(read);
+const fidelityMisses = (read, script) => {
+  const R = readValues(read), S = spokenValues(script), out = [];
+  const nearPct = (v, tol) => R.pct.some((r) => Math.abs(r - v) <= tol);
+  for (const v of S.pct) if (!nearPct(v, 1.5)) out.push(`${v}% not in brief`);
+  for (const v of S.usd) if (!R.usd.some((r) => r > 0 && Math.abs(r - v) / Math.max(r, 1) <= 0.15)) out.push(`$${v} not in brief`);
+  for (const v of S.frac) if (!nearPct(v, 8)) out.push(`fraction ~${v}% contradicts the brief`);
+  return out;
+};
 async function judge(prompt) {
   for (let i = 0; i < 3; i++) {
     const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -95,13 +139,14 @@ for (const [pname, P] of Object.entries(PERSONAS)) {
     const isAssess = ed === "assessment", novice = P.inv.level === "novice";
     const j = await judge(`Assetly writes a short ${isAssess ? "portfolio assessment" : "daily close brief"} (READ) and a spoken script (LISTEN) for ${P.desc}.
 READ:\n${read}\nLISTEN SCRIPT:\n${script}
-Return STRICT JSON {"bluf_read":bool,"bluf_read_evidence":str,"bluf_listen":bool,"bluf_listen_evidence":str,"tier_read":bool,"tier_read_evidence":str,"tier_listen":bool,"tier_listen_evidence":str,"clear":bool,"clear_evidence":str,"opinion":bool,"opinion_evidence":str,"construct":bool,"construct_evidence":str,"worst":str}.
+Return STRICT JSON {"bluf_read":bool,"bluf_read_evidence":str,"bluf_listen":bool,"bluf_listen_evidence":str,"tier_read":bool,"tier_read_evidence":str,"tier_listen":bool,"tier_listen_evidence":str,"clear":bool,"clear_evidence":str,"opinion":bool,"opinion_evidence":str,"construct":bool,"construct_evidence":str,"faithful":bool,"faithful_evidence":str,"worst":str}.
 bluf_read: every READ section opens with its conclusion, never a list of moves; evidence follows the point. To FAIL quote a section that buries its point; else pass.
 bluf_listen: the LISTEN script delivers the bottom line in its first two sentences after the greeting and covers only what matters, no laundry lists. To FAIL quote the buried opening or a list; else pass.
 tier_read / tier_listen: language matches the reader (novice/intermediate: plain everyday words, no unexplained financial terms of art — ticker symbols, index names, company/product names are fine; pro: professional register). To FAIL quote the mismatch; else pass.
 clear: a smart newcomer could retell the main points after one pass; sentences are short and concrete. To FAIL quote the confusing passage; else pass.
 opinion: at least one clear, fact-backed judgment (not a hedge, not a command to trade). To FAIL state "no opinion found" plus the closest attempt; else pass.
 construct: risks are framed constructively, not bare doom; a measurable tripwire or watch item attached to a risk COUNTS as its next step (that is the design). To FAIL quote actual doom language, or a risk that has neither framing nor any tripwire/watch/next step anywhere near it; else pass.
+faithful: nothing in the LISTEN script contradicts the READ text. Rounding for the ear is CORRECT and never a failure (25.6% spoken as "twenty-six percent", $43,224 as "forty-three thousand dollars"). A failure is a changed FACT: a weight described as a fraction that does not match the read figure (a quarter is 25%, a third is 33%, half is 50%), a figure attached to the wrong holding, or a number that appears nowhere in the read text. To FAIL quote BOTH the read figure and the script figure; else pass.
 worst: weakest sentence overall, quoted.`);
     if (!j) { log(`${pname}/${ed}: JUDGE NULL`); results.push({ pname, ed, M: {} }); continue; }
     const readWords = wc(read), scriptWords = wc(script);
@@ -111,21 +156,22 @@ worst: weakest sentence overall, quoted.`);
       B3_number_diet: pct([dietMisses(s).length === 0, heard(script) <= 7, roundedOk(script)]),
       B4_tier_read: pct([ev(j, "tier_read"), !(novice && JARGON.test(read))]),
       B5_tier_listen: pct([ev(j, "tier_listen"), !(novice && JARGON.test(script))]),
-      B6_read_len: readWords / 200 <= 2.02 && readWords >= (isAssess ? 200 : 120) ? 100 : 0,
-      B7_listen_len: scriptWords >= 100 && scriptWords <= 225 ? 100 : 0,   // <= 1.5 min at ~150 wpm, no fast-forward
+      B6_length: pct([readWords / 200 <= 2.02 && readWords >= (isAssess ? 200 : 120), scriptWords >= 100 && scriptWords <= 225]),   // <=2 min read; <=1.5 min listen at ~150 wpm, no fast-forward
+      B7_fidelity: pct([fidelityMisses(read, script).length === 0, ev(j, "faithful")]),
       B8_understand: pct([ev(j, "clear"), avgSentence(read) <= (novice ? 16 : 22), avgSentence(script) <= (novice ? 16 : 20)]),
       B9_opinion: pct([ev(j, "opinion"), !HEDGE.test(read + script), ev(j, "construct"), !DOOM.test(read + script)]),
       B10_delivery: pct([secs <= 180, !!script, /talk soon/i.test(script.slice(-160)), !/\b(NVDA|JPM|BLK|QQQM)\b/.test(script)]),
     };
     const bad = Object.entries(M).filter(([, v]) => v < 95).map(([k, v]) => `${k}=${v}`);
     if (dietMisses(s).length) log(`   diet misses: ${dietMisses(s).join(", ")}`);
-    const evid = ["bluf_read", "bluf_listen", "tier_read", "tier_listen", "clear", "opinion", "construct"].filter((k) => !ev(j, k)).map((k) => `${k}: ${String(j[k + "_evidence"]).slice(0, 90)}`);
+    if (fidelityMisses(read, script).length) log(`   fidelity misses: ${fidelityMisses(read, script).join(", ")}`);
+    const evid = ["bluf_read", "bluf_listen", "tier_read", "tier_listen", "clear", "opinion", "construct", "faithful"].filter((k) => !ev(j, k)).map((k) => `${k}: ${String(j[k + "_evidence"]).slice(0, 90)}`);
     log(`${pname}/${ed}: ${bad.length ? "BELOW " + bad.join(",") : "ALL 95+"} (${secs}s, read ${readWords}w, listen ${scriptWords}w)${evid.length ? " | " + evid.join(" || ") : ""}`);
     results.push({ pname, ed, M, evid, read: s, script, secs });
     writeFileSync("/tmp/bluf-results.json", JSON.stringify(results, null, 1));
   }
 }
-const METRICS = ["B1_bluf_read","B2_bluf_listen","B3_number_diet","B4_tier_read","B5_tier_listen","B6_read_len","B7_listen_len","B8_understand","B9_opinion","B10_delivery"];
+const METRICS = ["B1_bluf_read","B2_bluf_listen","B3_number_diet","B4_tier_read","B5_tier_listen","B6_length","B7_fidelity","B8_understand","B9_opinion","B10_delivery"];
 const rs = results.filter((r) => r.M && Object.keys(r.M).length > 1);
 log(`== bluf (${rs.length} cells) ` + METRICS.map((m) => { const have = rs.filter((r) => r.M[m] !== undefined); return have.length ? `${m}:${Math.round(have.reduce((a, r) => a + r.M[m], 0) / have.length)}` : `${m}:n/a`; }).join(" "));
 log("done");
