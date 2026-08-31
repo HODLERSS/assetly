@@ -248,7 +248,10 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
           // narration into the deterministic template, which reads far worse than a slightly long script.
           const meaningOk = !FRACW.test(t) && !walkthrough(t);
           const accept = a === 2 ? true : a === 1 ? meaningOk : (meaningOk && !padded);
-          if (t.split(/\s+/).length >= floorNow && /[.!?]$/.test(t) && accept) spoken = t;
+          // count SPOKEN words: the SSML tags are never heard, and counting them let a 90-word script
+          // clear a 97-word floor
+          const heardWords = t.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+          if (heardWords >= floorNow && /[.!?]$/.test(t) && accept) spoken = t;
           }
         }
       }

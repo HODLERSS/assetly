@@ -202,7 +202,9 @@ tier_read / tier_listen: language matches the reader. For novice/intermediate: p
 clear: a smart newcomer could retell the main points after one pass; sentences are short and concrete. To FAIL quote the confusing passage; else pass.
 opinion: at least one clear, fact-backed judgment (not a hedge, not a command to trade). To FAIL state "no opinion found" plus the closest attempt; else pass.
 construct: risks are framed constructively, not bare doom; a measurable tripwire or watch item attached to a risk COUNTS as its next step (that is the design). To FAIL quote actual doom language, or a risk that has neither framing nor any tripwire/watch/next step anywhere near it; else pass.
-faithful: check ONLY the fraction words listed below, nothing else. Every other number, date and rounding question is checked deterministically elsewhere and is NOT your concern.
+faithful: check TWO things and nothing else. Rounding is always correct and never a failure (25.6% spoken as "twenty-six percent", $22,900 as "twenty-three thousand dollars"); a spelled-out number equals its digits.
+(A) WRONG REFERENT: does the script attach a figure to the wrong thing - a holding given another holding's weight, or the geography/cash/total figure presented as one position's size? To FAIL, quote the script phrase AND the read figure that contradicts it.
+(B) FRACTIONS, listed below.
 ${fracLine}
 FAIL only if a fraction is more than 8 points away from the figure it actually describes, quoting both. A script calling a 25.6% holding "about half" is a FAILURE (50 versus 25.6). Otherwise PASS.
 worst: weakest sentence overall, quoted.`);
