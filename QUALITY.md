@@ -241,12 +241,24 @@ evidence strings instead of the aggregate scores found three real defects undern
 | Metric | What it actually was | Fix |
 |---|---|---|
 | B3 number diet | The book section's figure cap was **8** in the generator but the diet spec caps it at **7** on assessment. Every assessment cell was failing on a one-off. | `bookCap = 7` (satisfies the close cap of 8 too) |
-| B7 fidelity (50, then 0) | The spoken script was stating figures **absent from the read brief**: "It climbed 1 percent adding roughly 15 dollars", a "50%" found nowhere in the brief, a book total that disagreed with the written one. | A stray ARABIC NUMERAL is now checked against the allowed-figure set and **regenerates** rather than ships. It only rejects, never edits, so unlike a rewriting scrub it cannot corrupt a figure. |
+| B7 fidelity (50, then 0) | The spoken script stated figures **absent from the read brief**: "It climbed 1 percent adding roughly 15 dollars", a "50%" found nowhere, a book total disagreeing with the written one. Observed in a single-process round, so the finding is real - but see the contamination note below, because later B7 failures were NOT. | A stray ARABIC NUMERAL is now checked against the allowed-figure set and **regenerates** rather than ships. It only rejects, never edits, so unlike a rewriting scrub it cannot corrupt a figure. |
 | B4 tier (read) | Genuine jargon reaching a 55-year-old first-time investor as things to WATCH: "net new money negative for two consecutive quarters", "core capital ratio drops below twelve percent". The second was also mangled to "cET1" by a lead-word lowercaser that did not spare acronyms. | Novice map extended (net new money / net flows, capital ratios, AUM, funding costs); the lowercaser now skips a word that starts with two capitals. |
 
 Two lessons worth keeping: **variance and defect look identical in an aggregate score** - only the per-cell
 evidence string separates them, so read it before concluding; and a **guard that rejects is safe where a
 guard that rewrites is not**, which is the same invariant `safeField` enforces on the read side.
+
+**Measurement contamination, and the third lesson.** Midway through the session TWO batteries were running
+concurrently against the same fixture account (a stale background run plus a fresh one). They race on
+`setBook` - each deletes and re-inserts the same holdings - and on the `daily_briefs` rows. The failure mode
+is maximally misleading: one process narrates while the other regenerates, so the LISTEN script and the READ
+brief come from different generations and the judge scores a **fidelity break that does not exist**. Several
+B7 and B3 readings were acted on before two `node bluf-battery.mjs` processes were spotted in `ps`.
+
+`bluf-battery.mjs` now takes an exclusive `/tmp/bluf-battery.lock` and refuses to start while another run
+holds it (stale locks from a dead pid clear automatically). The lesson: **a shared mutable fixture makes
+concurrency a correctness bug in the MEASUREMENT, not just a performance concern** - and a contaminated
+number is worse than no number, because it gets acted on.
 
 **Still open.** The numeral guard does not catch a WORD-SPELLED fabrication ("twenty-seven thousand dollars"
 against a different real total), because narration spells numbers for the ear. Closing that needs the
