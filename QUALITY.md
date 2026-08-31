@@ -218,16 +218,24 @@ per section; risks framed constructively with a next step, never doom.
 | B9 | Opinion & framing | ≥1 fact-backed judgment; no hedge phrases; constructive risk framing with a next step; no doom vocabulary | both artifacts |
 | B10 | Delivery | generated ≤180s first attempt | script exists, signs off, zero bare tickers |
 
-**Final matrix (round 19, 2026-08-31, daily-brief v76 / narrate v16 / insights-sync v29 / ask v20).**
+**Status (2026-08-31, daily-brief v79 / narrate v16 / insights-sync v29 / ask v20).**
 Grid: 2 personas (novice55, pro) x 2 editions (assessment, close) x read+listen = 8 artifacts, 4 scored cells.
 
-| B1 | B2 | B3 | B4 | B5 | B6 | B7 | B8 | B9 | B10 |
-|----|----|----|----|----|----|----|----|----|-----|
-| 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
+Round 19 scored 100 on all ten metrics with every cell `ALL 95+`. **The confirmation round did not reproduce
+it** (B1 88, B2 92, B4 75, B5 75, B8 84), so that round is recorded as one clean sample, not a met gate: the
+generation is stochastic and a single pass can flatter it. The bar is TWO CONSECUTIVE clean rounds plus green
+A and P regressions, and it is not yet met at the time of writing.
 
-All four cells `ALL 95+`. Measured lengths that round: reads 185-322 words (a two-minute read is ~400), spoken
-scripts 129-196 words (~52-78 seconds at an unhurried 150 wpm, no speed-up). Nineteen rounds; artifacts for every
-round are kept at `/tmp/bluf-round*-results.json` so any score can be re-derived.
+What the confirmation round and the A/P regressions found is in the iteration log
+(`answers/20260831_0930_assetly_bluf_read_listen_quality.md`): a bare stat line opening the close tape
+section, two beginner-vocabulary gaps, an A8 regression caused by this goal's own beginner two-sentence rule
+(notes at 34-35 words against a 33-word spec, notes being the one field with no deterministic cap), and a
+single-holding assessment starved to 165 words because the number diet runs after the loop that enforces the
+length floor. All are fixed; the re-run is what decides the gate.
+
+Measured lengths hold across every round: reads 149-359 words (a two-minute read is ~400), spoken scripts
+115-214 words (~46-86 seconds at an unhurried 150 wpm, no speed-up). Artifacts for every round are kept at
+`/tmp/bluf-round*-results.json` so any score can be re-derived.
 
 **Why B7 exists.** Round 3 scored a cell 100 across all ten metrics while the audio said a 25.6% position was
 "about half" of the book. Ten green metrics and a false statement in the artifact the user actually listens to.
