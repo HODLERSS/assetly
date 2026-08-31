@@ -578,12 +578,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           // lowercasing the lead-in word turns an ACRONYM into nonsense ("CET1" -> "cET1"), so only a
           // normally-capitalised word is lowered
           const lead = (x: string) => (/^[A-Z][A-Z0-9]/.test(x) ? x : x[0].toLowerCase() + x.slice(1));
-          if (!phrase) return p;
-          const withRisk = p.note.replace(/[.\s]+$/, "") + `. The risk: ${lead(phrase)}.`;
-          // the model sometimes already wrote its own "The risk:", and a note carrying two of them reads
-          // as a template seam; keep the FIRST and fold the rest into one clause
-          const parts = withRisk.split(/\.\s*The risk:\s*/i);
-          return { ...p, note: parts.length <= 2 ? withRisk : `${parts[0]}. The risk: ${parts.slice(1).map((x) => x.replace(/\.\s*$/, "")).join(", and ")}.` };
+          return phrase ? { ...p, note: p.note.replace(/[.\s]+$/, "") + `. The risk: ${lead(phrase)}.` } : p;
         }) });
         draft = ensureRisk(draft as Sections);   // before the fact-check, so a lengthened note gets tightened to its cap
         const checked = elapsed() > 112 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims. Think briefly.",
@@ -1054,7 +1049,15 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // a watch item that says nothing ("No catalyst") reads as a fragment; make it a real clause
       const fixWatch = (w: string) => /^\s*(no catalyst|none|n\/a|nothing)\b/i.test(String(w ?? ""))
         ? "No dated catalyst before the next open" : String(w ?? "");
-      sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(p.note, capNote), watch: fitCap(fixWatch(p.watch), 14) }));
+      // "The risk: NII pressure. The risk: high concentration." reads as a template seam; keep the first
+      const oneRisk = (note: string) => {
+        const t = String(note ?? "");
+        const first = t.indexOf(". The risk:");
+        if (first < 0) return t;
+        const second = t.indexOf(". The risk:", first + 5);
+        return second < 0 ? t : t.slice(0, second) + ".";
+      };
+      sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(oneRisk(p.note), capNote), watch: fitCap(fixWatch(p.watch), 14) }));
       sections.ideas = (sections.ideas ?? []).map((x) => fitCap(String(x), 16));
       // The per-field integrity net replaced the global revert, and the LENGTH floor went with it: a brief
       // trimmed to 100 words is worse than a slightly redundant one. Restore it alongside.
