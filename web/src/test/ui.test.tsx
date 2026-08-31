@@ -362,7 +362,7 @@ describe("U39 morning brief", () => {
     expect(card.textContent).toContain("Morning Brief");
     expect(card.textContent).toContain("37% of your book");
     expect(screen.queryByTestId("brief-body")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: /read · 3 min/i }));
+    await userEvent.click(screen.getByRole("button", { name: /read · 2 min/i }));
     const bodyEl = await screen.findByTestId("brief-body");
     expect(bodyEl.textContent).toContain("VIX 14.2");
     expect(bodyEl.textContent).toContain("SK hynix");
@@ -1270,7 +1270,7 @@ describe("U48 portfolio assessment card", () => {
     expect(card.textContent).toContain("Portfolio Assessment");
     expect(card.textContent).toContain("two-bet book");
     expect(screen.getByRole("button", { name: /listen to your brief/i })).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: /read · 3 min/i }));
+    await userEvent.click(screen.getByRole("button", { name: /read · 2 min/i }));
     const body = await screen.findByTestId("brief-body");
     expect(body.textContent).toContain("Your book");
     expect(body.textContent).toContain("Quality read");

@@ -36,7 +36,7 @@ const setPortfolio = async (list) => {
 const wc = (t) => String(t ?? "").split(/\s+/).filter(Boolean).length;
 const totalWords = (s) => wc(s.lede) + wc(s.overnight) + s.positions.reduce((a, p) => a + wc(p.note) + wc(p.watch) + wc(p.name), 0) + wc(s.desk_view) + wc(s.horizon) + (s.ideas ?? []).reduce((a, x) => a + wc(x), 0);
 // per-section caps carry a +2-word tolerance (the fast model lands on the cap ± a word); the total and listen-time caps are exact
-const CAP = { lede: 32, book: 62, note: 36, watch: 14, desk: 52, horizon: 52, idea: 16, total: 440, totalMin: 300 };
+const CAP = { lede: 32, book: 52, note: 33, watch: 14, desk: 48, horizon: 46, idea: 16, total: 400, totalMin: 240 };   // 2-minute read ceiling
 const FILLER = /(investors should|keep an eye|monitor closely|time will tell|stay tuned|it'?s important to|as always|remains to be seen|worth watching|demands scrutiny|warrants attention)/i;
 const PROCESS = /(skeptic|the memo|pushback|analyst note)/i;
 const HORIZON_BAN = /\b(today|tonight|overnight|yesterday|this morning|premarket|pre-market|after-hours|after (the )?market close|at the bell|futures|session|intraday)\b/i;
@@ -146,7 +146,7 @@ for (const name of subset) {
     if (!jj) { log(`${name}: JUDGE-NULL (${secs}s)`); results.push({ name, M: { A1: secs <= 180 && attempts === 1 ? 100 : 0 }, judgeNull: true, sections: s }); continue; }
     const posText = s.positions.map(p => p.name).join(" | ");
     const small = hold.length <= 2;                       // 1-2 holding books: deeper notes, lower total floor
-    const noteCap = small ? 56 : CAP.note, totalMin = hold.length === 1 ? 220 : hold.length === 2 ? 260 : CAP.totalMin;
+    const noteCap = small ? 50 : CAP.note, totalMin = hold.length === 1 ? 180 : hold.length === 2 ? 210 : CAP.totalMin;
     const big = hold.filter(h => h.w >= 20);
     const watchOk = s.positions.every(p => wc(p.watch) <= 14 && !/\b(monitor|watch|track|keep an eye)\b/i.test(p.watch));
     const ideas = s.ideas ?? [];
@@ -158,7 +158,7 @@ for (const name of subset) {
       A5: ev(jj, "m5") ? 100 : 0,
       A6: pct([ev(jj, "m6"), /\d+(\.\d+)?\s?%/.test(s.desk_view)]),
       A7: pct([watchOk, ideas.length >= 2 && ideas.length <= 3 && ideas.every(x => wc(x) <= 16) && !ideas.some(x => /^diversify\b/i.test(x.trim()) || IDEA_BAN.test(x.trim())), ev(jj, "m7")]),
-      A8: pct([wc(s.lede) <= CAP.lede, wc(s.overnight) <= CAP.book, s.positions.every(p => wc(p.note) <= noteCap), s.positions.every(p => wc(p.watch) <= CAP.watch), wc(s.desk_view) <= CAP.desk, wc(s.horizon) <= CAP.horizon, ideas.every(x => wc(x) <= CAP.idea), totalWords(s) >= totalMin && totalWords(s) <= CAP.total && totalWords(s) / 145 <= 3.05]),
+      A8: pct([wc(s.lede) <= CAP.lede, wc(s.overnight) <= CAP.book, s.positions.every(p => wc(p.note) <= noteCap), s.positions.every(p => wc(p.watch) <= CAP.watch), wc(s.desk_view) <= CAP.desk, wc(s.horizon) <= CAP.horizon, ideas.every(x => wc(x) <= CAP.idea), totalWords(s) >= totalMin && totalWords(s) <= CAP.total && totalWords(s) / 200 <= 2.02]),
       A9: pct([!all.includes("—"), !/[0-9]{6}\.(KS|KQ)/.test(all), !/KRW\s?[0-9]/.test(all), !FILLER.test(all), !PROCESS.test(all), roundOk(all), avgSentence(s) <= 26, !/\*\*|^#|\n#/.test(all)]),
       A10: pct([!TRADE_BAN.test(text), ev(jj, "m10"), ev(jj, "m11")]),
     };

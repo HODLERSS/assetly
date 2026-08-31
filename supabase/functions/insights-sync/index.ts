@@ -97,7 +97,7 @@ function readerBlock(inv: Investor | null | undefined): string {
   };
   const lvlG: Record<string, string> = {
     novice: "BEGINNER reader: plain words, short sentences. NO bare acronyms or jargon ANYWHERE, including watch items and bullets. Banned for this reader: EVERY financial acronym and term of art, including ROE, ROIC, EBITDA, FCF, P/E, EPS, AUM, NIM, capex, basis points, net flows, net interest margin (say: lending profit margin), and the bare word moat (say: a lasting edge over competitors). Use the plain phrase instead: profit growth not ROE, cash flow not FCF, operating profit not EBITDA. Ticker symbols with weights (like QQQM 25.6%) are fine, they are names, not jargon. If a term is unavoidable, gloss it in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
-    intermediate: "Informed reader: plain language, common financial terms need no explanation.",
+    intermediate: "Informed reader: plain everyday language with as little financial jargon as possible; everyday investing words (dividend, earnings, revenue, valuation) are fine without explanation, but avoid acronyms and terms of art the same way you would for a beginner, minus the in-line explanations.",
     advanced: "Advanced reader: precise financial vocabulary welcome, no hand-holding.",
     pro: "Professional reader: dense, technical, desk-note register.",
   };
@@ -342,7 +342,7 @@ Respect the session notes: never present the last session's move as happening to
       }
       const parsed = content ? parseInsight(content) : null;
       if (!parsed) { errors.push("user " + uid.slice(0, 8) + ": unparseable"); continue; }
-      const isNovice = String((invRow?.investor as { level?: string } | null | undefined)?.level ?? "novice") === "novice";
+      const isNovice = ["novice", "intermediate"].includes(String((invRow?.investor as { level?: string } | null | undefined)?.level ?? "novice"));
       const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => isNovice ? noviceScrub(x) : x);
       const { error: piErr } = await admin.from("portfolio_insights").insert({ user_id: uid, bullets: scrubB(parsed.bullets).slice(0, 3), news5: parsed.news5 ? scrubB(parsed.news5) : parsed.news5, model });
       if (piErr) errors.push("user " + uid.slice(0, 8) + ": " + piErr.message); else pWrote++;

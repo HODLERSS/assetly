@@ -7,10 +7,10 @@ import type { Api, BriefEdition, DailyBrief } from "../lib/api";
 // note). Collapsed to the lede; one tap opens the full read. When several editions exist,
 // chips switch between them and the newest is shown first.
 const ED_META: Record<BriefEdition, { title: string; tape: string; positions: string; desk: string; watch: string; read: string; chip: string }> = {
-  morning: { title: "Morning Brief", tape: "Overnight", positions: "Your positions", desk: "Desk view", watch: "Watch", read: "Read · 3 min", chip: "Morning" },
+  morning: { title: "Morning Brief", tape: "Overnight", positions: "Your positions", desk: "Desk view", watch: "Watch", read: "Read · 2 min", chip: "Morning" },
   midday: { title: "Midday Pulse", tape: "The tape now", positions: "Your positions", desk: "Desk view", watch: "Watch", read: "Read · 2 min", chip: "Midday" },
   close: { title: "Closing Note", tape: "Today's tape", positions: "Your positions", desk: "Desk view", watch: "Watch", read: "Read · 2 min", chip: "Close" },
-  assessment: { title: "Portfolio Assessment", tape: "Your book", positions: "Quality read", desk: "Structure & risk", watch: "Tripwire", read: "Read · 3 min", chip: "Assessment" },
+  assessment: { title: "Portfolio Assessment", tape: "Your book", positions: "Quality read", desk: "Structure & risk", watch: "Tripwire", read: "Read · 2 min", chip: "Assessment" },
 };
 
 export function BriefCard({ api }: { api: Api }) {
