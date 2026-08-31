@@ -197,3 +197,32 @@ was written for which reader).
 
 **Post-personalization regression (2026-08-31):** A1:96 A2:100 A3:96 A4:100 A5:100 A6:100 A7:95 A8:97 A9:100 A10:100
 (default profile, 7 books) — the reader profile changes emphasis and vocabulary, never the facts or the caps.
+
+## Read + Listen (BLUF) — 10 metrics and the test methodology
+
+**The bar (2026-08-31):** every section leads with its conclusion; numbers are seasoning (one per point; verbal
+numbers rounded: 34.3% → "thirty-four percent", $43,224 → "forty-three thousand dollars"); language leveled per
+tier with plain-everyday-language through INTERMEDIATE (the novice North Star: a 55-year-old who bought her first
+stock, NVIDIA, nine months ago); reads ≤2 minutes, narration ≤90 seconds at a normal pace; one confident opinion
+per section; risks framed constructively with a next step, never doom.
+
+**Metrics (battery `web/bluf-battery.mjs`):**
+| # | Metric | Read | Listen |
+|---|---|---|---|
+| B1/B2 | BLUF | every section conclusion-first, no ticker-percent chains (judge + regex) | bottom line in the first two sentences, no laundry lists |
+| B3 | Number diet | ≤14 numbers (assessment) / ≤12 (daily) | ≤6 numbers, all rounded (deterministic) |
+| B4/B5 | Tier fit | no unexplained terms of art for novice/intermediate; pro register for pro (judge + jargon regex) | same, on the script |
+| B6/B7 | Length | ≤2 min at 200 wpm, with a floor | 100-225 words ≈ ≤90s at a normal ~150 wpm — never sped up |
+| B8 | Understandability | retellable after one pass; avg sentence ≤16 (novice) / ≤22 | script sentences shorter still |
+| B9 | Opinion & framing | ≥1 fact-backed judgment; no hedge phrases; constructive risk framing with a next step; no doom vocabulary | both artifacts |
+| B10 | Delivery | generated ≤180s first attempt | script exists, signs off, zero bare tickers |
+
+**Methodology (applies to all four batteries: A, P, B, connect):**
+1. **Fixed grid, fixed book.** Deterministic fixture portfolios and personas; the B-grid is 2 personas × 2 editions × read+listen = 8 scored artifacts per round.
+2. **Deterministic first.** Everything countable (lengths, numbers, rounding, jargon lists, hedges, tickers, timing) is scored in code; the judge only gets what needs judgment.
+3. **Evidence-bound judging.** gpt-oss-120b, temperature 0.1, must QUOTE evidence to fail a check; no quote = pass. Judges receive the generator's own ground truth (stats, memo facts, persona definitions) so they can't fail true statements.
+4. **Judge calibration is part of iteration.** When a failure's evidence shows the judge misread the design (gap-ideas as commands, proper nouns as jargon), the judge prompt is corrected and the round re-run — recorded in the iteration log like any fix.
+5. **Server-time measurement.** Latencies from DB `generated_at` minus the server Date header, immune to laptop sleep; delivery scored on the first attempt.
+6. **Artifacts saved every round** (`/tmp/*-results.json`, logs copied per round) so any score can be re-derived and disputed.
+7. **Code guarantees over prompt patches.** A recurring miss becomes a deterministic post-processor (caps, risk clauses, de-jargon map, verbal rounding), because prompts plateau near 90.
+8. **Regression gates.** After a feature lands, the affected upstream battery re-runs once (e.g. A1-A10 after personalization); no gate closes on a stale stack.
