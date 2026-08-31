@@ -697,8 +697,8 @@ RULES: every word must earn its place; no filler, no hedging, no generic advice.
 BLUF LAW: every section opens with its CONCLUSION first; never a chain of ticker-and-percent moves. NUMBER DIET: one number per point, never more than three per section. OPINION: one confident, fact-backed judgment per section; never hedged into mush. CONSTRUCTIVE FRAME: risks come with what to check or manage next, never bare doom; every section leaves the reader knowing what to DO.\n${READER}`;
         let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly, then write.", editorPrompt, 24000, 75000);
         const meta1 = lastMeta;
-        if ((!draft || !validSections(draft)) && elapsed() < 70) {
-          draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly. Output the exact JSON shape requested.", editorPrompt, 24000, 60000);
+        if ((!draft || !validSections(draft)) && elapsed() < 85) {
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly. Output the exact JSON shape requested.", editorPrompt, 24000, 45000, FAST_MODEL);
         }
         if (!draft || !validSections(draft)) {
           // graceful degradation for API slow waves: a compact editor beats no brief
@@ -710,7 +710,7 @@ TOP MEMOS:
 ${memosOut.slice(0, 3).map((m) => `- ${m.name}: ${m.changed}. ${m.bull}. ${m.bear}.`).join("\n")}
 Return STRICT JSON {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": []}.
 lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their holdings; 1-3 positions, note <= 32 words with a number, watch <= 10 words naming a concrete event (NEVER the words monitor, watch, track, keep an eye); desk_view <= 40 words, structural only: no day moves, no overnight numbers. Banned: investors should, keep an eye, monitor, worth watching, remains to be seen. No filler, no em dashes, Korean companies by name, won as ₩.`;
-          draft = await askModel(key, "Think very briefly. Output only the JSON.", compactPrompt, 12000, 40000);
+          draft = await askModel(key, "Think very briefly. Output only the JSON.", compactPrompt, 12000, Math.max(18000, Math.min(40000, (150 - elapsed()) * 1000)), FAST_MODEL);
           if (draft && validSections(draft)) usedCompact = true;
         }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": editor failed [" + meta1 + " | " + lastMeta + "]"); continue; }
@@ -794,10 +794,12 @@ CONTINUITY LAW: a claim already made in the morning brief may only reappear if y
 calendar: 0-3 items: tonight's after-hours reports, ${isFri ? "next week's" : "tomorrow's"} data or earnings. <= 10 words each.${krHeld ? `\nTheir Korean holdings trade TONIGHT (KRX opens 9:00 PM Eastern). If a Korean name has a catalyst, put it in positions or calendar.` : ""}
 ${STYLE_RULES}\n${READER}`;
         let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly, then write.", writerPrompt, 20000, 60000);
-        if ((!draft || !validSections(draft)) && elapsed() < 70) {
-          draft = await askModel(key, "You are the editor of a one-reader research desk. Think briefly. Output the exact JSON shape requested.", writerPrompt, 20000, 45000);
+        // Retrying M2.7 after it already timed out just burns the budget again (two aborts = 105s, which used
+        // to close the compact gate below and lose the brief entirely). gpt-oss writes this shape in ~20s.
+        if ((!draft || !validSections(draft)) && elapsed() < 85) {
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Think briefly. Output the exact JSON shape requested.", writerPrompt, 20000, 40000, FAST_MODEL);
         }
-        if ((!draft || !validSections(draft)) && elapsed() < 105) {
+        if ((!draft || !validSections(draft)) && elapsed() < 125) {
           // API slow-wave degradation: a compact intraday note beats no note
           const compact = `Write the ${briefDate} ${edition === "midday" ? "MIDDAY session pulse (11 AM Central)" : "post-close note"} for ONE investor. Dense; every word counts.
 MARKET NOW: ${mktLive || "(none)"}
@@ -807,7 +809,7 @@ DESK CONTEXT:
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.changed ?? ""}. watch: ${m.watch ?? ""}`).join("\n") || "- none"}
 ${shape}
 lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 3 MARKET NOW numbers and exact labels; 1-3 positions ordered by weight, note <= 28 words with a number, watch <= 10 words taken from DESK CONTEXT or "next session open", NEVER an invented level or date (and NEVER monitor/watch/track); desk_view <= 36 words structural only; calendar []. The day G/L figures in PORTFOLIO are the only loss/gain numbers allowed. No filler, no em dashes, Korean companies by name, won as \u20a9.`;
-          draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 12000, 35000);
+          draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 12000, Math.max(18000, Math.min(35000, (150 - elapsed()) * 1000)), FAST_MODEL);
           if (draft && validSections(draft)) usedCompact = true;
         }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": writer failed [" + lastMeta + "]"); continue; }
@@ -837,6 +839,20 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         : Array.isArray(v) ? v.map(scrubDeep)
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, scrubDeep(x)])) : v;
       sections = scrubDeep(sections) as Sections;
+      // ---- NUMBER DIET (deterministic): weight enumerations are the exact anti-BLUF pattern the reader
+      // objected to ("this stock -2.3%, that stock -4.4%"). Narrative sections state the conclusion and name
+      // at most two figures; the book/overnight section stays the one place a full stat line is welcome.
+      const numWord = (n: number) => ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][n] ?? String(n);
+      const collapseRun = (t: string) => (t ?? "").replace(
+        /(?:[A-Z][A-Za-z0-9.$]{0,6}\s+(?:is\s+|at\s+)?-?\d[\d.]*%)(?:,\s*[A-Z][A-Za-z0-9.$]{0,6}\s+(?:is\s+|at\s+)?-?\d[\d.]*%){2,}/g,
+        (run) => { const items = run.split(/,\s*/); return items.slice(0, 2).join(", ") + `, and ${numWord(items.length - 2)} smaller positions`; });
+      // parenthetical weight tags are decoration: keep at most `keep` of them
+      const deWeightParens = (t: string, keep: number) => { let seen = 0; return (t ?? "").replace(/\s*\(\s*-?\d[\d.]*%(?:\s*weight)?(?:,[^)]*)?\)/g, (m) => (++seen <= keep ? m : "")); };
+      const tidy = (t: string) => (t ?? "").replace(/\s+([,.;])/g, "$1").replace(/\s{2,}/g, " ").trim();
+      sections.overnight = tidy(collapseRun(deWeightParens(sections.overnight, 1)));
+      sections.desk_view = tidy(collapseRun(deWeightParens(sections.desk_view, 0)));   // structural section: weights are noise
+      sections.lede = tidy(deWeightParens(sections.lede, 1));
+      sections.positions = sections.positions.map((p) => ({ ...p, note: tidy(collapseRun(deWeightParens(p.note, 1))) }));
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
       if (["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])))) {
         sections = JSON.parse(noviceScrub(JSON.stringify(sections))) as Sections;

@@ -40,6 +40,18 @@ const textOf = (s) => [s.lede, s.overnight, ...(s.positions ?? []).flatMap((p) =
 const nums = (t) => (strip(t).replace(NAMEY, "INDEX").match(/-?\d[\d,]*(?:\.\d+)?\s?%?|\$\s?[\d,]+/g) ?? []).filter((x) => !/^(19|20)\d\d$/.test(x.trim()));
 // the listener hears spelled-out quantities too ("twenty-six percent"), so the script diet counts those as well
 const WORDNUM = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|trillion)(?:[\s-](?:one|two|three|four|five|six|seven|eight|nine|hundred|thousand|million|billion))*\s+(?:percent|dollars?|won|times|basis points)/gi;
+// dates and durations are scaffolding, not statistics the reader must absorb; a range is ONE figure
+const DATEY = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}\b|\b\d+\s*[-\s]?(?:week|month|year|day|quarter)s?\b/gi;
+const stats = (t) => nums(String(t ?? "").replace(DATEY, " ").replace(/-?\d[\d.]*\s*(?:-|\u2013|to)\s*-?\d[\d.]*\s?%/g, "0%"));
+// the NUMBER DIET law is per section (<=3), not a global budget: a five-position book honestly carries more
+// figures than a two-position one. The book/overnight line is the one section a full stat line belongs in.
+const dietSections = (s) => {
+  const out = [["lede", s.lede, 3], ["book", s.overnight, 6], ["desk", s.desk_view, 3], ["horizon", s.horizon ?? "", 3]];
+  (s.positions ?? []).forEach((p, i) => { out.push([`note${i}`, p.note, 3], [`watch${i}`, p.watch, 3]); });
+  (s.ideas ?? []).forEach((x, i) => out.push([`idea${i}`, x, 2]));
+  return out;
+};
+const dietMisses = (s) => dietSections(s).filter(([, t, cap]) => stats(t).length > cap).map(([k, t, cap]) => `${k}:${stats(t).length}>${cap}`);
 const heard = (t) => nums(t).length + (strip(t).replace(NAMEY, "INDEX").match(WORDNUM) ?? []).length;
 const JARGON = /\b(ROE|ROIC|ROTCE|EBITDA|FCF|EPS|AUM|NIM|beta|alpha|sharpe|capex|basis points|convexity|duration|multiple compression|net interest margin|short interest|float)\b/;
 const HEDGE = /\b(may or may not|it is unclear whether|only time will tell|could go either way|hard to say|remains uncertain whether|we cannot know)\b/i;
@@ -96,7 +108,7 @@ worst: weakest sentence overall, quoted.`);
     const M = {
       B1_bluf_read: pct([ev(j, "bluf_read"), !TICKER_CHAIN.test([s.lede, ...(s.positions ?? []).map((p) => p.note), s.desk_view].join("\n"))]),
       B2_bluf_listen: pct([ev(j, "bluf_listen"), !TICKER_CHAIN.test(script)]),
-      B3_number_diet: pct([nums(read).length <= (isAssess ? 17 : 13), heard(script) <= 7, roundedOk(script)]),   // the prompt law is <=3 per section
+      B3_number_diet: pct([dietMisses(s).length === 0, heard(script) <= 7, roundedOk(script)]),
       B4_tier_read: pct([ev(j, "tier_read"), !(novice && JARGON.test(read))]),
       B5_tier_listen: pct([ev(j, "tier_listen"), !(novice && JARGON.test(script))]),
       B6_read_len: readWords / 200 <= 2.02 && readWords >= (isAssess ? 200 : 120) ? 100 : 0,
@@ -106,6 +118,7 @@ worst: weakest sentence overall, quoted.`);
       B10_delivery: pct([secs <= 180, !!script, /talk soon/i.test(script.slice(-160)), !/\b(NVDA|JPM|BLK|QQQM)\b/.test(script)]),
     };
     const bad = Object.entries(M).filter(([, v]) => v < 95).map(([k, v]) => `${k}=${v}`);
+    if (dietMisses(s).length) log(`   diet misses: ${dietMisses(s).join(", ")}`);
     const evid = ["bluf_read", "bluf_listen", "tier_read", "tier_listen", "clear", "opinion", "construct"].filter((k) => !ev(j, k)).map((k) => `${k}: ${String(j[k + "_evidence"]).slice(0, 90)}`);
     log(`${pname}/${ed}: ${bad.length ? "BELOW " + bad.join(",") : "ALL 95+"} (${secs}s, read ${readWords}w, listen ${scriptWords}w)${evid.length ? " | " + evid.join(" || ") : ""}`);
     results.push({ pname, ed, M, evid, read: s, script, secs });
