@@ -592,7 +592,9 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
             const stop = ends.length ? ends[ends.length - 1] : -1;
             if (stop > cut.length * 0.5) cut = cut.slice(0, stop + 1);
             else {
-              const comma = cut.lastIndexOf(",");
+              // likewise here: only a comma OUTSIDE a number is a clause boundary
+              const commas = [...cut.matchAll(/(?<!\d),(?!\d)/g)].map((m) => m.index ?? -1);
+              const comma = commas.length ? commas[commas.length - 1] : -1;
               if (comma > cut.length * 0.6) cut = cut.slice(0, comma);
               let prev = "";
               while (prev !== cut) { prev = cut; cut = cut.replace(/[\s,;:]+(?:so|and|but|or|which|that|with|for|to|at|in|on|of|as|while|because|if|when|from|by|than|after|before|into|over|under|about|its|their|the|a|an)\.?$/i, ""); }
@@ -923,7 +925,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         let out = (t ?? "").trim(), prev = "";
         while (prev !== out) { prev = out; out = out.replace(/[\s,;:]+(?:so|and|but|or|which|that|with|for|to|at|in|on|of|as|while|because|if|when|from|by|than|its|their|the|a|an)\s*\.?$/i, ""); }
         // a truncation can also end on a bare figure ("..., so 25."): that is a fragment, not a sentence
-        out = out.replace(/[,;]\s*(?:so|and|but|which|that)?\s*-?\d[\d,.]*%?\s*\.?$/i, "");
+        // the comma must not be a THOUSANDS SEPARATOR: "$23,000." is one figure, not a clause plus "000"
+        out = out.replace(/(?<!\d)[,;]\s+(?:so|and|but|which|that)?\s*-?\d[\d,.]*%?\s*\.?$/i, "");
         return out.replace(/[,;:]+$/, "").replace(/([^.!?])$/, "$1.");
       };
       // Telling the reader what to do with their money is not ours to say, and it has recurred twice
