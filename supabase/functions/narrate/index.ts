@@ -221,7 +221,10 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
         for (let a = 0; a < 3 && !spoken; a++) {
           // every edition is written by the fast model: M2.7 over-thinks these shapes and times out, and the
           // deterministic fallback recites every position in turn, which is the laundry list BLUF forbids
-          const out = await askModel(key, "You turn a written investment brief into a vivid spoken radio script. Output only the JSON.", prompt, 9000, 35000, "gpt-oss-120b");
+          // 35s was too tight on a slow model wave, and every timeout costs a WRITTEN script and hands the
+          // listener the deterministic template instead. A template read is always worse than a late script.
+          const out = await askModel(key, "You turn a written investment brief into a vivid spoken radio script. Output only the JSON.", prompt, 9000, a === 0 ? 55000 : 45000, "gpt-oss-120b");
+          if (!out) console.log(`narrate: script attempt ${a + 1} produced nothing (model timeout or error)`);
           const sp = out && typeof (out as { spoken?: unknown }).spoken === "string" ? String((out as { spoken: string }).spoken) : null;
           // on the last attempt a slightly short model script is still far better than the template
           const floorNow = a === 2 ? Math.round(spec.floor * 0.75) : spec.floor;
