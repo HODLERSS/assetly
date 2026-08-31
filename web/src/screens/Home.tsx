@@ -2,10 +2,17 @@ import { useEffect, useState } from "react";
 import type { Api, PortfolioRow } from "../lib/api";
 import { BriefCard } from "../components/BriefCard";
 import { isMarketOpen, marketOf, moverEligible, moverMode, sessionLabel } from "../lib/markets";
-import { convertCcy, dayChangeAmount, glClass, labelParts, money, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
+import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyExact, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
 
 // Canvas 2a: net worth, movers, market pulse.
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
+// crypto files under a market by its denomination, exactly as the old Holdings filter did:
+// a USD coin belongs with the US book, a KRW-quoted one with the Korean book
+const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
+  const m = marketOf(r);
+  if (m === "CRYPTO") return r.currency === "KRW" ? "KR" : "US";
+  return m;
+};
 
 export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone}: {
   api: Api; rows: PortfolioRow[];
@@ -19,6 +26,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
   const hasCrypto = rows.some((r) => marketOf(r) === "CRYPTO");
   const mode = moverMode(new Date(), heldMkts);
   const [pulse, setPulse] = useState<{ symbol: string; name: string; price: number; change_pct: number | null }[]>([]);
+  const [filter, setFilter] = useState<"all" | "US" | "KR" | "ret">("all");
   useEffect(() => {
     let live = true;
     if (mode.kind === "pulse") api.getPulse().then((p) => { if (live) setPulse(p); }).catch(() => {});
@@ -35,10 +43,19 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
     return (
       <div className="empty">
         <p style={{ marginBottom: 14 }}>No runners on the track.</p>
-        <button className="btn" onClick={onAdd}>Add your first position</button>
+        <button className="btn" style={{ marginBottom: 10 }} onClick={async () => {
+          try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } catch { /* button stays */ }
+        }}>⚡ Connect your brokerage</button>
+        <button className="btn secondary" onClick={onAdd}>Add positions manually</button>
       </div>
     );
   }
+  // Holdings folded in: market / retirement filters with their own totals line
+  const marketsHeld = [...new Set(rows.map(mktFor).filter((m): m is "US" | "KR" => m === "US" || m === "KR"))];
+  const hasRet = rows.some((r) => r.account === "401k" || r.account === "ira");
+  const filterChips: ("US" | "KR" | "ret")[] = [...(marketsHeld.length > 1 ? marketsHeld : []), ...(hasRet ? ["ret" as const] : [])];
+  const isRet = (r: PortfolioRow) => r.account === "401k" || r.account === "ira";
+  const shown = rows.filter((r) => (filter === "all" ? true : filter === "ret" ? isRet(r) : mktFor(r) === filter));
   const movers = [...rows].filter((r) => r.change_pct !== null && moverEligible(r, new Date(), heldMkts))
     .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0)).slice(0, 3);
   const quietMovers = [...rows].filter((r) => r.change_pct !== null && marketOf(r) !== null)
@@ -112,7 +129,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
           <p className="sub" style={{ margin: "6px 2px 2px" }}>Index futures ahead of the US open.</p>
         </div>
       )}
-      {!showPulse && <div className="card" style={{ marginBottom: 16 }}>
+      {!showPulse && <div className="card" style={{ marginBottom: 16 }} data-testid="movers-card">
         {moverList.map((r) => (
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span></span>
@@ -123,19 +140,59 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
           </button>
         ))}
       </div>}
-      <h2 className="h1" style={{ fontSize: 16 }}>Positions</h2>
-      <div className="card">
-        {rows.map((r) => (
-          <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
-            <span><span className="sym">{labelParts(r, dispKr === "KRW").main}</span><br />
-              <span className="sub">{r.kind === "cash" ? "cash" : r.kind === "debt" ? "debt" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{ACCT[r.account] ? ` · ${ACCT[r.account]}` : ""}</span>
-              {r.change_pct !== null && <span className={`sub num ${glClass(r.change_pct)}`}> · {signedPct(r.change_pct)}{(() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()}{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span>}</span>
-            <span className="right">
-              {(() => { const [v, c] = show(r.value, r); return <span className="num">{r.kind === "debt" ? signedMoney(-(v ?? 0), c) : money(v, c)}</span>; })()}<br />
-              {(() => { const [g, c] = show(r.total_gl, r); return <span className={`num sub ${glClass(r.total_gl)}`}>{signedMoney(g, c)}</span>; })()}
-            </span>
-          </button>
-        ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2 className="h1" style={{ fontSize: 16 }}>Positions</h2>
+        <span style={{ display: "flex", gap: 8 }}>
+          <button className="chip" aria-label="Import from brokerage" onClick={async () => {
+            try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } catch { /* connect button stays */ }
+          }}>⚡ Import</button>
+          <button className="chip" onClick={onAdd} aria-label="Add position">+ Add</button>
+        </span>
+      </div>
+      {filterChips.length > 0 && (
+        <div className="chips" role="group" aria-label="Filter by type">
+          <button className="chip" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>All</button>
+          {filterChips.map((k) => (
+            <button key={k} className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>
+              {k === "US" ? "US" : k === "KR" ? "KR" : "Ret"}
+            </button>
+          ))}
+        </div>
+      )}
+      {filter !== "all" && shown.length > 0 && (() => {
+        let value = 0, day = 0, gl = 0;
+        for (const r of shown) {
+          const sign = r.kind === "debt" ? -1 : 1;
+          const v = convertCcy(r.value ?? 0, r.currency, baseCurrency, totals.fx) ?? 0;
+          const d = convertCcy(dayChangeAmount(r.value, r.change_pct) ?? 0, r.currency, baseCurrency, totals.fx) ?? 0;
+          const g = convertCcy(r.total_gl ?? 0, r.currency, baseCurrency, totals.fx) ?? 0;
+          value += sign * v; day += sign * d; gl += sign * g;
+        }
+        const dayPct = value - day !== 0 ? (day / (value - day)) * 100 : 0;
+        const glPct = value - gl !== 0 ? (gl / (value - gl)) * 100 : 0;
+        return (
+          <div className="status-line num" data-testid="filter-totals" style={{ margin: "0 2px 8px" }}>
+            {money(value, baseCurrency)} · today <span className={glClass(day)}>{signedMoney(day, baseCurrency)} ({signedPct(dayPct)})</span> · total <span className={glClass(gl)}>{signedMoney(gl, baseCurrency)} ({signedPct(glPct)})</span>
+          </div>
+        );
+      })()}
+      <div className="card" data-testid="positions-card">
+        {shown.map((r) => {
+          const [rv, rc] = show(r.value, r);
+          return (
+            <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
+              <span>
+                <span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span><br />
+                <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{ACCT[r.account] ? ` · ${ACCT[r.account]}` : ""}{r.source === "snaptrade" ? " · ⚡" : ""}{r.kind === "cash" || r.kind === "debt" ? "" : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
+              </span>
+              <span className="right">
+                <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span><br />
+                <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)}{r.change_pct !== null && (() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} today{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span>
+              </span>
+            </button>
+          );
+        })}
+        {shown.length === 0 && <p className="empty">Nothing in this filter.</p>}
       </div>
     </>
   );

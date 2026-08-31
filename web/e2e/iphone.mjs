@@ -70,7 +70,7 @@ await step("FIG priced + history backfilled in the cloud", async () => {
   if (!(count > 20)) throw new Error("history backfill missing: " + count);
 });
 await step("remove FIG to reset for the classic flow", async () => {
-  await page.getByRole("button", { name: /^holdings$/i }).tap();
+  await page.getByRole("button", { name: /^home$/i }).tap();
   await page.getByRole("button", { name: /Figma, Inc\./i }).tap();
   await page.getByRole("button", { name: /remove position/i }).tap();
   await page.getByRole("dialog").getByRole("button", { name: /remove position/i }).tap();
@@ -104,7 +104,7 @@ await step("news tab lists cloud-pipeline stories", async () => {
   await shot("12-news");
 });
 await step("position detail + add lot → derived average", async () => {
-  await page.getByRole("button", { name: /^holdings$/i }).tap();
+  await page.getByRole("button", { name: /^home$/i }).tap();
   await page.getByRole("button", { name: /MARA Holdings/i }).tap();
   await page.getByRole("heading", { name: /^lots$/i }).waitFor();
   await shot("07-position");

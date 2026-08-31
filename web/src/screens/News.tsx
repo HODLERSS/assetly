@@ -76,17 +76,28 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
         ))}
       </div>
       {filter && <InsightsCard api={api} symbol={filter} onRefresh={onRefreshSymbol ? () => onRefreshSymbol(filter) : undefined} refreshing={!!symbolRefreshing[filter]} fresh={symbolFresh[filter] ?? null} />}
-      {!filter && (top5?.news5?.length ?? 0) > 0 && (
-        <section className="card insights" data-testid="news-top5-card" aria-label="Top portfolio signals">
+      {!filter && ((top5?.bullets?.length ?? 0) > 0 || (top5?.news5?.length ?? 0) > 0) && (
+        <section className="card insights" data-testid="news-top5-card" aria-label="Portfolio intelligence">
           <div className="insights-head">
             <span className="insights-brand">Assetly Intelligence</span>
             <button className="insights-toggle" onClick={() => onRefreshInsights?.()} disabled={insightsRefreshing} aria-label="Refresh Assetly Intelligence">
               {insightsRefreshing ? <>Refreshing <span className="spin" aria-hidden="true">↻</span></> : <>{timeAgo(top5!.generated_at)} · ↻</>}
             </button>
           </div>
-          <ul className="insights-list">
-            {top5!.news5!.map((b, i) => <li key={i}>{b}</li>)}
-          </ul>
+          {/* the portfolio read that used to live on the Holdings tab */}
+          {(top5?.bullets?.length ?? 0) > 0 && (
+            <ul className="insights-list" data-testid="portfolio-insights-card">
+              {top5!.bullets.map((b, i) => <li key={i}>{b}</li>)}
+            </ul>
+          )}
+          {(top5?.news5?.length ?? 0) > 0 && (
+            <>
+              {(top5?.bullets?.length ?? 0) > 0 && <p className="sub" style={{ margin: "10px 2px 4px", borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>This week across your holdings</p>}
+              <ul className="insights-list" data-testid="news-top5-list">
+                {top5!.news5!.map((b, i) => <li key={i}>{b}</li>)}
+              </ul>
+            </>
+          )}
           <p className="insights-foot">Not financial advice</p>
         </section>
       )}

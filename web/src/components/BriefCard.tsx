@@ -71,11 +71,11 @@ export function BriefCard({ api }: { api: Api }) {
         <span className="insights-actions">
           {brief.audio_path && (
             <button className="insights-toggle" onClick={() => void toggleAudio()} aria-label={playing ? "Pause narration" : "Listen to your brief"}>
-              <span className="ico" aria-hidden="true">{playing ? "❚❚" : "▶"}</span>{playing ? "Pause" : "Listen"}
+              <span className="ico" aria-hidden="true">{playing ? "❚❚" : "▶"}</span>
             </button>
           )}
           <button className="insights-toggle" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Close the brief" : meta.read}>
-            <span className="ico" aria-hidden="true">{open ? "✕" : "📖"}</span>{open ? "Close" : meta.read.replace("Read · ", "Read ")}
+            <span className="ico" aria-hidden="true">{open ? "✕" : "📖"}</span>
           </button>
         </span>
       </div>

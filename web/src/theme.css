@@ -39,10 +39,11 @@ input, select { font: inherit; }
 
 .tabbar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--as-surface);
   border-top: 1px solid var(--as-rule); padding-bottom: max(env(safe-area-inset-bottom), 6px); max-width: 480px; margin: 0 auto; z-index: 20; }
-.tabbar button { flex: 1; background: none; border: 0; padding: 10px 0 10px; color: var(--as-muted);
-  font-size: 11px; font-weight: 600; display: flex; flex-direction: column; gap: 3px; align-items: center; min-height: 50px; }
+.tabbar button { flex: 1; background: none; border: 0; padding: 8px 0 10px; color: var(--as-muted);
+  font-size: 10.5px; font-weight: 600; display: flex; flex-direction: column; gap: 3px; align-items: center; min-height: 54px; }
 .tabbar button[aria-current="page"] { color: var(--as-primary); }
-.tabbar .dot { width: 22px; height: 5px; border-radius: 3px; background: currentColor; opacity: .85; }
+.tabbar button svg { display: block; opacity: .9; }
+.tabbar button[aria-current="page"] svg { opacity: 1; }
 
 .card { background: var(--as-surface); border: 1px solid var(--as-rule); border-radius: var(--as-radius); }
 .net { font: 600 38px/1.1 var(--as-font-num); font-feature-settings: "tnum"; letter-spacing: -0.01em; }
@@ -116,7 +117,10 @@ input, select { font: inherit; }
 .insights-list li { font-size: 13.5px; line-height: 1.45; }
 .insights-toggle { background: none; border: 0; color: var(--as-primary); font: 600 12px/1 var(--as-font-ui); padding: 0; min-height: 32px;
   display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.insights-toggle .ico { font-size: 12px; line-height: 1; }
+.insights-toggle .ico { font-size: 14px; line-height: 1; }
+/* Listen / Read are icon-only: keep a real 44px tap target and no text gap */
+.insights-actions .insights-toggle { min-width: 34px; min-height: 34px; display: inline-flex;
+  align-items: center; justify-content: center; gap: 0; }
 .insights-actions { display: inline-flex; align-items: center; gap: 14px; }
 .insights-horizons { margin: 4px 0 0; display: grid; gap: 3px; }
 .insights-horizons div { display: flex; gap: 10px; font-size: 12.5px; }

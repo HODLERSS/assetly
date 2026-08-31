@@ -86,7 +86,7 @@ function stubApi(over: Partial<Api> = {}): Api {
       { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
     ]),
     getPortfolio: vi.fn().mockResolvedValue([row({})]),
-    addPosition: vi.fn().mockResolvedValue(undefined),   // no id -> legacy back-to-holdings flow
+    addPosition: vi.fn().mockResolvedValue(undefined),   // no id -> legacy back-to-home flow
     getLots: vi.fn().mockResolvedValue([{ id: "l1", holding_id: "h1", qty: 10, cost_per_share: 166.55, acquired_on: "2026-07-22", note: null }]),
     addLot: vi.fn().mockResolvedValue(undefined),
     updateLot: vi.fn().mockResolvedValue(undefined),
@@ -164,11 +164,11 @@ describe("U6 home + prices", () => {
 });
 
 describe("U3 add position", () => {
-  it("adds from the holdings tab", async () => {
+  it("adds from the home tab", async () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
     await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
@@ -181,7 +181,7 @@ describe("U3 add position", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
     await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
@@ -198,8 +198,8 @@ describe("U36 compact day dollars", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await screen.findByText("RDDT");
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await within(await screen.findByTestId("positions-card")).findByText("RDDT");
     // value 4800 at +5.26% -> day move ~= $240
     expect(document.body.textContent).toMatch(/\+5\.26% \(\+\$240\) today/);
   });
@@ -214,8 +214,8 @@ describe("U35 live-session dot", () => {
     ]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await screen.findByText("RDDT");
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await within(await screen.findByTestId("positions-card")).findByText("RDDT");
     const rowsEls = [...document.querySelectorAll(".card .row")];
     const usRow = rowsEls.find((e) => e.textContent!.includes("RDDT"))!;
     const krRow = rowsEls.find((e) => e.textContent!.includes("000660.KS"))!;
@@ -229,7 +229,7 @@ describe("U38 serial adds", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
     await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
@@ -275,7 +275,7 @@ describe("U43 connect-first onboarding", () => {
 });
 
 describe("U44 intelligence refresh light", () => {
-  it("tap refresh on Holdings, leave to Home, answer lands -> Holdings tab lights; opening it clears", async () => {
+  it("tap refresh on News, leave to Home, answer lands -> News tab lights; opening it clears", async () => {
     const old = { bullets: ["Old bullet"], windows: null, news5: ["old signal"], model: "m", generated_at: "2026-08-28T10:00:00Z" };
     const fresh = { bullets: ["Fresh bullet"], windows: null, news5: ["fresh signal"], model: "m", generated_at: "2026-08-28T11:00:00Z" };
     let resolveRefresh: (v: typeof fresh) => void = () => {};
@@ -286,22 +286,21 @@ describe("U44 intelligence refresh light", () => {
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     const tabs = () => within(screen.getByRole("navigation", { name: "Tabs" }));
-    await userEvent.click(tabs().getByRole("button", { name: /^Holdings$/ }));
-    await screen.findByTestId("portfolio-insights-card");
-    await userEvent.click(screen.getByRole("button", { name: /refresh portfolio assessment/i }));
-    // leave mid-generation
-    await userEvent.click(tabs().getByRole("button", { name: /^Home$/ }));
-    expect(screen.queryByLabelText("New portfolio assessment")).toBeNull();
+    await userEvent.click(tabs().getByRole("button", { name: /^News$/ }));
+    await screen.findByTestId("portfolio-insights-card");        // the portfolio read now lives on News
+    await userEvent.click(screen.getByRole("button", { name: /refresh assetly intelligence/i }));
+    await userEvent.click(tabs().getByRole("button", { name: /^Home$/ }));   // leave mid-generation
+    expect(screen.queryByLabelText("New Assetly Intelligence")).toBeNull();
     resolveRefresh(fresh);
-    await screen.findByLabelText("New portfolio assessment");          // the light
-    await userEvent.click(tabs().getByRole("button", { name: /New portfolio assessment|^Holdings$/ }));
-    await vi.waitFor(() => expect(screen.queryByLabelText("New portfolio assessment")).toBeNull());   // cleared on open
+    await screen.findByLabelText("New Assetly Intelligence");     // the light
+    await userEvent.click(tabs().getByRole("button", { name: /New Assetly Intelligence|^News$/ }));
+    await vi.waitFor(() => expect(screen.queryByLabelText("New Assetly Intelligence")).toBeNull());
     expect((await screen.findByTestId("portfolio-insights-card")).textContent).toContain("Fresh bullet");
   });
 });
 
 describe("U45 brief arrival light", () => {
-  it("a brief landing while the user is on Holdings lights the Home tab and shows the banner on return", async () => {
+  it("a brief landing while the user is on News lights the Home tab and shows the banner on return", async () => {
     const sec = { lede: "First brief lede.", overnight: "S&P500 index 6,470 (+0.4%), VIX 14.1, KOSPI 3,120 (+0.8%).",
       positions: [{ name: "MARA", note: "Up 2.1%.", watch: "Q3 call" }], desk_view: "Structural.", calendar: [] };
     const briefs = vi.fn().mockResolvedValue([]);
@@ -309,7 +308,7 @@ describe("U45 brief arrival light", () => {
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     const tabs = () => within(screen.getByRole("navigation", { name: "Tabs" }));
-    await userEvent.click(tabs().getByRole("button", { name: /^Holdings$/ }));
+    await userEvent.click(tabs().getByRole("button", { name: /^News$/ }));
     // first poll saw nothing; now the first brief exists
     briefs.mockResolvedValue([{ brief_date: "2026-08-28", edition: "morning", generated_at: "2026-08-28T12:40:00Z", sections: sec, audio_path: "u/2026-08-28-morning.mp3" }]);
     // the watcher polls every 20s in production; in tests, drive one tick via the exposed interval
@@ -399,7 +398,7 @@ describe("U37 warmup first look", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
     await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
@@ -423,8 +422,8 @@ describe("U37 warmup first look", () => {
         windows: { trend: "Two-year grind, recent AI re-rating." }, model: "m", generated_at: new Date().toISOString() }) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await userEvent.click(await within(await screen.findByTestId("positions-card")).findByRole("button", { name: /Reddit/i }));
     const pending = await screen.findByTestId("insights-pending");
     expect(pending.textContent).toMatch(/Reading RDDT/);
     const card = await screen.findByTestId("insights-card", {}, { timeout: 9000 });
@@ -443,7 +442,7 @@ describe("U34 KR names over codes", () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(krRows()) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     const sym = await screen.findByText("SK하이닉스");
     expect(sym.className).toContain("sym");
     await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
@@ -457,7 +456,7 @@ describe("U34 KR names over codes", () => {
     });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     expect(await screen.findByText("SK hynix")).toBeTruthy();
     expect(screen.queryByText("SK하이닉스")).toBeNull();
   });
@@ -474,7 +473,10 @@ describe("U33 news top-5 intelligence", () => {
     await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
     const card = await screen.findByTestId("news-top5-card");
     expect(card.textContent).toContain("Assetly Intelligence");
-    expect(card.querySelectorAll("li").length).toBe(5);
+    // the card now carries the portfolio read (3 bullets, moved here from the old Holdings tab)
+    // above the 5 ranked signals
+    expect(within(card).getByTestId("portfolio-insights-card").querySelectorAll("li").length).toBe(3);
+    expect(within(card).getByTestId("news-top5-list").querySelectorAll("li").length).toBe(5);
     expect(card.textContent).toContain("Not financial advice");
     await userEvent.click(screen.getByRole("button", { name: "RDDT" }));
     await waitFor(() => expect(screen.queryByTestId("news-top5-card")).toBeNull());
@@ -527,7 +529,7 @@ describe("U26 currency matrix", () => {
     });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     // RDDT $4,800 * 1380 = ₩6,624,000
     await waitFor(() => expect(document.body.textContent).toContain("₩6,624,000"));
   });
@@ -547,29 +549,30 @@ describe("U27 holdings filters", () => {
     ]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await screen.findByText("BTC-USD");
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await waitFor(() => expect(document.body.textContent).toContain("BTC-USD"));
     await userEvent.click(screen.getByRole("button", { name: /^US$/ }));
-    await waitFor(() => expect(screen.queryByText("005930.KS")).toBeNull());
-    expect(screen.getByText("BTC-USD")).toBeTruthy();
+    // the US filter keeps the USD-denominated crypto and drops the KRW listing
+    await waitFor(() => expect(screen.getByTestId("positions-card").textContent).not.toContain("005930.KS"));
+    expect(screen.getByTestId("positions-card").textContent).toContain("BTC-USD");
   });
   it("chips are All, KR, US, Ret only and single-select", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(three()) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await screen.findByText("QQQM");
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await waitFor(() => expect(screen.getByTestId("positions-card").textContent).toContain("QQQM"));
     expect(screen.queryByRole("button", { name: /^Equity$/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Cash$/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^ETF$/ })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: /^US$/ }));
     await waitFor(() => expect(screen.queryByText("005930.KS")).toBeNull());
-    expect(screen.getByText("QQQM")).toBeTruthy();
+    expect(screen.getByTestId("positions-card").textContent).toContain("QQQM");
     await userEvent.click(screen.getByRole("button", { name: /^Ret$/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: /^Ret$/ }).getAttribute("aria-pressed")).toBe("true"));
     expect(screen.getByRole("button", { name: /^US$/ }).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByText("QQQM")).toBeTruthy();
-    expect(screen.queryByText("RDDT")).toBeNull();
+    expect(screen.getByTestId("positions-card").textContent).toContain("QQQM");
+    expect(screen.getByTestId("positions-card").textContent).not.toContain("RDDT");
     await userEvent.click(screen.getByRole("button", { name: /^All$/ }));
     await waitFor(() => expect(screen.getByText("005930.KS")).toBeTruthy());
   });
@@ -599,8 +602,8 @@ describe("U32 edit from the position view", () => {
       { id: "l1", holding_id: "h1", qty: 10, cost_per_share: 166.55, acquired_on: null, note: null }]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await userEvent.click(await within(await screen.findByTestId("positions-card")).findByRole("button", { name: /Reddit/i }));
     const calls = vi.mocked(api.getPortfolio).mock.calls.length;
     await userEvent.click(await screen.findByRole("button", { name: /^edit position$/i }));
     const shares = screen.getByLabelText(/^shares$/i);
@@ -622,7 +625,7 @@ describe("U32 edit from the position view", () => {
     });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(await screen.findByRole("button", { name: /Cash/i }));
     await userEvent.click(await screen.findByRole("button", { name: /^edit amount$/i }));
     expect(screen.queryByLabelText(/cost per share/i)).toBeNull();
@@ -641,7 +644,7 @@ describe("U25 notes", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
     await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
@@ -656,8 +659,8 @@ describe("U25 notes", () => {
       { id: "l1", holding_id: "h1", qty: 10, cost_per_share: 166.55, acquired_on: "2026-07-22", note: "DCA week 1" }]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await userEvent.click(await within(await screen.findByTestId("positions-card")).findByRole("button", { name: /Reddit/i }));
     await screen.findByText("DCA week 1");
     await userEvent.click(screen.getByRole("button", { name: /edit lot 10 shares/i }));
     const noteInput = screen.getByLabelText(/note \(optional\)/i);
@@ -718,9 +721,9 @@ describe("U24 ASK", () => {
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
-    await userEvent.click(screen.getByRole("button", { name: /1W movement/i }));
+    await userEvent.click(screen.getByRole("button", { name: /1W and 1M movement/i }));
     await screen.findByTestId("ask-answer");
-    expect(api.ask).toHaveBeenCalledWith("What was my 1W movement in $ and %?");
+    expect(api.ask).toHaveBeenCalledWith("What was my 1W and 1M movement in $ and %?");
   });
 });
 
@@ -743,24 +746,24 @@ describe("U31 ASK follow-ups", () => {
   });
 });
 
-describe("U22 portfolio insights on Holdings", () => {
+describe("U22 portfolio insights on News", () => {
   it("renders the quiet 'Your portfolio' card above the list", async () => {
     const api = stubApi({ getPortfolioInsights: vi.fn().mockResolvedValue({
       bullets: ["MARA is 39% of assets — one earnings call moves your month", "Korea book carried today (+1.2%) while US slept", "Cash buffer under 2 months of burn"],
       windows: null, model: "MiniMax-M2.7", generated_at: new Date().toISOString() }) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
     const card = await screen.findByTestId("portfolio-insights-card");
-    expect(card.textContent).toContain("Your portfolio");
+    expect(card.closest(".insights")!.textContent).toContain("Assetly Intelligence");
     expect(card.textContent).toContain("39% of assets");
-    expect(card.textContent).toContain("Not financial advice");
+    expect(card.closest(".insights")!.textContent).toContain("Not financial advice");
   });
   it("absent quietly when there is none yet", async () => {
     render(<App api={stubApi()} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await screen.findByText(/Reddit/);
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+    await screen.findByRole("button", { name: /all holdings/i });
     expect(screen.queryByTestId("portfolio-insights-card")).toBeNull();
   });
 });
@@ -772,8 +775,8 @@ describe("U20 Assetly Intelligence", () => {
     const api = stubApi({ getInsights: vi.fn().mockResolvedValue(insight) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await userEvent.click(await within(await screen.findByTestId("positions-card")).findByRole("button", { name: /Reddit/i }));
     const card = await screen.findByTestId("insights-card");
     expect(card.textContent).toContain("Assetly Intelligence");
     expect(card.textContent).toContain("Take one about margins");
@@ -785,8 +788,8 @@ describe("U20 Assetly Intelligence", () => {
     const api = stubApi();   // getInsights -> null
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await userEvent.click(await within(await screen.findByTestId("positions-card")).findByRole("button", { name: /Reddit/i }));
     await screen.findByRole("heading", { name: /^lots$/i });
     expect(screen.queryByTestId("insights-card")).toBeNull();
   });
@@ -821,7 +824,7 @@ describe("U18 labels + bank accounts", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.click(await screen.findByRole("button", { name: /add a cash balance/i }));
     expect(screen.getByRole("button", { name: "Bank" }).getAttribute("aria-pressed")).toBe("true");
@@ -837,7 +840,7 @@ describe("U18 labels + bank accounts", () => {
     ]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await screen.findByText("Cash (Yeonhwa)");
     await screen.findByText("Cash (Minjae)");
     expect(screen.getAllByText(/cash balance · Bank/).length).toBe(2);
@@ -849,7 +852,7 @@ describe("U17 KRW cash and debt", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.click(await screen.findByRole("button", { name: /add a cash balance/i }));
     await userEvent.click(screen.getByRole("button", { name: /₩ KRW/ }));
@@ -914,7 +917,7 @@ describe("U15 debt", () => {
     render(<App api={api} />);
     const net = await screen.findByTestId("net-worth");
     await waitFor(() => expect(net.textContent).toBe("$3,000"));      // 4,800 - 1,800
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await screen.findByText(/debt balance/);
     expect(screen.getByText("-$1,800")).toBeTruthy();
   });
@@ -922,7 +925,7 @@ describe("U15 debt", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.click(await screen.findByRole("button", { name: /add a loan or debt/i }));
     await userEvent.type(screen.getByLabelText(/amount owed/i), "1800");
@@ -936,7 +939,7 @@ describe("U14 accounts + cash", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
     await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
@@ -950,7 +953,7 @@ describe("U14 accounts + cash", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.click(await screen.findByRole("button", { name: /add a cash balance/i }));
     expect(screen.queryByLabelText(/cost per share/i)).toBeNull();
@@ -967,8 +970,8 @@ describe("U14 accounts + cash", () => {
     ]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await screen.findByText(/Invesco Nasdaq 100/);
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await within(await screen.findByTestId("positions-card")).findByText(/Invesco Nasdaq 100/);
     const subs = Array.from(document.querySelectorAll("span.sub")).map((e) => (e.textContent ?? "").trim());
     expect(subs.some((t) => t.startsWith("24 sh · avg"))).toBe(true);     // brokerage row untagged
     expect(subs.some((t) => /24 sh · (401k|IRA)/.test(t))).toBe(false);
@@ -1005,7 +1008,7 @@ describe("U13 persona-fleet fixes", () => {
     await screen.findByTestId("net-worth");
     expect(screen.getByText(/0\.5 BTC/)).toBeTruthy();
     expect(screen.queryByText(/0\.5 sh/)).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     expect((await screen.findAllByText(/0\.5 BTC/)).length).toBeGreaterThan(0);
     expect(screen.queryByText(/0\.5 sh/)).toBeNull();
   });
@@ -1013,8 +1016,8 @@ describe("U13 persona-fleet fixes", () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([row({ avg_cost: 195 })]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await userEvent.click(await within(await screen.findByTestId("positions-card")).findByRole("button", { name: /Reddit/i }));
     await screen.findByTestId("price-chart");
     expect(await screen.findByTestId("avg-cost-line")).toBeTruthy();
     expect(screen.getByText(/avg \$195\.00/)).toBeTruthy();
@@ -1023,8 +1026,8 @@ describe("U13 persona-fleet fixes", () => {
     const api = stubApi();   // stub history spans ~2 days; default range = 1M
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await userEvent.click(await within(await screen.findByTestId("positions-card")).findByRole("button", { name: /Reddit/i }));
     await screen.findByTestId("price-chart");
     expect((await screen.findByTestId("partial-note")).textContent).toMatch(/showing \d+d of data/);
   });
@@ -1046,7 +1049,7 @@ describe("U12 instant news", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");
     await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
@@ -1061,8 +1064,8 @@ describe("U11 price chart on position", () => {
   const openPosition = async () => {
     render(<App api={apiRef} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /Reddit/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    await userEvent.click(await within(await screen.findByTestId("positions-card")).findByRole("button", { name: /Reddit/i }));
     await screen.findByRole("heading", { name: /^lots$/i });
   };
   let apiRef: Api;
@@ -1210,7 +1213,7 @@ describe("U9 empty state", () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([]) });
     render(<App api={api} />);
     await screen.findByText(/no runners on the track/i);
-    expect(screen.getByRole("button", { name: /add your first position/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /add positions manually/i })).toBeTruthy();
   });
 });
 
@@ -1231,7 +1234,7 @@ describe("U47 series of manual adds", () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
-    await userEvent.click(screen.getByRole("button", { name: /^holdings$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));
     for (const qty of ["5", "3"]) {
       await userEvent.type(screen.getByLabelText(/ticker or name/i), "MARA");

@@ -6,14 +6,14 @@ import { api as defaultApi, type Api, type BriefEdition, type Insight, type Port
 import { AuthScreen } from "./screens/Auth";
 import { Onboarding } from "./screens/Onboarding";
 import { Home } from "./screens/Home";
-import { Holdings } from "./screens/Holdings";
+import { TabIcon } from "./components/TabIcon";
 import { PositionScreen } from "./screens/Position";
 import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
 import { SettingsScreen } from "./screens/Settings";
 import { AskScreen } from "./screens/Ask";
 
-export type Tab = "home" | "holdings" | "news" | "ask" | "settings";
+export type Tab = "home" | "news" | "ask" | "settings";
 export type View =
   | { kind: "tab"; tab: Tab }
   | { kind: "add" }
@@ -30,7 +30,6 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [view, setView] = useState<View>({ kind: "tab", tab: "home" });
   const [error, setError] = useState<string | null>(null);
   const [askAlert, setAskAlert] = useState(false);
-  const [holdAlert, setHoldAlert] = useState(false);
   const [newsAlert, setNewsAlert] = useState(false);
   const [homeAlert, setHomeAlert] = useState(false);
   const [briefBanner, setBriefBanner] = useState<{ audio: boolean; edition: BriefEdition } | null>(null);   // first-arrival banner on Home
@@ -81,7 +80,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     } finally { setSymRefreshing((m) => ({ ...m, [symbol]: false })); }
   }, [api, symRefreshing]);
   const [pinsFresh, setPinsFresh] = useState<Insight | null>(null);   // result of the last app-level refresh
-  // Refresh lives here, not in Holdings: it keeps running across tabs and lights the tab when done.
+  // Refresh lives here, not in a screen: it keeps running across tabs and lights the tab when done.
   const refreshInsights = useCallback(async () => {
     if (pinsRefreshing) return;
     setPinsRefreshing(true);
@@ -90,13 +89,13 @@ export function App({ api = defaultApi }: { api?: Api }) {
       if (v) {
         setPinsFresh(v);
         const cur = viewRef.current.kind === "tab" ? viewRef.current.tab : null;
-        if (cur === "holdings" || cur === "news") seenInsightRef.current = v.generated_at;
-        if (cur !== "holdings") setHoldAlert(true);
+        if (cur === "news") seenInsightRef.current = v.generated_at;
+        if (cur !== "news") setNewsAlert(true);
         if (cur !== "news") setNewsAlert(true);
       }
     } finally { setPinsRefreshing(false); }
   }, [api, pinsRefreshing]);
-  // background watch: a newer portfolio assessment (cron/refresh) lights the Holdings tab
+  // background watch: a newer portfolio assessment (cron/refresh) lights the News tab, where it now lives
   useEffect(() => {
     if (!session) return;
     let live = true;
@@ -111,8 +110,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
         if (seenInsightRef.current === null && !freshSinceConnect) { seenInsightRef.current = v.generated_at; return; }
         if (v.generated_at !== seenInsightRef.current) {
           const cur = viewRef.current.kind === "tab" ? viewRef.current.tab : null;
-          if (cur === "holdings" || cur === "news") seenInsightRef.current = v.generated_at;
-          if (cur !== "holdings") setHoldAlert(true);
+          if (cur === "news") seenInsightRef.current = v.generated_at;
+          if (cur !== "news") setNewsAlert(true);
           if (cur !== "news") setNewsAlert(true);
           // connect moment: a fresh assessment means news + intelligence are in -> ask the first question now
           if (connectPendingRef.current || freshSinceConnect) {
@@ -279,7 +278,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     return <Onboarding api={api} onDone={load} snaptrade={obSnap} onBookChanged={() => { bookChangeRef.current.pending = true; runBookPipeline(); }} />;
   }
 
-  const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "holdings") setHoldAlert(false); if (v.kind === "tab" && v.tab === "news") setNewsAlert(false); if (v.kind === "tab" && v.tab === "home") setHomeAlert(false); setView(v); };
+  const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "news") setNewsAlert(false); if (v.kind === "tab" && v.tab === "home") setHomeAlert(false); setView(v); };
   const tab = view.kind === "tab" ? view.tab : null;
 
   return (
@@ -309,24 +308,19 @@ export function App({ api = defaultApi }: { api?: Api }) {
         <h1 className="sr-only">Assetly</h1>
         {view.kind === "add" && (
           <AddPosition api={api} onRefresh={load} onAdded={scheduleBookChange}
-            onDone={() => go({ kind: "tab", tab: "holdings" })}
-            onCancel={() => go({ kind: "tab", tab: "holdings" })} />
+            onDone={() => go({ kind: "tab", tab: "home" })}
+            onCancel={() => go({ kind: "tab", tab: "home" })} />
         )}
         {view.kind === "position" && (
           <PositionScreen api={api} dispKr={profile?.display_kr ?? "KRW"} row={rows.find((r) => r.holding_id === view.holdingId) ?? null}
-            onChanged={load} onRemoved={async () => { await load(); go({ kind: "tab", tab: "holdings" }); }}
-            onBack={() => go({ kind: "tab", tab: "holdings" })} />
+            onChanged={load} onRemoved={async () => { await load(); go({ kind: "tab", tab: "home" }); }}
+            onBack={() => go({ kind: "tab", tab: "home" })} />
         )}
         {view.kind === "tab" && view.tab === "home" && (
           <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"}
             dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"}
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
             briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)} />
-        )}
-        {view.kind === "tab" && view.tab === "holdings" && (
-          <Holdings rows={rows} api={api} fxRate={fx} totalsCcy={base} dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"} onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
-            onInsightsChanged={(g) => { seenInsightRef.current = g; setHoldAlert(false); }}
-            onRefreshInsights={refreshInsights} insightsRefreshing={pinsRefreshing} freshInsights={pinsFresh} />
         )}
         {view.kind === "tab" && view.tab === "news" && (
           <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"}
@@ -347,12 +341,11 @@ export function App({ api = defaultApi }: { api?: Api }) {
       </main>
 
       <nav className="tabbar" aria-label="Tabs">
-        {(["home", "holdings", "news", "ask", "settings"] as Tab[]).map((t) => (
+        {(["home", "news", "ask", "settings"] as Tab[]).map((t) => (
           <button key={t} aria-current={tab === t ? "page" : undefined} onClick={() => go({ kind: "tab", tab: t })}>
-            <span className="dot" aria-hidden="true" />
-            {t === "home" ? "Home" : t === "holdings" ? "Holdings" : t === "news" ? "News" : t === "ask" ? "Ask" : "Settings"}
+            <TabIcon tab={t} active={tab === t} />
+            {t === "home" ? "Home" : t === "news" ? "News" : t === "ask" ? "Ask" : "Settings"}
             {t === "ask" && askAlert && <span className="tab-alert" aria-label="New answer ready" />}
-            {t === "holdings" && holdAlert && <span className="tab-alert" aria-label="New portfolio assessment" />}
             {t === "news" && newsAlert && <span className="tab-alert" aria-label="New Assetly Intelligence" />}
             {t === "home" && homeAlert && <span className="tab-alert" aria-label="Your brief is ready" />}
           </button>

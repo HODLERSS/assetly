@@ -30,7 +30,7 @@ const shot = (n) => page.screenshot({ path: `${OUT}scenario-${n}.png` });
 
 const addViaUi = async (query, pickRe, qty, cost, first = false) => {
   if (first) await page.getByRole("button", { name: /add your first position/i }).tap();
-  else { await page.getByRole("button", { name: /^holdings$/i }).tap();
+  else { await page.getByRole("button", { name: /^home$/i }).tap();
          await page.getByRole("button", { name: /^add position$/i }).tap(); }
   await page.getByLabel(/ticker or name/i).fill(query);
   await page.getByRole("button", { name: pickRe }).first().tap({ timeout: 25000 });
@@ -69,9 +69,9 @@ await step("add 7 more through the data layer (what the screens call)", async ()
 
 await step("holdings shows all 10 with prices", async () => {
   await page.getByRole("button", { name: /^home$/i }).tap();
-  await page.getByRole("button", { name: /^holdings$/i }).tap();
+  await page.getByRole("button", { name: /^home$/i }).tap();
   await page.reload();                                     // pull fresh portfolio
-  await page.getByRole("button", { name: /^holdings$/i }).tap();
+  await page.getByRole("button", { name: /^home$/i }).tap();
   for (const re of [/MARA Holdings/i, /Figma/i, /Apple/i, /NVIDIA/i, /Samsung Electronics/i])
     await page.getByRole("button", { name: re }).first().waitFor({ timeout: 20000 });
   await shot("02-ten-holdings");
