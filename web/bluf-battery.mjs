@@ -130,7 +130,10 @@ const spokenValues = (script) => {
     // suffixed amounts are consumed above; blanking them first stops "$1.2m" from also yielding a stray 1
     ...[...t.replace(/\$\s?[\d,]+(?:\.\d+)?\s?[kKmMbB]\b/g, " ").matchAll(/\$\s?([\d,]+(?:\.\d+)?)/g)].map((m) => parseFloat(m[1].replace(/,/g, ""))),
   ].filter((v) => v !== null && !Number.isNaN(v));
-  const fracHits = Object.entries(FRACW).filter(([w]) => new RegExp(`\\b${w}\\b`, "i").test(t));
+  // "a quarter where earnings fall" is a fiscal quarter, not 25%: a fraction only counts when it is
+  // describing a share of the book
+  const SHARE_CTX = "(?:of\\s+(?:the\\s+|your\\s+|its\\s+|all\\s+)?(?:book|portfolio|assets|holdings|money|fund|total)|your\\s+(?:book|portfolio|assets)|the\\s+(?:book|portfolio))";
+  const fracHits = Object.entries(FRACW).filter(([w]) => new RegExp(`\\b${w}\\b\\s+${SHARE_CTX}`, "i").test(t));
   const frac = fracHits.map(([, v]) => v);
   const fracWords = fracHits.map(([w, v]) => `"${w}" (= ${v}%)`);
   // a brief may state a price WITHOUT its unit ("bitcoin below seventy thousand"); keep those as candidates
@@ -190,7 +193,7 @@ READ:\n${read}\nLISTEN SCRIPT:\n${script}
 Return STRICT JSON {"bluf_read":bool,"bluf_read_evidence":str,"bluf_listen":bool,"bluf_listen_evidence":str,"tier_read":bool,"tier_read_evidence":str,"tier_listen":bool,"tier_listen_evidence":str,"clear":bool,"clear_evidence":str,"opinion":bool,"opinion_evidence":str,"construct":bool,"construct_evidence":str,"faithful":bool,"faithful_evidence":str,"worst":str}.
 bluf_read: every READ section opens with its conclusion, never a list of moves; evidence follows the point. To FAIL quote a section that buries its point; else pass.
 bluf_listen: the LISTEN script delivers the bottom line in its first two sentences after the greeting and covers only what matters, no laundry lists. To FAIL quote the buried opening or a list; else pass.
-tier_read / tier_listen: language matches the reader (novice/intermediate: plain everyday words, no unexplained financial terms of art — ticker symbols, index names, company/product names are fine; pro: professional register). To FAIL quote the mismatch; else pass.
+tier_read / tier_listen: language matches the reader. For novice/intermediate: plain everyday words, no unexplained financial terms of art (ticker symbols, index names, company/product names are fine). For a PRO reader technical vocabulary is CORRECT and expected ("net interest margin", "total return", "basis points" are the right register): never fail a pro artifact for using a professional term, only for being condescending, padded, or over-explained. To FAIL quote the mismatch; else pass.
 clear: a smart newcomer could retell the main points after one pass; sentences are short and concrete. To FAIL quote the confusing passage; else pass.
 opinion: at least one clear, fact-backed judgment (not a hedge, not a command to trade). To FAIL state "no opinion found" plus the closest attempt; else pass.
 construct: risks are framed constructively, not bare doom; a measurable tripwire or watch item attached to a risk COUNTS as its next step (that is the design). To FAIL quote actual doom language, or a risk that has neither framing nor any tripwire/watch/next step anywhere near it; else pass.
