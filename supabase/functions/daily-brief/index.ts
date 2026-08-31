@@ -586,7 +586,10 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           if (wcT(out) > cap) {
             // a raw word-slice leaves a dangling fragment ("...on the same driver, so."); end on a real boundary
             let cut = out.split(/\s+/).slice(0, cap).join(" ");
-            const stop = Math.max(cut.lastIndexOf("."), cut.lastIndexOf("!"), cut.lastIndexOf("?"));
+            // a period only ENDS a sentence when whitespace or the end follows it: the decimal point inside
+            // "25.6%" was being read as a terminator, which is how "so 25." reached the reader
+            const ends = [...cut.matchAll(/[.!?](?=\s|$)/g)].map((m) => m.index ?? -1);
+            const stop = ends.length ? ends[ends.length - 1] : -1;
             if (stop > cut.length * 0.5) cut = cut.slice(0, stop + 1);
             else {
               const comma = cut.lastIndexOf(",");
@@ -910,6 +913,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const undangle = (t: string) => {
         let out = (t ?? "").trim(), prev = "";
         while (prev !== out) { prev = out; out = out.replace(/[\s,;:]+(?:so|and|but|or|which|that|with|for|to|at|in|on|of|as|while|because|if|when|from|by|than|its|their|the|a|an)\s*\.?$/i, ""); }
+        // a truncation can also end on a bare figure ("..., so 25."): that is a fragment, not a sentence
+        out = out.replace(/[,;]\s*(?:so|and|but|which|that)?\s*-?\d[\d,.]*%?\s*\.?$/i, "");
         return out.replace(/[,;:]+$/, "").replace(/([^.!?])$/, "$1.");
       };
       // Telling the reader what to do with their money is not ours to say, and it has recurred twice
