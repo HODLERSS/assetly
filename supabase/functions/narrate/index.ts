@@ -186,7 +186,9 @@ Deno.serve(async (req) => {
   const scriptOnly = body.script_only === true;
   let narrated = 0; const errors: string[] = []; const scripts: Record<string, string> = {};
   for (const row of rows) {
-    if (!scriptOnly && testIds.has(row.user_id)) continue;
+    // Test accounts never spend TTS credits by default. An OPERATOR holding the internal token can opt a
+    // run in (body.tts_test) to produce real audio for a demo, which is the only way to hear a fixture book.
+    if (!scriptOnly && testIds.has(row.user_id) && !(isInternal && body.tts_test === true)) continue;
     if (elapsed() > 110) { errors.push("wall clock; remaining rows next sweep"); break; }
     try {
       const s = row.sections as Sections;
