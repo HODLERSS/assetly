@@ -905,11 +905,14 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // enumerations come in too many phrasings to pattern-match one by one; enforce the cap structurally.
       // The opening states the shape of the book; a later sentence that re-states weights is what goes.
       const figuresIn = (t: string) => (String(t ?? "").match(/-?\d[\d,]*(?:\.\d+)?\s?%|\$\s?[\d,]+/g) ?? []).map((x) => x.trim());
-      const trimStats = (t: string, cap: number) => {
+      // never trim a section into a stub: losing the substance is worse than carrying one extra figure
+      const trimStats = (t: string, cap: number, minWords = 26) => {
+        const wcS = (x: string) => String(x).split(/\s+/).filter(Boolean).length;
         const sents = String(t ?? "").split(/(?<=[.;])\s+/).filter(Boolean);
         if (sents.length <= 1) return t;
         const out = sents.slice();
-        while (out.length > 1 && out.reduce((a, x) => a + statCount(x), 0) > cap) {
+        while (out.length > 1 && out.reduce((a, x) => a + statCount(x), 0) > cap
+               && out.reduce((a, x) => a + wcS(x), 0) > minWords) {
           // drop what REPEATS figures already stated before it; only then fall back to the later sentence
           let idx = -1, bestDup = -1;
           for (let i = 1; i < out.length; i++) {
@@ -919,6 +922,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             if (dup >= bestDup) { bestDup = dup; idx = i; }
           }
           if (idx < 0) break;
+          if (out.reduce((a, x) => a + wcS(x), 0) - wcS(out[idx]) < minWords) break;
           out.splice(idx, 1);
         }
         return out.join(" ");
@@ -952,7 +956,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // the close/morning tape line is instructed to carry three market quotes plus the day P&L, so it gets 8
       const bookCap = edition === "assessment" ? 6 : 8;
       sections.overnight = tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.overnight, 1))), bookCap))));
-      sections.desk_view = tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.desk_view, 0))), 3))));   // structural section: weights are noise
+      sections.desk_view = tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.desk_view, 0))), edition === "assessment" ? 5 : 3, 30))));   // structural section: weights are noise
       sections.lede = tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1))));
       // in a DAILY note the weight is structural, not news, and the book line already states it: dropping the
       // "on a 9.3% weight" clause leaves the move and its dollar impact, which is what the day is about
@@ -961,6 +965,10 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections.positions = sections.positions.map((p) => ({ ...p, note: tidy(deSemi(deAdvice(deWeightClause(collapseRun(deWeightParens(p.note, 1)))))) }));
       // a diet that starves the brief is worse than the redundancy it removed
       if (wcAll(sections) < dietFloor && wcAll(preDiet) >= wcAll(sections)) sections = preDiet;
+      // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
+      if (["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])))) {
+        sections = JSON.parse(noviceScrub(JSON.stringify(sections))) as Sections;
+      }
       // CAPS LAST: the beginner vocabulary map lengthens text ("moat" -> "lasting edge over competitors"),
       // so a cap applied before it can be exceeded by the substitution itself
       const capNote = holdings.length <= 2 ? 56 : 33;
@@ -970,10 +978,6 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       if (edition === "assessment") sections.horizon = fitCap(sections.horizon ?? "", 46, /next [^:]{1,14}:[\s\S]*next [^:]{1,14}:/i);
       sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(p.note, capNote), watch: fitCap(p.watch, 14) }));
       sections.ideas = (sections.ideas ?? []).map((x) => fitCap(String(x), 16));
-      // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
-      if (["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])))) {
-        sections = JSON.parse(noviceScrub(JSON.stringify(sections))) as Sections;
-      }
       const { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
         audio_path: null,   // new text => stale audio; narrate re-runs for this row
