@@ -104,7 +104,7 @@ function readerBlock(inv: Investor | null | undefined): string {
     learn: "They want to LEARN as they go: give one short line of reasoning behind each conclusion.",
   };
   const lvlG: Record<string, string> = {
-    novice: "BEGINNER reader: plain words, short sentences. Sentences of at most 14 words. NO bare acronyms or jargon ANYWHERE, including watch items and bullets. Banned for this reader: EVERY financial acronym and term of art, including ROE, ROIC, EBITDA, FCF, P/E, EPS, AUM, NIM, capex, basis points, net flows, net interest margin (say: lending profit margin), tilt (say: focus), cash drag (say: idle cash), growth premium and valuation (say: price tag), an economic print (say: report), and the bare word moat (say: a lasting edge over competitors). Use the plain phrase instead: profit growth not ROE, cash flow not FCF, operating profit not EBITDA. Ticker symbols with weights (like QQQM 25.6%) are fine, they are names, not jargon. If a term is unavoidable, gloss it in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
+    novice: "BEGINNER reader: plain words, short sentences. Sentences of at most 14 words. NO bare acronyms or jargon ANYWHERE, including watch items and bullets. Banned for this reader: EVERY financial acronym and term of art, including ROE, ROIC, EBITDA, FCF, P/E, EPS, AUM, NIM, capex, basis points, net flows, net interest margin (say: profit on lending), tilt (say: focus), cash drag (say: idle cash), growth premium and valuation (say: price tag), an economic print (say: report), and the bare word moat (say: a lasting edge over competitors). Use the plain phrase instead: profit growth not ROE, cash flow not FCF, operating profit not EBITDA. Ticker symbols with weights (like QQQM 25.6%) are fine, they are names, not jargon. If a term is unavoidable, gloss it in-line (like: free cash flow, the cash left after all expenses). Never condescend.",
     intermediate: "Informed reader: plain everyday language with as little financial jargon as possible; everyday investing words (dividend, earnings, revenue, valuation) are fine without explanation, but avoid acronyms and terms of art the same way you would for a beginner, minus the in-line explanations.",
     advanced: "Advanced reader: precise financial vocabulary welcome, no hand-holding.",
     pro: "Professional reader: dense, technical, desk-note register.",
@@ -192,7 +192,7 @@ const NOVICE_MAP: [RegExp, string][] = [
   [/\bshort interest\b/gi, "bets against the stock"], [/\bof float\b/gi, "of its tradable shares"],
   [/\bleverage(d)?\b/gi, "borrowed money"], [/\bhigh[- ]beta\b/gi, "sharper-moving-than-the-market"],
   [/\bbeta\b/gi, "sensitivity to market swings"], [/\bvaluation multiple(s)?\b/gi, "price tag relative to earnings"],
-  [/\bmultiple compression\b/gi, "a shrinking price tag relative to earnings"], [/\bnet interest margin\b/gi, "lending profit margin"],
+  [/\bmultiple compression\b/gi, "a shrinking price tag relative to earnings"], [/\b(net interest margin|lending profit margin|net interest income)\b/gi, "profit on lending"],
   [/\bAUM\b/g, "assets under management"], [/\bROE\b/g, "return on the owners' money"], [/\bROIC\b/g, "return on invested money"],
   [/\bEBITDA\b/g, "operating profit"], [/\bFCF\b/g, "spare cash flow"], [/\bP\/E\b/g, "price-to-earnings ratio"],
   [/\bEPS\b/g, "earnings per share"], [/\bcapex\b/gi, "spending on equipment and buildout"], [/\bbasis points\b/gi, "hundredths of a percent"],
