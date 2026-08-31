@@ -99,11 +99,15 @@ Deno.serve(async (req) => {
   let uid: string | null = typeof body.user_id === "string" ? body.user_id : null;
   const voiceFor = async (userId: string): Promise<string> => {
     const { data: pr } = await admin.from("profiles").select("investor").eq("id", userId).maybeSingle();
-    const inv = (pr?.investor ?? {}) as { level?: string; purpose?: string };
-    const lvl = inv.level === "pro" || inv.level === "advanced" ? "The listener is experienced: professional vocabulary is fine, keep it dense."
-      : inv.level === "intermediate" ? "The listener knows the basics: plain language, no definitions needed."
+    const inv = (pr?.investor ?? {}) as { level?: string[] | string; purpose?: string[] | string };
+    const lvls = Array.isArray(inv.level) ? inv.level : [inv.level ?? "novice"];
+    const purps = Array.isArray(inv.purpose) ? inv.purpose : [inv.purpose ?? "watch"];
+    const order = ["novice", "intermediate", "advanced", "pro"];
+    const top = lvls.reduce((a, b) => (order.indexOf(String(b)) > order.indexOf(String(a)) ? b : a), "novice");
+    const lvl = top === "pro" || top === "advanced" ? "The listener is experienced: professional vocabulary is fine, keep it dense."
+      : top === "intermediate" ? "The listener knows the basics: plain language, no definitions needed."
       : "The listener is a BEGINNER: plain everyday words, and briefly explain any financial term as you use it.";
-    return lvl + (inv.purpose === "learn" ? " They like understanding the why, so give a short reason with each point." : "");
+    return lvl + (purps.includes("learn") ? " They like understanding the why, so give a short reason with each point." : "");
   };
   if (!isInternal && !isSvc) { const { data: ud } = await admin.auth.getUser(bearer); if (!ud?.user?.id) return json({ ok: false, error: "not signed in" }, 401); uid = ud.user.id; }
   // internal operator utilities (internal token only): showcase capture + demo profile switching.

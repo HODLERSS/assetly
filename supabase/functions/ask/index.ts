@@ -84,9 +84,18 @@ function trimAnswer(a: string): string {
 
 
 // ---- reader profile: the 6 sign-up answers steer VOICE, EMPHASIS and PURPOSE, never the facts ----
-type Investor = { styles?: string[]; purpose?: string; horizon?: string; target?: string; risk?: string; level?: string };
+type Investor = { styles?: string[] | string; purpose?: string[] | string; horizon?: string[] | string; target?: string[] | string; risk?: string[] | string; level?: string[] | string };
+// answers may be single strings (old profiles) or arrays (multi-select quiz): normalize, and reduce where one value must win
+const toArr = (x: unknown, d: string[]): string[] => Array.isArray(x) ? (x.length ? x.map(String) : d) : (typeof x === "string" && x ? [x] : d);
+const LVL_ORDER = ["novice", "intermediate", "advanced", "pro"];
+const topLevel = (xs: string[]): string => xs.reduce((a, b) => (LVL_ORDER.indexOf(b) > LVL_ORDER.indexOf(a) ? b : a), "novice");
+const HZ_ORDER = ["<1y", "1-3y", "3-10y", "10y+"];
+const longestHz = (xs: string[]): string => xs.reduce((a, b) => (HZ_ORDER.indexOf(b) > HZ_ORDER.indexOf(a) ? b : a), xs[0] ?? "3-10y");
+
 function readerBlock(inv: Investor | null | undefined): string {
-  const v = { styles: ["value"], purpose: "watch", horizon: "3-10y", target: "8-12%", risk: "hold", level: "novice", ...(inv ?? {}) };
+  const raw = inv ?? {};
+  const v = { styles: toArr(raw.styles, ["value"]), purpose: toArr(raw.purpose, ["watch"]), horizon: toArr(raw.horizon, ["3-10y"]),
+    target: toArr(raw.target, ["8-12%"]), risk: toArr(raw.risk, ["hold"]), level: topLevel(toArr(raw.level, ["novice"])) };
   const styleG: Record<string, string> = {
     value: "valuation, moat, margin of safety and downside first",
     growth: "revenue growth, market size and execution first",
@@ -118,12 +127,15 @@ function readerBlock(inv: Investor | null | undefined): string {
     buy_more: "treats drawdowns as buying opportunities", hold: "holds through drawdowns",
     trim: "trims into weakness", sell: "is quick to cut losses; flag risk early and clearly",
   };
-  const st = (Array.isArray(v.styles) && v.styles.length ? v.styles : ["value"]).map((x) => styleG[x] ?? "").filter(Boolean).join("; also ");
+  const st = v.styles.map((x) => styleG[x] ?? "").filter(Boolean).join("; also ");
+  const pp = v.purpose.map((x) => purpG[x] ?? "").filter(Boolean).join(" ");
+  const hz = horG[longestHz(v.horizon)] ?? horG["3-10y"];
+  const rk = v.risk.map((x) => riskG[x] ?? "").filter(Boolean).join(" and ");
   return `READER PROFILE (personalize EMPHASIS, VOCABULARY and FRAMING for this one reader; facts and numbers stay identical):
 - ${lvlG[v.level] ?? lvlG.novice}
 - Lens: ${st || styleG.value}. Apply the lens TO this book in EVERY position note and the structure section: the first judgment in each comes through this lens (value: what it is worth versus its price and the downside; income: state in EVERY position note whether and roughly how well that holding pays the owner, dividend or yield posture included, and in the structure section how much income the whole book actually produces), even when the book does not match the lens. Even the one-line verdict must carry the lens: name what kind of book it is AND what that means through this lens (for income: what the book pays its owner; for value: what it costs versus what it earns).
-- ${purpG[v.purpose] ?? purpG.watch}
-- ${horG[v.horizon] ?? horG["3-10y"]}; target return ${v.target}/yr; ${riskG[v.risk] ?? riskG.hold}.`;
+- ${pp || purpG.watch}
+- ${hz}; target return ${v.target.join(" or ")}/yr; ${rk || riskG.hold}.`;
 }
 
 Deno.serve(async (req) => {
