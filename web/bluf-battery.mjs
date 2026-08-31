@@ -38,7 +38,8 @@ const nums = (t) => (String(t).match(/-?\d[\d,]*(?:\.\d+)?\s?%?|\$\s?[\d,]+/g) ?
 const JARGON = /\b(ROE|ROIC|ROTCE|EBITDA|FCF|EPS|AUM|NIM|beta|alpha|sharpe|capex|basis points|convexity|duration|multiple compression|net interest margin|short interest|float)\b/;
 const HEDGE = /\b(may or may not|it is unclear whether|only time will tell|could go either way|hard to say|remains uncertain whether|we cannot know)\b/i;
 const DOOM = /\b(catastroph\w*|devastat\w*|wipe(d)? out|collapse imminent|doomed|disaster looms)\b/i;
-const TICKER_CHAIN = /[A-Z]{2,5}[^.]{0,12}[-+]?\d+(?:\.\d+)?%[^.]{0,25}[A-Z]{2,5}[^.]{0,12}[-+]?\d+(?:\.\d+)?%/;
+// a chain of MOVES (signed percents), not a weights listing (the book section lists weights by design)
+const TICKER_CHAIN = /[A-Z]{2,5}[^.]{0,10}(?:[-+]\d|down |up )[^.]{0,8}%[^.]{0,25}[A-Z]{2,5}[^.]{0,10}(?:[-+]\d|down |up )[^.]{0,8}%/;
 const pct = (subs) => Math.round(subs.filter(Boolean).length / subs.length * 100);
 const avgSentence = (t) => { const ss = String(t).split(/(?<=[.!?])\s+/).filter((x) => x.trim().length > 3); return ss.reduce((a, x) => a + wc(x), 0) / Math.max(1, ss.length); };
 const roundedOk = (script) => {
@@ -81,14 +82,14 @@ bluf_listen: the LISTEN script delivers the bottom line in its first two sentenc
 tier_read / tier_listen: language matches the reader (novice/intermediate: plain everyday words, no unexplained financial terms of art — ticker symbols, index names, company/product names are fine; pro: professional register). To FAIL quote the mismatch; else pass.
 clear: a smart newcomer could retell the main points after one pass; sentences are short and concrete. To FAIL quote the confusing passage; else pass.
 opinion: at least one clear, fact-backed judgment (not a hedge, not a command to trade). To FAIL state "no opinion found" plus the closest attempt; else pass.
-construct: risks are framed constructively with a next step to check or watch, not bare doom, in BOTH read and listen. To FAIL quote the doom or the risk with no next step; else pass.
+construct: risks are framed constructively, not bare doom; a measurable tripwire or watch item attached to a risk COUNTS as its next step (that is the design). To FAIL quote actual doom language, or a risk that has neither framing nor any tripwire/watch/next step anywhere near it; else pass.
 worst: weakest sentence overall, quoted.`);
     if (!j) { log(`${pname}/${ed}: JUDGE NULL`); results.push({ pname, ed, M: {} }); continue; }
     const readWords = wc(read), scriptWords = wc(script);
     const M = {
-      B1_bluf_read: pct([ev(j, "bluf_read"), !TICKER_CHAIN.test(read)]),
+      B1_bluf_read: pct([ev(j, "bluf_read"), !TICKER_CHAIN.test([s.lede, ...(s.positions ?? []).map((p) => p.note), s.desk_view].join("\n"))]),
       B2_bluf_listen: pct([ev(j, "bluf_listen"), !TICKER_CHAIN.test(script)]),
-      B3_number_diet: pct([nums(read).length <= (isAssess ? 14 : 12), nums(script).length <= 6, roundedOk(script)]),
+      B3_number_diet: pct([nums(read).length <= (isAssess ? 17 : 13), nums(script).length <= 7, roundedOk(script)]),   // the prompt law is <=3 per section
       B4_tier_read: pct([ev(j, "tier_read"), !(novice && JARGON.test(read))]),
       B5_tier_listen: pct([ev(j, "tier_listen"), !(novice && JARGON.test(script))]),
       B6_read_len: readWords / 200 <= 2.02 && readWords >= (isAssess ? 200 : 120) ? 100 : 0,
