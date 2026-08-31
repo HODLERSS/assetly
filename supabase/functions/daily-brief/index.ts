@@ -199,8 +199,19 @@ const NOVICE_MAP: [RegExp, string][] = [
   [/\bshort-duration\b/gi, "shorter-term"], [/\blong-duration\b/gi, "longer-term"], [/\binflows\b/gi, "money coming in"], [/\boutflows\b/gi, "money leaving"],
   [/\brotce\b/gi, "bank profitability"], [/\broa\b/gi, "profit on assets"], [/\breturn on (tangible )?(common )?equity\b/gi, "bank profitability"],
   [/\bmoat\b/gi, "lasting edge over competitors"], [/\bdrawdown(s)?\b/gi, "drop from the top"], [/\bDAU\b/g, "daily users"],
+  // replacements must be drop-in NOUN PHRASES: swapping in a verb phrase ("hurts lean toward fast-growing
+  // companies") reads worse than the jargon it replaced
+  [/\bvalue tilt\b/gi, "value focus"], [/\bgrowth tilt\b/gi, "growth focus"], [/\btilt\b/gi, "focus"],
+  [/\bcash drag\b/gi, "idle cash"], [/\brebalancing\b/gi, "reshuffle"], [/\brebalance\b/gi, "reshuffle"],
+  [/\bhigh[- ]beta\b/gi, "fast-moving"], [/\bcrypto[- ]beta\b/gi, "crypto exposure"],
 ];
-const noviceScrub = (t: string): string => { let x = t; for (const [re, plain] of NOVICE_MAP) x = x.replace(re, plain); return x; };
+const noviceScrub = (t: string): string => {
+  let x = t;
+  for (const [re, plain] of NOVICE_MAP) x = x.replace(re, plain);
+  // a lowercase replacement can land at a sentence start; the guard on the preceding character keeps
+  // abbreviations ("U.S. stocks") from being re-capitalised
+  return x.replace(/(^|(?<=[a-z0-9%)])[.!?]\s+)([a-z])/g, (_m, a, b) => a + b.toUpperCase());
+};
 
 const STYLE_RULES = `BLUF LAW: every section opens with its CONCLUSION in the first sentence; evidence and numbers come after. Never open any section with a chain of ticker-and-percent moves; say what it all means first, then the one or two moves that prove it.
 NUMBER DIET: numbers are seasoning, not the meal. Use the ONE number that carries each point; never two numbers in one sentence unless comparing them; a section never needs more than three.
@@ -332,6 +343,10 @@ Deno.serve(async (req) => {
         }
       }
       const READER = readerBlock(invBy.get(uid));
+      // a 30-word note and a 14-word-sentence rule for beginners contradict each other; for those readers the
+      // note is TWO short sentences, so both rules can hold at once
+      const beginner = ["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])));
+      const noteSplit = beginner ? " Write the note as TWO sentences of at most 14 words each, never one long sentence." : "";
       const [HZ1, HZ2] = HZ_LABELS[longestHz(toArr((invBy.get(uid) as Investor | null | undefined)?.horizon, ["3-10y"]))] ?? HZ_LABELS["3-10y"];
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
         .sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
@@ -687,7 +702,7 @@ Return STRICT JSON:
 {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}
 lede: the ONE thing that matters for THIS portfolio today. <= 2 sentences, <= 34 words. Earn the reader's next 3 minutes.
 overnight: the tape that touches them. MUST contain at least THREE literal numbers copied from the MARKET line (futures, VIX, index, FX) using their EXACT labels (never call futures "the S&P"; never merge two instruments), then one clause on what it means for their largest exposures BY NAME. <= 55 words.
-positions: the 1-4 holdings that EARNED coverage today (news, calls, filings, breaks). Not just the biggest. note <= 32 words with at least one number; incorporate the skeptic where it sharpens. watch <= 10 words and must be a CONCRETE event, date, or level (e.g. "Q3 guidance Sep 4", "HBM pricing at Goldman conf"). NEVER verbs like monitor, watch, track, keep an eye.
+positions: the 1-4 holdings that EARNED coverage today (news, calls, filings, breaks). Not just the biggest. note <= 32 words with at least one number; incorporate the skeptic where it sharpens.${noteSplit} watch <= 10 words and must be a CONCRETE event, date, or level (e.g. "Q3 guidance Sep 4", "HBM pricing at Goldman conf"). NEVER verbs like monitor, watch, track, keep an eye.
 desk_view: one STRUCTURAL observation only: valuation, correlation, concentration, or rotation. It may not contain ANY overnight or single-day number; multi-week, valuation, or weight numbers only. Builds on yesterday when given. <= 40 words.
 calendar: 0-3 items <= 10 words each; EVERY item must carry an explicit FUTURE date (from NEXT EARNINGS ESTIMATES or dated headlines); undated or past items are forbidden.
 BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching", "demands scrutiny", "warrants attention".
@@ -709,7 +724,7 @@ ${statsLines}
 TOP MEMOS:
 ${memosOut.slice(0, 3).map((m) => `- ${m.name}: ${m.changed}. ${m.bull}. ${m.bear}.`).join("\n")}
 Return STRICT JSON {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": []}.
-lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their holdings; 1-3 positions, note <= 32 words with a number, watch <= 10 words naming a concrete event (NEVER the words monitor, watch, track, keep an eye); desk_view <= 40 words, structural only: no day moves, no overnight numbers. Banned: investors should, keep an eye, monitor, worth watching, remains to be seen. No filler, no em dashes, Korean companies by name, won as ₩.`;
+lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their holdings; 1-3 positions, note <= 32 words with a number,${noteSplit} watch <= 10 words naming a concrete event (NEVER the words monitor, watch, track, keep an eye); desk_view <= 40 words, structural only: no day moves, no overnight numbers. Banned: investors should, keep an eye, monitor, worth watching, remains to be seen. No filler, no em dashes, Korean companies by name, won as ₩.`;
           draft = await askModel(key, "Think very briefly. Output only the JSON.", compactPrompt, 12000, Math.max(18000, Math.min(40000, (150 - elapsed()) * 1000)), FAST_MODEL);
           if (draft && validSections(draft)) usedCompact = true;
         }
@@ -775,7 +790,7 @@ ${dataBlock}
 ${shape}
 lede: the ONE thing that changed since the open for THIS portfolio, stated as a CONSEQUENCE for the reader (what it does to their risk, concentration, or plan), never a bare move recap. <= 28 words.
 overnight: the tape RIGHT NOW: at least THREE literal numbers copied from MARKET NOW with their EXACT labels, then the single biggest portfolio day move BY NAME with its number. <= 50 words.
-positions: the 1-4 holdings actually moving or with fresh news since the open, ordered by importance to THIS portfolio: any holding above 35% of assets MUST appear, with its day number and current weight, before smaller names. The largest holding gets the MOST substantive note; spend both its allowed numbers there. note <= 28 words with the day number and WHY it moves; if the driver is unknown write "no clear driver yet" rather than inventing one. watch <= 10 words: a concrete afternoon or tonight event, level, or time; any date must be a REAL FUTURE date (after ${briefDate}), never past. For crypto assets: a price level, ETF flow print, protocol event, or dated macro print. NEVER verbs like monitor, watch, track.
+positions: the 1-4 holdings actually moving or with fresh news since the open, ordered by importance to THIS portfolio: any holding above 35% of assets MUST appear, with its day number and current weight, before smaller names. The largest holding gets the MOST substantive note; spend both its allowed numbers there. note <= 28 words with the day number and WHY it moves;${noteSplit} if the driver is unknown write "no clear driver yet" rather than inventing one. watch <= 10 words: a concrete afternoon or tonight event, level, or time; any date must be a REAL FUTURE date (after ${briefDate}), never past. For crypto assets: a price level, ETF flow print, protocol event, or dated macro print. NEVER verbs like monitor, watch, track.
 desk_view: what today's action changes about the morning view, or the specific level or event this afternoon that would change it. Structural; never repeat the morning desk view. <= 36 words.
 QUIET-BOOK LAW: if no holding moved more than 1.5% and there is no fresh news, SAY the session is quiet in one clause and make the afternoon catalyst the centerpiece. Never manufacture drama, never invent price levels: any level you cite must be within 20% of a price that appears in the data above.
 CONTINUITY LAW: a claim already made in the morning brief may only reappear if you ADVANCE it with new evidence from today's session; restating it in different words is a failure. Cover what the morning could not know.
@@ -788,7 +803,7 @@ ${dataBlock}
 ${shape}
 lede: the day's story for THIS portfolio in one breath: the DAY P&L number, then a consequence clause ("which leaves...", "which means...") saying what it changes about their position. A move recap with no consequence is a failure. <= 30 words.
 overnight: the tape at the bell: at least THREE literal numbers copied from MARKET NOW with their EXACT labels, plus the portfolio day P&L. <= 55 words.
-positions: the 1-4 holdings that defined the day, ordered by importance to THIS portfolio: any holding above 35% of assets MUST appear, with its day number and weight, before smaller names. The largest holding gets the MOST substantive note; spend both its allowed numbers there. note <= 30 words: what happened AND what it means beyond today, with the day number. watch <= 10 words naming a concrete ${isFri ? "next-week" : "tonight-or-tomorrow"} catalyst, level, or event (after-hours earnings, data time, KRX open); any date must be a REAL FUTURE date (after ${briefDate}), never past. For crypto assets: a price level, ETF flow print, protocol event, or dated macro print. NEVER verbs like monitor, watch, track.
+positions: the 1-4 holdings that defined the day, ordered by importance to THIS portfolio: any holding above 35% of assets MUST appear, with its day number and weight, before smaller names. The largest holding gets the MOST substantive note; spend both its allowed numbers there. note <= 30 words: what happened AND what it means beyond today, with the day number.${noteSplit} watch <= 10 words naming a concrete ${isFri ? "next-week" : "tonight-or-tomorrow"} catalyst, level, or event (after-hours earnings, data time, KRX open); any date must be a REAL FUTURE date (after ${briefDate}), never past. For crypto assets: a price level, ETF flow print, protocol event, or dated macro print. NEVER verbs like monitor, watch, track.
 desk_view: the setup for ${isFri ? "next week" : "tomorrow"}: the one structural risk or opportunity to sleep on. No single-day numbers. <= 40 words.
 CONTINUITY LAW: a claim already made in the morning brief may only reappear if you ADVANCE it (resolved, worsened, confirmed by the close); restating it in different words is a failure.
 calendar: 0-3 items: tonight's after-hours reports, ${isFri ? "next week's" : "tomorrow's"} data or earnings. <= 10 words each.${krHeld ? `\nTheir Korean holdings trade TONIGHT (KRX opens 9:00 PM Eastern). If a Korean name has a catalyst, put it in positions or calendar.` : ""}
@@ -808,7 +823,7 @@ ${statsLines}
 DESK CONTEXT:
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.changed ?? ""}. watch: ${m.watch ?? ""}`).join("\n") || "- none"}
 ${shape}
-lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 3 MARKET NOW numbers and exact labels; 1-3 positions ordered by weight, note <= 28 words with a number, watch <= 10 words taken from DESK CONTEXT or "next session open", NEVER an invented level or date (and NEVER monitor/watch/track); desk_view <= 36 words structural only; calendar []. The day G/L figures in PORTFOLIO are the only loss/gain numbers allowed. No filler, no em dashes, Korean companies by name, won as \u20a9.`;
+lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 3 MARKET NOW numbers and exact labels; 1-3 positions ordered by weight, note <= 28 words with a number,${noteSplit} watch <= 10 words taken from DESK CONTEXT or "next session open", NEVER an invented level or date (and NEVER monitor/watch/track); desk_view <= 36 words structural only; calendar []. The day G/L figures in PORTFOLIO are the only loss/gain numbers allowed. No filler, no em dashes, Korean companies by name, won as \u20a9.`;
           draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 12000, Math.max(18000, Math.min(35000, (150 - elapsed()) * 1000)), FAST_MODEL);
           if (draft && validSections(draft)) usedCompact = true;
         }
