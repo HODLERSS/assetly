@@ -252,7 +252,8 @@ export function makeApi(sb: SupabaseClient = supabase) {
         .map((r) => ({ brief_date: String(r.brief_date), edition: (r.edition ?? "morning") as BriefEdition,
                        sections: r.sections as BriefSections, generated_at: String(r.generated_at),
                        audio_path: (r.audio_path as string | null) ?? null }))
-        .sort((x, y) => (x.generated_at < y.generated_at ? -1 : x.generated_at > y.generated_at ? 1 : 0));
+        .sort((x, y) => (x.generated_at < y.generated_at ? -1 : x.generated_at > y.generated_at ? 1 : 0))
+        .slice(-2);   // Home shows the TWO most recent briefs only; older editions retire as new ones land
     },
     /** Short-lived playback URL for a brief's narration. */
     async getBriefAudioUrl(path: string): Promise<string | null> {
