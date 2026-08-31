@@ -566,7 +566,10 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           if (!NEG.test(phrase) && m?.tripwire) phrase = String(m.tripwire).replace(/[.\s]+$/, "");
           // keep the note near its cap: a long note gets a short risk clause
           phrase = phrase.split(/\s+/).slice(0, p.note.split(/\s+/).length > 24 ? 8 : 11).join(" ");   // the memo segment can be long
-          return phrase ? { ...p, note: p.note.replace(/[.\s]+$/, "") + `. The risk: ${phrase[0].toLowerCase() + phrase.slice(1)}.` } : p;
+          // lowercasing the lead-in word turns an ACRONYM into nonsense ("CET1" -> "cET1"), so only a
+          // normally-capitalised word is lowered
+          const lead = (x: string) => (/^[A-Z][A-Z0-9]/.test(x) ? x : x[0].toLowerCase() + x.slice(1));
+          return phrase ? { ...p, note: p.note.replace(/[.\s]+$/, "") + `. The risk: ${lead(phrase)}.` } : p;
         }) });
         draft = ensureRisk(draft as Sections);   // before the fact-check, so a lengthened note gets tightened to its cap
         const checked = elapsed() > 112 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims. Think briefly.",
@@ -1005,7 +1008,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         .replace(/(^|(?<=[a-z0-9%)])[.!?]\s+)([a-z])/g, (_m, a, b) => a + b.toUpperCase());
       const tidy = (t: string) => undangle((t ?? "").replace(/\s+([,.;])/g, "$1").replace(/\s{2,}/g, " ").trim());
       // the close/morning tape line is instructed to carry three market quotes plus the day P&L, so it gets 8
-      const bookCap = edition === "assessment" ? 8 : 8;   // total + 2 holdings ($ and %) + cash ($ and %) + geography
+      const bookCap = 7;   // the diet spec caps the book section at 7 figures on assessment and 8 on close; 7 satisfies both
       sections.overnight = safeField(sections.overnight, tidy(deSemi(deAdvice(trimStats(collapseList(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.overnight, 1))))), bookCap, 16)))));
       sections.desk_view = safeField(sections.desk_view, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.desk_view, 0)))), edition === "assessment" ? 5 : 3, 30)))));   // structural section
       sections.lede = safeField(sections.lede, tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1)))));

@@ -248,7 +248,15 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
           // Escalating leniency: the first attempt must be tight, the second need only avoid the two errors
           // that change meaning, the last takes what it can get. Being strict on every attempt pushed the
           // narration into the deterministic template, which reads far worse than a slightly long script.
-          const meaningOk = !FRACW.test(t) && !walkthrough(t);
+          // A spoken script spells numbers for the ear, so a stray ARABIC NUMERAL is either a figure the
+          // model failed to spell or one it invented. Either way it is checkable against the allowed set
+          // with no word-number parser: "It climbed 1 percent adding roughly 15 dollars" and a "50%" that
+          // appears nowhere in the brief were both caught this way. A miss only regenerates - it never
+          // edits the script - so this cannot corrupt a figure the way a rewriting scrub can.
+          const allowedNums = new Set(allowed.map((x) => x.replace(/[$,%\s]/g, "")));
+          const strayFigure = (x: string) => (x.replace(/<[^>]*>/g, " ").match(/\d[\d,]*(?:\.\d+)?/g) ?? [])
+            .some((n) => !allowedNums.has(n.replace(/,/g, "")));
+          const meaningOk = !FRACW.test(t) && !walkthrough(t) && !strayFigure(t);
           const accept = a === 2 ? true : a === 1 ? meaningOk : (meaningOk && !padded);
           // count SPOKEN words: the SSML tags are never heard, and counting them let a 90-word script
           // clear a 97-word floor
