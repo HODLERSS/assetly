@@ -232,8 +232,25 @@ they were measuring a build that carried a live figure-corruption bug the B fixt
 trigger. The A battery's arithmetic metric caught it after twenty-two B rounds had missed it.
 
 Best repeatable state: 3 of 4 cells clean, aggregate metrics in the 88-100 band. The failing cell is almost
-always novice/assessment, and it fails a DIFFERENT metric most rounds (B2, B3, B4, B9 in successive runs),
-which is run-to-run variance around the threshold rather than a fixable defect.
+always novice/assessment.
+
+**Correction (Aug 31, daily-brief v94 / narrate v29).** An earlier version of this section called that cell's
+rotating failure "run-to-run variance rather than a fixable defect." That was wrong, and reading the per-cell
+evidence strings instead of the aggregate scores found three real defects underneath it:
+
+| Metric | What it actually was | Fix |
+|---|---|---|
+| B3 number diet | The book section's figure cap was **8** in the generator but the diet spec caps it at **7** on assessment. Every assessment cell was failing on a one-off. | `bookCap = 7` (satisfies the close cap of 8 too) |
+| B7 fidelity (50, then 0) | The spoken script was stating figures **absent from the read brief**: "It climbed 1 percent adding roughly 15 dollars", a "50%" found nowhere in the brief, a book total that disagreed with the written one. | A stray ARABIC NUMERAL is now checked against the allowed-figure set and **regenerates** rather than ships. It only rejects, never edits, so unlike a rewriting scrub it cannot corrupt a figure. |
+| B4 tier (read) | Genuine jargon reaching a 55-year-old first-time investor as things to WATCH: "net new money negative for two consecutive quarters", "core capital ratio drops below twelve percent". The second was also mangled to "cET1" by a lead-word lowercaser that did not spare acronyms. | Novice map extended (net new money / net flows, capital ratios, AUM, funding costs); the lowercaser now skips a word that starts with two capitals. |
+
+Two lessons worth keeping: **variance and defect look identical in an aggregate score** - only the per-cell
+evidence string separates them, so read it before concluding; and a **guard that rejects is safe where a
+guard that rewrites is not**, which is the same invariant `safeField` enforces on the read side.
+
+**Still open.** The numeral guard does not catch a WORD-SPELLED fabrication ("twenty-seven thousand dollars"
+against a different real total), because narration spells numbers for the ear. Closing that needs the
+battery's word-number parser ported into `narrate`.
 
 **Why the loop was stopped.** The last several changes each traded one metric for another: the narration beat
 cap fixed padding but pushed generation into the deterministic template; the laundry-list drops fixed the
