@@ -204,6 +204,7 @@ const NOVICE_MAP: [RegExp, string][] = [
   // replacements must be drop-in NOUN PHRASES: swapping in a verb phrase ("hurts lean toward fast-growing
   // companies") reads worse than the jargon it replaced
   [/\bvalue tilt\b/gi, "value focus"], [/\bgrowth tilt\b/gi, "growth focus"], [/\btilt\b/gi, "focus"],
+  [/\bYoY\b/g, "year over year"], [/\bQoQ\b/g, "quarter over quarter"], [/\bY\/Y\b/g, "year over year"],
   [/\b(the |a )?quiet tape\b/gi, "$1quiet market"], [/\btape\b/gi, "market"], [/\bhash ?power\b/gi, "mining power"], [/\bhash ?rate\b/gi, "mining speed"], [/\bcash drag\b/gi, "idle cash"], [/\brebalancing\b/gi, "reshuffle"], [/\brebalance\b/gi, "reshuffle"],
   [/\bgrowth premium\b/gi, "high price tag"], [/\bvaluation(s)?\b/gi, "price tag$1"],
   [/\b(value|growth|momentum|defensive)[- ]play\b/gi, "$1 holding"], [/\b(value|income)[- ]hold\b/gi, "$1 holding"],

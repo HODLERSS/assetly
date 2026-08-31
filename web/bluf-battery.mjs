@@ -32,7 +32,9 @@ const setBook = async () => {
     if (h) { await c.from("lots").delete().eq("holding_id", h.id); await c.from("lots").insert({ holding_id: h.id, qty, cost_per_share: cost }); }
   }
 };
-const strip = (t) => String(t ?? "").replace(/<[^>]*>/g, " ");           // SSML tags are never heard
+// SSML tags are never heard. The tag name must start with a LETTER: "<5%" is a less-than sign in the text,
+// and treating it as an opening tag deleted everything up to the next ">", hiding real figures from the check.
+const strip = (t) => String(t ?? "").replace(/<\/?[a-zA-Z][^>]*>/g, " ");
 // index/product names that merely contain digits are names, not numbers the reader must absorb
 const NAMEY = /\b(Nasdaq[-\s]?100|S&P[-\s]?500|Russell[-\s]?2000|FTSE[-\s]?100|Nikkei[-\s]?225|Dow[-\s]?30|MSCI[-\s]?\w+)\b/gi;
 const wc = (t) => strip(t).split(/\s+/).filter(Boolean).length;
