@@ -584,7 +584,17 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
             out = shorter;
           }
           if (wcT(out) > cap) {
-            const cut = out.split(/\s+/).slice(0, cap).join(" ").replace(/[,;:]?$/, ".");
+            // a raw word-slice leaves a dangling fragment ("...on the same driver, so."); end on a real boundary
+            let cut = out.split(/\s+/).slice(0, cap).join(" ");
+            const stop = Math.max(cut.lastIndexOf("."), cut.lastIndexOf("!"), cut.lastIndexOf("?"));
+            if (stop > cut.length * 0.5) cut = cut.slice(0, stop + 1);
+            else {
+              const comma = cut.lastIndexOf(",");
+              if (comma > cut.length * 0.6) cut = cut.slice(0, comma);
+              let prev = "";
+              while (prev !== cut) { prev = cut; cut = cut.replace(/[\s,;:]+(?:so|and|but|or|which|that|with|for|to|at|in|on|of|as|while|because|if|when|from|by|than|after|before|into|over|under|about|its|their|the|a|an)\.?$/i, ""); }
+              cut = cut.replace(/[,;:]+$/, "") + ".";
+            }
             if (!mustKeep || mustKeep.test(cut)) out = cut;   // last resort: a hard cut, but never one that loses the required clause
           }
           return out;
@@ -861,6 +871,10 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // objected to ("this stock -2.3%, that stock -4.4%"). Narrative sections state the conclusion and name
       // at most two figures; the book/overnight section stays the one place a full stat line is welcome.
       const numWord = (n: number) => ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][n] ?? String(n);
+      // the same laundry list also comes percent-first ("25.6% in a fund, 15.5% in a bank, 10.1% in ...")
+      const collapsePctFirst = (t: string) => (t ?? "").replace(
+        /(-?\d[\d.]*%[^,.;]{0,44})(?:,\s*(?:and\s+)?-?\d[\d.]*%[^,.;]{0,44}){2,}/g,
+        (run) => { const items = run.split(/,\s*/); return items.slice(0, 2).join(", ") + `, and ${numWord(items.length - 2)} smaller slices`; });
       const collapseRun = (t: string) => (t ?? "").replace(
         /(?:[A-Z][A-Za-z0-9.$]{0,6}\s+(?:is\s+|at\s+)?-?\d[\d.]*%)(?:,\s*[A-Z][A-Za-z0-9.$]{0,6}\s+(?:is\s+|at\s+)?-?\d[\d.]*%){2,}/g,
         (run) => { const items = run.split(/,\s*/); return items.slice(0, 2).join(", ") + `, and ${numWord(items.length - 2)} smaller positions`; });
@@ -892,11 +906,17 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         }
         return out.join(" ");
       };
-      const tidy = (t: string) => (t ?? "").replace(/\s+([,.;])/g, "$1").replace(/\s{2,}/g, " ").trim();
+      // last guard: no dangling clause reaches the reader, whichever stage truncated it
+      const undangle = (t: string) => {
+        let out = (t ?? "").trim(), prev = "";
+        while (prev !== out) { prev = out; out = out.replace(/[\s,;:]+(?:so|and|but|or|which|that|with|for|to|at|in|on|of|as|while|because|if|when|from|by|than|its|their|the|a|an)\s*\.?$/i, ""); }
+        return out.replace(/[,;:]+$/, "").replace(/([^.!?])$/, "$1.");
+      };
+      const tidy = (t: string) => undangle((t ?? "").replace(/\s+([,.;])/g, "$1").replace(/\s{2,}/g, " ").trim());
       // the close/morning tape line is instructed to carry three market quotes plus the day P&L, so it gets 8
       const bookCap = edition === "assessment" ? 6 : 8;
-      sections.overnight = tidy(trimStats(collapseRun(deWeightParens(sections.overnight, 1)), bookCap));
-      sections.desk_view = tidy(trimStats(collapseRun(deWeightParens(sections.desk_view, 0)), 3));   // structural section: weights are noise
+      sections.overnight = tidy(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.overnight, 1))), bookCap));
+      sections.desk_view = tidy(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.desk_view, 0))), 3));   // structural section: weights are noise
       sections.lede = tidy(deWeightParens(sections.lede, 1));
       sections.positions = sections.positions.map((p) => ({ ...p, note: tidy(collapseRun(deWeightParens(p.note, 1))) }));
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
