@@ -72,10 +72,20 @@ const roundUsd = (v: number) => {
   if (v >= 1000) { const m = Math.pow(10, String(Math.round(v)).length - 2); return Math.round(v / m) * m + " dollars"; }
   return Math.round(v) + " dollars";
 };
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const ORD = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth", "twenty-first", "twenty-second", "twenty-third", "twenty-fourth", "twenty-fifth", "twenty-sixth", "twenty-seventh", "twenty-eighth", "twenty-ninth", "thirtieth", "thirty-first"];
 const earNumbers = (t: string) => t
+  // an ISO date read aloud is "two thousand twenty six dash zero nine"; say it like a person
+  .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_, _y, m, d) => `${MONTHS[Number(m) - 1] ?? ""} ${ORD[Number(d)] ?? Number(d)}`.trim())
+  // "$85k" must not lose its magnitude: matching "$85" alone left the orphan "k" ("85 dollarsk")
+  .replace(/\$([\d,]+(?:\.\d+)?)\s?([kKmMbB]|bn|BN)\b/g, (_, d, suf) => {
+    const mult = /^[kK]$/.test(suf) ? 1e3 : /^[mM]$/.test(suf) ? 1e6 : 1e9;
+    return roundUsd(Number(String(d).replace(/,/g, "")) * mult);
+  })
   .replace(/\$([\d,]+(?:\.\d+)?)/g, (_, d) => roundUsd(Number(String(d).replace(/,/g, ""))))
   .replace(/(-?\d+(?:\.\d+)?)\s?%/g, (_, n) => roundPct(Number(n)) + " percent")
-  .replace(/₩([\d,]+)/g, "$1 won");
+  .replace(/₩([\d,]+)/g, "$1 won")
+  .replace(/\s+&(?=[.,]|\s|$)/g, "");   // a truncated legal name ("JPMORGAN CHASE &") must not be spoken
 function fallbackScript(s: Sections, dayLine: string, edition: string): string {
   const greet = edition === "assessment" ? `Hi, it's ${dayLine}. Here's your portfolio assessment.` : edition === "close" ? `Good evening, it's ${dayLine}. Here's your closing note.` : edition === "midday" ? `It's ${dayLine}, midday. Here's your pulse.` : `Good morning, it's ${dayLine}. Here's your brief.`;
   const parts = [greet, earNumbers(s.lede), earNumbers(s.overnight),
@@ -179,8 +189,9 @@ spoken: ${spec.len} spoken script of this portfolio assessment, BOTTOM LINE UP F
           : `Brief:\n${JSON.stringify(s)}\n\nReturn STRICT JSON {"spoken": str}.
 spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at a normal unhurried pace. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} analyst speaking to ONE client they know well; confident and opinionated where the facts back it; constructive: a risk always comes with what to watch or do about it, never bare doom. Short sentences. Contractions. STRUCTURE: quick greeting, then WHAT TODAY MEANS for their money in the first two sentences (never a list of moves), then the two or three things that actually matter with why, one look-ahead, and the sign-off ("That's your brief. Talk soon."), which the script MUST end with. NUMBER RULES: at most FIVE numbers in the whole script; round for the ear (down 2.3% becomes down two percent; $43,224 becomes forty-three thousand dollars); never read a stock-by-stock percentage list. FIDELITY: every figure you speak must trace to the brief. Rounding for the ear is required, changing the fact is not: never turn a percentage into a fraction word that does not match it (a quarter is 25%, a third is 33%, half is 50%); if the fraction is not a clean match, say the rounded percent instead. Insert <break time="0.6s" /> between beats. Insert <break time="0.7s" /> between sections. Use ONLY facts from the brief. ${await voiceFor(String(row.user_id))} No ticker codes, company names only.${nameLine} Never mention that this is generated.`;
         for (let a = 0; a < 2 && !spoken; a++) {
-          // the assessment script is written by the fast model: M2.7 over-thinks the longer assessment shape and times out
-          const out = await askModel(key, "You turn a written investment brief into a vivid spoken radio script. Output only the JSON.", prompt, 9000, 35000, isAssess ? "gpt-oss-120b" : undefined);
+          // every edition is written by the fast model: M2.7 over-thinks these shapes and times out, and the
+          // deterministic fallback recites every position in turn, which is the laundry list BLUF forbids
+          const out = await askModel(key, "You turn a written investment brief into a vivid spoken radio script. Output only the JSON.", prompt, 9000, 35000, "gpt-oss-120b");
           const sp = out && typeof (out as { spoken?: unknown }).spoken === "string" ? String((out as { spoken: string }).spoken) : null;
           if (sp) { const t = sp.replace(/(?:\s*<break[^>]*\/>\s*)+$/g, "").trim(); if (t.split(/\s+/).length >= spec.floor && /[.!?]$/.test(t)) spoken = t; }
         }

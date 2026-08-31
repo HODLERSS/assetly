@@ -847,10 +847,38 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         /(?:[A-Z][A-Za-z0-9.$]{0,6}\s+(?:is\s+|at\s+)?-?\d[\d.]*%)(?:,\s*[A-Z][A-Za-z0-9.$]{0,6}\s+(?:is\s+|at\s+)?-?\d[\d.]*%){2,}/g,
         (run) => { const items = run.split(/,\s*/); return items.slice(0, 2).join(", ") + `, and ${numWord(items.length - 2)} smaller positions`; });
       // parenthetical weight tags are decoration: keep at most `keep` of them
-      const deWeightParens = (t: string, keep: number) => { let seen = 0; return (t ?? "").replace(/\s*\(\s*-?\d[\d.]*%(?:\s*weight)?(?:,[^)]*)?\)/g, (m) => (++seen <= keep ? m : "")); };
+      const deWeightParens = (t: string, keep: number) => { let seen = 0; return (t ?? "").replace(/\s*\(\s*[~≈]?\s*-?\d[\d.]*%(?:\s*weight)?(?:,[^)]*)?\)/g, (m) => (++seen <= keep ? m : "")); };
+      // dates and durations are scaffolding, not statistics; a range is one figure
+      const statCount = (t: string) => ((t ?? "")
+        .replace(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}\b|\b\d+\s*[-\s]?(?:week|month|year|day|quarter)s?\b/gi, " ")
+        .replace(/-?\d[\d.]*\s*(?:-|to)\s*-?\d[\d.]*\s?%/g, "0%")
+        .match(/-?\d[\d,]*(?:\.\d+)?\s?%|\$\s?[\d,]+/g) ?? []).filter((x) => !/^(19|20)\d\d$/.test(x.trim())).length;
+      // enumerations come in too many phrasings to pattern-match one by one; enforce the cap structurally.
+      // The opening states the shape of the book; a later sentence that re-states weights is what goes.
+      const figuresIn = (t: string) => (String(t ?? "").match(/-?\d[\d,]*(?:\.\d+)?\s?%|\$\s?[\d,]+/g) ?? []).map((x) => x.trim());
+      const trimStats = (t: string, cap: number) => {
+        const sents = String(t ?? "").split(/(?<=[.;])\s+/).filter(Boolean);
+        if (sents.length <= 1) return t;
+        const out = sents.slice();
+        while (out.length > 1 && out.reduce((a, x) => a + statCount(x), 0) > cap) {
+          // drop what REPEATS figures already stated before it; only then fall back to the later sentence
+          let idx = -1, bestDup = -1;
+          for (let i = 1; i < out.length; i++) {
+            if (statCount(out[i]) === 0) continue;
+            const earlier = new Set(out.slice(0, i).flatMap(figuresIn));
+            const dup = figuresIn(out[i]).filter((f) => earlier.has(f)).length;
+            if (dup >= bestDup) { bestDup = dup; idx = i; }
+          }
+          if (idx < 0) break;
+          out.splice(idx, 1);
+        }
+        return out.join(" ");
+      };
       const tidy = (t: string) => (t ?? "").replace(/\s+([,.;])/g, "$1").replace(/\s{2,}/g, " ").trim();
-      sections.overnight = tidy(collapseRun(deWeightParens(sections.overnight, 1)));
-      sections.desk_view = tidy(collapseRun(deWeightParens(sections.desk_view, 0)));   // structural section: weights are noise
+      // the close/morning tape line is instructed to carry three market quotes plus the day P&L, so it gets 8
+      const bookCap = edition === "assessment" ? 6 : 8;
+      sections.overnight = tidy(trimStats(collapseRun(deWeightParens(sections.overnight, 1)), bookCap));
+      sections.desk_view = tidy(trimStats(collapseRun(deWeightParens(sections.desk_view, 0)), 3));   // structural section: weights are noise
       sections.lede = tidy(deWeightParens(sections.lede, 1));
       sections.positions = sections.positions.map((p) => ({ ...p, note: tidy(collapseRun(deWeightParens(p.note, 1))) }));
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires

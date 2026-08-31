@@ -210,12 +210,19 @@ per section; risks framed constructively with a next step, never doom.
 | # | Metric | Read | Listen |
 |---|---|---|---|
 | B1/B2 | BLUF | every section conclusion-first, no ticker-percent chains (judge + regex) | bottom line in the first two sentences, no laundry lists |
-| B3 | Number diet | ≤17 numbers (assessment) / ≤13 (daily), index names excluded | ≤7 quantities the listener actually hears (digits + spelled-out, SSML stripped), all rounded |
+| B3 | Number diet | per section as the prompt law states: ≤3 statistics per narrative section, ≤6 in the book/stats line, ≤2 per idea; dates, duration labels and index names are scaffolding, not statistics | ≤7 quantities the listener actually hears (digits + spelled-out, SSML stripped), all rounded |
 | B4/B5 | Tier fit | no unexplained terms of art for novice/intermediate; pro register for pro (judge + jargon regex) | same, on the script |
-| B6/B7 | Length | ≤2 min at 200 wpm, with a floor | 100-225 words ≈ ≤90s at a normal ~150 wpm — never sped up |
+| B6 | Length | ≤2 min at 200 wpm, with a floor | 100-225 words ≈ ≤90s at a normal ~150 wpm — never sped up |
+| B7 | Fidelity | — | every spoken quantity traces to a figure in the read brief (deterministic, both sides parsed for spelled-out numbers) + an evidence-bound judge for wrong-referent fractions |
 | B8 | Understandability | retellable after one pass; avg sentence ≤16 (novice) / ≤22 | script sentences shorter still |
 | B9 | Opinion & framing | ≥1 fact-backed judgment; no hedge phrases; constructive risk framing with a next step; no doom vocabulary | both artifacts |
 | B10 | Delivery | generated ≤180s first attempt | script exists, signs off, zero bare tickers |
+
+**Why B7 exists.** Round 3 scored a cell 100 across all ten metrics while the audio said a 25.6% position was
+"about half" of the book. Ten green metrics and a false statement in the artifact the user actually listens to.
+Value matching alone does not catch it (50 sat within tolerance of an unrelated 51.3% in the brief), so the
+metric pairs deterministic tracing with a judge that must quote BOTH figures to fail. Rounding for the ear is
+always correct; changing the fact never is.
 
 **Methodology (applies to all four batteries: A, P, B, connect):**
 1. **Fixed grid, fixed book.** Deterministic fixture portfolios and personas; the B-grid is 2 personas × 2 editions × read+listen = 8 scored artifacts per round.
