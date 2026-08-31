@@ -218,6 +218,17 @@ per section; risks framed constructively with a next step, never doom.
 | B9 | Opinion & framing | ≥1 fact-backed judgment; no hedge phrases; constructive risk framing with a next step; no doom vocabulary | both artifacts |
 | B10 | Delivery | generated ≤180s first attempt | script exists, signs off, zero bare tickers |
 
+**Final matrix (round 19, 2026-08-31, daily-brief v76 / narrate v16 / insights-sync v29 / ask v20).**
+Grid: 2 personas (novice55, pro) x 2 editions (assessment, close) x read+listen = 8 artifacts, 4 scored cells.
+
+| B1 | B2 | B3 | B4 | B5 | B6 | B7 | B8 | B9 | B10 |
+|----|----|----|----|----|----|----|----|----|-----|
+| 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 |
+
+All four cells `ALL 95+`. Measured lengths that round: reads 185-322 words (a two-minute read is ~400), spoken
+scripts 129-196 words (~52-78 seconds at an unhurried 150 wpm, no speed-up). Nineteen rounds; artifacts for every
+round are kept at `/tmp/bluf-round*-results.json` so any score can be re-derived.
+
 **Why B7 exists.** Round 3 scored a cell 100 across all ten metrics while the audio said a 25.6% position was
 "about half" of the book. Ten green metrics and a false statement in the artifact the user actually listens to.
 Value matching alone does not catch it (50 sat within tolerance of an unrelated 51.3% in the brief), so the
