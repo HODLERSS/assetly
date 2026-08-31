@@ -216,7 +216,7 @@ const noviceScrub = (t: string): string => {
   return x.replace(/(^|(?<=[a-z0-9%)])[.!?]\s+)([a-z])/g, (_m, a, b) => a + b.toUpperCase());
 };
 
-const STYLE_RULES = `BLUF LAW: every section opens with its CONCLUSION in the first sentence; evidence and numbers come after. Never open any section with a chain of ticker-and-percent moves; say what it all means first, then the one or two moves that prove it.
+const STYLE_RULES = `BLUF LAW: every section opens with its CONCLUSION in the first sentence; evidence and numbers come after. Never open any section with a chain of ticker-and-percent moves; say what it all means first, then the one or two moves that prove it. This applies to EVERY position note as well: open with what the move MEANS for this owner ("Your biggest holding barely moved"), then give the move and its number in the next sentence. A note that opens "TICKER fell 0.7% today" is a failure.
 NUMBER DIET: numbers are seasoning, not the meal. Use the ONE number that carries each point; never two numbers in one sentence unless comparing them; a section never needs more than three.
 OPINION: have a view. One confident, fact-backed judgment per section is expected ("this is the book's real risk", "this print matters more than the headline"); never wishy-washy, never hedged into mush. Opinions about quality and risk, never buy/sell instructions.
 CONSTRUCTIVE FRAME: straightforward and data-driven, but framed positively: a risk comes with what would manage it or what to check next, never bare doom; strengths get real airtime; every section leaves the reader knowing what to DO next (a thing to check, read, or watch).
