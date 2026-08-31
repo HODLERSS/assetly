@@ -64,6 +64,9 @@ const HEDGE = /\b(may or may not|it is unclear whether|only time will tell|could
 const DOOM = /\b(catastroph\w*|devastat\w*|wipe(d)? out|collapse imminent|doomed|disaster looms)\b/i;
 // a chain of MOVES (signed percents), not a weights listing (the book section lists weights by design)
 const TICKER_CHAIN = /[A-Z]{2,5}[^.]{0,10}(?:[-+]\d|down |up )[^.]{0,8}%[^.]{0,25}[A-Z]{2,5}[^.]{0,10}(?:[-+]\d|down |up )[^.]{0,8}%/;
+// the same walkthrough spelled out in words ("X slipped a fraction, Y fell a little, Z dropped two percent")
+const MOVE_VERB = /\b(slipped|fell|dropped|rose|gained|climbed|declined|advanced|sank|jumped|edged (?:up|down)|ticked (?:up|down))\b/gi;
+const wordedChain = (t) => ((String(t ?? "").match(MOVE_VERB) ?? []).length >= 3);
 const pct = (subs) => Math.round(subs.filter(Boolean).length / subs.length * 100);
 const avgSentence = (t) => { const ss = strip(t).split(/(?<=[.!?])\s+/).filter((x) => x.trim().length > 3); return ss.reduce((a, x) => a + wc(x), 0) / Math.max(1, ss.length); };
 const roundedOk = (raw) => {
@@ -93,10 +96,11 @@ const FRACW = { "half": 50, "a third": 33, "one third": 33, "two thirds": 67, "a
 // what the listener hears as a quantity, in numbers
 const DIGITW = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
 // spoken decimals: "zero point two percent" is 0.2, not 2
+const WHOLEW = "(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[\\s\\u2010-\\u2015-](?:one|two|three|four|five|six|seven|eight|nine))?|(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)|\\d+";
 const unspokenDecimals = (t) => String(t).replace(
-  /\b(zero|one|two|three|four|five|six|seven|eight|nine|\d+)\s+point\s+((?:zero|one|two|three|four|five|six|seven|eight|nine|\d)(?:\s+(?:zero|one|two|three|four|five|six|seven|eight|nine|\d))*)\b/gi,
+  new RegExp(`\\b(${WHOLEW})\\s+point\\s+((?:zero|one|two|three|four|five|six|seven|eight|nine|\\d)(?:\\s+(?:zero|one|two|three|four|five|six|seven|eight|nine|\\d))*)\\b`, "gi"),
   (_m, whole, frac) => {
-    const w = /^\d+$/.test(whole) ? whole : String(DIGITW[String(whole).toLowerCase()]);
+    const w = /^\d+$/.test(whole) ? whole : String(wordVal(whole) ?? DIGITW[String(whole).toLowerCase()] ?? 0);
     const f = String(frac).trim().split(/\s+/).map((d) => (/^\d$/.test(d) ? d : String(DIGITW[d.toLowerCase()]))).join("");
     return `${w}.${f}`;
   });
@@ -111,8 +115,9 @@ const spokenValues = (script) => {
   const seq = `\\b${words}(?:${HY}${words})*\\b`;
   const pct = [
     ...[...t.matchAll(new RegExp(`(${seq})\\s+percent`, "gi"))].map((m) => wordVal(m[1])),
-    ...[...t.matchAll(/(-?\d[\d.]*)\s?%/g)].map((m) => Math.abs(parseFloat(m[1]))),
-  ].filter((v) => v !== null);
+    // spoken decimals were normalised to digits above, so "15.5 percent" must be caught as well as "15.5%"
+    ...[...t.matchAll(/(-?\d[\d.]*)\s*(?:%|percent\b)/g)].map((m) => Math.abs(parseFloat(m[1]))),
+  ].filter((v) => v !== null && !Number.isNaN(v));
   const SUF = { k: 1e3, m: 1e6, b: 1e9 };
   const usd = [
     ...[...t.matchAll(new RegExp(`(${seq})\\s+dollars`, "gi"))].map((m) => wordVal(m[1])),
@@ -193,7 +198,7 @@ worst: weakest sentence overall, quoted.`);
     const readWords = wc(read), scriptWords = wc(script);
     const M = {
       B1_bluf_read: pct([ev(j, "bluf_read"), !TICKER_CHAIN.test([s.lede, ...(s.positions ?? []).map((p) => p.note), s.desk_view].join("\n"))]),
-      B2_bluf_listen: pct([ev(j, "bluf_listen"), !TICKER_CHAIN.test(script)]),
+      B2_bluf_listen: pct([ev(j, "bluf_listen"), !TICKER_CHAIN.test(script), !wordedChain(script)]),
       B3_number_diet: pct([dietMisses(s, isAssess).length === 0, heard(script) <= 7, roundedOk(script)]),
       B4_tier_read: pct([ev(j, "tier_read"), !(novice && JARGON.test(read))]),
       B5_tier_listen: pct([ev(j, "tier_listen"), !(novice && JARGON.test(script))]),
