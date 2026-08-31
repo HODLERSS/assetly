@@ -14,7 +14,10 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
   dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
   briefBanner?: { audio: boolean; edition?: string } | null; onBriefBannerDone?: () => void;
 }) {
-  const mode = moverMode();
+  // only the markets this book actually holds drive the session badge and mover mode
+  const heldMkts = [...new Set(rows.map((r) => marketOf(r)).filter((m): m is "US" | "KR" => m === "US" || m === "KR"))];
+  const hasCrypto = rows.some((r) => marketOf(r) === "CRYPTO");
+  const mode = moverMode(new Date(), heldMkts);
   const [pulse, setPulse] = useState<{ symbol: string; name: string; price: number; change_pct: number | null }[]>([]);
   useEffect(() => {
     let live = true;
@@ -36,7 +39,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
       </div>
     );
   }
-  const movers = [...rows].filter((r) => r.change_pct !== null && moverEligible(r))
+  const movers = [...rows].filter((r) => r.change_pct !== null && moverEligible(r, new Date(), heldMkts))
     .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0)).slice(0, 3);
   const quietMovers = [...rows].filter((r) => r.change_pct !== null && marketOf(r) !== null)
     .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0)).slice(0, 3);
@@ -94,7 +97,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
         </div>
       )}
       <BriefCard api={api} />
-      <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {sessionLabel()}</span></h2>
+      <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {sessionLabel(new Date(), heldMkts, hasCrypto)}</span></h2>
       {showPulse && (
         <div className="card" style={{ marginBottom: 16 }} data-testid="pulse-card">
           {pulse.map((p) => (

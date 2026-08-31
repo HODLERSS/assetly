@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isMarketOpen, marketOf, moverEligible, sessionLabel } from "../lib/markets";
+import { isMarketOpen, marketOf, moverEligible, sessionLabel, moverMode } from "../lib/markets";
 
 // Fixed instants (UTC) with known market states.
 const KR_OPEN = new Date("2026-08-26T01:30:00Z");    // Wed 10:30 KST, Tue 21:30 ET
@@ -51,5 +51,22 @@ describe("market assignment + mover eligibility", () => {
     expect(moverEligible(btc, KR_OPEN)).toBe(true);              // crypto always
     expect(moverEligible(us, BOTH_CLOSED)).toBe(true);           // weekend: show last sessions
     expect(moverEligible(cash, US_OPEN)).toBe(false);
+  });
+});
+
+describe("held-market awareness (US-only books never see KRX)", () => {
+  const KR_OPEN = new Date("2026-08-31T01:30:00Z");     // 10:30 KST Monday, US closed
+  it("a US-only book ignores the open KRX session", () => {
+    expect(sessionLabel(KR_OPEN, ["US"])).not.toContain("KRX");
+    expect(moverMode(KR_OPEN, ["US"]).kind).not.toBe("open");
+    const us = { symbol: "NVDA", kind: "equity" };
+    expect(moverEligible(us, KR_OPEN, ["US"])).toBe(true);   // quiet mode shows the last US session
+  });
+  it("a KR-holding book still gets the KRX session", () => {
+    expect(sessionLabel(KR_OPEN, ["US", "KR"])).toBe("KRX open");
+  });
+  it("a crypto-only book reads crypto, not markets closed", () => {
+    const SUNDAY = new Date("2026-08-30T08:00:00Z");
+    expect(sessionLabel(SUNDAY, [], true)).toBe("crypto trades 24/7");
   });
 });

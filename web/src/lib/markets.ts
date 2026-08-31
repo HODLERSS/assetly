@@ -47,15 +47,17 @@ export function isMarketOpen(market: Market, now: Date = new Date()): boolean {
   return z.dow >= 1 && z.dow <= 5 && !KR_HOLIDAYS.has(z.ymd) && z.minutes >= 540 && z.minutes < 930;
 }
 
-/** Session badge for the Home movers header. */
-export function sessionLabel(now: Date = new Date()): string {
-  const us = isMarketOpen("US", now), kr = isMarketOpen("KR", now);
+/** Session badge for the Home movers header. `held` = the markets the book actually contains:
+ *  a US-only book never sees "KRX open" (bit aiinsights 2026-08-31). */
+export function sessionLabel(now: Date = new Date(), held: ("US" | "KR")[] = ["US", "KR"], hasCrypto = false): string {
+  const us = held.includes("US") && isMarketOpen("US", now), kr = held.includes("KR") && isMarketOpen("KR", now);
   if (us && kr) return "US + KRX open";
   if (us) return "US open";
   if (kr) return "KRX open";
-  const mode = moverMode(now);
+  const mode = moverMode(now, held);
   if (mode.kind === "afterglow") return mode.market === "US" ? "US just closed" : "KRX just closed";
   if (mode.kind === "pulse") return `US opens in ~${Math.max(1, Math.round(mode.opensInMin / 60))}h`;
+  if (held.length === 0 && hasCrypto) return "crypto trades 24/7";
   return "markets closed";
 }
 
@@ -89,22 +91,23 @@ export type MoverMode =
  *  afterglow -> a market closed within the last 3h: its session still headlines
  *  pulse     -> US open is <=5h away and nothing closed recently: index futures
  *  quiet     -> overnight/weekend: all holdings' last-session moves */
-export function moverMode(now: Date = new Date()): MoverMode {
-  if (isMarketOpen("US", now) || isMarketOpen("KR", now)) return { kind: "open" };
-  const usC = minutesSinceClose("US", now), krC = minutesSinceClose("KR", now);
+export function moverMode(now: Date = new Date(), held: ("US" | "KR")[] = ["US", "KR"]): MoverMode {
+  const has = (m: "US" | "KR") => held.includes(m);
+  if ((has("US") && isMarketOpen("US", now)) || (has("KR") && isMarketOpen("KR", now))) return { kind: "open" };
+  const usC = has("US") ? minutesSinceClose("US", now) : null, krC = has("KR") ? minutesSinceClose("KR", now) : null;
   if (usC !== null && usC <= 180) return { kind: "afterglow", market: "US" };
   if (krC !== null && krC <= 180) return { kind: "afterglow", market: "KR" };
-  const usO = minutesToOpen("US", now);
+  const usO = has("US") ? minutesToOpen("US", now) : null;
   if (usO !== null && usO <= 300) return { kind: "pulse", opensInMin: usO };
   return { kind: "quiet" };
 }
 
 /** Movers should reflect what is actually trading right now. Crypto always qualifies. */
-export function moverEligible(row: Pick<PortfolioRow, "symbol" | "kind">, now: Date = new Date()): boolean {
+export function moverEligible(row: Pick<PortfolioRow, "symbol" | "kind">, now: Date = new Date(), held: ("US" | "KR")[] = ["US", "KR"]): boolean {
   const m = marketOf(row);
   if (m === null) return false;
   if (m === "CRYPTO") return true;
-  const mode = moverMode(now);
+  const mode = moverMode(now, held);
   if (mode.kind === "open") return isMarketOpen(m, now);
   if (mode.kind === "afterglow") return m === mode.market;
   if (mode.kind === "pulse") return false;             // the futures card takes the slot
