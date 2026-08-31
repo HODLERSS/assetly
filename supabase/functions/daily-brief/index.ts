@@ -202,7 +202,7 @@ const NOVICE_MAP: [RegExp, string][] = [
   // replacements must be drop-in NOUN PHRASES: swapping in a verb phrase ("hurts lean toward fast-growing
   // companies") reads worse than the jargon it replaced
   [/\bvalue tilt\b/gi, "value focus"], [/\bgrowth tilt\b/gi, "growth focus"], [/\btilt\b/gi, "focus"],
-  [/\bhash ?power\b/gi, "mining power"], [/\bhash ?rate\b/gi, "mining speed"], [/\bcash drag\b/gi, "idle cash"], [/\brebalancing\b/gi, "reshuffle"], [/\brebalance\b/gi, "reshuffle"],
+  [/\b(the |a )?quiet tape\b/gi, "$1quiet market"], [/\btape\b/gi, "market"], [/\bhash ?power\b/gi, "mining power"], [/\bhash ?rate\b/gi, "mining speed"], [/\bcash drag\b/gi, "idle cash"], [/\brebalancing\b/gi, "reshuffle"], [/\brebalance\b/gi, "reshuffle"],
   [/\bgrowth premium\b/gi, "high price tag"], [/\bvaluation(s)?\b/gi, "price tag$1"],
   [/\b(value|growth|momentum|defensive)[- ]play\b/gi, "$1 holding"], [/\b(value|income)[- ]hold\b/gi, "$1 holding"],
   [/\b(inflation|CPI|PCE|jobs|payrolls|GDP|retail sales)\s+print\b/gi, "$1 report"], [/\bdata print\b/gi, "data report"],
@@ -828,7 +828,7 @@ ${dataBlock}
 
 ${shape}
 lede: the day's story for THIS portfolio in one breath: the DAY P&L number, then a consequence clause ("which leaves...", "which means...") saying what it changes about their position. A move recap with no consequence is a failure. <= 30 words.
-overnight: OPEN WITH THE CONCLUSION in a short clause (what the tape did to this book: "A quiet tape left the book barely changed"), THEN at least THREE literal numbers copied from MARKET NOW with their EXACT labels, plus the portfolio day P&L. Never open this section with a bare list of levels. <= 55 words.
+overnight: OPEN WITH THE CONCLUSION in a short clause (what the session did to this book: "A quiet day left the book barely changed" - plain words, never trading-desk slang like "tape"), THEN at least THREE literal numbers copied from MARKET NOW with their EXACT labels, plus the portfolio day P&L. Never open this section with a bare list of levels. <= 55 words.
 positions: the 1-4 holdings that defined the day, ordered by importance to THIS portfolio: any holding above 35% of assets MUST appear, with its day number and weight, before smaller names. The largest holding gets the MOST substantive note; spend both its allowed numbers there. note <= 30 words: what happened AND what it means beyond today, with the day number. AT MOST TWO numbers in the note.${noteSplit} watch <= 10 words naming a concrete ${isFri ? "next-week" : "tonight-or-tomorrow"} catalyst, level, or event (after-hours earnings, data time, KRX open); any date must be a REAL FUTURE date (after ${briefDate}), never past. For crypto assets: a price level, ETF flow print, protocol event, or dated macro print. NEVER verbs like monitor, watch, track.
 desk_view: the setup for ${isFri ? "next week" : "tomorrow"}: the one structural risk or opportunity to sleep on. No single-day numbers. <= 40 words.
 CONTINUITY LAW: a claim already made in the morning brief may only reappear if you ADVANCE it (resolved, worsened, confirmed by the close); restating it in different words is a failure.
@@ -984,7 +984,10 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections.overnight = fitCap(sections.overnight, 52);
       sections.desk_view = fitCap(sections.desk_view, 48);
       if (edition === "assessment") sections.horizon = fitCap(sections.horizon ?? "", 46, /next [^:]{1,14}:[\s\S]*next [^:]{1,14}:/i);
-      sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(p.note, capNote), watch: fitCap(p.watch, 14) }));
+      // a watch item that says nothing ("No catalyst") reads as a fragment; make it a real clause
+      const fixWatch = (w: string) => /^\s*(no catalyst|none|n\/a|nothing)\b/i.test(String(w ?? ""))
+        ? "No dated catalyst before the next open" : String(w ?? "");
+      sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(p.note, capNote), watch: fitCap(fixWatch(p.watch), 14) }));
       sections.ideas = (sections.ideas ?? []).map((x) => fitCap(String(x), 16));
       const { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
