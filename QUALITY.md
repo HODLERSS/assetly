@@ -218,24 +218,30 @@ per section; risks framed constructively with a next step, never doom.
 | B9 | Opinion & framing | ≥1 fact-backed judgment; no hedge phrases; constructive risk framing with a next step; no doom vocabulary | both artifacts |
 | B10 | Delivery | generated ≤180s first attempt | script exists, signs off, zero bare tickers |
 
-**Status (2026-08-31, daily-brief v79 / narrate v16 / insights-sync v29 / ask v20).**
+**Status (2026-08-31, daily-brief v89 / narrate v22 / insights-sync v29 / ask v20).**
 Grid: 2 personas (novice55, pro) x 2 editions (assessment, close) x read+listen = 8 artifacts, 4 scored cells.
 
-Round 19 scored 100 on all ten metrics with every cell `ALL 95+`. **The confirmation round did not reproduce
-it** (B1 88, B2 92, B4 75, B5 75, B8 84), so that round is recorded as one clean sample, not a met gate: the
-generation is stochastic and a single pass can flatter it. The bar is TWO CONSECUTIVE clean rounds plus green
-A and P regressions, and it is not yet met at the time of writing.
+**The 95+ gate is NOT met and was never met across two consecutive rounds.** Individual rounds reached 100 on
+all ten metrics (rounds 19, 21, 22), but no clean round reproduced, and round 21/22 were later invalidated:
+they were measuring a build that carried a live figure-corruption bug the B fixture book happens not to
+trigger. The A battery's arithmetic metric caught it after twenty-two B rounds had missed it.
 
-What the confirmation round and the A/P regressions found is in the iteration log
-(`answers/20260831_0930_assetly_bluf_read_listen_quality.md`): a bare stat line opening the close tape
-section, two beginner-vocabulary gaps, an A8 regression caused by this goal's own beginner two-sentence rule
-(notes at 34-35 words against a 33-word spec, notes being the one field with no deterministic cap), and a
-single-holding assessment starved to 165 words because the number diet runs after the loop that enforces the
-length floor. All are fixed; the re-run is what decides the gate.
+Best repeatable state: 3 of 4 cells clean, aggregate metrics in the 88-100 band. The failing cell is almost
+always novice/assessment, and it fails a DIFFERENT metric most rounds (B2, B3, B4, B9 in successive runs),
+which is run-to-run variance around the threshold rather than a fixable defect.
 
-Measured lengths hold across every round: reads 149-359 words (a two-minute read is ~400), spoken scripts
-115-214 words (~46-86 seconds at an unhurried 150 wpm, no speed-up). Artifacts for every round are kept at
-`/tmp/bluf-round*-results.json` so any score can be re-derived.
+**Why the loop was stopped.** The last several changes each traded one metric for another: the narration beat
+cap fixed padding but pushed generation into the deterministic template; the laundry-list drops fixed the
+number diet but thinned a daily read to 100 words against its 120 floor. That oscillation is the signal that
+the remaining gap is not reachable by adding constraints.
+
+**Recommended next step for the listen side:** a fixed-template narration with a small number of required
+beats (verdict, two things that matter, one risk, one next step) composed slot by slot, rather than free
+composition scored after the fact. Every listen-side defect this goal found - walkthrough, repetition, flat
+back half, padding - is a symptom of unconstrained composition, and no post-hoc check fixes that class.
+
+Measured lengths hold throughout: reads 100-359 words (a two-minute read is ~400), spoken scripts 97-214
+words (~40-85 seconds at an unhurried 150 wpm). Artifacts for every round are at `/tmp/bluf-round*-results.json`.
 
 **Why B7 exists.** Round 3 scored a cell 100 across all ten metrics while the audio said a 25.6% position was
 "about half" of the book. Ten green metrics and a false statement in the artifact the user actually listens to.
