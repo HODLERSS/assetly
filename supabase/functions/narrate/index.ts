@@ -215,9 +215,14 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
           const floorNow = a === 2 ? Math.round(spec.floor * 0.75) : spec.floor;
           // a fraction word describing a weight is a rule violation we can see: regenerate rather than ship it
           const FRACW = /\b(half|a third|one third|two thirds|a quarter|one quarter|three quarters|a fifth)\b/i;
+          // a holdings walkthrough is the pattern this brief exists to replace, and three prompt versions have
+          // not reliably stopped it: detect it and regenerate, the way a stray fraction is handled
+          const MOVEV = /\b(slipped|fell|dropped|rose|gained|climbed|declined|advanced|sank|jumped|edged|ticked)\b/i;
+          const MKTS = /\b(market|S&P|SPX|futures|volatility|VIX|the index|indices|portfolio|your book|the book|dow)\b/i;
+          const walkthrough = (x: string) => x.split(/(?<=[.!?])\s+/).filter((y) => MOVEV.test(y) && !MKTS.test(y)).length >= 3;
           if (sp) {
             const t = sp.replace(/(?:\s*<break[^>]*\/>\s*)+$/g, "").trim();
-            if (t.split(/\s+/).length >= floorNow && /[.!?]$/.test(t) && (a === 2 || !FRACW.test(t))) spoken = t;
+            if (t.split(/\s+/).length >= floorNow && /[.!?]$/.test(t) && (a === 2 || (!FRACW.test(t) && !walkthrough(t)))) spoken = t;
           }
         }
       }
