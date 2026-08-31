@@ -970,6 +970,17 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const figuresIn = (t: string) => (String(t ?? "").match(/-?\d[\d,]*(?:\.\d+)?\s?%|\$\s?[\d,]+/g) ?? []).map((x) => x.trim());
       // never trim a section into a stub: losing the substance is worse than carrying one extra figure
       const RISK_CLAUSE = /\bthe risk:/i;
+      // "Recent 30-day returns: QQQM +1.5%, Nvidia +5.7%, Marathon +3.2%, JPMorgan -0.4%, BlackRock -0.8%."
+      // is the exact laundry list this brief exists to replace, and desk_view's own spec already forbids
+      // performance figures there. Sentence-level trimming could not reach it: dropping it left 17 words
+      // against an 18-word floor. So drop it BY SHAPE instead, and only ever by deletion.
+      const RETURNS_LIST = /(?:returns?|performance)\b[^.]*?[-+\u2212]?\d[\d.]*\s?%[^.]*?[-+\u2212]?\d[\d.]*\s?%[^.]*?[-+\u2212]?\d[\d.]*\s?%|(?:[-+\u2212]\d[\d.]*\s?%[^.]*?){3,}/;
+      const dropReturnsList = (t: string) => {
+        const sents = String(t ?? "").split(/(?<=[.;])\s+/).filter(Boolean);
+        if (sents.length <= 1) return t;
+        const kept = sents.filter((x) => !RETURNS_LIST.test(x));
+        return kept.length ? kept.join(" ") : t;   // never empty the section
+      };
       const trimStats = (t: string, cap: number, minWords = 26) => {
         const wcS = (x: string) => String(x).split(/\s+/).filter(Boolean).length;
         const sents = String(t ?? "").split(/(?<=[.;])\s+/).filter(Boolean);
@@ -1028,7 +1039,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections.overnight = safeField(sections.overnight, tidy(deSemi(deAdvice(trimStats(collapseList(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.overnight, 1))))), bookCap, 16)))));
       // the model sometimes writes the section label into the field itself
       sections.desk_view = String(sections.desk_view ?? "").replace(/^\s*(desk\s*view|structure\s*(?:&|and)\s*risk|the\s*desk\s*view)\s*[:\u2014-]\s*/i, "");
-      sections.desk_view = safeField(sections.desk_view, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.desk_view, 0)))), edition === "assessment" ? 5 : 3, 18)))));   // structural section; the floor is 18, not 30, because at 30 a four-sentence desk view could not shed a single sentence without breaching it, so the figure cap never bit
+      sections.desk_view = safeField(sections.desk_view, tidy(deSemi(deAdvice(trimStats(dropReturnsList(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.desk_view, 0))))), edition === "assessment" ? 5 : 3, 18)))));   // structural section; the floor is 18, not 30, because at 30 a four-sentence desk view could not shed a single sentence without breaching it, so the figure cap never bit
       sections.lede = safeField(sections.lede, tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1)))));
       // in a DAILY note the weight is structural, not news, and the book line already states it: dropping the
       // "on a 9.3% weight" clause leaves the move and its dollar impact, which is what the day is about
