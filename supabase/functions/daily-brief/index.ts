@@ -204,6 +204,7 @@ const NOVICE_MAP: [RegExp, string][] = [
   [/\bvalue tilt\b/gi, "value focus"], [/\bgrowth tilt\b/gi, "growth focus"], [/\btilt\b/gi, "focus"],
   [/\bcash drag\b/gi, "idle cash"], [/\brebalancing\b/gi, "reshuffle"], [/\brebalance\b/gi, "reshuffle"],
   [/\bgrowth premium\b/gi, "high price tag"], [/\bvaluation(s)?\b/gi, "price tag$1"],
+  [/\b(value|growth|momentum|defensive)[- ]play\b/gi, "$1 holding"], [/\b(value|income)[- ]hold\b/gi, "$1 holding"],
   [/\b(inflation|CPI|PCE|jobs|payrolls|GDP|retail sales)\s+print\b/gi, "$1 report"], [/\bdata print\b/gi, "data report"],
   [/\bhigh[- ]beta\b/gi, "fast-moving"], [/\bcrypto[- ]beta\b/gi, "crypto exposure"],
 ];
@@ -348,7 +349,7 @@ Deno.serve(async (req) => {
       // a 30-word note and a 14-word-sentence rule for beginners contradict each other; for those readers the
       // note is TWO short sentences, so both rules can hold at once
       const beginner = ["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])));
-      const noteSplit = beginner ? " Write the note as TWO sentences of at most 14 words each, never one long sentence." : "";
+      const noteSplit = beginner ? " Write the note as TWO sentences of at most 14 words each (about 20 to 26 words in total), never one long sentence and never a single short one." : "";
       const [HZ1, HZ2] = HZ_LABELS[longestHz(toArr((invBy.get(uid) as Investor | null | undefined)?.horizon, ["3-10y"]))] ?? HZ_LABELS["3-10y"];
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
         .sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));

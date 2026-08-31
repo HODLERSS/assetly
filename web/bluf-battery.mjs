@@ -75,7 +75,7 @@ const W1 = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eigh
 const W10 = { twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90 };
 const wordVal = (phrase) => {
   let total = 0, cur = 0, seen = false;
-  for (const t of String(phrase).toLowerCase().replace(/-/g, " ").split(/\s+/).filter(Boolean)) {
+  for (const t of String(phrase).toLowerCase().replace(/[\u2010-\u2015-]/g, " ").split(/\s+/).filter(Boolean)) {
     if (t in W1) { cur += W1[t]; seen = true; }
     else if (t in W10) { cur += W10[t]; seen = true; }
     else if (t === "hundred") { cur = (cur || 1) * 100; seen = true; }
@@ -87,10 +87,24 @@ const wordVal = (phrase) => {
 };
 const FRACW = { "half": 50, "a third": 33, "one third": 33, "two thirds": 67, "a quarter": 25, "one quarter": 25, "three quarters": 75, "a fifth": 20 };
 // what the listener hears as a quantity, in numbers
+const DIGITW = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
+// spoken decimals: "zero point two percent" is 0.2, not 2
+const unspokenDecimals = (t) => String(t).replace(
+  /\b(zero|one|two|three|four|five|six|seven|eight|nine|\d+)\s+point\s+((?:zero|one|two|three|four|five|six|seven|eight|nine|\d)(?:\s+(?:zero|one|two|three|four|five|six|seven|eight|nine|\d))*)\b/gi,
+  (_m, whole, frac) => {
+    const w = /^\d+$/.test(whole) ? whole : String(DIGITW[String(whole).toLowerCase()]);
+    const f = String(frac).trim().split(/\s+/).map((d) => (/^\d$/.test(d) ? d : String(DIGITW[d.toLowerCase()]))).join("");
+    return `${w}.${f}`;
+  });
 const spokenValues = (script) => {
-  const t = strip(script).replace(NAMEY, "INDEX");
-  const words = "(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion)";
-  const seq = `(?:${words}(?:[\\s-]${words})*)`;
+  const t = unspokenDecimals(strip(script).replace(NAMEY, "INDEX"));
+  // longest-first with boundaries: unordered alternation matches "seven" inside "seventy", which turned
+  // "seventy thousand" into 7 and 1000 and made a real figure look absent from the brief
+  const WORDS = ["seventeen", "seventy", "thirteen", "fourteen", "fifteen", "sixteen", "eighteen", "nineteen", "eleven", "twelve", "twenty", "thirty", "forty", "fifty", "sixty", "eighty", "ninety", "hundred", "thousand", "million", "billion", "three", "seven", "eight", "nine", "four", "five", "zero", "one", "two", "six", "ten"]
+    .sort((a, b) => b.length - a.length);
+  const words = `(?:${WORDS.join("|")})`;
+  const HY = "[\\s\\u2010-\\u2015-]";   // narration uses non-breaking hyphens: "twenty\u2011three" must not parse as "three"
+  const seq = `\\b${words}(?:${HY}${words})*\\b`;
   const pct = [
     ...[...t.matchAll(new RegExp(`(${seq})\\s+percent`, "gi"))].map((m) => wordVal(m[1])),
     ...[...t.matchAll(/(-?\d[\d.]*)\s?%/g)].map((m) => Math.abs(parseFloat(m[1]))),
@@ -100,15 +114,24 @@ const spokenValues = (script) => {
     ...[...t.matchAll(/\$\s?([\d,]+(?:\.\d+)?)/g)].map((m) => parseFloat(m[1].replace(/,/g, ""))),
   ].filter((v) => v !== null);
   const frac = Object.entries(FRACW).filter(([w]) => new RegExp(`\\b${w}\\b`, "i").test(t)).map(([, v]) => v);
-  return { pct, usd, frac };
+  // a brief may state a price WITHOUT its unit ("bitcoin below seventy thousand"); keep those as candidates
+  // so the same figure spoken as "seventy thousand dollars" still traces
+  const bare = [
+    ...[...t.matchAll(new RegExp(`(${seq})`, "gi"))].map((m) => wordVal(m[1])),
+    ...[...t.matchAll(/\b([\d,]{3,}(?:\.\d+)?)\b/g)].map((m) => parseFloat(m[1].replace(/,/g, ""))),
+  ].filter((v) => v !== null && v > 0);
+  return { pct, usd, frac, bare };
 };
 // the brief spells numbers out for beginners too, so both sides use the same parser
 const readValues = (read) => spokenValues(read);
 const fidelityMisses = (read, script) => {
   const R = readValues(read), S = spokenValues(script), out = [];
   const nearPct = (v, tol) => R.pct.some((r) => Math.abs(r - v) <= tol);
-  for (const v of S.pct) if (!nearPct(v, 1.5)) out.push(`${v}% not in brief`);
-  for (const v of S.usd) if (!R.usd.some((r) => r > 0 && Math.abs(r - v) / Math.max(r, 1) <= 0.15)) out.push(`$${v} not in brief`);
+  // a legitimate rounding never moves a figure by a whole point; a ±1.5 window let "two percent" match an
+  // unrelated 0.7% while the brief actually said 0.2%
+  for (const v of S.pct) if (!nearPct(v, 0.99)) out.push(`${v}% not in brief`);
+  const usdPool = [...R.usd, ...R.bare];
+  for (const v of S.usd) if (!usdPool.some((r) => r > 0 && Math.abs(r - v) / Math.max(r, 1) <= 0.15)) out.push(`$${v} not in brief`);
   for (const v of S.frac) if (!nearPct(v, 8)) out.push(`fraction ~${v}% contradicts the brief`);
   return out;
 };
