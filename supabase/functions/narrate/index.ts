@@ -40,6 +40,8 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
 const speechName = (name: string) => {
   let n = name.trim();
   for (let i = 0; i < 3; i++) n = n.replace(/[,\s]*\b(Incorporated|Inc\.?|Corporation|Corp\.?|Company|Co\.?|Limited|Ltd\.?|PLC|N\.V\.|S\.A\.|AG|SE|Holdings?|Group|Trust|Fund|ETF|Class [A-C]( Shares)?|Common Stock|Ordinary Shares|ADR|\(.*?\))\s*$/i, "").trim();
+  // "JPMORGAN CHASE & CO" loses "CO" above and is left ending in a bare ampersand, which is then SPOKEN
+  n = n.replace(/[\s,]*&\s*$/, "").trim();
   return n || name;
 };
 async function tickerNames(admin: ReturnType<typeof createClient>, userId: string, text: string): Promise<[string, string][]> {
@@ -92,7 +94,7 @@ function fallbackScript(s: Sections, dayLine: string, edition: string): string {
   const greet = edition === "assessment" ? `Hi, it's ${dayLine}. Here's your portfolio assessment.` : edition === "close" ? `Good evening, it's ${dayLine}. Here's your closing note.` : edition === "midday" ? `It's ${dayLine}, midday. Here's your pulse.` : `Good morning, it's ${dayLine}. Here's your brief.`;
   const say = (t: string) => earNumbers(String(t ?? "").trim());
   const firstSentence = (t: string) => (String(t ?? "").split(/(?<=[.!?])\s+/)[0] ?? "").trim();
-  const top = (s.positions ?? []).slice(0, 3);
+  const top = (s.positions ?? []).slice(0, 2);   // two names, not a walkthrough
   const parts = [
     greet,
     say(s.lede),
@@ -110,7 +112,7 @@ function fallbackScript(s: Sections, dayLine: string, edition: string): string {
     // a DAILY brief has no horizon and no research ideas, so without its catalysts the fallback runs ~35
     // seconds against an intended 75-90; the watch items are the useful content that belongs there
     ...(edition !== "assessment" && top.some((p) => String(p.watch ?? "").trim())
-      ? [`What to watch next: ${top.map((p) => say(String(p.watch ?? "").trim())).filter(Boolean).slice(0, 2).join(", and ")}.`]
+      ? [`What to watch next: ${[...new Set(top.map((p) => say(String(p.watch ?? "").trim())).filter(Boolean))].slice(0, 2).join(", and ")}.`]
       : []),
     edition === "assessment" ? "That's your assessment. Talk soon." : "That's your brief. Talk soon."];
   return parts.filter(Boolean).join(' <break time="0.7s" /> ');
