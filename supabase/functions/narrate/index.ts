@@ -100,7 +100,7 @@ function fallbackScript(s: Sections, dayLine: string, edition: string): string {
     // do not announce the name and then repeat it, and never speak a stray ampersand from a legal name
     ...top.map((p) => {
       const nm = say(String(p.name).replace(/\s*&\s*/g, " ").trim());
-      const note = say(firstSentence(p.note));
+      const note = say(String(p.note ?? "").trim());   // the FULL note: its first sentence is a BLUF one-liner, and three of those made a 33-second brief
       return new RegExp(`^${nm.slice(0, 12).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(note) ? note : `${nm}: ${note}`;
     }),
     say(s.desk_view),
