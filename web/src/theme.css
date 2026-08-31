@@ -196,16 +196,17 @@ input, select { font: inherit; }
 .mp-sub { font-size: 11.5px; color: var(--as-muted); font-family: var(--as-font-num); font-feature-settings: "tnum";
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.mp-controls { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.mp-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 /* 44px is the iOS minimum touch target; the glyph inside is smaller but the tappable box is not */
-.mp-btn { position: relative; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center;
+.mp-btn { min-width: 42px; min-height: 44px; display: inline-flex; align-items: center;
   justify-content: center; background: none; border: 0; color: var(--as-ink); padding: 0; border-radius: 999px; }
 .mp-btn:active { background: var(--as-hover); }
 .mp-btn:disabled { opacity: .4; }
 .mp-btn svg { display: block; }
-/* the "15" sits inside the circular-arrow glyph, the way Podcasts draws it */
-.mp-skipnum { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -38%);
-  font: 600 8.5px/1 var(--as-font-num); pointer-events: none; }
+/* the number sits BESIDE the arrow, never on top of it: stamped inside a 22px glyph it collided
+   with the arrow strokes and read as a smudge on a phone */
+.mp-skip { gap: 1px; }
+.mp-skipnum { font: 600 10px/1 var(--as-font-num); pointer-events: none; color: inherit; }
 
 .mp-play { background: var(--as-primary); color: var(--as-on-primary); min-width: 44px; min-height: 44px; }
 .mp-play:active { background: var(--as-primary); opacity: .85; }

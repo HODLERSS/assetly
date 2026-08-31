@@ -29,12 +29,12 @@ export function MiniPlayer() {
         <div className="mp-what">
           <span className="mp-title">{s.track.title}</span>
           <span className="mp-sub">
-            {s.error ? s.error : s.loading ? "Loading audio" : `${s.track.subtitle} · ${clock(shown)} / ${clock(duration)}`}
+            {s.error ? s.error : s.loading ? "Loading audio" : s.track.subtitle}
           </span>
         </div>
         <div className="mp-controls">
-          <button className="mp-btn" onClick={() => skip(-SKIP_SECONDS)} aria-label={`Back ${SKIP_SECONDS} seconds`} disabled={s.loading}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <button className="mp-btn mp-skip" onClick={() => skip(-SKIP_SECONDS)} aria-label={`Back ${SKIP_SECONDS} seconds`} disabled={s.loading}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6" />
             </svg>
             <span className="mp-skipnum" aria-hidden="true">{SKIP_SECONDS}</span>
@@ -46,11 +46,11 @@ export function MiniPlayer() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.6c0-.8.9-1.3 1.6-.9l8 6.4c.6.4.6 1.4 0 1.8l-8 6.4c-.7.4-1.6-.1-1.6-.9V5.6Z" /></svg>
             )}
           </button>
-          <button className="mp-btn" onClick={() => skip(SKIP_SECONDS)} aria-label={`Forward ${SKIP_SECONDS} seconds`} disabled={s.loading}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <button className="mp-btn mp-skip" onClick={() => skip(SKIP_SECONDS)} aria-label={`Forward ${SKIP_SECONDS} seconds`} disabled={s.loading}>
+            <span className="mp-skipnum" aria-hidden="true">{SKIP_SECONDS}</span>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 5V2l5 4-5 4V7a6 6 0 1 0 6 6" />
             </svg>
-            <span className="mp-skipnum" aria-hidden="true">{SKIP_SECONDS}</span>
           </button>
           <button className="mp-btn mp-rate" onClick={cycleRate} aria-label={`Playback speed ${s.rate} times. Tap to change.`} data-testid="mini-player-rate">
             {s.rate}&times;
