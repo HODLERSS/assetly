@@ -121,14 +121,16 @@ const spokenValues = (script) => {
     // suffixed amounts are consumed above; blanking them first stops "$1.2m" from also yielding a stray 1
     ...[...t.replace(/\$\s?[\d,]+(?:\.\d+)?\s?[kKmMbB]\b/g, " ").matchAll(/\$\s?([\d,]+(?:\.\d+)?)/g)].map((m) => parseFloat(m[1].replace(/,/g, ""))),
   ].filter((v) => v !== null && !Number.isNaN(v));
-  const frac = Object.entries(FRACW).filter(([w]) => new RegExp(`\\b${w}\\b`, "i").test(t)).map(([, v]) => v);
+  const fracHits = Object.entries(FRACW).filter(([w]) => new RegExp(`\\b${w}\\b`, "i").test(t));
+  const frac = fracHits.map(([, v]) => v);
+  const fracWords = fracHits.map(([w, v]) => `"${w}" (= ${v}%)`);
   // a brief may state a price WITHOUT its unit ("bitcoin below seventy thousand"); keep those as candidates
   // so the same figure spoken as "seventy thousand dollars" still traces
   const bare = [
     ...[...t.matchAll(new RegExp(`(${seq})`, "gi"))].map((m) => wordVal(m[1])),
     ...[...t.matchAll(/\b([\d,]{3,}(?:\.\d+)?)\b/g)].map((m) => parseFloat(m[1].replace(/,/g, ""))),
   ].filter((v) => v !== null && v > 0);
-  return { pct, usd, frac, bare };
+  return { pct, usd, frac, fracWords, bare };
 };
 // the brief spells numbers out for beginners too, so both sides use the same parser
 const readValues = (read) => spokenValues(read);
@@ -170,6 +172,10 @@ for (const [pname, P] of Object.entries(PERSONAS)) {
     const script = Object.values(sc?.scripts ?? {})[0] ?? "";
     const s = row.sections, read = textOf(s);
     const isAssess = ed === "assessment", novice = P.inv.level === "novice";
+    const fracFound = spokenValues(script).fracWords;
+    const fracLine = fracFound.length
+      ? `The LISTEN script contains these fraction words: ${fracFound.join(", ")}. For EACH one, find the figure in the READ text it describes and compare.`
+      : "The LISTEN script contains no fraction words, so this check PASSES automatically.";
     const j = await judge(`Assetly writes a short ${isAssess ? "portfolio assessment" : "daily close brief"} (READ) and a spoken script (LISTEN) for ${P.desc}.
 READ:\n${read}\nLISTEN SCRIPT:\n${script}
 Return STRICT JSON {"bluf_read":bool,"bluf_read_evidence":str,"bluf_listen":bool,"bluf_listen_evidence":str,"tier_read":bool,"tier_read_evidence":str,"tier_listen":bool,"tier_listen_evidence":str,"clear":bool,"clear_evidence":str,"opinion":bool,"opinion_evidence":str,"construct":bool,"construct_evidence":str,"faithful":bool,"faithful_evidence":str,"worst":str}.
@@ -179,7 +185,9 @@ tier_read / tier_listen: language matches the reader (novice/intermediate: plain
 clear: a smart newcomer could retell the main points after one pass; sentences are short and concrete. To FAIL quote the confusing passage; else pass.
 opinion: at least one clear, fact-backed judgment (not a hedge, not a command to trade). To FAIL state "no opinion found" plus the closest attempt; else pass.
 construct: risks are framed constructively, not bare doom; a measurable tripwire or watch item attached to a risk COUNTS as its next step (that is the design). To FAIL quote actual doom language, or a risk that has neither framing nor any tripwire/watch/next step anywhere near it; else pass.
-faithful: nothing in the LISTEN script contradicts the READ text. Rounding for the ear is CORRECT and never a failure (25.6% spoken as "twenty-six percent", $43,224 as "forty-three thousand dollars"). A failure is a changed FACT: a weight described as a fraction that does not match the read figure (a quarter is 25%, a third is 33%, half is 50%), a figure attached to the wrong holding, or a number that appears nowhere in the read text. To FAIL quote BOTH the read figure and the script figure; else pass.
+faithful: check ONLY the fraction words listed below, nothing else. Every other number, date and rounding question is checked deterministically elsewhere and is NOT your concern.
+${fracLine}
+FAIL only if a fraction is more than 8 points away from the figure it actually describes, quoting both. A script calling a 25.6% holding "about half" is a FAILURE (50 versus 25.6). Otherwise PASS.
 worst: weakest sentence overall, quoted.`);
     if (!j) { log(`${pname}/${ed}: JUDGE NULL`); results.push({ pname, ed, M: {} }); continue; }
     const readWords = wc(read), scriptWords = wc(script);
