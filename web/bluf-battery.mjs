@@ -36,6 +36,10 @@ const strip = (t) => String(t ?? "").replace(/<[^>]*>/g, " ");           // SSML
 // index/product names that merely contain digits are names, not numbers the reader must absorb
 const NAMEY = /\b(Nasdaq[-\s]?100|S&P[-\s]?500|Russell[-\s]?2000|FTSE[-\s]?100|Nikkei[-\s]?225|Dow[-\s]?30|MSCI[-\s]?\w+)\b/gi;
 const wc = (t) => strip(t).split(/\s+/).filter(Boolean).length;
+const period = (t) => { const x = String(t ?? "").trim(); return x ? (/[.!?]$/.test(x) ? x : x + ".") : ""; };
+// sentence length is measured on PROSE only: names, watch chips, ideas and calendar entries are labels with
+// no terminal punctuation, so concatenating them invents 40-word "sentences" no reader ever sees
+const proseOf = (s) => [s.lede, s.overnight, ...(s.positions ?? []).map((p) => p.note), s.desk_view, s.horizon ?? ""].map(period).filter(Boolean).join(" ");
 const textOf = (s) => [s.lede, s.overnight, ...(s.positions ?? []).flatMap((p) => [p.name, p.note, p.watch]), s.desk_view, s.horizon ?? "", ...(s.ideas ?? []), ...(s.calendar ?? [])].join("\n");
 const nums = (t) => (strip(t).replace(NAMEY, "INDEX").match(/-?\d[\d,]*(?:\.\d+)?\s?%?|\$\s?[\d,]+/g) ?? []).filter((x) => !/^(19|20)\d\d$/.test(x.trim()));
 // the listener hears spelled-out quantities too ("twenty-six percent"), so the script diet counts those as well
@@ -183,7 +187,7 @@ worst: weakest sentence overall, quoted.`);
       B5_tier_listen: pct([ev(j, "tier_listen"), !(novice && JARGON.test(script))]),
       B6_length: pct([readWords / 200 <= 2.02 && readWords >= (isAssess ? 200 : 120), scriptWords >= 100 && scriptWords <= 225]),   // <=2 min read; <=1.5 min listen at ~150 wpm, no fast-forward
       B7_fidelity: pct([fidelityMisses(read, script).length === 0, ev(j, "faithful")]),
-      B8_understand: pct([ev(j, "clear"), avgSentence(read) <= (novice ? 16 : 22), avgSentence(script) <= (novice ? 16 : 20)]),
+      B8_understand: pct([ev(j, "clear"), avgSentence(proseOf(s)) <= (novice ? 16 : 22), avgSentence(script) <= (novice ? 16 : 20)]),
       B9_opinion: pct([ev(j, "opinion"), !HEDGE.test(read + script), ev(j, "construct"), !DOOM.test(read + script)]),
       B10_delivery: pct([secs <= 180, !!script, /talk soon/i.test(script.slice(-160)), !/\b(NVDA|JPM|BLK|QQQM)\b/.test(script)]),
     };

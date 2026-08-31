@@ -86,12 +86,20 @@ const earNumbers = (t: string) => t
   .replace(/(-?\d+(?:\.\d+)?)\s?%/g, (_, n) => roundPct(Number(n)) + " percent")
   .replace(/₩([\d,]+)/g, "$1 won")
   .replace(/\s+&(?=[.,]|\s|$)/g, "");   // a truncated legal name ("JPMORGAN CHASE &") must not be spoken
+// The fallback ships to a real listener whenever the model wanes, so it obeys the same laws as the written
+// script: bottom line first, only the two positions that matter, no stat line read aloud, no laundry list.
 function fallbackScript(s: Sections, dayLine: string, edition: string): string {
   const greet = edition === "assessment" ? `Hi, it's ${dayLine}. Here's your portfolio assessment.` : edition === "close" ? `Good evening, it's ${dayLine}. Here's your closing note.` : edition === "midday" ? `It's ${dayLine}, midday. Here's your pulse.` : `Good morning, it's ${dayLine}. Here's your brief.`;
-  const parts = [greet, earNumbers(s.lede), earNumbers(s.overnight),
-    ...s.positions.map((p) => `${p.name}. ${earNumbers(p.note)} ${edition === "assessment" ? "The tripwire:" : "What to watch:"} ${earNumbers(p.watch)}.`),
-    earNumbers(s.desk_view),
-    ...(edition === "assessment" ? [earNumbers(s.horizon ?? ""), (s.ideas ?? []).length ? "Worth researching: " + earNumbers((s.ideas ?? []).join(". ")) + "." : ""] : []),
+  const say = (t: string) => earNumbers(String(t ?? "").trim());
+  const firstSentence = (t: string) => (String(t ?? "").split(/(?<=[.!?])\s+/)[0] ?? "").trim();
+  const top = (s.positions ?? []).slice(0, 2);
+  const parts = [
+    greet,
+    say(s.lede),
+    // the two names that matter, each in ONE sentence, with the ampersand of a truncated legal name removed
+    ...top.map((p) => `${say(String(p.name).replace(/\s*&\s*$/, ""))}: ${say(firstSentence(p.note))}`),
+    say(s.desk_view),
+    ...(edition === "assessment" && s.horizon ? [say(firstSentence(s.horizon))] : []),
     edition === "assessment" ? "That's your assessment. Talk soon." : "That's your brief. Talk soon."];
   return parts.filter(Boolean).join(' <break time="0.7s" /> ');
 }
@@ -188,12 +196,14 @@ Deno.serve(async (req) => {
 spoken: ${spec.len} spoken script of this portfolio assessment, BOTTOM LINE UP FRONT, at a normal unhurried pace. It is the FIRST look at a client's newly added portfolio. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} speaking to ONE client they are just getting to know; confident and OPINIONATED where the facts back it, never wishy-washy; straightforward and data-driven but constructive: a risk always comes with what to watch or do about it, never bare doom. Short sentences. Contractions. STRUCTURE: quick greeting, then the VERDDICT and single most important structural fact in the first two sentences, then only the TWO OR THREE things that matter most (not every position), one clear risk, one thing worth looking into, and the sign-off ("That's your assessment. Talk soon."), which the script MUST end with. NUMBER RULES: at most FIVE numbers in the whole script; round everything for the ear (34.3% becomes thirty-four percent; $43,224 becomes forty-three thousand dollars); never read decimals aloud ABOVE one percent; a figure UNDER one percent keeps its decimal ("zero point two percent"), because rounding 0.2% to "two percent" changes the fact tenfold. FIDELITY: every figure you speak must trace to the assessment. Rounding for the ear is required, changing the fact is not: never turn a percentage into a fraction word that does not match it (a quarter is 25%, a third is 33%, half is 50%); if the fraction is not a clean match, say the rounded percent instead. Insert <break time="0.6s" /> between beats. Use ONLY facts from the assessment. Never tell them to buy or sell. ${await voiceFor(String(row.user_id))} No ticker codes, company names only.${nameLine} Never mention that this is generated.`
           : `Brief:\n${JSON.stringify(s)}\n\nReturn STRICT JSON {"spoken": str}.
 spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at a normal unhurried pace. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} analyst speaking to ONE client they know well; confident and opinionated where the facts back it; constructive: a risk always comes with what to watch or do about it, never bare doom. Short sentences. Contractions. STRUCTURE: quick greeting, then WHAT TODAY MEANS for their money in the first two sentences (never a list of moves), then the two or three things that actually matter with why, one look-ahead, and the sign-off ("That's your brief. Talk soon."), which the script MUST end with. NUMBER RULES: at most FIVE numbers in the whole script; round for the ear (down 2.3% becomes down two percent; $43,224 becomes forty-three thousand dollars); never read a stock-by-stock percentage list. NEVER DROP A DECIMAL: 0.2% is "zero point two percent" and 0.4% is "zero point four percent", never "two percent" or "four percent"; a figure under one percent keeps its decimal or is spoken as "a fraction of a percent". Never tell them to buy, sell, trim, add, or rotate, and never say "keep an eye on": name the risk and what would confirm it instead. FIDELITY: every figure you speak must trace to the brief. Rounding for the ear is required, changing the fact is not: never turn a percentage into a fraction word that does not match it (a quarter is 25%, a third is 33%, half is 50%); if the fraction is not a clean match, say the rounded percent instead. Insert <break time="0.6s" /> between beats. Insert <break time="0.7s" /> between sections. Use ONLY facts from the brief. ${await voiceFor(String(row.user_id))} No ticker codes, company names only.${nameLine} Never mention that this is generated.`;
-        for (let a = 0; a < 2 && !spoken; a++) {
+        for (let a = 0; a < 3 && !spoken; a++) {
           // every edition is written by the fast model: M2.7 over-thinks these shapes and times out, and the
           // deterministic fallback recites every position in turn, which is the laundry list BLUF forbids
           const out = await askModel(key, "You turn a written investment brief into a vivid spoken radio script. Output only the JSON.", prompt, 9000, 35000, "gpt-oss-120b");
           const sp = out && typeof (out as { spoken?: unknown }).spoken === "string" ? String((out as { spoken: string }).spoken) : null;
-          if (sp) { const t = sp.replace(/(?:\s*<break[^>]*\/>\s*)+$/g, "").trim(); if (t.split(/\s+/).length >= spec.floor && /[.!?]$/.test(t)) spoken = t; }
+          // on the last attempt a slightly short model script is still far better than the template
+          const floorNow = a === 2 ? Math.round(spec.floor * 0.75) : spec.floor;
+          if (sp) { const t = sp.replace(/(?:\s*<break[^>]*\/>\s*)+$/g, "").trim(); if (t.split(/\s+/).length >= floorNow && /[.!?]$/.test(t)) spoken = t; }
         }
       }
       let usedFallback = false;
