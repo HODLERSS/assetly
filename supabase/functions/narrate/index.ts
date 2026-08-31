@@ -108,6 +108,8 @@ const spokenFigureUnsupported = (script: string, allowed: string[]): boolean => 
   });
 };
 
+const EAR_JARGON = /\b(beta|alpha|ROE|ROIC|ROTCE|EBITDA|FCF|EPS|AUM|NII|NIM|CET\s?1|capex|basis points|multiple compression|valuation multiple|net interest (?:margin|income)|drawdown|Sharpe|duration|convexity|dry powder|megacap|tilt|cash drag|hash ?rate|free cash flow)\b/i;
+
 const speechName = (name: string) => {
   let n = name.trim();
   for (let i = 0; i < 3; i++) n = n.replace(/[,\s]*\b(Incorporated|Inc\.?|Corporation|Corp\.?|Company|Co\.?|Limited|Ltd\.?|PLC|N\.V\.|S\.A\.|AG|SE|Holdings?|Group|Trust|Fund|ETF|Class [A-C]( Shares)?|Common Stock|Ordinary Shares|ADR|\(.*?\))\s*$/i, "").trim();
@@ -295,6 +297,11 @@ Deno.serve(async (req) => {
         // bottom-line-first structural instead of hoped-for. If anything about the slots looks wrong we
         // fall through to the original free-composition loop untouched, so the worst case is the old behaviour.
         const nPoints = isAssess ? 3 : 2;
+        const voiceLine = await voiceFor(String(row.user_id));
+        const beginner = /BEGINNER/.test(voiceLine);
+        const earBan = beginner
+          ? " BANNED WORDS for this listener, no exceptions: beta, alpha, ROE, ROIC, EBITDA, FCF, EPS, AUM, NII, NIM, CET1, capex, basis points, drawdown, Sharpe, duration, tilt, cash drag, hash rate, free cash flow, multiple compression, valuation multiple. Say what the word MEANS in ordinary English instead: for beta say how sharply it moves compared with the market, for free cash flow say the cash left after the bills."
+          : "";
         const slotPrompt = `${isAssess ? "Assessment" : "Brief"}:\n${JSON.stringify(s)}\n\nReturn STRICT JSON:
 {"bottom_line": str, "because": str, "points": [{"name": str, "point": str}], "risk": str, "next": str}
 
@@ -306,7 +313,7 @@ risk: the single thing that would make this worse, AND the CHECKABLE condition t
 next: the one concrete thing ahead. 10-18 words.\nThe assembled script must run 120 to 190 spoken words in total: write full sentences, not clipped notes.
 
 NUMBER RULES: at most FIVE figures across ALL fields combined. Round for the ear: 34.3% is "thirty-four percent", $43,224 is "forty-three thousand dollars". Never read a decimal above one percent; a figure UNDER one percent keeps its decimal. Never describe a holding's size as a fraction (half, a third, a quarter): say the rounded percent.
-Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". Never speak as "we" about acting on their money. ${await voiceFor(String(row.user_id))} No ticker codes, company names only.${nameLine}${figureLine}`;
+Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". Never speak as "we" about acting on their money. ${voiceLine}${earBan} No ticker codes, company names only.${nameLine}${figureLine}`;
 
         type Slots = { bottom_line: string; because: string; points: { name: string; point: string }[]; risk: string; next: string };
         const oneSentence = (x: unknown) => String(x ?? "").replace(/\s+/g, " ").trim();
@@ -336,7 +343,8 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
           const figs = (draft.replace(/<[^>]*>/g, " ").match(/-?\d[\d,]*(?:\.\d+)?\s?%|\$\s?[\d,]+|(?<![\w.])\d[\d,]*(?:\.\d+)?(?![\w%])/g) ?? []).length;
           const unsupported = spokenFigureUnsupported(draft, allowed);
           const heardFigs = figs + spokenQuantities(draft).length;   // the diet counts what the EAR receives, spelled or not
-          if (heardW >= 104 && heardW <= 205 && heardFigs <= 6 && !FRACW0.test(draft) && !unsupported) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
+          const jargon = beginner && EAR_JARGON.test(draft.replace(/<[^>]*>/g, " "));
+          if (heardW >= 104 && heardW <= 205 && heardFigs <= 6 && !FRACW0.test(draft) && !unsupported && !jargon) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
           if (unsupported && a === 1) console.log("narrate: slot script spoke a figure the brief does not support");
         }
         if (!spoken) console.log("narrate: slot composition did not land, falling back to free composition");
@@ -379,7 +387,8 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
           const allowedNums = new Set(allowed.map((x) => x.replace(/[$,%\s]/g, "")));
           const strayFigure = (x: string) => (x.replace(/<[^>]*>/g, " ").match(/\d[\d,]*(?:\.\d+)?/g) ?? [])
             .some((n) => !allowedNums.has(n.replace(/,/g, "")));
-          const meaningOk = !FRACW.test(t) && !walkthrough(t) && !strayFigure(t) && !spokenFigureUnsupported(t, allowed);
+          const meaningOk = !FRACW.test(t) && !walkthrough(t) && !strayFigure(t) && !spokenFigureUnsupported(t, allowed)
+            && !(beginner && EAR_JARGON.test(t.replace(/<[^>]*>/g, " ")));
           const accept = a === 2 ? true : a === 1 ? meaningOk : (meaningOk && !padded);
           // count SPOKEN words: the SSML tags are never heard, and counting them let a 90-word script
           // clear a 97-word floor
