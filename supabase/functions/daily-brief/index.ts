@@ -874,6 +874,11 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         : Array.isArray(v) ? v.map(scrubDeep)
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, scrubDeep(x)])) : v;
       sections = scrubDeep(sections) as Sections;
+      // The diet runs AFTER the expansion loop that enforces the length floor, so an aggressive trim can
+      // starve a brief back below it. Snapshot first and keep the trim only if the brief stays long enough.
+      const wcAll = (o: Sections) => [o.lede, o.overnight, o.desk_view, o.horizon ?? "", ...(o.ideas ?? []), ...o.positions.flatMap((q) => [q.name, q.note, q.watch])].join(" ").split(/\s+/).filter(Boolean).length;
+      const preDiet = JSON.parse(JSON.stringify(sections)) as Sections;
+      const dietFloor = edition === "assessment" ? (holdings.length <= 2 ? 180 : 240) : 120;
       // ---- NUMBER DIET (deterministic): weight enumerations are the exact anti-BLUF pattern the reader
       // objected to ("this stock -2.3%, that stock -4.4%"). Narrative sections state the conclusion and name
       // at most two figures; the book/overnight section stays the one place a full stat line is welcome.
@@ -948,6 +953,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const deWeightClause = (t: string) => edition === "assessment" ? t
         : (t ?? "").replace(/,?\s*(?:on|at|with|representing)\s+an?\s+(?:\w+\s+){0,2}-?[\d.]+%\s*(?:weight|stake|position|holding|slice)\b/gi, "");
       sections.positions = sections.positions.map((p) => ({ ...p, note: tidy(deSemi(deAdvice(deWeightClause(collapseRun(deWeightParens(p.note, 1)))))) }));
+      // a diet that starves the brief is worse than the redundancy it removed
+      if (wcAll(sections) < dietFloor && wcAll(preDiet) >= wcAll(sections)) sections = preDiet;
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
       if (["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])))) {
         sections = JSON.parse(noviceScrub(JSON.stringify(sections))) as Sections;
