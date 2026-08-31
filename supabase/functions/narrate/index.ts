@@ -97,7 +97,12 @@ function fallbackScript(s: Sections, dayLine: string, edition: string): string {
     greet,
     say(s.lede),
     // the two names that matter, each in ONE sentence, with the ampersand of a truncated legal name removed
-    ...top.map((p) => `${say(String(p.name).replace(/\s*&\s*$/, ""))}: ${say(firstSentence(p.note))}`),
+    // do not announce the name and then repeat it, and never speak a stray ampersand from a legal name
+    ...top.map((p) => {
+      const nm = say(String(p.name).replace(/\s*&\s*/g, " ").trim());
+      const note = say(firstSentence(p.note));
+      return new RegExp(`^${nm.slice(0, 12).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(note) ? note : `${nm}: ${note}`;
+    }),
     say(s.desk_view),
     // the fallback must still clear the spoken-length floor, or a listener gets a 90-word stub
     ...(s.horizon ? [say(firstSentence(s.horizon))] : []),
