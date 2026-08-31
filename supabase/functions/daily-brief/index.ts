@@ -1019,7 +1019,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections.overnight = safeField(sections.overnight, tidy(deSemi(deAdvice(trimStats(collapseList(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.overnight, 1))))), bookCap, 16)))));
       // the model sometimes writes the section label into the field itself
       sections.desk_view = String(sections.desk_view ?? "").replace(/^\s*(desk\s*view|structure\s*(?:&|and)\s*risk|the\s*desk\s*view)\s*[:\u2014-]\s*/i, "");
-      sections.desk_view = safeField(sections.desk_view, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.desk_view, 0)))), edition === "assessment" ? 5 : 3, 30)))));   // structural section
+      sections.desk_view = safeField(sections.desk_view, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.desk_view, 0)))), edition === "assessment" ? 5 : 3, 18)))));   // structural section; the floor is 18, not 30, because at 30 a four-sentence desk view could not shed a single sentence without breaching it, so the figure cap never bit
       sections.lede = safeField(sections.lede, tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1)))));
       // in a DAILY note the weight is structural, not news, and the book line already states it: dropping the
       // "on a 9.3% weight" clause leaves the move and its dollar impact, which is what the day is about
