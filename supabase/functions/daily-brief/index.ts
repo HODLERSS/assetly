@@ -634,6 +634,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         const deTape = (t: string) => t.replace(/\btoday's\b/gi, "current").replace(/\btoday\b/gi, "now").replace(/\btonight\b/gi, "soon");
         sections.lede = deTape(sections.lede); sections.overnight = deTape(sections.overnight); sections.desk_view = deTape(sections.desk_view);
         sections.horizon = deTape(sections.horizon ?? ""); sections.positions = sections.positions.map((p) => ({ ...p, note: deTape(p.note), watch: deTape(p.watch) }));
+        sections.ideas = (sections.ideas ?? []).map(deTape);   // ideas were the one field the tape scrub missed
         // ideas are research gaps, never instructions (guaranteed in code): strip a leading Add/Buy/Consider/Allocate
         const VERB = /(add|buy|consider|allocate|explore|introduce|include|hold|own|put|use|pair|layer)(ing)?\s+(adding\s+|an?\s+|some\s+|the\s+)?/i;
         sections.ideas = sections.ideas.map((x) => {
