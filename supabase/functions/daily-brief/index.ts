@@ -891,7 +891,11 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // figure is legitimate (that is what the diet does); INVENTING or ALTERING one never is. If the scrubs
       // produce a figure that was not in the text they started from, the scrubs lose and the original stands.
       const figSet = (o: unknown) => new Set((JSON.stringify(o ?? "").match(/-?\d[\d,]*(?:\.\d+)?%?/g) ?? []));
-      const figsBefore = figSet(sections);
+      // per-field: a scrub that alters a figure loses THAT field, not the whole diet
+      const safeField = (before: string, after: string) => {
+        const b = figSet(before);
+        return [...figSet(after)].some((f) => !b.has(f)) ? before : after;
+      };
       const dietFloor = edition === "assessment" ? (holdings.length <= 2 ? 180 : 240) : 120;
       // ---- NUMBER DIET (deterministic): weight enumerations are the exact anti-BLUF pattern the reader
       // objected to ("this stock -2.3%, that stock -4.4%"). Narrative sections state the conclusion and name
@@ -971,14 +975,14 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const tidy = (t: string) => undangle((t ?? "").replace(/\s+([,.;])/g, "$1").replace(/\s{2,}/g, " ").trim());
       // the close/morning tape line is instructed to carry three market quotes plus the day P&L, so it gets 8
       const bookCap = edition === "assessment" ? 6 : 8;
-      sections.overnight = tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.overnight, 1))), bookCap))));
-      sections.desk_view = tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.desk_view, 0))), edition === "assessment" ? 5 : 3, 30))));   // structural section: weights are noise
-      sections.lede = tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1))));
+      sections.overnight = safeField(sections.overnight, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.overnight, 1))), bookCap)))));
+      sections.desk_view = safeField(sections.desk_view, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.desk_view, 0))), edition === "assessment" ? 5 : 3, 30)))));   // structural section
+      sections.lede = safeField(sections.lede, tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1)))));
       // in a DAILY note the weight is structural, not news, and the book line already states it: dropping the
       // "on a 9.3% weight" clause leaves the move and its dollar impact, which is what the day is about
       const deWeightClause = (t: string) => edition === "assessment" ? t
         : (t ?? "").replace(/,?\s*(?:on|at|with|representing)\s+an?\s+(?:\w+\s+){0,2}-?[\d.]+%\s*(?:weight|stake|position|holding|slice)\b/gi, "");
-      sections.positions = sections.positions.map((p) => ({ ...p, note: tidy(deSemi(deAdvice(deWeightClause(collapseRun(deWeightParens(p.note, 1)))))) }));
+      sections.positions = sections.positions.map((p) => ({ ...p, note: safeField(p.note, tidy(deSemi(deAdvice(deWeightClause(collapseRun(deWeightParens(p.note, 1))))))) }));
       // a diet that starves the brief is worse than the redundancy it removed
       if (wcAll(sections) < dietFloor && wcAll(preDiet) >= wcAll(sections)) sections = preDiet;
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
@@ -997,11 +1001,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         ? "No dated catalyst before the next open" : String(w ?? "");
       sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(p.note, capNote), watch: fitCap(fixWatch(p.watch), 14) }));
       sections.ideas = (sections.ideas ?? []).map((x) => fitCap(String(x), 16));
-      const invented = [...figSet(sections)].filter((f) => !figsBefore.has(f));
-      if (invented.length) {
-        console.log("post-processing altered figures " + invented.slice(0, 5).join(",") + " - reverting to pre-scrub text");
-        sections = preDiet;
-      }
+
       const { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
         audio_path: null,   // new text => stale audio; narrate re-runs for this row
