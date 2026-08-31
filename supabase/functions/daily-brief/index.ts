@@ -969,6 +969,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // The opening states the shape of the book; a later sentence that re-states weights is what goes.
       const figuresIn = (t: string) => (String(t ?? "").match(/-?\d[\d,]*(?:\.\d+)?\s?%|\$\s?[\d,]+/g) ?? []).map((x) => x.trim());
       // never trim a section into a stub: losing the substance is worse than carrying one extra figure
+      const RISK_CLAUSE = /\bthe risk:/i;
       const trimStats = (t: string, cap: number, minWords = 26) => {
         const wcS = (x: string) => String(x).split(/\s+/).filter(Boolean).length;
         const sents = String(t ?? "").split(/(?<=[.;])\s+/).filter(Boolean);
@@ -985,6 +986,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           for (let i = 1; i < out.length; i++) {
             const n = statCount(out[i]);
             if (n === 0) continue;
+            if (RISK_CLAUSE.test(out[i])) continue;   // a note's risk clause is required; never trim it away
             const earlier = new Set(out.slice(0, i).flatMap(figuresIn));
             const dup = figuresIn(out[i]).filter((f) => earlier.has(f)).length;
             if (dup > bestDup || (dup === bestDup && n > bestStats)) { bestDup = dup; bestStats = n; idx = i; }
@@ -1032,7 +1034,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // "on a 9.3% weight" clause leaves the move and its dollar impact, which is what the day is about
       const deWeightClause = (t: string) => edition === "assessment" ? t
         : (t ?? "").replace(/,?\s*(?:on|at|with|representing)\s+an?\s+(?:\w+\s+){0,2}-?[\d.]+%\s*(?:weight|stake|position|holding|slice)\b/gi, "");
-      sections.positions = sections.positions.map((p) => ({ ...p, note: safeField(p.note, tidy(deSemi(deAdvice(deWeightClause(collapseRun(deWeightParens(p.note, 1))))))) }));
+      sections.positions = sections.positions.map((p) => ({ ...p, note: safeField(p.note, tidy(deSemi(deAdvice(trimStats(deWeightClause(collapseRun(deWeightParens(p.note, 1))), 3, 18))))) }));
       // a diet that starves the brief is worse than the redundancy it removed
       if (wcAll(sections) < dietFloor && wcAll(preDiet) >= wcAll(sections)) sections = preDiet;
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires

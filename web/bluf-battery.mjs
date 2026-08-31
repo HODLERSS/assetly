@@ -125,11 +125,12 @@ const FRACW = { "half": 50, "a third": 33, "one third": 33, "two thirds": 67, "a
 const DIGITW = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
 // spoken decimals: "zero point two percent" is 0.2, not 2
 const WHOLEW = "(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[\\s\\u2010-\\u2015-](?:one|two|three|four|five|six|seven|eight|nine))?|(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)|\\d+";
+const HYC = "[\\s\\u2010-\\u2015-]";   // a spoken decimal may be hyphenated: "four\u2011point\u2011eight percent"
 const unspokenDecimals = (t) => String(t).replace(
-  new RegExp(`\\b(${WHOLEW})\\s+point\\s+((?:zero|one|two|three|four|five|six|seven|eight|nine|\\d)(?:\\s+(?:zero|one|two|three|four|five|six|seven|eight|nine|\\d))*)\\b`, "gi"),
+  new RegExp(`\\b(${WHOLEW})${HYC}+point${HYC}+((?:zero|one|two|three|four|five|six|seven|eight|nine|\\d)(?:${HYC}+(?:zero|one|two|three|four|five|six|seven|eight|nine|\\d))*)\\b`, "gi"),
   (_m, whole, frac) => {
     const w = /^\d+$/.test(whole) ? whole : String(wordVal(whole) ?? DIGITW[String(whole).toLowerCase()] ?? 0);
-    const f = String(frac).trim().split(/\s+/).map((d) => (/^\d$/.test(d) ? d : String(DIGITW[d.toLowerCase()]))).join("");
+    const f = String(frac).trim().split(/[\s\u2010-\u2015-]+/).map((d) => (/^\d$/.test(d) ? d : String(DIGITW[d.toLowerCase()]))).join("");
     return `${w}.${f}`;
   });
 const spokenValues = (script) => {
@@ -139,7 +140,7 @@ const spokenValues = (script) => {
   const WORDS = ["seventeen", "seventy", "thirteen", "fourteen", "fifteen", "sixteen", "eighteen", "nineteen", "eleven", "twelve", "twenty", "thirty", "forty", "fifty", "sixty", "eighty", "ninety", "hundred", "thousand", "million", "billion", "three", "seven", "eight", "nine", "four", "five", "zero", "one", "two", "six", "ten"]
     .sort((a, b) => b.length - a.length);
   const words = `(?:${WORDS.join("|")})`;
-  const HY = "[\\s\\u2010-\\u2015-]";   // narration uses non-breaking hyphens: "twenty\u2011three" must not parse as "three"
+  const HY = HYC;   // narration uses non-breaking hyphens: "twenty\u2011three" must not parse as "three"
   const seq = `\\b${words}(?:${HY}${words})*\\b`;
   const pct = [
     ...[...t.matchAll(new RegExp(`(${seq})\\s+percent`, "gi"))].map((m) => wordVal(m[1])),
