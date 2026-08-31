@@ -21,7 +21,9 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 const LEADERS = ["NVDA", "AAPL", "MSFT", "TSLA", "META", "AMZN", "GOOGL"];
 
 // a dash glued to a digit is a MINUS SIGN (−32.8%, –5%): normalize it before the dash-to-comma rewrite, or the sign is lost
-const deDash = (v: string) => v.replace(/[\u2212\u2013\u2014]\s?(?=\d)/g, "-").replace(/\s*—\s*/g, ", ").replace(/\s*–\s*/g, ", ");
+// A dash is a MINUS only when it is glued to the digit ("\u201332.8%"). With a space it is punctuation
+// ("15.5% \u2014 51.2% of assets"), and treating that as a minus flipped a positive weight negative.
+const deDash = (v: string) => v.replace(/[\u2212\u2013\u2014](?=\d)/g, "-").replace(/\s*—\s*/g, ", ").replace(/\s*–\s*/g, ", ");
 function deepDeDash<T>(v: T): T {
   if (typeof v === "string") return deDash(v) as unknown as T;
   if (Array.isArray(v)) return v.map(deepDeDash) as unknown as T;
@@ -898,11 +900,11 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const collapsePctFirst = (t: string) => String(t ?? "").split(/(?<=[.;])\s+/).map((sent) =>
         (RETURNY.test(sent) || !ALLOCY.test(sent)) ? sent : sent.replace(
           /(-?\d[\d.]*%[^,.;]{0,44})(?:,\s*(?:and\s+)?-?\d[\d.]*%[^,.;]{0,44}){2,}/g,
-          (run) => { const items = run.split(/,\s*/); return items.slice(0, 2).join(", ") + `, and ${numWord(items.length - 2)} smaller slices`; })
+          (run) => { const items = run.split(/,\s*/); const n = items.length - 2; return items.slice(0, 2).join(", ") + `, and ${numWord(n)} smaller slice${n === 1 ? "" : "s"}`; })
       ).join(" ");
       const collapseRun = (t: string) => (t ?? "").replace(
         /(?:[A-Z][A-Za-z0-9.$]{0,6}\s+(?:is\s+|at\s+)?-?\d[\d.]*%)(?:,\s*[A-Z][A-Za-z0-9.$]{0,6}\s+(?:is\s+|at\s+)?-?\d[\d.]*%){2,}/g,
-        (run) => { const items = run.split(/,\s*/); return items.slice(0, 2).join(", ") + `, and ${numWord(items.length - 2)} smaller positions`; });
+        (run) => { const items = run.split(/,\s*/); const n = items.length - 2; return items.slice(0, 2).join(", ") + `, and ${numWord(n)} smaller position${n === 1 ? "" : "s"}`; });
       // parenthetical weight tags are decoration: keep at most `keep` of them
       const deWeightParens = (t: string, keep: number) => { let seen = 0; return (t ?? "").replace(/\s*\(\s*[~≈]?\s*-?\d[\d.]*%(?:\s*weight)?(?:,[^)]*)?\)/g, (m) => (++seen <= keep ? m : "")); };
       // dates and durations are scaffolding, not statistics; a range is one figure
