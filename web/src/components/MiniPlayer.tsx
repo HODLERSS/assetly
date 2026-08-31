@@ -34,10 +34,9 @@ export function MiniPlayer() {
         </div>
         <div className="mp-controls">
           <button className="mp-btn mp-skip" onClick={() => skip(-SKIP_SECONDS)} aria-label={`Back ${SKIP_SECONDS} seconds`} disabled={s.loading}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6" />
             </svg>
-            <span className="mp-skipnum" aria-hidden="true">{SKIP_SECONDS}</span>
           </button>
           <button className="mp-btn mp-play" onClick={toggle} aria-label={s.playing ? "Pause" : "Play"} data-testid="mini-player-toggle" disabled={s.loading}>
             {s.playing ? (
@@ -47,8 +46,7 @@ export function MiniPlayer() {
             )}
           </button>
           <button className="mp-btn mp-skip" onClick={() => skip(SKIP_SECONDS)} aria-label={`Forward ${SKIP_SECONDS} seconds`} disabled={s.loading}>
-            <span className="mp-skipnum" aria-hidden="true">{SKIP_SECONDS}</span>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 5V2l5 4-5 4V7a6 6 0 1 0 6 6" />
             </svg>
           </button>

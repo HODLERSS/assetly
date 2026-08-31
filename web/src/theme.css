@@ -203,10 +203,8 @@ input, select { font: inherit; }
 .mp-btn:active { background: var(--as-hover); }
 .mp-btn:disabled { opacity: .4; }
 .mp-btn svg { display: block; }
-/* the number sits BESIDE the arrow, never on top of it: stamped inside a 22px glyph it collided
-   with the arrow strokes and read as a smudge on a phone */
-.mp-skip { gap: 1px; }
-.mp-skipnum { font: 600 10px/1 var(--as-font-num); pointer-events: none; color: inherit; }
+/* the arrows carry no "15": stamped inside the glyph it collided with the strokes, and set beside it
+   the row read as busy. The interval lives in the aria-label, where a screen reader still announces it. */
 
 .mp-play { background: var(--as-primary); color: var(--as-on-primary); min-width: 44px; min-height: 44px; }
 .mp-play:active { background: var(--as-primary); opacity: .85; }
