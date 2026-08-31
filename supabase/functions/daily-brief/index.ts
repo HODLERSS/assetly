@@ -195,6 +195,8 @@ const NOVICE_MAP: [RegExp, string][] = [
   [/\bleverage(d)?\b/gi, "borrowed money"], [/\bhigh[- ]beta\b/gi, "sharper-moving-than-the-market"],
   [/\bbeta\b/gi, "sensitivity to market swings"], [/\bvaluation multiple(s)?\b/gi, "price tag relative to earnings"],
   [/\bmultiple compression\b/gi, "a shrinking price tag relative to earnings"], [/\b(net interest margin|lending profit margin|net interest income)\b/gi, "profit on lending"],
+  [/\b(NII|NIM)\b/g, "profit on lending"], [/\bCET\s?1\b/gi, "its safety cushion of capital"],
+  [/\bmegacaps?\b/gi, "the biggest companies"], [/\bdry powder\b/gi, "cash ready to invest"],
   // caught by the B4 tier check: a 55-year-old first-time investor was handed "net new money negative for two
   // consecutive quarters" and "core capital ratio drops below twelve percent" as things to WATCH
   [/\b(?:negative\s+)?(?:net new money|net new assets|net (?:out)?flows?)\s+(?:is\s+|turning\s+|going\s+)?negative\b/gi, "customers pulling money out"],
@@ -576,7 +578,12 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           // lowercasing the lead-in word turns an ACRONYM into nonsense ("CET1" -> "cET1"), so only a
           // normally-capitalised word is lowered
           const lead = (x: string) => (/^[A-Z][A-Z0-9]/.test(x) ? x : x[0].toLowerCase() + x.slice(1));
-          return phrase ? { ...p, note: p.note.replace(/[.\s]+$/, "") + `. The risk: ${lead(phrase)}.` } : p;
+          if (!phrase) return p;
+          const withRisk = p.note.replace(/[.\s]+$/, "") + `. The risk: ${lead(phrase)}.`;
+          // the model sometimes already wrote its own "The risk:", and a note carrying two of them reads
+          // as a template seam; keep the FIRST and fold the rest into one clause
+          const parts = withRisk.split(/\.\s*The risk:\s*/i);
+          return { ...p, note: parts.length <= 2 ? withRisk : `${parts[0]}. The risk: ${parts.slice(1).map((x) => x.replace(/\.\s*$/, "")).join(", and ")}.` };
         }) });
         draft = ensureRisk(draft as Sections);   // before the fact-check, so a lengthened note gets tightened to its cap
         const checked = elapsed() > 112 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims. Think briefly.",

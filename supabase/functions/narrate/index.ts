@@ -65,6 +65,17 @@ const wordsToNumber = (toks: string[]): number | null => {
   }
   return seen ? total + cur + (frac ?? 0) : null;
 };
+/** "twenty-three point four percent" -> "twenty-three percent"; a figure UNDER one percent keeps its decimal. */
+const NW = "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|and";
+// the group must START and END on a number word, or it eats the space in front of it ("a twenty-three
+// point four percent" came back as "atwenty-three percent")
+const EAR_RE = new RegExp(`((?:${NW})(?:[\\s-]+(?:${NW}))*)\\s+point\\s+(?:zero|one|two|three|four|five|six|seven|eight|nine)\\s+percent\\b`, "gi");
+const roundEar = (t: string) => String(t ?? "").replace(EAR_RE,
+  (whole, intPart: string) => {
+    const v = wordsToNumber(String(intPart).toLowerCase().replace(/-/g, " ").split(/\s+/).filter(Boolean));
+    return v !== null && v >= 1 ? `${String(intPart).trim()} percent` : whole;   // under 1% the decimal IS the fact
+  });
+
 const spokenQuantities = (text: string): { value: number; unit: "pct" | "usd" }[] => {
   const toks = String(text).toLowerCase().replace(/<[^>]*>/g, " ").replace(/-/g, " ").replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
   const out: { value: number; unit: "pct" | "usd" }[] = [];
@@ -308,7 +319,7 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
         const period = (x: string) => (/[.!?]$/.test(x) ? x : x + ".");
         const weekday = dayLine.split(",")[0];
         const greet = ed === "morning" ? `Good morning, it's ${weekday}.` : `Good afternoon, it's ${weekday}.`;
-        for (let a = 0; a < 2 && !spoken; a++) {
+        for (let a = 0; a < 3 && !spoken; a++) {
           const raw = await askModel(key, "You write the parts of a spoken investment brief. Output only the JSON.", slotPrompt, 6000, a === 0 ? 45000 : 40000, "gpt-oss-120b");
           if (!okSlots(raw)) continue;
           const body = [
@@ -324,7 +335,8 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
           const FRACW0 = /\b(half|a third|one third|two thirds|a quarter|one quarter|three quarters|a fifth)\b/i;
           const figs = (draft.replace(/<[^>]*>/g, " ").match(/-?\d[\d,]*(?:\.\d+)?\s?%|\$\s?[\d,]+|(?<![\w.])\d[\d,]*(?:\.\d+)?(?![\w%])/g) ?? []).length;
           const unsupported = spokenFigureUnsupported(draft, allowed);
-          if (heardW >= 104 && heardW <= 205 && figs <= 5 && !FRACW0.test(draft) && !unsupported) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
+          const heardFigs = figs + spokenQuantities(draft).length;   // the diet counts what the EAR receives, spelled or not
+          if (heardW >= 104 && heardW <= 205 && heardFigs <= 6 && !FRACW0.test(draft) && !unsupported) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
           if (unsupported && a === 1) console.log("narrate: slot script spoke a figure the brief does not support");
         }
         if (!spoken) console.log("narrate: slot composition did not land, falling back to free composition");
@@ -380,6 +392,7 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
       if (!spoken) { spoken = fallbackScript(s, dayLine, ed); usedFallback = true; }
       // normalize, round, name the companies, then guarantee the sign-off BEFORE the script_only return,
       // so the script an operator inspects is exactly the one a listener hears
+      spoken = roundEar(spoken);
       spoken = sayNames(earNumbers(spoken.replace(/(\d+(?:\.\d+)?)\s?percent/gi, "$1%").replace(/(\d[\d,]*(?:\.\d+)?)\s?dollars/gi, "$$$1")), names);   // normalize then round: every spoken number comes out rounded, tickers come out as company names
       if (!/(talk soon|see you|that's your|that’s your)/i.test(spoken.slice(-120))) spoken += ` <break time="0.6s" /> ${isAssess ? "That's your assessment." : "That's your brief."} Talk soon.`;
       if (scriptOnly) { scripts[`${row.brief_date}-${ed}`] = spoken; narrated++; continue; }
