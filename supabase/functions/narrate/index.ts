@@ -225,8 +225,13 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
             // beat cap: a 90-second script is ~12 sentences. More than that and the model is padding with
           // restatement and generic commentary, which is what makes the back half of a brief worthless.
           const beats = t.replace(/<[^>]*>/g, " ").split(/(?<=[.!?])\s+/).filter((x) => x.trim().length > 3).length;
-          const padded = beats > 13 || /\bwe(?:'|\u2019)?ll\b/i.test(t);
-          if (t.split(/\s+/).length >= floorNow && /[.!?]$/.test(t) && (a === 2 || (!FRACW.test(t) && !walkthrough(t) && !padded))) spoken = t;
+          const padded = beats > 14 || /\bwe(?:'|\u2019)?ll\b/i.test(t);
+          // Escalating leniency: the first attempt must be tight, the second need only avoid the two errors
+          // that change meaning, the last takes what it can get. Being strict on every attempt pushed the
+          // narration into the deterministic template, which reads far worse than a slightly long script.
+          const meaningOk = !FRACW.test(t) && !walkthrough(t);
+          const accept = a === 2 ? true : a === 1 ? meaningOk : (meaningOk && !padded);
+          if (t.split(/\s+/).length >= floorNow && /[.!?]$/.test(t) && accept) spoken = t;
           }
         }
       }
