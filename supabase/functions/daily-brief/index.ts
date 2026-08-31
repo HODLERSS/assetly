@@ -889,9 +889,16 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // at most two figures; the book/overnight section stays the one place a full stat line is welcome.
       const numWord = (n: number) => ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][n] ?? String(n);
       // the same laundry list also comes percent-first ("25.6% in a fund, 15.5% in a bank, 10.1% in ...")
-      const collapsePctFirst = (t: string) => (t ?? "").replace(
-        /(-?\d[\d.]*%[^,.;]{0,44})(?:,\s*(?:and\s+)?-?\d[\d.]*%[^,.;]{0,44}){2,}/g,
-        (run) => { const items = run.split(/,\s*/); return items.slice(0, 2).join(", ") + `, and ${numWord(items.length - 2)} smaller slices`; });
+      // ONLY an allocation list collapses. A percent-first run can just as easily be a RETURNS list
+      // ("30-day returns are 24.4% for Bitcoin, 33.5% for Ethereum"), where collapsing deletes real figures
+      // and leaves weight-language nonsense.
+      const RETURNY = /\b(return|returns|gain|gains|loss|losses|performance|rose|fell|climbed|dropped|up|down|yield|yields)\b/i;
+      const ALLOCY = /\b(assets|book|portfolio|weight|allocation|holdings|exposure)\b/i;
+      const collapsePctFirst = (t: string) => String(t ?? "").split(/(?<=[.;])\s+/).map((sent) =>
+        (RETURNY.test(sent) || !ALLOCY.test(sent)) ? sent : sent.replace(
+          /(-?\d[\d.]*%[^,.;]{0,44})(?:,\s*(?:and\s+)?-?\d[\d.]*%[^,.;]{0,44}){2,}/g,
+          (run) => { const items = run.split(/,\s*/); return items.slice(0, 2).join(", ") + `, and ${numWord(items.length - 2)} smaller slices`; })
+      ).join(" ");
       const collapseRun = (t: string) => (t ?? "").replace(
         /(?:[A-Z][A-Za-z0-9.$]{0,6}\s+(?:is\s+|at\s+)?-?\d[\d.]*%)(?:,\s*[A-Z][A-Za-z0-9.$]{0,6}\s+(?:is\s+|at\s+)?-?\d[\d.]*%){2,}/g,
         (run) => { const items = run.split(/,\s*/); return items.slice(0, 2).join(", ") + `, and ${numWord(items.length - 2)} smaller positions`; });
