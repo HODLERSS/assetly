@@ -32,8 +32,8 @@ export type BriefSections = {
 export type BriefEdition = "morning" | "midday" | "close" | "assessment";
 export type DailyBrief = { brief_date: string; edition: BriefEdition; sections: BriefSections; generated_at: string; audio_path?: string | null };
 /** Five tap-only answers from sign-up (or Settings). null/missing = the defaults below. */
-export type Investor = { styles: string[]; purpose: string; horizon: string; target: string; risk: string; level: string };
-export const INVESTOR_DEFAULT: Investor = { styles: ["value"], purpose: "watch", horizon: "3-10y", target: "8-12%", risk: "hold", level: "novice" };
+export type Investor = { styles: string[]; purpose: string[]; horizon: string[]; target: string[]; risk: string[]; level: string[] };
+export const INVESTOR_DEFAULT: Investor = { styles: ["value"], purpose: ["watch"], horizon: ["3-10y"], target: ["8-12%"], risk: ["hold"], level: ["novice"] };
 export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null; investor?: Investor | null };
 
 const nm = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));

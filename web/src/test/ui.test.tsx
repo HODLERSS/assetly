@@ -269,7 +269,7 @@ describe("U43 connect-first onboarding", () => {
     await screen.findByText(/imported 1 position/i, {}, { timeout: 4000 });
     expect(card.textContent).toContain("RDDT");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    await vi.waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD", expect.objectContaining({ level: "novice", styles: ["value"] })));
+    await vi.waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD", expect.objectContaining({ level: ["novice"], styles: ["value"] })));
     window.history.replaceState({}, "", "/");
   });
 });
@@ -1294,10 +1294,15 @@ describe("U49 investor quiz at sign-up", () => {
     await userEvent.click(screen.getByRole("button", { name: "Crypto" }));   // three lenses: no cap on selections
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     await userEvent.click(await screen.findByRole("button", { name: "Find my next investment" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     await userEvent.click(await screen.findByRole("button", { name: "10+ years" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     await userEvent.click(await screen.findByRole("button", { name: /Aggressive 12/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     await userEvent.click(await screen.findByRole("button", { name: "Buy more" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     await userEvent.click(await screen.findByRole("button", { name: "Intermediate" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     // quiz done -> the holdings step; add one manual position to finish onboarding
     await screen.findByTestId("ob-connect");
     await userEvent.type(screen.getByLabelText(/find your first position/i), "MARA");
@@ -1306,7 +1311,7 @@ describe("U49 investor quiz at sign-up", () => {
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD",
-      { styles: ["value", "ai_tech", "crypto"], purpose: "ideas", horizon: "10y+", target: "12-25%", risk: "buy_more", level: "intermediate" }));
+      { styles: ["value", "ai_tech", "crypto"], purpose: ["ideas"], horizon: ["10y+"], target: ["12-25%"], risk: ["buy_more"], level: ["intermediate"] }));
   });
   it("skip = novice value investor defaults", async () => {
     const api = stubApi({ getProfile: vi.fn().mockResolvedValue(freshProfile), getPortfolio: vi.fn().mockResolvedValue([]) });
@@ -1320,7 +1325,7 @@ describe("U49 investor quiz at sign-up", () => {
     await userEvent.type(screen.getByLabelText(/cost per share/i), "10");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD",
-      { styles: ["value"], purpose: "watch", horizon: "3-10y", target: "8-12%", risk: "hold", level: "novice" }));
+      { styles: ["value"], purpose: ["watch"], horizon: ["3-10y"], target: ["8-12%"], risk: ["hold"], level: ["novice"] }));
   });
 });
 
@@ -1336,12 +1341,15 @@ describe("U50 investor profile in settings", () => {
     await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
     await userEvent.click(screen.getByRole("button", { name: "Growth" }));   // styles: value + growth
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Stay on top of what I own" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));   // purpose keeps its saved value
     await userEvent.click(await screen.findByRole("button", { name: "1–3 years" }));
-    await userEvent.click(await screen.findByRole("button", { name: /Market-like/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));   // target keeps its saved value
     await userEvent.click(await screen.findByRole("button", { name: "Trim a bit" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     await userEvent.click(await screen.findByRole("button", { name: "Advanced" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.updateInvestor).toHaveBeenCalledWith(
-      { styles: ["value", "growth"], purpose: "watch", horizon: "1-3y", target: "8-12%", risk: "trim", level: "advanced" }));
+      { styles: ["value", "growth"], purpose: ["watch"], horizon: ["3-10y", "1-3y"], target: ["8-12%"], risk: ["hold", "trim"], level: ["novice", "advanced"] }));
   });
 });
