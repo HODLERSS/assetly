@@ -192,3 +192,5 @@ was written for which reader).
 | P3 | Level fit | vocabulary matches experience: novice → ≤20-word sentences, no unexplained jargon (deterministic) + judge |
 | P4 | Horizon & ambition fit | time framing matches the horizon and target-return answers — judge |
 | P5 | Advice safety | still never a buy/sell/trim instruction, for every persona incl. "ideas" hunters — regex + judge |
+
+**Final (2026-08-31, round 6): P1 100 · P2 100 · P3 100 · P4 100 · P5 100; blind persona-matching 6/6 in all six rounds.** The path there mirrored the assessment battery: generation plateaued near 90 on prompts alone; the last points came from code guarantees (novice plain-language map, lens-colored verdict) and judge calibration (names are not jargon; an income read of a growth book truthfully calls it growthy).
