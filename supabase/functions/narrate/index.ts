@@ -217,6 +217,55 @@ Deno.serve(async (req) => {
       // ---- script: tight-budget model call, else deterministic fallback ----
       let spoken: string | null = null;
       if (key) {
+        // ---- SLOT COMPOSITION (preferred) ----------------------------------------------------
+        // Free composition scored after the fact plateaus: the model buries the verdict and pads,
+        // so BLUF and understandability sat at 92 no matter how the prompt was worded. Here the MODEL
+        // still writes every sentence, but the CODE fixes the running order and the caps, which makes
+        // bottom-line-first structural instead of hoped-for. If anything about the slots looks wrong we
+        // fall through to the original free-composition loop untouched, so the worst case is the old behaviour.
+        const nPoints = isAssess ? 3 : 2;
+        const slotPrompt = `${isAssess ? "Assessment" : "Brief"}:\n${JSON.stringify(s)}\n\nReturn STRICT JSON:
+{"bottom_line": str, "because": str, "points": [{"name": str, "point": str}], "risk": str, "next": str}
+
+You are a sharp, warm ${spec.who} talking to ONE client. Short sentences. Contractions. Opinionated where the facts back it, never wishy-washy. Write each field as COMPLETE SENTENCES that can be read aloud back to back.
+bottom_line: the ONE thing this means for their money, stated as a VERDICT, not a summary. 14-24 words. Never open with a greeting, never announce what this is, never start with "Today" or "This".
+because: why that verdict is true, with the structural fact behind it. 16-26 words. AT MOST ONE figure.
+points: the ${nPoints === 3 ? "two or three" : "one or two"} things that actually changed the picture. name = the company in plain words. point 16-28 words, AT MOST ONE figure each, and say why it matters rather than how it moved. NEVER walk through the holdings in turn.
+risk: the single thing that would make this worse and what would confirm it. 16-26 words. Constructive, never bare doom.
+next: the one concrete thing ahead. 10-18 words.\nThe assembled script must run 120 to 190 spoken words in total: write full sentences, not clipped notes.
+
+NUMBER RULES: at most FIVE figures across ALL fields combined. Round for the ear: 34.3% is "thirty-four percent", $43,224 is "forty-three thousand dollars". Never read a decimal above one percent; a figure UNDER one percent keeps its decimal. Never describe a holding's size as a fraction (half, a third, a quarter): say the rounded percent.
+Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". Never speak as "we" about acting on their money. ${await voiceFor(String(row.user_id))} No ticker codes, company names only.${nameLine}${figureLine}`;
+
+        type Slots = { bottom_line: string; because: string; points: { name: string; point: string }[]; risk: string; next: string };
+        const oneSentence = (x: unknown) => String(x ?? "").replace(/\s+/g, " ").trim();
+        const okSlots = (o: unknown): o is Slots => {
+          const v = o as Slots;
+          return !!v && !!oneSentence(v.bottom_line) && !!oneSentence(v.because) && !!oneSentence(v.risk)
+            && Array.isArray(v.points) && v.points.length >= 1 && v.points.length <= nPoints
+            && v.points.every((p) => p && !!oneSentence(p.point));
+        };
+        const period = (x: string) => (/[.!?]$/.test(x) ? x : x + ".");
+        const weekday = dayLine.split(",")[0];
+        const greet = ed === "morning" ? `Good morning, it's ${weekday}.` : `Good afternoon, it's ${weekday}.`;
+        for (let a = 0; a < 2 && !spoken; a++) {
+          const raw = await askModel(key, "You write the parts of a spoken investment brief. Output only the JSON.", slotPrompt, 6000, a === 0 ? 45000 : 40000, "gpt-oss-120b");
+          if (!okSlots(raw)) continue;
+          const body = [
+            period(oneSentence(raw.bottom_line)), period(oneSentence(raw.because)),
+            '<break time="0.6s" />',
+            ...raw.points.slice(0, nPoints).map((p) => period(oneSentence(p.point))),
+            '<break time="0.6s" />',
+            period(oneSentence(raw.risk)), period(oneSentence(raw.next)),
+          ].filter((x) => x && x !== ".").join(" ");
+          const draft = `${greet} <break time="0.5s" /> ${body}`;
+          const heardW = draft.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+          // the same accept-only-never-edit checks the free path uses, plus the figure budget
+          const FRACW0 = /\b(half|a third|one third|two thirds|a quarter|one quarter|three quarters|a fifth)\b/i;
+          const figs = (draft.replace(/<[^>]*>/g, " ").match(/-?\d[\d,]*(?:\.\d+)?\s?%|\$\s?[\d,]+|(?<![\w.])\d[\d,]*(?:\.\d+)?(?![\w%])/g) ?? []).length;
+          if (heardW >= 104 && heardW <= 205 && figs <= 5 && !FRACW0.test(draft)) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
+        }
+        if (!spoken) console.log("narrate: slot composition did not land, falling back to free composition");
         const prompt = isAssess
           ? `Assessment:\n${JSON.stringify(s)}\n\nReturn STRICT JSON {"spoken": str}.
 spoken: ${spec.len} spoken script of this portfolio assessment, BOTTOM LINE UP FRONT, at a normal unhurried pace. It is the FIRST look at a client's newly added portfolio. Today is ${dayLine}; use it in the greeting and never guess a different weekday. Voice: a sharp, warm ${spec.who} speaking to ONE client they are just getting to know; confident and OPINIONATED where the facts back it, never wishy-washy; straightforward and data-driven but constructive: a risk always comes with what to watch or do about it, never bare doom. Short sentences. Contractions. STRUCTURE - exactly these beats and NOTHING more: (1) a quick greeting, never introducing yourself or announcing what this is; (2) the VERDDICT and single most important structural fact in the first two sentences, then only the TWO OR THREE things that matter most (not every position), one clear risk, one thing worth looking into, and the sign-off ("That's your assessment. Talk soon."), which the script MUST end with. NUMBER RULES: at most FIVE numbers in the whole script; round everything for the ear (34.3% becomes thirty-four percent; $43,224 becomes forty-three thousand dollars); never read decimals aloud ABOVE one percent; a figure UNDER one percent keeps its decimal ("zero point two percent"), because rounding 0.2% to "two percent" changes the fact tenfold. NEVER describe a holding's size as a fraction (half, a third, a quarter): say the rounded percent instead, because a fraction that misses changes the fact. FIDELITY: every figure you speak must trace to the assessment. Rounding for the ear is required, changing the fact is not: never turn a percentage into a fraction word that does not match it (a quarter is 25%, a third is 33%, half is 50%); if the fraction is not a clean match, say the rounded percent instead. AT MOST TWELVE SENTENCES IN TOTAL. Every sentence must carry a fact or a judgement the listener did not already have: never restate a point in different words, never add generic market commentary to fill time, and never speak as "we" about acting on their money ("we'll monitor", "we'll adjust"). A short script that says three things well beats a long one that lists ten. Insert <break time="0.6s" /> between beats. Use ONLY facts from the assessment. Never tell them to buy or sell. ${await voiceFor(String(row.user_id))} No ticker codes, company names only.${nameLine}${figureLine} Never mention that this is generated.`
