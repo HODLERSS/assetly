@@ -929,17 +929,21 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         out = out.split(/(?<=[.!?])\s+/).filter((x) => !(TRADE_VERB.test(x) && ADVICE_FRAME.test(x))).join(" ");
         return out;
       };
+      // The style rules already ban semicolons and the model keeps using them to weld two clauses into one
+      // 26-word sentence. Splitting them enforces the rule that exists and halves sentence length.
+      const deSemi = (t: string) => String(t ?? "").replace(/;\s+/g, ". ")
+        .replace(/(^|(?<=[a-z0-9%)])[.!?]\s+)([a-z])/g, (_m, a, b) => a + b.toUpperCase());
       const tidy = (t: string) => undangle((t ?? "").replace(/\s+([,.;])/g, "$1").replace(/\s{2,}/g, " ").trim());
       // the close/morning tape line is instructed to carry three market quotes plus the day P&L, so it gets 8
       const bookCap = edition === "assessment" ? 6 : 8;
-      sections.overnight = tidy(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.overnight, 1))), bookCap)));
-      sections.desk_view = tidy(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.desk_view, 0))), 3)));   // structural section: weights are noise
-      sections.lede = tidy(deAdvice(deWeightParens(sections.lede, 1)));
+      sections.overnight = tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.overnight, 1))), bookCap))));
+      sections.desk_view = tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(deWeightParens(sections.desk_view, 0))), 3))));   // structural section: weights are noise
+      sections.lede = tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1))));
       // in a DAILY note the weight is structural, not news, and the book line already states it: dropping the
       // "on a 9.3% weight" clause leaves the move and its dollar impact, which is what the day is about
       const deWeightClause = (t: string) => edition === "assessment" ? t
         : (t ?? "").replace(/,?\s*(?:on|at|with|representing)\s+an?\s+(?:\w+\s+){0,2}-?[\d.]+%\s*(?:weight|stake|position|holding|slice)\b/gi, "");
-      sections.positions = sections.positions.map((p) => ({ ...p, note: tidy(deAdvice(deWeightClause(collapseRun(deWeightParens(p.note, 1))))) }));
+      sections.positions = sections.positions.map((p) => ({ ...p, note: tidy(deSemi(deAdvice(deWeightClause(collapseRun(deWeightParens(p.note, 1)))))) }));
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
       if (["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])))) {
         sections = JSON.parse(noviceScrub(JSON.stringify(sections))) as Sections;
