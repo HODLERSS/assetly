@@ -1356,3 +1356,109 @@ describe("U50 investor profile in settings", () => {
       { styles: ["value", "growth"], purpose: ["watch"], horizon: ["3-10y", "1-3y"], target: ["8-12%"], risk: ["hold", "trim"], level: ["novice", "advanced"] }));
   });
 });
+
+// ---------------------------------------------------------------------------
+// U51 Now-playing mini player. The bug this replaces: the audio element lived in
+// BriefCard, so leaving Home unmounted it and the brief stopped mid-sentence.
+// ---------------------------------------------------------------------------
+describe("U51 mini player", () => {
+  const brief = {
+    brief_date: "2026-08-31", edition: "morning" as const, generated_at: "2026-08-31T12:40:00Z",
+    sections: {
+      lede: "Your book is carrying one big bet and it is paying you today.",
+      overnight: "S&P500 futures 6,470 (+0.4%), VIX 14.1, KOSPI 3,120 (+0.8%).",
+      positions: [{ name: "MARA", note: "Up 2% into the print.", watch: "Q3 call tonight" }],
+      desk_view: "Concentration is the book's defining feature.", calendar: [],
+    },
+    audio_path: "u/2026-08-31-morning.mp3",
+  };
+  const withAudio = () => {
+    const api = stubApi();
+    (api.getDailyBriefs as ReturnType<typeof vi.fn>).mockResolvedValue([brief]);
+    (api.getBriefAudioUrl as ReturnType<typeof vi.fn>).mockResolvedValue("https://cdn.test/brief.mp3");
+    return api;
+  };
+  // jsdom implements no media playback: stand in for it and let the real events drive the store
+  let play: ReturnType<typeof vi.fn>, pause: ReturnType<typeof vi.fn>;
+  beforeEach(async () => {
+    (await import("../lib/player")).__resetPlayer();
+    document.body.className = "";
+    play = vi.fn(function (this: HTMLAudioElement) { this.dispatchEvent(new Event("play")); return Promise.resolve(); });
+    pause = vi.fn(function (this: HTMLAudioElement) { this.dispatchEvent(new Event("pause")); });
+    const loadFn = vi.fn(function (this: HTMLAudioElement) {
+      Object.defineProperty(this, "duration", { value: 96, configurable: true });
+      this.dispatchEvent(new Event("durationchange"));
+      this.dispatchEvent(new Event("loadedmetadata"));
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, "play", { value: play, writable: true, configurable: true });
+    Object.defineProperty(HTMLMediaElement.prototype, "pause", { value: pause, writable: true, configurable: true });
+    Object.defineProperty(HTMLMediaElement.prototype, "load", { value: loadFn, writable: true, configurable: true });
+    Object.defineProperty(HTMLMediaElement.prototype, "currentTime", { value: 0, writable: true, configurable: true });
+    Object.defineProperty(HTMLMediaElement.prototype, "playbackRate", { value: 1, writable: true, configurable: true });
+  });
+
+  const startListening = async (api: Api) => {
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await screen.findByTestId("brief-card");
+    await userEvent.click(screen.getByTestId("brief-listen"));
+    return screen.findByTestId("mini-player");
+  };
+
+  it("keeps playing when the user moves to another tab, and the bar goes with them", async () => {
+    const api = withAudio();
+    const bar = await startListening(api);
+    expect(bar.textContent).toContain("Morning Brief");
+    const playsBefore = play.mock.calls.length;
+    const pausesBefore = pause.mock.calls.length;
+
+    // leave Home entirely; BriefCard unmounts
+    await userEvent.click(within(screen.getByRole("navigation", { name: /tabs/i })).getByRole("button", { name: /news/i }));
+    expect(screen.queryByTestId("brief-card")).toBeNull();
+
+    // the player is still on screen and nothing paused it
+    expect(screen.getByTestId("mini-player")).toBeTruthy();
+    expect(pause.mock.calls.length).toBe(pausesBefore);
+    expect(play.mock.calls.length).toBe(playsBefore);
+    expect(document.body.classList.contains("has-miniplayer")).toBe(true);
+  });
+
+  it("play/pause, 15-second skip, speed cycling and close all work from the bar", async () => {
+    const api = withAudio();
+    await startListening(api);
+
+    await userEvent.click(screen.getByTestId("mini-player-toggle"));      // pause
+    expect(pause).toHaveBeenCalled();
+    const before = play.mock.calls.length;
+    await userEvent.click(screen.getByTestId("mini-player-toggle"));      // resume
+    expect(play.mock.calls.length).toBeGreaterThan(before);
+
+    const el = document.querySelector("audio") as HTMLAudioElement | null;
+    const player = await import("../lib/player");
+    player.seek(10);
+    player.skip(15);
+    expect(player.getSnapshot().position).toBe(25);
+    player.skip(-15);
+    expect(player.getSnapshot().position).toBe(10);
+    player.seek(9999);                                                     // never past the end
+    expect(player.getSnapshot().position).toBe(96);
+    void el;
+
+    expect(screen.getByTestId("mini-player-rate").textContent).toContain("1");
+    await userEvent.click(screen.getByTestId("mini-player-rate"));
+    expect(player.getSnapshot().rate).toBe(1.25);
+
+    await userEvent.click(screen.getByRole("button", { name: /stop and close the player/i }));
+    await waitFor(() => expect(screen.queryByTestId("mini-player")).toBeNull());
+    expect(document.body.classList.contains("has-miniplayer")).toBe(false);
+  });
+
+  it("a brief with no recording never shows a listen button or a bar", async () => {
+    const api = stubApi();
+    (api.getDailyBriefs as ReturnType<typeof vi.fn>).mockResolvedValue([{ ...brief, audio_path: null }]);
+    render(<App api={api} />);
+    await screen.findByTestId("brief-card");
+    expect(screen.queryByTestId("brief-listen")).toBeNull();
+    expect(screen.queryByTestId("mini-player")).toBeNull();
+  });
+});

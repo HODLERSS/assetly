@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Api, BriefEdition, DailyBrief } from "../lib/api";
+import { getSnapshot, load as loadTrack, subscribe, toggle as togglePlayer } from "../lib/player";
 
 // The Daily Brief — three personal research notes a trading day: morning (pre-open),
 // midday pulse (11am CT), closing note (post-close) — plus the Portfolio Assessment, the
@@ -17,8 +18,7 @@ export function BriefCard({ api }: { api: Api }) {
   const [briefs, setBriefs] = useState<DailyBrief[] | undefined>(undefined);
   const [picked, setPicked] = useState<BriefEdition | null>(null);
   const [open, setOpen] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const player = useSyncExternalStore(subscribe, getSnapshot);
 
   useEffect(() => {
     let live = true; let tries = 0;
@@ -31,38 +31,28 @@ export function BriefCard({ api }: { api: Api }) {
     load();
     return () => { live = false; };
   }, [api]);
-  useEffect(() => () => { audioRef.current?.pause(); }, []);
 
   if (!briefs?.length) return null;
   const brief = (picked && briefs.find((b) => b.edition === picked)) ?? briefs[briefs.length - 1];
   const meta = ED_META[brief.edition];
+  const dateLabel = new Date(brief.brief_date + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-  const stopAudio = () => { audioRef.current?.pause(); audioRef.current = null; setPlaying(false); };
-  const pick = (ed: BriefEdition) => { if (ed !== brief.edition) { stopAudio(); setPicked(ed); } };
+  // switching edition does NOT stop playback: the mini player keeps whatever is loaded, so you can
+  // read the close while the morning brief finishes talking
+  const pick = (ed: BriefEdition) => { if (ed !== brief.edition) setPicked(ed); };
 
-  const toggleAudio = async () => {
-    if (!brief.audio_path) return;
-    if (audioRef.current) {
-      if (playing) { audioRef.current.pause(); setPlaying(false); }
-      else { void audioRef.current.play(); setPlaying(true); }
-      return;
-    }
-    const url = await api.getBriefAudioUrl(brief.audio_path);
-    if (!url) return;
-    const a = new Audio(url);
-    audioRef.current = a;
-    a.onended = () => setPlaying(false);
-    if ("mediaSession" in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: meta.title, artist: "Assetly", album: brief.brief_date });
-      navigator.mediaSession.setActionHandler?.("pause", () => { a.pause(); setPlaying(false); });
-      navigator.mediaSession.setActionHandler?.("play", () => { void a.play(); setPlaying(true); });
-    }
-    void a.play();
-    setPlaying(true);
+  const trackId = `${brief.brief_date}:${brief.edition}`;
+  const isThis = player.track?.id === trackId;
+  const playing = isThis && player.playing;
+
+  const toggleAudio = () => {
+    const path = brief.audio_path;
+    if (!path) return;
+    if (isThis) { togglePlayer(); return; }
+    // handed a RESOLVER, not a URL: the signed link expires and the player re-signs it on its own
+    void loadTrack({ id: trackId, title: meta.title, subtitle: dateLabel, date: brief.brief_date }, () => api.getBriefAudioUrl(path));
   };
 
-  const d = new Date(brief.brief_date + "T12:00:00Z");
-  const dateLabel = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const s = brief.sections;
   return (
     <section className="card insights" data-testid="brief-card" aria-label={`Your ${meta.title.toLowerCase()}`}>
@@ -70,7 +60,7 @@ export function BriefCard({ api }: { api: Api }) {
         <span className="insights-brand">{meta.title} · {dateLabel}</span>
         <span className="insights-actions">
           {brief.audio_path && (
-            <button className="insights-toggle" onClick={() => void toggleAudio()} aria-label={playing ? "Pause narration" : "Listen to your brief"}>
+            <button className="insights-toggle" onClick={toggleAudio} aria-label={playing ? "Pause narration" : "Listen to your brief"} data-testid="brief-listen">
               <span className="ico" aria-hidden="true">{playing ? "❚❚" : "▶"}</span>
             </button>
           )}

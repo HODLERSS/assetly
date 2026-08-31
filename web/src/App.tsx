@@ -7,6 +7,7 @@ import { AuthScreen } from "./screens/Auth";
 import { Onboarding } from "./screens/Onboarding";
 import { Home } from "./screens/Home";
 import { TabIcon } from "./components/TabIcon";
+import { MiniPlayer } from "./components/MiniPlayer";
 import { PositionScreen } from "./screens/Position";
 import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
@@ -339,6 +340,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
           <SettingsScreen api={api} profile={profile} rows={rows} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
         )}
       </main>
+
+      <MiniPlayer />
 
       <nav className="tabbar" aria-label="Tabs">
         {(["home", "news", "ask", "settings"] as Tab[]).map((t) => (
