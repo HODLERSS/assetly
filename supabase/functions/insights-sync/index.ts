@@ -44,6 +44,22 @@ async function askMara(key: string, model: string, prompt: string, maxTokens = 1
   return c;
 }
 
+// MiniMax-M2.7 + json_object can exhaust its token budget on the longest prompt shapes and return
+// HTTP 400 "Model did not output valid JSON. The output was truncated" - which used to kill the whole
+// insight for that user. gpt-oss-120b writes the same shape validly, so every call falls back to it.
+const FAST_MODEL = "gpt-oss-120b";
+async function askMaraFb(key: string, model: string, prompt: string, maxTokens = 10000): Promise<string | null> {
+  if (model !== FAST_MODEL) {
+    try {
+      const c = await askMara(key, model, prompt, maxTokens);
+      if (c) return c;
+    } catch (e) {
+      console.log("insights: primary model failed, falling back to " + FAST_MODEL + ": " + String(e).slice(0, 140));
+    }
+  }
+  return await askMara(key, FAST_MODEL, prompt, maxTokens);
+}
+
 // ---- market sessions (mirror of web/src/lib/markets.ts) ----
 const US_HOL = new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25","2027-01-01"]);
 const KR_HOL = new Set(["2026-01-01","2026-03-02","2026-05-01","2026-05-05","2026-06-03","2026-06-06","2026-08-17","2026-10-05","2026-10-09","2026-12-25","2026-12-31","2027-01-01"]);
@@ -249,6 +265,7 @@ Deno.serve(async (req) => {
       const latestTr = tr?.[0];
 
       let content: string | null;
+      let prompt = "";
       if (fixture) {
         content = JSON.stringify(body.canned ?? { bullets: ["fixture bullet one", "fixture bullet two", "fixture bullet three"], windows: { d7: "flat week", d30: "quiet month", d60: "range-bound", y1: "recovering", y2: "volatile" } });
       } else {
@@ -262,7 +279,7 @@ ${(fils ?? []).length ? `\nSEC filings (last 9 months): ${(fils ?? []).map((f) =
 Return STRICT JSON: {"bullets": [3-4 strings], "trend": str}.
 bullets: the sharpest takes on what matters RIGHT NOW, synthesizing news, the earnings call, and price action. Each 10-15 words MAX. Interpret, never restate headlines. Refer to the company by NAME, never numeric KRX codes. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons.
 trend: ONE sentence, max 20 words, covering the recent move and the longer-term picture together.`;
-        content = await askMara(key, model, prompt);
+        content = await askMaraFb(key, model, prompt);
       }
       const parsed = content ? parseInsight(content) : null;
       if (!parsed) { errors.push(symbol + ": unparseable raw[" + String(content).slice(0, 260).replace(/\n/g, " ") + "]"); continue; }
@@ -332,7 +349,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       if (fixture) {
         content = JSON.stringify(body.cannedPortfolio ?? { bullets: ["portfolio fixture one", "portfolio fixture two", "portfolio fixture three"], news5: ["fixture signal one", "fixture signal two", "fixture signal three", "fixture signal four", "fixture signal five"] });
       } else {
-        const prompt = `A retail investor's portfolio (total assets $${Math.round(total)}, debt $${Math.round(debt)}):
+        prompt = `A retail investor's portfolio (total assets $${Math.round(total)}, debt $${Math.round(debt)}):
 Market sessions right now: ${userMkts.map((mk) => sessNote(mk)).join(" ")}
 ${desc}
 Latest earnings calls on file:
@@ -351,9 +368,13 @@ news5: the top 5 signals from this week across their holdings, RANKED by importa
 ${READER}
 Bullet 3 must speak to THIS reader's lens, purpose and horizon (see the profile above).
 Respect the session notes: never present the last session's move as happening today. Refer to Korean companies by NAME, never numeric KRX codes like 005930.KS. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons. No generic advice.`;
-        content = await askMara(key, model, prompt, 14000);
+        content = await askMaraFb(key, model, prompt, 14000);
       }
-      const parsed = content ? parseInsight(content) : null;
+      let parsed = content ? parseInsight(content) : null;
+      if (!parsed && !fixture) {   // a valid-JSON-but-wrong-shape reply still deserves one clean retry on the fast model
+        const retry = await askMaraFb(key, FAST_MODEL, prompt, 14000).catch(() => null);
+        parsed = retry ? parseInsight(retry) : null;
+      }
       if (!parsed) { errors.push("user " + uid.slice(0, 8) + ": unparseable"); continue; }
       const isNovice = ["novice", "intermediate"].includes(topLevel(toArr((invRow?.investor as Investor | null | undefined)?.level, ["novice"])));
       const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => isNovice ? noviceScrub(x) : x);

@@ -32,17 +32,24 @@ const setBook = async () => {
     if (h) { await c.from("lots").delete().eq("holding_id", h.id); await c.from("lots").insert({ holding_id: h.id, qty, cost_per_share: cost }); }
   }
 };
-const wc = (t) => String(t ?? "").split(/\s+/).filter(Boolean).length;
+const strip = (t) => String(t ?? "").replace(/<[^>]*>/g, " ");           // SSML tags are never heard
+// index/product names that merely contain digits are names, not numbers the reader must absorb
+const NAMEY = /\b(Nasdaq[-\s]?100|S&P[-\s]?500|Russell[-\s]?2000|FTSE[-\s]?100|Nikkei[-\s]?225|Dow[-\s]?30|MSCI[-\s]?\w+)\b/gi;
+const wc = (t) => strip(t).split(/\s+/).filter(Boolean).length;
 const textOf = (s) => [s.lede, s.overnight, ...(s.positions ?? []).flatMap((p) => [p.name, p.note, p.watch]), s.desk_view, s.horizon ?? "", ...(s.ideas ?? []), ...(s.calendar ?? [])].join("\n");
-const nums = (t) => (String(t).match(/-?\d[\d,]*(?:\.\d+)?\s?%?|\$\s?[\d,]+/g) ?? []).filter((x) => !/^(19|20)\d\d$/.test(x.trim()));
+const nums = (t) => (strip(t).replace(NAMEY, "INDEX").match(/-?\d[\d,]*(?:\.\d+)?\s?%?|\$\s?[\d,]+/g) ?? []).filter((x) => !/^(19|20)\d\d$/.test(x.trim()));
+// the listener hears spelled-out quantities too ("twenty-six percent"), so the script diet counts those as well
+const WORDNUM = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|trillion)(?:[\s-](?:one|two|three|four|five|six|seven|eight|nine|hundred|thousand|million|billion))*\s+(?:percent|dollars?|won|times|basis points)/gi;
+const heard = (t) => nums(t).length + (strip(t).replace(NAMEY, "INDEX").match(WORDNUM) ?? []).length;
 const JARGON = /\b(ROE|ROIC|ROTCE|EBITDA|FCF|EPS|AUM|NIM|beta|alpha|sharpe|capex|basis points|convexity|duration|multiple compression|net interest margin|short interest|float)\b/;
 const HEDGE = /\b(may or may not|it is unclear whether|only time will tell|could go either way|hard to say|remains uncertain whether|we cannot know)\b/i;
 const DOOM = /\b(catastroph\w*|devastat\w*|wipe(d)? out|collapse imminent|doomed|disaster looms)\b/i;
 // a chain of MOVES (signed percents), not a weights listing (the book section lists weights by design)
 const TICKER_CHAIN = /[A-Z]{2,5}[^.]{0,10}(?:[-+]\d|down |up )[^.]{0,8}%[^.]{0,25}[A-Z]{2,5}[^.]{0,10}(?:[-+]\d|down |up )[^.]{0,8}%/;
 const pct = (subs) => Math.round(subs.filter(Boolean).length / subs.length * 100);
-const avgSentence = (t) => { const ss = String(t).split(/(?<=[.!?])\s+/).filter((x) => x.trim().length > 3); return ss.reduce((a, x) => a + wc(x), 0) / Math.max(1, ss.length); };
-const roundedOk = (script) => {
+const avgSentence = (t) => { const ss = strip(t).split(/(?<=[.!?])\s+/).filter((x) => x.trim().length > 3); return ss.reduce((a, x) => a + wc(x), 0) / Math.max(1, ss.length); };
+const roundedOk = (raw) => {
+  const script = strip(raw);
   const badPct = (script.match(/\d+\.\d+\s?percent/gi) ?? []).filter((m) => Math.abs(parseFloat(m)) >= 1);
   const badUsd = (script.match(/\b\d{4,}\b(?=\s?(dollars|won))/g) ?? []).filter((d) => Number(d) % (Math.pow(10, String(d).length - 2)) !== 0);
   return badPct.length === 0 && badUsd.length === 0;
@@ -89,7 +96,7 @@ worst: weakest sentence overall, quoted.`);
     const M = {
       B1_bluf_read: pct([ev(j, "bluf_read"), !TICKER_CHAIN.test([s.lede, ...(s.positions ?? []).map((p) => p.note), s.desk_view].join("\n"))]),
       B2_bluf_listen: pct([ev(j, "bluf_listen"), !TICKER_CHAIN.test(script)]),
-      B3_number_diet: pct([nums(read).length <= (isAssess ? 17 : 13), nums(script).length <= 7, roundedOk(script)]),   // the prompt law is <=3 per section
+      B3_number_diet: pct([nums(read).length <= (isAssess ? 17 : 13), heard(script) <= 7, roundedOk(script)]),   // the prompt law is <=3 per section
       B4_tier_read: pct([ev(j, "tier_read"), !(novice && JARGON.test(read))]),
       B5_tier_listen: pct([ev(j, "tier_listen"), !(novice && JARGON.test(script))]),
       B6_read_len: readWords / 200 <= 2.02 && readWords >= (isAssess ? 200 : 120) ? 100 : 0,
