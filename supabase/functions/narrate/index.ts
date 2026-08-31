@@ -92,14 +92,16 @@ function fallbackScript(s: Sections, dayLine: string, edition: string): string {
   const greet = edition === "assessment" ? `Hi, it's ${dayLine}. Here's your portfolio assessment.` : edition === "close" ? `Good evening, it's ${dayLine}. Here's your closing note.` : edition === "midday" ? `It's ${dayLine}, midday. Here's your pulse.` : `Good morning, it's ${dayLine}. Here's your brief.`;
   const say = (t: string) => earNumbers(String(t ?? "").trim());
   const firstSentence = (t: string) => (String(t ?? "").split(/(?<=[.!?])\s+/)[0] ?? "").trim();
-  const top = (s.positions ?? []).slice(0, 2);
+  const top = (s.positions ?? []).slice(0, 3);
   const parts = [
     greet,
     say(s.lede),
     // the two names that matter, each in ONE sentence, with the ampersand of a truncated legal name removed
     ...top.map((p) => `${say(String(p.name).replace(/\s*&\s*$/, ""))}: ${say(firstSentence(p.note))}`),
     say(s.desk_view),
-    ...(edition === "assessment" && s.horizon ? [say(firstSentence(s.horizon))] : []),
+    // the fallback must still clear the spoken-length floor, or a listener gets a 90-word stub
+    ...(s.horizon ? [say(firstSentence(s.horizon))] : []),
+    ...((s.ideas ?? []).length ? [`One thing worth looking into: ${say(firstSentence(String((s.ideas ?? [])[0])))}`] : []),
     edition === "assessment" ? "That's your assessment. Talk soon." : "That's your brief. Talk soon."];
   return parts.filter(Boolean).join(' <break time="0.7s" /> ');
 }

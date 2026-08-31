@@ -1013,6 +1013,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         ? "No dated catalyst before the next open" : String(w ?? "");
       sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(p.note, capNote), watch: fitCap(fixWatch(p.watch), 14) }));
       sections.ideas = (sections.ideas ?? []).map((x) => fitCap(String(x), 16));
+      // The per-field integrity net replaced the global revert, and the LENGTH floor went with it: a brief
+      // trimmed to 100 words is worse than a slightly redundant one. Restore it alongside.
+      if (wcAll(sections) < dietFloor && wcAll(preDiet) > wcAll(sections)) sections = preDiet;
 
       const { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
