@@ -65,8 +65,12 @@ const DOOM = /\b(catastroph\w*|devastat\w*|wipe(d)? out|collapse imminent|doomed
 // a chain of MOVES (signed percents), not a weights listing (the book section lists weights by design)
 const TICKER_CHAIN = /[A-Z]{2,5}[^.]{0,10}(?:[-+]\d|down |up )[^.]{0,8}%[^.]{0,25}[A-Z]{2,5}[^.]{0,10}(?:[-+]\d|down |up )[^.]{0,8}%/;
 // the same walkthrough spelled out in words ("X slipped a fraction, Y fell a little, Z dropped two percent")
-const MOVE_VERB = /\b(slipped|fell|dropped|rose|gained|climbed|declined|advanced|sank|jumped|edged (?:up|down)|ticked (?:up|down))\b/gi;
-const wordedChain = (t) => ((String(t ?? "").match(MOVE_VERB) ?? []).length >= 3);
+const MOVE_VERB = /\b(slipped|fell|dropped|rose|gained|climbed|declined|advanced|sank|jumped|edged (?:up|down)|ticked (?:up|down))\b/i;
+// the tape moving is not a laundry list: only HOLDING-level moves count, so market, index, futures and
+// whole-portfolio sentences are excluded before the chain is counted
+const MARKET_SENT = /\b(market|S&P|SPX|futures|volatility|VIX|the index|indices|portfolio|your book|the book|dow)\b/i;
+const wordedChain = (t) => String(t ?? "").split(/(?<=[.!?])\s+/)
+  .filter((x) => MOVE_VERB.test(x) && !MARKET_SENT.test(x)).length >= 3;
 const pct = (subs) => Math.round(subs.filter(Boolean).length / subs.length * 100);
 const avgSentence = (t) => { const ss = strip(t).split(/(?<=[.!?])\s+/).filter((x) => x.trim().length > 3); return ss.reduce((a, x) => a + wc(x), 0) / Math.max(1, ss.length); };
 const roundedOk = (raw) => {
