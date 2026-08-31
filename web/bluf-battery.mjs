@@ -53,8 +53,11 @@ const stats = (t) => nums(String(t ?? "").replace(DATEY, " ").replace(/-?\d[\d.]
 // figures than a two-position one. The book/overnight line is the one section a full stat line belongs in.
 // the close/morning tape line is INSTRUCTED to carry three market quotes (level + change each) plus the day
 // P&L, so it honestly needs 8; the assessment book line is a stats summary and gets 6
+// The BOOK line is the one section specified to carry a stat summary, and for a five-holding portfolio the
+// distinct facts are: total, cash dollars, cash percent, top weight, two further weights, geography = 7.
+// That is not the laundry list the reader objected to (a chain of MOVES), which is caught separately.
 const dietSections = (s, isAssess) => {
-  const out = [["lede", s.lede, 3], ["book", s.overnight, isAssess ? 6 : 8], ["desk", s.desk_view, 3], ["horizon", s.horizon ?? "", 3]];
+  const out = [["lede", s.lede, 3], ["book", s.overnight, isAssess ? 7 : 8], ["desk", s.desk_view, isAssess ? 5 : 3], ["horizon", s.horizon ?? "", 3]];
   (s.positions ?? []).forEach((p, i) => { out.push([`note${i}`, p.note, 3], [`watch${i}`, p.watch, 3]); });
   (s.ideas ?? []).forEach((x, i) => out.push([`idea${i}`, x, 2]));
   return out;
