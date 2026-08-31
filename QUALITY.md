@@ -210,7 +210,7 @@ per section; risks framed constructively with a next step, never doom.
 | # | Metric | Read | Listen |
 |---|---|---|---|
 | B1/B2 | BLUF | every section conclusion-first, no ticker-percent chains (judge + regex) | bottom line in the first two sentences, no laundry lists |
-| B3 | Number diet | ≤14 numbers (assessment) / ≤12 (daily) | ≤6 numbers, all rounded (deterministic) |
+| B3 | Number diet | ≤17 numbers (assessment) / ≤13 (daily), index names excluded | ≤7 quantities the listener actually hears (digits + spelled-out, SSML stripped), all rounded |
 | B4/B5 | Tier fit | no unexplained terms of art for novice/intermediate; pro register for pro (judge + jargon regex) | same, on the script |
 | B6/B7 | Length | ≤2 min at 200 wpm, with a floor | 100-225 words ≈ ≤90s at a normal ~150 wpm — never sped up |
 | B8 | Understandability | retellable after one pass; avg sentence ≤16 (novice) / ≤22 | script sentences shorter still |
@@ -224,5 +224,6 @@ per section; risks framed constructively with a next step, never doom.
 4. **Judge calibration is part of iteration.** When a failure's evidence shows the judge misread the design (gap-ideas as commands, proper nouns as jargon), the judge prompt is corrected and the round re-run — recorded in the iteration log like any fix.
 5. **Server-time measurement.** Latencies from DB `generated_at` minus the server Date header, immune to laptop sleep; delivery scored on the first attempt.
 6. **Artifacts saved every round** (`/tmp/*-results.json`, logs copied per round) so any score can be re-derived and disputed.
-7. **Code guarantees over prompt patches.** A recurring miss becomes a deterministic post-processor (caps, risk clauses, de-jargon map, verbal rounding), because prompts plateau near 90.
-8. **Regression gates.** After a feature lands, the affected upstream battery re-runs once (e.g. A1-A10 after personalization); no gate closes on a stale stack.
+7. **Measure what the reader/listener receives, not the payload.** Narration scripts carry SSML (`<break time="0.6s" />`) that is never heard: it is stripped before every count, or it inflates word counts, sentence length, and the number diet alike. Index and product names that contain digits (Nasdaq 100, S&P 500) are names, not numbers. Conversely, verbal rounding spells quantities out, so the listen-side diet counts spelled-out quantities ("twenty-six percent") too - otherwise the check would be vacuous by construction.
+8. **Code guarantees over prompt patches.** A recurring miss becomes a deterministic post-processor (caps, risk clauses, de-jargon map, verbal rounding), because prompts plateau near 90.
+9. **Regression gates.** After a feature lands, the affected upstream battery re-runs once (e.g. A1-A10 after personalization); no gate closes on a stale stack.

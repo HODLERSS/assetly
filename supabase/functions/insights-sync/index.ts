@@ -265,7 +265,6 @@ Deno.serve(async (req) => {
       const latestTr = tr?.[0];
 
       let content: string | null;
-      let prompt = "";
       if (fixture) {
         content = JSON.stringify(body.canned ?? { bullets: ["fixture bullet one", "fixture bullet two", "fixture bullet three"], windows: { d7: "flat week", d30: "quiet month", d60: "range-bound", y1: "recovering", y2: "volatile" } });
       } else {
@@ -346,6 +345,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const callLines = sigSyms.map((sy) => { const t = (trs ?? []).find((x) => x.symbol === sy); return t ? `- ${nOf(sy)}: ${String(t.title).slice(0, 80)} (call date ${String(t.published_at).slice(0, 10)})` : null; }).filter(Boolean).join("\n");
       const newsLines = sigSyms.map((sy) => (nws ?? []).filter((x) => x.symbol === sy).slice(0, 2).map((x) => `- ${nOf(sy)} [${x.source}]: ${String(x.title).slice(0, 90)}`).join("\n")).filter(Boolean).join("\n");
       let content: string | null;
+      let prompt = "";
       if (fixture) {
         content = JSON.stringify(body.cannedPortfolio ?? { bullets: ["portfolio fixture one", "portfolio fixture two", "portfolio fixture three"], news5: ["fixture signal one", "fixture signal two", "fixture signal three", "fixture signal four", "fixture signal five"] });
       } else {
