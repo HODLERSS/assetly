@@ -37,6 +37,66 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
 }
 // tickers for the ear: "NVDA" must be spoken as "NVIDIA", never N-V-D-A. Names come from the symbols table, trimmed of
 // corporate suffixes; applied to the model script AND the fallback, whole-word, longest ticker first.
+// ---- spoken-figure fidelity -------------------------------------------------------------------
+// The numeral guard only sees ARABIC digits, and a script written FOR THE EAR spells its numbers out.
+// That gap is where the real fabrications lived: "twenty-six point six percent" against a book that
+// says 25.6%, and a spoken total that disagreed with the written one. Rounding for the ear is REQUIRED,
+// so this never demands an exact match - it asks that every spoken quantity round to something the brief
+// actually contains. Like every other guard here it only REJECTS, so it can never alter a figure.
+const NUM_U: Record<string, number> = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19 };
+const NUM_T: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const NUM_S: Record<string, number> = { hundred: 100, thousand: 1000, million: 1000000, billion: 1000000000 };
+const isNumWord = (w: string) => w in NUM_U || w in NUM_T || w in NUM_S || w === "point" || w === "and" || w === "a";
+const wordsToNumber = (toks: string[]): number | null => {
+  let total = 0, cur = 0, seen = false, frac: number | null = null;
+  for (let i = 0; i < toks.length; i++) {
+    const w = toks[i];
+    if (w === "and") continue;
+    if (w === "a") { if (toks[i + 1] in NUM_S) cur = cur || 1; continue; }
+    if (w === "point") {
+      const d: number[] = []; let j = i + 1;
+      while (j < toks.length && toks[j] in NUM_U && NUM_U[toks[j]] < 10) { d.push(NUM_U[toks[j]]); j++; }
+      if (d.length) { frac = Number("0." + d.join("")); i = j - 1; seen = true; }
+      continue;
+    }
+    if (w in NUM_U) { cur += NUM_U[w]; seen = true; continue; }
+    if (w in NUM_T) { cur += NUM_T[w]; seen = true; continue; }
+    if (w in NUM_S) { const m = NUM_S[w]; seen = true; if (m === 100) cur = (cur || 1) * 100; else { total += (cur || 1) * m; cur = 0; } continue; }
+  }
+  return seen ? total + cur + (frac ?? 0) : null;
+};
+const spokenQuantities = (text: string): { value: number; unit: "pct" | "usd" }[] => {
+  const toks = String(text).toLowerCase().replace(/<[^>]*>/g, " ").replace(/-/g, " ").replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
+  const out: { value: number; unit: "pct" | "usd" }[] = [];
+  for (let i = 0; i < toks.length; i++) {
+    if (!isNumWord(toks[i]) || toks[i] === "and" || toks[i] === "a") continue;
+    let j = i;
+    while (j < toks.length && isNumWord(toks[j])) j++;
+    const unit = toks[j];
+    if (unit === "percent" || unit === "dollar" || unit === "dollars") {
+      const v = wordsToNumber(toks.slice(i, j));
+      if (v !== null) out.push({ value: v, unit: unit === "percent" ? "pct" : "usd" });
+    }
+    i = j;
+  }
+  return out;
+};
+/** true when a spoken quantity matches no figure in the brief, allowing the rounding the script is told to do. */
+const spokenFigureUnsupported = (script: string, allowed: string[]): boolean => {
+  const pcts = allowed.filter((a) => a.includes("%")).map((a) => Number(a.replace(/[^0-9.]/g, ""))).filter((n) => Number.isFinite(n));
+  const usds = allowed.filter((a) => a.includes("$")).map((a) => Number(a.replace(/[^0-9.]/g, ""))).filter((n) => Number.isFinite(n));
+  return spokenQuantities(script).some(({ value, unit }) => {
+    const pool = unit === "pct" ? pcts : usds;
+    if (!pool.length) return false;                       // nothing of that unit to check against
+    return !pool.some((a) => {
+      if (unit === "pct") return Math.round(a) === Math.round(value) || Math.abs(a - value) < 0.05;
+      // dollars are rounded hard for the ear: 43,224 may be spoken as 43,000 or 43 thousand
+      const grains = [1, 100, 1000, 10000];
+      return grains.some((g) => Math.round(a / g) * g === Math.round(value / g) * g);
+    });
+  });
+};
+
 const speechName = (name: string) => {
   let n = name.trim();
   for (let i = 0; i < 3; i++) n = n.replace(/[,\s]*\b(Incorporated|Inc\.?|Corporation|Corp\.?|Company|Co\.?|Limited|Ltd\.?|PLC|N\.V\.|S\.A\.|AG|SE|Holdings?|Group|Trust|Fund|ETF|Class [A-C]( Shares)?|Common Stock|Ordinary Shares|ADR|\(.*?\))\s*$/i, "").trim();
@@ -263,7 +323,9 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
           // the same accept-only-never-edit checks the free path uses, plus the figure budget
           const FRACW0 = /\b(half|a third|one third|two thirds|a quarter|one quarter|three quarters|a fifth)\b/i;
           const figs = (draft.replace(/<[^>]*>/g, " ").match(/-?\d[\d,]*(?:\.\d+)?\s?%|\$\s?[\d,]+|(?<![\w.])\d[\d,]*(?:\.\d+)?(?![\w%])/g) ?? []).length;
-          if (heardW >= 104 && heardW <= 205 && figs <= 5 && !FRACW0.test(draft)) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
+          const unsupported = spokenFigureUnsupported(draft, allowed);
+          if (heardW >= 104 && heardW <= 205 && figs <= 5 && !FRACW0.test(draft) && !unsupported) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
+          if (unsupported && a === 1) console.log("narrate: slot script spoke a figure the brief does not support");
         }
         if (!spoken) console.log("narrate: slot composition did not land, falling back to free composition");
         const prompt = isAssess
@@ -305,7 +367,7 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
           const allowedNums = new Set(allowed.map((x) => x.replace(/[$,%\s]/g, "")));
           const strayFigure = (x: string) => (x.replace(/<[^>]*>/g, " ").match(/\d[\d,]*(?:\.\d+)?/g) ?? [])
             .some((n) => !allowedNums.has(n.replace(/,/g, "")));
-          const meaningOk = !FRACW.test(t) && !walkthrough(t) && !strayFigure(t);
+          const meaningOk = !FRACW.test(t) && !walkthrough(t) && !strayFigure(t) && !spokenFigureUnsupported(t, allowed);
           const accept = a === 2 ? true : a === 1 ? meaningOk : (meaningOk && !padded);
           // count SPOKEN words: the SSML tags are never heard, and counting them let a 90-word script
           // clear a 97-word floor

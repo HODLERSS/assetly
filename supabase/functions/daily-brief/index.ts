@@ -975,12 +975,17 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         while (out.length > 1 && out.reduce((a, x) => a + statCount(x), 0) > cap
                && out.reduce((a, x) => a + wcS(x), 0) > minWords) {
           // drop what REPEATS figures already stated before it; only then fall back to the later sentence
-          let idx = -1, bestDup = -1;
+          // Prefer what REPEATS figures already stated. With no repeats the old rule fell through to
+          // "the last sentence", which is usually the short summarising one - so a book line would shed a
+          // five-word tail and then hit the word floor with a 8-figure enumeration untouched. Tie-break on
+          // FIGURE COUNT instead: the densest sentence IS the laundry list this diet exists to remove.
+          let idx = -1, bestDup = -1, bestStats = -1;
           for (let i = 1; i < out.length; i++) {
-            if (statCount(out[i]) === 0) continue;
+            const n = statCount(out[i]);
+            if (n === 0) continue;
             const earlier = new Set(out.slice(0, i).flatMap(figuresIn));
             const dup = figuresIn(out[i]).filter((f) => earlier.has(f)).length;
-            if (dup >= bestDup) { bestDup = dup; idx = i; }
+            if (dup > bestDup || (dup === bestDup && n > bestStats)) { bestDup = dup; bestStats = n; idx = i; }
           }
           if (idx < 0) break;
           if (out.reduce((a, x) => a + wcS(x), 0) - wcS(out[idx]) < minWords) break;
