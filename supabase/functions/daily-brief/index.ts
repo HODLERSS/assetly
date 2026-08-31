@@ -919,6 +919,23 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const words = (a: string[]) => a.join(" ").split(/\s+/).filter(Boolean).length;
         return keep.length && words(keep) >= minWords ? keep.join(" ") : sents.join(" ");
       };
+      // A run of 3+ comma-separated segments each carrying a percentage is an enumeration whatever the
+      // vocabulary ("QQQM holds $5,900 (25.6%), JPM $3,600 (15.5%), ..."). Keep two and name the rest.
+      // The comma inside "$5,900" is a THOUSANDS SEPARATOR, so segmentation must not split on it.
+      const collapseList = (t: string) => String(t ?? "").split(/(?<=[.;])\s+/).map((sent) => {
+        if (RETURNY.test(sent)) return sent;
+        const m = sent.match(/[.;]\s*$/); const end = m ? m[0] : "";
+        const body = end ? sent.slice(0, -end.length) : sent;
+        const segs = body.split(/(?<!\d),\s*/);
+        let start = -1, len = 0, bStart = -1, bLen = 0;
+        segs.forEach((sg, i) => {
+          if (/\d\s?%/.test(sg)) { if (start < 0) { start = i; len = 0; } len++; if (len > bLen) { bLen = len; bStart = start; } }
+          else { start = -1; len = 0; }
+        });
+        if (bLen < 3) return sent;
+        const dropped = bLen - 2;
+        return [...segs.slice(0, bStart + 2), `and ${numWord(dropped)} smaller position${dropped === 1 ? "" : "s"}`, ...segs.slice(bStart + bLen)].join(", ") + end;
+      }).join(" ");
       const RETURNY = /\b(return|returns|gain|gains|loss|losses|performance|rose|fell|climbed|dropped|up|down|yield|yields)\b/i;
       const ALLOCY = /\b(assets|book|portfolio|weight|allocation|holdings|exposure)\b/i;
       const collapsePctFirst = (t: string) => String(t ?? "").split(/(?<=[.;])\s+/).map((sent) =>
@@ -988,8 +1005,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         .replace(/(^|(?<=[a-z0-9%)])[.!?]\s+)([a-z])/g, (_m, a, b) => a + b.toUpperCase());
       const tidy = (t: string) => undangle((t ?? "").replace(/\s+([,.;])/g, "$1").replace(/\s{2,}/g, " ").trim());
       // the close/morning tape line is instructed to carry three market quotes plus the day P&L, so it gets 8
-      const bookCap = edition === "assessment" ? 6 : 8;
-      sections.overnight = safeField(sections.overnight, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.overnight, 1)))), bookCap)))));
+      const bookCap = edition === "assessment" ? 8 : 8;   // total + 2 holdings ($ and %) + cash ($ and %) + geography
+      sections.overnight = safeField(sections.overnight, tidy(deSemi(deAdvice(trimStats(collapseList(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.overnight, 1))))), bookCap, 16)))));
       sections.desk_view = safeField(sections.desk_view, tidy(deSemi(deAdvice(trimStats(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.desk_view, 0)))), edition === "assessment" ? 5 : 3, 30)))));   // structural section
       sections.lede = safeField(sections.lede, tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1)))));
       // in a DAILY note the weight is structural, not news, and the book line already states it: dropping the
