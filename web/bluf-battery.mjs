@@ -4,7 +4,26 @@
 // Methodology: fixed fixture book, deterministic checks first, evidence-bound gpt-oss judge for the rest,
 // raw artifacts saved to /tmp/bluf-results.json every run. Run: node bluf-battery.mjs
 import { createClient } from "@supabase/supabase-js";
-import { readFileSync, appendFileSync, writeFileSync } from "fs";
+import { readFileSync, appendFileSync, writeFileSync, openSync, closeSync, unlinkSync } from "fs";
+// EXCLUSIVE RUN LOCK. Two batteries sharing the fixture account race on setBook (each deletes and
+// re-inserts the same holdings) and on the daily_briefs rows, so a second run makes BOTH runs' numbers
+// meaningless - and it fails in the most misleading way possible: the LISTEN script narrates one process's
+// brief while the READ check reads the other's, which is scored as a fidelity break that does not exist.
+// Caught Aug 31 2026 after acting on exactly that phantom.
+const LOCK = "/tmp/bluf-battery.lock";
+let lockFd;
+try { lockFd = openSync(LOCK, "wx"); writeFileSync(LOCK, String(process.pid)); }
+catch {
+  const owner = (() => { try { return readFileSync(LOCK, "utf8").trim(); } catch { return "?"; } })();
+  let alive = false;
+  try { process.kill(Number(owner), 0); alive = true; } catch { alive = false; }
+  if (alive) { console.error(`bluf-battery: another run (pid ${owner}) holds ${LOCK}. Refusing to start - concurrent runs corrupt both.`); process.exit(2); }
+  console.error(`bluf-battery: clearing stale lock from dead pid ${owner}`);
+  unlinkSync(LOCK); lockFd = openSync(LOCK, "wx"); writeFileSync(LOCK, String(process.pid));
+}
+const releaseLock = () => { try { closeSync(lockFd); } catch { /* already closed */ } try { unlinkSync(LOCK); } catch { /* already gone */ } };
+process.on("exit", releaseLock);
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { releaseLock(); process.exit(130); });
 const LOG = "/tmp/bluf.log"; const log = (m) => { console.log(m); appendFileSync(LOG, m + "\n"); };
 if (!process.env.APPEND) writeFileSync(LOG, "");
 const env = readFileSync("/Users/minjaelee/Documents/_Claude/AI/stockAnalysis/app/supabase/.env.local", "utf8");
