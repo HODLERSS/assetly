@@ -248,6 +248,23 @@ Two lessons worth keeping: **variance and defect look identical in an aggregate 
 evidence string separates them, so read it before concluding; and a **guard that rejects is safe where a
 guard that rewrites is not**, which is the same invariant `safeField` enforces on the read side.
 
+**A local typecheck is NOT a deploy gate (Aug 31, v99 BOOT_ERROR).** A daily-brief deploy failed to BOOT
+in Deno and the function returned 503 for every request - a live outage. `tsc --noEmit` had passed cleanly,
+and so had a full `ts.transpileModule` parse, so nothing local warned. The battery reported it only as
+`GEN FAIL`, which reads like a model timeout; a direct invoke was what exposed `BOOT_ERROR`.
+
+The construct Deno rejected and TypeScript accepted was a regex literal inside a template-literal
+substitution in that file; an equivalent written without it boots. The exact parser bug was not worth
+chasing once a clean equivalent worked.
+
+**Process that follows from it:**
+1. After ANY edge-function deploy, invoke the function once and assert a 200 BEFORE running a gate. A
+   round measured against a dead function is worse than no round: it burns 15 minutes and its numbers are
+   garbage.
+2. Bisect on a THROWAWAY function slug (`db-canary`), never by re-breaking production. Deploy the suspect
+   source there, probe, narrow, then promote and delete the canary.
+3. Restore service FIRST (redeploy the last known-good SHA), diagnose second.
+
 **Measurement contamination, and the third lesson.** Midway through the session TWO batteries were running
 concurrently against the same fixture account (a stale background run plus a fresh one). They race on
 `setBook` - each deletes and re-inserts the same holdings - and on the `daily_briefs` rows. The failure mode
