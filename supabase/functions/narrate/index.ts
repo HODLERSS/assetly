@@ -107,6 +107,11 @@ function fallbackScript(s: Sections, dayLine: string, edition: string): string {
     // the fallback must still clear the spoken-length floor, or a listener gets a 90-word stub
     ...(s.horizon ? [say(firstSentence(s.horizon))] : []),
     ...((s.ideas ?? []).length ? [`One thing worth looking into: ${say(firstSentence(String((s.ideas ?? [])[0])))}`] : []),
+    // a DAILY brief has no horizon and no research ideas, so without its catalysts the fallback runs ~35
+    // seconds against an intended 75-90; the watch items are the useful content that belongs there
+    ...(edition !== "assessment" && top.some((p) => String(p.watch ?? "").trim())
+      ? [`What to watch next: ${top.map((p) => say(String(p.watch ?? "").trim())).filter(Boolean).slice(0, 2).join(", and ")}.`]
+      : []),
     edition === "assessment" ? "That's your assessment. Talk soon." : "That's your brief. Talk soon."];
   return parts.filter(Boolean).join(' <break time="0.7s" /> ');
 }
