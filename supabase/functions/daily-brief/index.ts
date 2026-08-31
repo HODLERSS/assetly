@@ -216,6 +216,38 @@ const noviceScrub = (t: string): string => {
   return x.replace(/(^|(?<=[a-z0-9%)])[.!?]\s+)([a-z])/g, (_m, a, b) => a + b.toUpperCase());
 };
 
+// word-cap enforcement, boundary aware; hoisted so it can also run LAST, after the vocabulary
+// substitution that lengthens text ("moat" becomes "lasting edge over competitors")
+const fitCap = (t: string, cap: number, mustKeep?: RegExp): string => {
+  const wcT = (x: string) => x.split(/\s+/).filter(Boolean).length;
+  let out = t.trim();
+  while (wcT(out) > cap && /[.!?]\s+[^.!?]+[.!?]?$/.test(out)) {
+    const shorter = out.replace(/\s+[^.!?]+[.!?]?$/, "").trim();
+    if (mustKeep && !mustKeep.test(shorter)) break;
+    out = shorter;
+  }
+  if (wcT(out) > cap) {
+    // a raw word-slice leaves a dangling fragment ("...on the same driver, so."); end on a real boundary
+    let cut = out.split(/\s+/).slice(0, cap).join(" ");
+    // a period only ENDS a sentence when whitespace or the end follows it: the decimal point inside
+    // "25.6%" was being read as a terminator, which is how "so 25." reached the reader
+    const ends = [...cut.matchAll(/[.!?](?=\s|$)/g)].map((m) => m.index ?? -1);
+    const stop = ends.length ? ends[ends.length - 1] : -1;
+    if (stop > cut.length * 0.5) cut = cut.slice(0, stop + 1);
+    else {
+      // likewise here: only a comma OUTSIDE a number is a clause boundary
+      const commas = [...cut.matchAll(/(?<!\d),(?!\d)/g)].map((m) => m.index ?? -1);
+      const comma = commas.length ? commas[commas.length - 1] : -1;
+      if (comma > cut.length * 0.6) cut = cut.slice(0, comma);
+      let prev = "";
+      while (prev !== cut) { prev = cut; cut = cut.replace(/[\s,;:]+(?:so|and|but|or|which|that|with|for|to|at|in|on|of|as|while|because|if|when|from|by|than|after|before|into|over|under|about|its|their|the|a|an)\.?$/i, ""); }
+      cut = cut.replace(/[,;:]+$/, "") + ".";
+    }
+    if (!mustKeep || mustKeep.test(cut)) out = cut;   // last resort: a hard cut, but never one that loses the required clause
+  }
+  return out;
+};
+
 const STYLE_RULES = `BLUF LAW: every section opens with its CONCLUSION in the first sentence; evidence and numbers come after. Never open any section with a chain of ticker-and-percent moves; say what it all means first, then the one or two moves that prove it. This applies to EVERY position note as well: open with what the move MEANS for this owner ("Your biggest holding barely moved"), then give the move and its number in the next sentence. A note that opens "TICKER fell 0.7% today" is a failure.
 NUMBER DIET: numbers are seasoning, not the meal. Use the ONE number that carries each point; never two numbers in one sentence unless comparing them; a section never needs more than three.
 OPINION: have a view. One confident, fact-backed judgment per section is expected ("this is the book's real risk", "this print matters more than the headline"); never wishy-washy, never hedged into mush. Opinions about quality and risk, never buy/sell instructions.
@@ -575,35 +607,6 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           sections.desk_view = `${skStructure} ${rest}`.trim();
         }
         // section caps guaranteed in code: trailing sentences go first, a hard cut only as the last resort
-        const fitCap = (t: string, cap: number, mustKeep?: RegExp): string => {
-          const wcT = (x: string) => x.split(/\s+/).filter(Boolean).length;
-          let out = t.trim();
-          while (wcT(out) > cap && /[.!?]\s+[^.!?]+[.!?]?$/.test(out)) {
-            const shorter = out.replace(/\s+[^.!?]+[.!?]?$/, "").trim();
-            if (mustKeep && !mustKeep.test(shorter)) break;
-            out = shorter;
-          }
-          if (wcT(out) > cap) {
-            // a raw word-slice leaves a dangling fragment ("...on the same driver, so."); end on a real boundary
-            let cut = out.split(/\s+/).slice(0, cap).join(" ");
-            // a period only ENDS a sentence when whitespace or the end follows it: the decimal point inside
-            // "25.6%" was being read as a terminator, which is how "so 25." reached the reader
-            const ends = [...cut.matchAll(/[.!?](?=\s|$)/g)].map((m) => m.index ?? -1);
-            const stop = ends.length ? ends[ends.length - 1] : -1;
-            if (stop > cut.length * 0.5) cut = cut.slice(0, stop + 1);
-            else {
-              // likewise here: only a comma OUTSIDE a number is a clause boundary
-              const commas = [...cut.matchAll(/(?<!\d),(?!\d)/g)].map((m) => m.index ?? -1);
-              const comma = commas.length ? commas[commas.length - 1] : -1;
-              if (comma > cut.length * 0.6) cut = cut.slice(0, comma);
-              let prev = "";
-              while (prev !== cut) { prev = cut; cut = cut.replace(/[\s,;:]+(?:so|and|but|or|which|that|with|for|to|at|in|on|of|as|while|because|if|when|from|by|than|after|before|into|over|under|about|its|their|the|a|an)\.?$/i, ""); }
-              cut = cut.replace(/[,;:]+$/, "") + ".";
-            }
-            if (!mustKeep || mustKeep.test(cut)) out = cut;   // last resort: a hard cut, but never one that loses the required clause
-          }
-          return out;
-        };
         sections.lede = fitCap(sections.lede, 30);
         sections.overnight = fitCap(sections.overnight, 52);
         sections.desk_view = fitCap(sections.desk_view, 48);
@@ -958,6 +961,15 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections.positions = sections.positions.map((p) => ({ ...p, note: tidy(deSemi(deAdvice(deWeightClause(collapseRun(deWeightParens(p.note, 1)))))) }));
       // a diet that starves the brief is worse than the redundancy it removed
       if (wcAll(sections) < dietFloor && wcAll(preDiet) >= wcAll(sections)) sections = preDiet;
+      // CAPS LAST: the beginner vocabulary map lengthens text ("moat" -> "lasting edge over competitors"),
+      // so a cap applied before it can be exceeded by the substitution itself
+      const capNote = holdings.length <= 2 ? 56 : 33;
+      sections.lede = fitCap(sections.lede, edition === "assessment" ? 30 : 34);
+      sections.overnight = fitCap(sections.overnight, 52);
+      sections.desk_view = fitCap(sections.desk_view, 48);
+      if (edition === "assessment") sections.horizon = fitCap(sections.horizon ?? "", 46, /next [^:]{1,14}:[\s\S]*next [^:]{1,14}:/i);
+      sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(p.note, capNote), watch: fitCap(p.watch, 14) }));
+      sections.ideas = (sections.ideas ?? []).map((x) => fitCap(String(x), 16));
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
       if (["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])))) {
         sections = JSON.parse(noviceScrub(JSON.stringify(sections))) as Sections;
