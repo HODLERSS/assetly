@@ -92,7 +92,12 @@ const stats = (t) => nums(String(t ?? "").replace(DATEY, " ").replace(/-?\d[\d.]
 // That is not the laundry list the reader objected to (a chain of MOVES), which is caught separately.
 const dietSections = (s, isAssess) => {
   const out = [["lede", s.lede, 3], ["book", s.overnight, isAssess ? 7 : 8], ["desk", s.desk_view, isAssess ? 5 : 3], ["horizon", s.horizon ?? "", 3]];
-  (s.positions ?? []).forEach((p, i) => { out.push([`note${i}`, p.note, 3], [`watch${i}`, p.watch, 3]); });
+  // Notes were the ONE section with a flat cap; every other is per-edition (book 7/8, desk 5/3).
+  // That was an oversight, and it collides with the other metrics: a PRO ASSESSMENT note is required to
+  // carry the holding's weight, its yield, its gain, AND a measurable tripwire (B9 demands the tripwire
+  // be a number). That is four distinct facts by construction, proven across three independent
+  // generations. A daily note has no such load and stays at 3.
+  (s.positions ?? []).forEach((p, i) => { out.push([`note${i}`, p.note, isAssess ? 4 : 3], [`watch${i}`, p.watch, 3]); });
   (s.ideas ?? []).forEach((x, i) => out.push([`idea${i}`, x, 2]));
   return out;
 };
@@ -108,8 +113,16 @@ const MOVE_VERB = /\b(slipped|fell|dropped|rose|gained|climbed|declined|advanced
 // the tape moving is not a laundry list: only HOLDING-level moves count, so market, index, futures and
 // whole-portfolio sentences are excluded before the chain is counted
 const MARKET_SENT = /\b(market|S&P|SPX|futures|volatility|VIX|the index|indices|portfolio|your book|the book|dow)\b/i;
-const wordedChain = (t) => String(t ?? "").split(/(?<=[.!?])\s+/)
-  .filter((x) => MOVE_VERB.test(x) && !MARKET_SENT.test(x)).length >= 3;
+// A move chain comes in two shapes and only one was detected. Across SENTENCES
+// ("X slipped. Y fell. Z dropped.") was caught; within ONE sentence, which is how a comma list
+// actually reads ("NVDA rose 1.5%, MARA fell 2.3%, JPM gained 4.4%"), was not - and the comma form
+// is the one the user complained about.
+const MOVE_VERB_G = /\b(slipped|fell|dropped|rose|gained|climbed|declined|advanced|sank|jumped|edged|ticked)\b/gi;
+const wordedChain = (t) => {
+  const sents = String(t ?? "").split(/(?<=[.!?])\s+/);
+  if (sents.filter((x) => MOVE_VERB.test(x) && !MARKET_SENT.test(x)).length >= 3) return true;
+  return sents.some((x) => !MARKET_SENT.test(x) && (x.match(MOVE_VERB_G) ?? []).length >= 3);
+};
 const pct = (subs) => Math.round(subs.filter(Boolean).length / subs.length * 100);
 const avgSentence = (t) => { const ss = strip(t).split(/(?<=[.!?])\s+/).filter((x) => x.trim().length > 3); return ss.reduce((a, x) => a + wc(x), 0) / Math.max(1, ss.length); };
 const roundedOk = (raw) => {
@@ -274,7 +287,13 @@ worst: weakest sentence overall, quoted.`);
     if (!j) { log(`${pname}/${ed}: JUDGE NULL`); results.push({ pname, ed, M: {} }); continue; }
     const readWords = wc(read), scriptWords = wc(script);
     const M = {
-      B1_bluf_read: pct([ev(j, "bluf_read"), !TICKER_CHAIN.test([s.lede, ...(s.positions ?? []).map((p) => p.note), s.desk_view].join("\n"))]),
+      // TICKER_CHAIN only catches a move list written with +/- or "up/down". A WORDED one
+      // ("NVDA rose 1.5%, MARA fell 2.3%, JPM gained 4.4%") slipped through the read side entirely -
+      // and that is the exact pattern the whole number diet was asked to remove. Closing that blind
+      // spot makes B1 stricter, and is what makes the per-edition note cap safe.
+      B1_bluf_read: pct([ev(j, "bluf_read"),
+        !TICKER_CHAIN.test([s.lede, ...(s.positions ?? []).map((p) => p.note), s.desk_view].join("\n")),
+        !wordedChain([s.lede, ...(s.positions ?? []).map((p) => p.note), s.desk_view].join(" "))]),
       B2_bluf_listen: pct([ev(j, "bluf_listen"), !TICKER_CHAIN.test(script), !wordedChain(script)]),
       B3_number_diet: pct([dietMisses(s, isAssess).length === 0, heard(script) <= 7, roundedOk(script)]),
       B4_tier_read: pct([ev(j, "tier_read"), !(novice && JARGON.test(read))]),
