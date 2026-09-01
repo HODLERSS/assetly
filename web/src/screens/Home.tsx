@@ -5,6 +5,7 @@ import { isMarketOpen, marketOf, moverEligible, moverMode, sessionLabel } from "
 import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyExact, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
 
 // Canvas 2a: net worth, movers, market pulse.
+const DETAIL_KEY = "assetly-nw-detail";
 const ACCT: Record<string, string> = { brokerage: "", bank: "Bank", "401k": "401k", ira: "IRA", crypto: "Crypto" };
 // crypto files under a market by its denomination, exactly as the old Holdings filter did:
 // a USD coin belongs with the US book, a KRW-quoted one with the Korean book
@@ -27,6 +28,9 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
   const mode = moverMode(new Date(), heldMkts);
   const [pulse, setPulse] = useState<{ symbol: string; name: string; price: number; change_pct: number | null }[]>([]);
   const [filter, setFilter] = useState<"all" | "US" | "KR" | "ret">("all");
+  // collapsed by default; whoever wants the split gets it back on every visit
+  const [detail, setDetailState] = useState(() => { try { return localStorage.getItem(DETAIL_KEY) === "1"; } catch { return false; } });
+  const setDetail = (v: boolean) => { setDetailState(v); try { localStorage.setItem(DETAIL_KEY, v ? "1" : "0"); } catch { /* private mode */ } };
   useEffect(() => {
     let live = true;
     if (mode.kind === "pulse") api.getPulse().then((p) => { if (live) setPulse(p); }).catch(() => {});
@@ -63,6 +67,11 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
   const showPulse = mode.kind === "pulse" && pulse.length > 0;
   const isLive = (r: PortfolioRow) => { const m = marketOf(r); return m !== null && r.change_pct !== null && isMarketOpen(m); };
   const moverList = mode.kind === "pulse" && !showPulse ? quietMovers : movers;
+  // The three supporting lines under the headline totals were the busiest thing on the screen and
+  // none of them is what you open the app for. They fold away; the toggle only appears when there
+  // is actually something folded, and the choice sticks.
+  const twoMarkets = new Set(rows.map(mktFor).filter(Boolean)).size > 1 && !!totals.fx;
+  const hasDetail = totals.debt > 0 || twoMarkets;
   return (
     <>
       <section aria-label="Net worth" style={{ margin: "8px 0 18px" }}>
@@ -73,6 +82,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
         <div className={`day num ${glClass(totals.gl)}`} data-testid="total-gl" style={{ fontSize: 13.5 }}>
           {signedMoney(totals.gl, baseCurrency)} ({signedPct(totals.cost !== 0 ? (totals.gl / totals.cost) * 100 : 0)}) all time
         </div>
+        <div className="nw-detail" id="nw-detail" hidden={!detail}>
         {totals.debt > 0 && (
           <div className="status-line num" data-testid="assets-debt">
             assets {money(totals.assets, baseCurrency)} · debt {signedMoney(-totals.debt, baseCurrency)}
@@ -102,10 +112,18 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
             </div>
           );
         })()}
+        </div>
+        {hasDetail && (
+          <button className="nw-more" type="button" data-testid="nw-detail-toggle"
+            aria-expanded={detail} aria-controls="nw-detail" onClick={() => setDetail(!detail)}>
+            {detail ? "Less" : "Breakdown"}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+          </button>
+        )}
         {totals.unconverted > 0 && (
           <div className="status-line" role="note">{totals.unconverted} position{totals.unconverted > 1 ? "s" : ""} awaiting FX rate — excluded from the total</div>
         )}
-        <div className="countdown" aria-hidden="true"><div style={{ width: "38%" }} /></div>
+        <div className="nw-rule" aria-hidden="true" />
       </section>
       {briefBanner && (
         <div className="status-note ok" role="status" data-testid="brief-banner">

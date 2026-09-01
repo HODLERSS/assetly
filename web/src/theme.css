@@ -133,8 +133,18 @@ input, select { font: inherit; }
 .empty { text-align: center; padding: 44px 18px; color: var(--as-muted); }
 .h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 6px 0 4px; }
 .sr-only { position: absolute; left: -9999px; }
-.countdown { height: 2px; background: var(--as-rule); border-radius: 1px; overflow: hidden; margin-top: 6px; }
-.countdown > div { height: 100%; background: var(--as-primary); }
+/* One solid brand rule closing the net-worth block. It used to be a part-filled bar, which read as a
+   progress meter measuring nothing — two colours, no meaning. A single line is the honest version. */
+.nw-rule { height: 2px; background: var(--as-primary); border-radius: 1px; margin-top: 12px; }
+/* the disclosure for the assets/debt and per-market lines: small, quiet, and out of the way */
+.nw-more { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 6px 0; min-height: 36px;
+  background: none; border: 0; cursor: pointer; font: 11.5px/1 var(--as-font-num); color: var(--as-muted); }
+.nw-more:hover { color: var(--as-primary); }
+.nw-more svg { transition: transform 160ms ease; }
+.nw-more[aria-expanded="true"] svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .nw-more svg { transition: none; } }
+.nw-detail { display: grid; gap: 2px; margin-top: 4px; }
+.nw-detail[hidden] { display: none; }
 
 .chart-skeleton { height: 96px; border-radius: var(--as-radius); background:
   linear-gradient(90deg, var(--as-hover) 25%, var(--as-rule) 50%, var(--as-hover) 75%);

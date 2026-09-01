@@ -337,6 +337,22 @@ describe("U46 debt in totals", () => {
     const gl = screen.getByTestId("total-gl").textContent!;
     expect(gl).not.toContain("NaN");
   });
+
+  it("the supporting lines are folded away until asked for, and the choice sticks", async () => {
+    localStorage.removeItem("assetly-nw-detail");
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
+      row({}),
+      { ...row({}), holding_id: "h-debt", symbol: "$DEBT", name: "Debt (USD)", kind: "debt", account: "bank", qty: 250000, price: 1, value: 250000, cost_basis: 250000, change_pct: 0, total_gl: 0 },
+    ]) });
+    render(<App api={api} />);
+    const toggle = await screen.findByTestId("nw-detail-toggle");
+    expect(document.getElementById("nw-detail")!.hasAttribute("hidden")).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    await userEvent.click(toggle);
+    expect(document.getElementById("nw-detail")!.hasAttribute("hidden")).toBe(false);
+    expect(localStorage.getItem("assetly-nw-detail")).toBe("1");
+    localStorage.removeItem("assetly-nw-detail");
+  });
 });
 
 describe("U39 morning brief", () => {
