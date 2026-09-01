@@ -223,46 +223,49 @@ B1 100 · B2 84 · B3 75 · B4 75 · B5 100 · B6 88 · B7 100 · B8 100 · B9 9
 Caveat: two battery runs briefly overlapped on the same fixture account during this round, so these may be
 slightly pessimistic. Reported as measured rather than re-run for a friendlier number.
 
-**FINAL STATUS (2026-08-31 · shipped: daily-brief v104 / narrate v37 / PWA index-CUQ1W8Bp.js).**
+**FINAL STATUS (2026-08-31 · shipped: daily-brief v105 / narrate v37 / PWA index-CUQ1W8Bp.js).**
 
-**The 95+ gate is NOT met.** Last measured pair, majority-of-three judging, both rounds clean:
+**The 95+ gate is NOT met.** Last pair, majority-of-three judging:
 
 | Metric | R1 | R2 |
 |---|---|---|
-| B1 bluf_read | 100 | 100 |
-| B2 bluf_listen | 100 | 92 |
-| **B3 number_diet** | **92** | **75** |
-| B4 tier_read | 88 | 100 |
-| B5 tier_listen | 100 | 100 |
-| B6 length | 100 | 100 |
-| B7 fidelity | 100 | 100 |
-| B8 understand | 100 | 100 |
-| B9 opinion | 100 | 100 |
-| B10 delivery | 100 | 100 |
+| B1 · B2 · B4 · B5 · B6 · B9 · B10 | 100 | 100 |
+| **B3 number_diet** | **92** | **84** |
+| B7 fidelity | 100 | 88 |
+| B8 understand | 100 | 92 |
 
-A perfect 10/10 round was reached (v103/v35 R1, and again under majority judging) but never twice running.
+R1 was 9/10 with three of four cells clean. A perfect 10/10 round was reached three times tonight, never
+twice consecutively.
 
-**B3 is the blocker, and the remaining failure is REAL.** Example, four figures against a cap of three:
+## The finding that matters more than the score: B3 and B9 are in conflict
 
-> "NVDA gained 1.5% today, adding $16 to the position now up $104 total. The 4.8% stake captures AI
-> infrastructure buildout without overconcentrating."
+Five different shapes failed B3 tonight. Four were fixed (the book enumeration, the desk returns list, the
+note dollar-echo, and a term of art mis-counted as a statistic). The fifth is not a defect:
 
-That is the user's original complaint in miniature: one move restated three ways (percent, dollar change,
-cumulative dollar). The prompt already says "at most two numbers" and the model exceeds it.
+> "QQQM comprises $5,900 (25.6% of book) with $1,700 gain. Downside if Nasdaq-100 underperforms
+> S&P 500 by >2% for two quarters."
 
-**Why it was not fixed, deliberately.** The sentence-level trimmer cannot reach it. Dropping sentence two
-brings it to three figures but deletes the judgement clause, trading B3 for B9 - the exact oscillation this
-document has recorded all session. The only remaining lever is a rewriting scrub INSIDE a sentence, and six
-of those caused defects earlier today, three of which corrupted figures. Stopping was the better call.
+Size, weight, gain, tripwire. **Four figures, cap of three — and the fourth exists because B9 REQUIRES a
+measurable tripwire.** An assessment note is asked to carry the position's size and weight, its result, and
+a numeric threshold; that is four by construction. This is not the laundry list the diet was written to
+kill ("this stock down 2.3%, that stock down 4.4%"): every figure is a distinct fact.
 
-**The fix, when someone returns to it:** drop the redundant restatement, not a sentence. A percent move and
-its dollar equivalent are one fact, so "gained 1.5%, adding $16" should keep one. That is deletion-only and
-does not touch the judgement clause. Verify against B9 and B6 before believing it.
+No clean deletion exists for this shape. Dropping the dollar value leaves "QQQM comprises (25.6% of book)",
+which is broken grammar, so removing it means REWRITING inside a sentence - the class that caused six
+defects today, three of which corrupted figures.
 
-**Also measured, and worth keeping:** roughly half of the last dozen "failures" were the RULER, not the
-product - a hyphenated spoken decimal, calendar entries read as prose, and a digit inside a term of art
-("Tier 1"). Reading the evidence string rather than the score is what separated them, and twice it stopped
-a correct brief being "fixed".
+**The honest options, for a human to choose:**
+1. **Cap notes per edition, `isAssess ? 4 : 3`** - every other section is already per-edition
+   (book 7/8, desk 5/3); notes are uniformly 3, which looks like an oversight rather than a decision.
+   This is the option I would take, but it is a SPEC change and I did not make it unilaterally: adjusting
+   the measurement to pass the measurement is the one move that would invalidate the whole exercise.
+2. Accept B3 at ~92 and treat the gate as met on nine metrics.
+3. Drop the gain from assessment notes, losing information a pro reader wants.
+
+**Do not confuse this with the earlier measurement fixes.** Those corrected things that were factually not
+statistics (a name containing a digit, a hyphenated spoken decimal, calendar entries read as prose). This
+one is a judgement about how many statistics are acceptable, which belongs to the person who asked for
+"less numbers", not to me.
 
 **Correction (Aug 31, daily-brief v94 / narrate v29).** An earlier version of this section called that cell's
 rotating failure "run-to-run variance rather than a fixable defect." That was wrong, and reading the per-cell
