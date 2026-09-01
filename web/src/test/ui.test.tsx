@@ -2,7 +2,7 @@
 // Covers the end-to-end user experience surface: auth, onboarding, add/edit/remove,
 // prices, news filter, errors, empty states, settings.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const oauthSpy = vi.fn().mockResolvedValue({ data: {}, error: null });
@@ -1460,5 +1460,51 @@ describe("U51 mini player", () => {
     await screen.findByTestId("brief-card");
     expect(screen.queryByTestId("brief-listen")).toBeNull();
     expect(screen.queryByTestId("mini-player")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U52 Appearance: system / light / dark, default system.
+// ---------------------------------------------------------------------------
+describe("U52 appearance", () => {
+  beforeEach(() => {
+    try { localStorage.removeItem("assetly-theme"); } catch { /* private mode */ }
+    document.documentElement.removeAttribute("data-theme");
+  });
+  const openSettings = async (api: Api) => {
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(within(screen.getByRole("navigation", { name: /tabs/i })).getByRole("button", { name: /settings/i }));
+    return screen.findByTestId("appearance-row");
+  };
+
+  it("defaults to system, and system sets no data-theme so the OS decides", async () => {
+    const row = await openSettings(stubApi());
+    expect(within(row).getByRole("button", { name: "System" }).getAttribute("aria-pressed")).toBe("true");
+    expect(document.documentElement.getAttribute("data-theme")).toBeNull();
+  });
+
+  it("choosing dark then light stamps the root, and system clears it again", async () => {
+    const row = await openSettings(stubApi());
+    await userEvent.click(within(row).getByRole("button", { name: "Dark" }));
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(within(row).getByRole("button", { name: "Dark" }).getAttribute("aria-pressed")).toBe("true");
+
+    await userEvent.click(within(row).getByRole("button", { name: "Light" }));
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+
+    await userEvent.click(within(row).getByRole("button", { name: "System" }));
+    expect(document.documentElement.getAttribute("data-theme")).toBeNull();
+  });
+
+  it("the choice survives a reload", async () => {
+    const row = await openSettings(stubApi());
+    await userEvent.click(within(row).getByRole("button", { name: "Dark" }));
+    expect(localStorage.getItem("assetly-theme")).toBe("dark");
+    cleanup();
+    document.documentElement.removeAttribute("data-theme");   // as a fresh page load would start
+    const row2 = await openSettings(stubApi());
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(within(row2).getByRole("button", { name: "Dark" }).getAttribute("aria-pressed")).toBe("true");
   });
 });

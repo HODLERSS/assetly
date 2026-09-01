@@ -3,6 +3,7 @@ import type { Api, PortfolioRow, Profile } from "../lib/api";
 import { INVESTOR_DEFAULT } from "../lib/api";
 import { InvestorQuiz, investorLabel } from "../components/InvestorQuiz";
 import { timeAgo } from "../lib/format";
+import { getTheme, setTheme, THEME_CHOICES, type ThemeChoice } from "../lib/theme";
 
 // Gap screen g2: account, currency matrix, markets, sign out. The matrix (totals / US assets /
 // KR assets, each USD or KRW) appears once the book actually holds KRW — no clutter before that.
@@ -10,6 +11,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
   api: Api; profile: Profile | null; rows: PortfolioRow[];
   onChanged: () => Promise<void> | void; onSignedOut: () => void;
 }) {
+  const [theme, setThemeState] = useState<ThemeChoice>(() => getTheme());
   const [fx, setFx] = useState<{ rate: number; asOf: string } | null>(null);
   const [st, setSt] = useState<{ connected: boolean; last_sync_at?: string | null; institutions?: string[] } | null>(null);
   const [conns, setConns] = useState<{ id: string; institution: string; disabled: boolean }[]>([]);
@@ -77,6 +79,15 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
           <div className="row"><span>Exchange rate</span>
             <span className="sub num" data-testid="fx-rate-row">₩{Math.round(fx.rate).toLocaleString("en-US")}/$ · {timeAgo(fx.asOf)}</span></div>
         )}
+        <div className="row" style={{ alignItems: "center" }} data-testid="appearance-row">
+          <span>Appearance</span>
+          <span className="chips" role="group" aria-label="Appearance">
+            {THEME_CHOICES.map((t) => (
+              <button key={t.id} className="chip" aria-pressed={theme === t.id}
+                onClick={() => { setThemeState(t.id); setTheme(t.id); }}>{t.label}</button>
+            ))}
+          </span>
+        </div>
         <div className="row"><span>Markets</span><span className="sub">{(profile?.markets ?? []).join(" · ") || "—"}</span></div>
         <div className="row"><span>Price cadence</span><span className="sub num">every 60s market hours</span></div>
       </div>

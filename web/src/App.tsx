@@ -8,6 +8,7 @@ import { Onboarding } from "./screens/Onboarding";
 import { Home } from "./screens/Home";
 import { TabIcon } from "./components/TabIcon";
 import { MiniPlayer } from "./components/MiniPlayer";
+import { applyTheme, getTheme, watchSystemTheme } from "./lib/theme";
 import { PositionScreen } from "./screens/Position";
 import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
@@ -129,6 +130,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const viewRef = useRef(view);
   viewRef.current = view;
 
+  useEffect(() => { applyTheme(getTheme()); return watchSystemTheme(); }, []);
   useEffect(() => {
     // stale-bundle guard: the PWA can cache an old build; check the served index once per open
     (async () => {
@@ -287,8 +289,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
       <header className="topbar">
         <span className="brand">
           <svg width="26" height="12" viewBox="0 0 32 12" aria-hidden="true">
-            <rect x="0" y="3" width="14" height="6" rx="3" fill="#2A3F92" />
-            <rect x="17" y="3" width="14" height="6" rx="3" fill="#2A3F92" opacity="0.45" />
+            <rect x="0" y="3" width="14" height="6" rx="3" fill="currentColor" />
+            <rect x="17" y="3" width="14" height="6" rx="3" fill="currentColor" opacity="0.45" />
           </svg>
           Assetly
         </span>

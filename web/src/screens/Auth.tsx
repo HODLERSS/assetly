@@ -20,9 +20,9 @@ export function AuthScreen() {
   return (
     <main className="screen" style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 12, minHeight: "100dvh" }}>
       <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <svg width="64" height="30" viewBox="0 0 32 12" aria-hidden="true">
-          <rect x="0" y="3" width="14" height="6" rx="3" fill="#2A3F92" />
-          <rect x="17" y="3" width="14" height="6" rx="3" fill="#2A3F92" opacity="0.45" />
+        <svg width="64" height="30" viewBox="0 0 32 12" aria-hidden="true" style={{ color: "var(--as-primary)" }}>
+          <rect x="0" y="3" width="14" height="6" rx="3" fill="currentColor" />
+          <rect x="17" y="3" width="14" height="6" rx="3" fill="currentColor" opacity="0.45" />
         </svg>
         <h1 className="h1" style={{ fontSize: 30 }}>Assetly</h1>
         <p className="mutedc">Your positions, priced every minute.</p>
