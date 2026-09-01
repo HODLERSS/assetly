@@ -264,6 +264,15 @@ export function makeApi(sb: SupabaseClient = supabase) {
     async firstBrief(): Promise<void> {
       await sb.functions.invoke("first-brief", { body: {} }).catch(() => null);
     },
+    /** Remember this device so a finished brief can be pushed to it. Upsert: iOS reissues tokens. */
+    async savePushToken(token: string, platform = "ios"): Promise<void> {
+      const { data: u } = await sb.auth.getUser();
+      if (!u.user || !token) return;
+      await sb.from("push_tokens").upsert(
+        { user_id: u.user.id, token, platform, last_seen_at: new Date().toISOString() },
+        { onConflict: "user_id,token" },
+      );
+    },
     /** Portfolio intelligence: refresh now (force regen for this user), then return the fresh row. */
     async refreshPortfolioInsights(): Promise<Insight | null> {
       const { data: u } = await sb.auth.getUser();

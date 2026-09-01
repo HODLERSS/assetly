@@ -1092,6 +1092,15 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           body: JSON.stringify({ user_id: uid, brief_date: briefDate, edition }),
         }).then((r) => r.text().catch(() => "")).catch(() => null);
         try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(handoff); } catch { /* ignore */ }
+
+        // The notification IS the shortest brief: push the lede, which has already been through BLUF,
+        // the number diet and the tier vocabulary. Fire-and-forget on the same waitUntil pattern, and
+        // inert until the APNs credentials exist, so a missing Apple account never costs anyone a brief.
+        const pushed = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/push-send`, {
+          method: "POST", headers: { Authorization: `Bearer ${svcK}`, apikey: svcK, "Content-Type": "application/json", "x-internal-token": itok },
+          body: JSON.stringify({ user_id: uid, edition, lede: sections.lede }),
+        }).then((r) => r.text().catch(() => "")).catch(() => null);
+        try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(pushed); } catch { /* ignore */ }
       }
     } catch (e) { errors.push(uid.slice(0, 8) + ": " + (e instanceof Error ? e.message : String(e))); }
   }

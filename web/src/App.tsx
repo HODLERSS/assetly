@@ -10,6 +10,7 @@ import { TabIcon } from "./components/TabIcon";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { applyTheme, getTheme, watchSystemTheme } from "./lib/theme";
 import { onOAuthReturn } from "./lib/native";
+import { clearBadge, registerPush } from "./lib/push";
 import { PositionScreen } from "./screens/Position";
 import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
@@ -132,6 +133,15 @@ export function App({ api = defaultApi }: { api?: Api }) {
   viewRef.current = view;
 
   useEffect(() => { applyTheme(getTheme()); return watchSystemTheme(); }, []);
+  // Push needs a signed-in user to attach the device token to. Registering is best-effort:
+  // a declined prompt is a normal outcome and the in-app poll still lights the tab.
+  useEffect(() => {
+    if (!session) return;
+    let off: (() => void) | undefined;
+    void registerPush((token) => api.savePushToken(token)).then((f) => { off = f; });
+    void clearBadge();
+    return () => off?.();
+  }, [session, api]);
   useEffect(() => {
     // stale-bundle guard: the PWA can cache an old build; check the served index once per open
     (async () => {
