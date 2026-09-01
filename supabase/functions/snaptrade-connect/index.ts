@@ -176,7 +176,10 @@ Deno.serve(async (req) => {
   await admin.from("snaptrade_exclusions").delete().eq("user_id", uid);
   const state = b64url(crypto.getRandomValues(new Uint8Array(24)));
   await admin.from("snaptrade_oauth_states").delete().lt("created_at", new Date(Date.now() - 3600000).toISOString());
-  await admin.from("snaptrade_oauth_states").insert({ state, user_id: uid, verifier: "portal" });
+  // the native shell cannot be returned to by a web URL: remember the platform on the state row so
+  // snaptrade-callback can hand back through the app's custom scheme instead of the website
+  const native = body.platform === "ios";
+  await admin.from("snaptrade_oauth_states").insert({ state, user_id: uid, verifier: native ? "portal:ios" : "portal" });
   const cb = `${Deno.env.get("SUPABASE_URL")}/functions/v1/snaptrade-callback?u=${state}`;
   const login = await stCall(cid, key, "POST", "/snapTrade/login",
     `userId=${encodeURIComponent(uid)}&userSecret=${encodeURIComponent(secret)}`,

@@ -20,7 +20,10 @@ async function internalToken(): Promise<string> {
 }
 
 const APP = "https://hodlerss.github.io/assetly/";
-const go = (q: string) => new Response(null, { status: 302, headers: { Location: APP + q } });
+// The iOS build is not reachable at a web address. When the flow began in the app we hand back through
+// its registered scheme, which reopens Assetly exactly where the website version would have landed.
+const APP_NATIVE = "assetly://oauth/";
+const go = (q: string, native = false) => new Response(null, { status: 302, headers: { Location: (native ? APP_NATIVE : APP) + q } });
 
 Deno.serve(async (req) => {
   const u = new URL(req.url);
@@ -38,11 +41,12 @@ Deno.serve(async (req) => {
   // ---- commercial Connection Portal return ----
   const portalState = u.searchParams.get("u");
   if (portalState) {
-    const { data: st } = await admin.from("snaptrade_oauth_states").select("user_id,created_at").eq("state", portalState).maybeSingle();
+    const { data: st } = await admin.from("snaptrade_oauth_states").select("user_id,created_at,verifier").eq("state", portalState).maybeSingle();
     await admin.from("snaptrade_oauth_states").delete().eq("state", portalState);
-    if (!st || Date.now() - +new Date(st.created_at) > 3600000) return go("?snaptrade=expired");
+    const nat = st?.verifier === "portal:ios";
+    if (!st || Date.now() - +new Date(st.created_at) > 3600000) return go("?snaptrade=expired", nat);
     kickSync(st.user_id);
-    return go("?snaptrade=connected");
+    return go("?snaptrade=connected", nat);
   }
 
   // ---- legacy OAuth-app return ----

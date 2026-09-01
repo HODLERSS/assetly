@@ -4,6 +4,7 @@ import { INVESTOR_DEFAULT } from "../lib/api";
 import { InvestorQuiz, investorLabel } from "../components/InvestorQuiz";
 import { timeAgo } from "../lib/format";
 import { getTheme, setTheme, THEME_CHOICES, type ThemeChoice } from "../lib/theme";
+import { openConnectPortal, platformTag } from "../lib/native";
 
 // Gap screen g2: account, currency matrix, markets, sign out. The matrix (totals / US assets /
 // KR assets, each USD or KRW) appears once the book actually holds KRW — no clutter before that.
@@ -138,13 +139,13 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
           {!st?.connected && (
             <button className="chip" disabled={stBusy} onClick={async () => {
               setStBusy(true);
-              try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } finally { setStBusy(false); }
+              try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } finally { setStBusy(false); }
             }}>Connect brokerage</button>
           )}
           {st?.connected && (
             <button className="chip" disabled={stBusy} onClick={async () => {
               setStBusy(true);
-              try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } finally { setStBusy(false); }
+              try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } finally { setStBusy(false); }
             }}>+ Add another brokerage</button>
           )}
         </div>

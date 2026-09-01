@@ -9,6 +9,7 @@ import { Home } from "./screens/Home";
 import { TabIcon } from "./components/TabIcon";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { applyTheme, getTheme, watchSystemTheme } from "./lib/theme";
+import { onOAuthReturn } from "./lib/native";
 import { PositionScreen } from "./screens/Position";
 import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
@@ -165,11 +166,14 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeKind, setNoticeKind] = useState<"busy" | "ok" | "warn">("ok");
   const [obSnap, setObSnap] = useState<string | null>(null);
+  const [snapReturn, setSnapReturn] = useState<string | null>(null);
+  useEffect(() => onOAuthReturn((status) => setSnapReturn(status)), []);
   useEffect(() => {
     if (!session) return;
     const q = new URLSearchParams(window.location.search);
-    const stp = q.get("snaptrade");
+    const stp = q.get("snaptrade") ?? snapReturn;
     if (!stp) return;
+    setSnapReturn(null);
     setObSnap(stp);
     q.delete("snaptrade");
     window.history.replaceState({}, "", window.location.pathname + (q.toString() ? "?" + q.toString() : "") + window.location.hash);
@@ -202,7 +206,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setTimeout(() => setNotice(null), 8000);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [session, snapReturn]);
 
   useEffect(() => {
     if (!session) { setProfile(null); setRows([]); return; }

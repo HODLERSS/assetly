@@ -3,6 +3,7 @@ import type { Api, Investor, PortfolioRow, SymbolRow } from "../lib/api";
 import { INVESTOR_DEFAULT } from "../lib/api";
 import { InvestorQuiz } from "../components/InvestorQuiz";
 import { marketOf } from "../lib/markets";
+import { openConnectPortal, platformTag } from "../lib/native";
 
 // Setup: connect a brokerage (positions import in seconds) OR add the first
 // position manually. After the OAuth return, this screen shows the live import
@@ -148,7 +149,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
         <section aria-label="Add your holdings">
           <button className="btn" data-testid="ob-connect" disabled={busy} onClick={async () => {
             setErr(null); setBusy(true);
-            try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); }
+            try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); }
             catch (e) { setErr(e instanceof Error ? e.message : "Could not start the brokerage link."); setBusy(false); }
           }}>⚡ Connect your brokerage</button>
           <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 2px 0" }}>
