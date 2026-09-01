@@ -33,14 +33,14 @@ input, select { font: inherit; }
 
 /* app shell */
 #root { max-width: 480px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
-.screen { flex: 1; padding: 16px 16px calc(88px + env(safe-area-inset-bottom)); }
+.screen { flex: 1; padding: 16px 16px calc(88px + var(--as-tabbar-pad)); }
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; letter-spacing: -0.02em; color: var(--as-primary); }
 
 .tabbar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--as-surface);
-  border-top: 1px solid var(--as-rule); padding-bottom: max(env(safe-area-inset-bottom), 6px); max-width: 480px; margin: 0 auto; z-index: 20; }
-.tabbar button { flex: 1; background: none; border: 0; padding: 8px 0 10px; color: var(--as-muted);
-  font-size: 10.5px; font-weight: 600; display: flex; flex-direction: column; gap: 3px; align-items: center; min-height: 54px; }
+  border-top: 1px solid var(--as-rule); padding-bottom: var(--as-tabbar-pad); max-width: 480px; margin: 0 auto; z-index: 20; }
+.tabbar button { flex: 1; background: none; border: 0; padding: 8px 0 6px; color: var(--as-muted);
+  font-size: 10.5px; line-height: 1.35; font-weight: 600; display: flex; flex-direction: column; gap: 3px; align-items: center; min-height: 56px; }
 .tabbar button[aria-current="page"] { color: var(--as-primary); }
 .tabbar button svg { display: block; opacity: .9; }
 .tabbar button[aria-current="page"] svg { opacity: 1; }
@@ -174,11 +174,11 @@ input, select { font: inherit; }
 /* ---------- Now-playing mini player ----------
    Docked above the tab bar (Podcasts / YouTube Music pattern) so a brief keeps playing while the
    user moves between tabs. Rendered once at the App level, so it never unmounts. */
-:root { --as-tabbar-h: 55px; --as-miniplayer-h: 76px; }
+:root { --as-tabbar-pad: max(env(safe-area-inset-bottom), 12px); --as-tabbar-h: 57px; --as-miniplayer-h: 76px; }
 
 .miniplayer {
   position: fixed; left: 0; right: 0; z-index: 25;
-  bottom: calc(var(--as-tabbar-h) + max(env(safe-area-inset-bottom), 6px));
+  bottom: calc(var(--as-tabbar-h) + var(--as-tabbar-pad));
   max-width: 480px; margin: 0 auto;
   background: var(--as-surface);
   border-top: 1px solid var(--as-rule); border-bottom: 1px solid var(--as-rule);
@@ -237,4 +237,4 @@ input, select { font: inherit; }
 .mp-track input[type="range"]:disabled::-webkit-slider-thumb { background: var(--as-muted); }
 
 /* keep the last row of content clear of the bar */
-body.has-miniplayer .screen { padding-bottom: calc(88px + var(--as-miniplayer-h) + env(safe-area-inset-bottom)); }
+body.has-miniplayer .screen { padding-bottom: calc(88px + var(--as-miniplayer-h) + var(--as-tabbar-pad)); }
