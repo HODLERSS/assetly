@@ -111,6 +111,13 @@ const spokenFigureUnsupported = (script: string, allowed: string[]): boolean => 
   });
 };
 
+// A sentence that ends on a preposition or conjunction is a truncated thought, and it is read ALOUD
+// to the listener: "keep JPMorgan Chase's dividend reliable and sustainable over." Two independent
+// judges flagged this before I did - the acceptance gates only ever checked that the script ENDS with
+// punctuation, never that the sentences inside it finish.
+const DANGLING = /\b(over|with|and|or|to|for|of|in|on|at|from|by|than|that|which|while|as|into|about|after|before|between|through|during)\s*[.!?]/i;
+const hasDanglingSentence = (t: string) => DANGLING.test(String(t ?? "").replace(/<[^>]*>/g, " "));
+
 const EAR_JARGON = /\b(beta|alpha|ROE|ROIC|ROTCE|EBITDA|FCF|EPS|AUM|NII|NIM|CET\s?1|capex|basis points|multiple compression|valuation multiple|net interest (?:margin|income)|drawdown|Sharpe|duration|convexity|dry powder|megacap|tilt|cash drag|hash ?rate|free cash flow)\b/i;
 
 const speechName = (name: string) => {
@@ -363,7 +370,7 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
           // were protecting against. The last attempt therefore enforces only what changes MEANING
           // (a figure the brief does not support, or jargon aimed at a beginner) and forgives the
           // cosmetic caps. A slightly long script beats the template every time.
-          const meaningBad = unsupported || jargon || strayDigits || FRACW0.test(draft);
+          const meaningBad = unsupported || jargon || strayDigits || FRACW0.test(draft) || hasDanglingSentence(draft);
           const tidyBad = heardFigs > 6;
           const ok = a === 2 ? !meaningBad : !(meaningBad || tidyBad);
           if (heardW >= 104 && heardW <= 205 && ok) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
@@ -409,7 +416,7 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
           const allowedNums = new Set(allowed.map((x) => x.replace(/[$,%\s]/g, "")));
           const strayFigure = (x: string) => (x.replace(/<[^>]*>/g, " ").match(/\d[\d,]*(?:\.\d+)?/g) ?? [])
             .some((n) => !allowedNums.has(n.replace(/,/g, "")));
-          const meaningOk = !FRACW.test(t) && !walkthrough(t) && !strayFigure(t) && !spokenFigureUnsupported(t, allowed)
+          const meaningOk = !FRACW.test(t) && !walkthrough(t) && !strayFigure(t) && !spokenFigureUnsupported(t, allowed) && !hasDanglingSentence(t)
             && !(beginner && EAR_JARGON.test(t.replace(/<[^>]*>/g, " ")));
           const accept = a === 2 ? true : a === 1 ? meaningOk : (meaningOk && !padded);
           // count SPOKEN words: the SSML tags are never heard, and counting them let a 90-word script
