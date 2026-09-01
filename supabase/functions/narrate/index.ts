@@ -65,7 +65,8 @@ const wordsToNumber = (toks: string[]): number | null => {
   }
   return seen ? total + cur + (frac ?? 0) : null;
 };
-/** "twenty-three point four percent" -> "twenty-three percent"; a figure UNDER one percent keeps its decimal. */
+/** "twenty-three point four percent" -> "twenty-three percent". Below TEN percent the decimal stays:
+ *  rounding 34.3 to 34 loses nothing, rounding 1.5 to 2 is a third of the figure. */
 const NW = "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|and";
 // the group must START and END on a number word, or it eats the space in front of it ("a twenty-three
 // point four percent" came back as "atwenty-three percent")
@@ -73,7 +74,7 @@ const EAR_RE = new RegExp(`((?:${NW})(?:[\\s-]+(?:${NW}))*)\\s+point\\s+(?:zero|
 const roundEar = (t: string) => String(t ?? "").replace(EAR_RE,
   (whole, intPart: string) => {
     const v = wordsToNumber(String(intPart).toLowerCase().replace(/-/g, " ").split(/\s+/).filter(Boolean));
-    return v !== null && v >= 1 ? `${String(intPart).trim()} percent` : whole;   // under 1% the decimal IS the fact
+    return v !== null && v >= 10 ? `${String(intPart).trim()} percent` : whole;   // under 10% the decimal carries real weight
   });
 
 const spokenQuantities = (text: string): { value: number; unit: "pct" | "usd" }[] => {
@@ -100,7 +101,9 @@ const spokenFigureUnsupported = (script: string, allowed: string[]): boolean => 
     const pool = unit === "pct" ? pcts : usds;
     if (!pool.length) return false;                       // nothing of that unit to check against
     return !pool.some((a) => {
-      if (unit === "pct") return Math.round(a) === Math.round(value) || Math.abs(a - value) < 0.05;
+      // at 10% and up, rounding to the nearest whole number is the REQUIRED ear-rounding; below that the
+      // spoken figure must essentially match, because "two percent" for 1.5% misstates it by a third
+      if (unit === "pct") return a >= 10 ? Math.abs(a - value) <= 0.5 : Math.abs(a - value) < 0.05;
       // dollars are rounded hard for the ear: 43,224 may be spoken as 43,000 or 43 thousand
       const grains = [1, 100, 1000, 10000];
       return grains.some((g) => Math.round(a / g) * g === Math.round(value / g) * g);
@@ -312,7 +315,7 @@ points: the ${nPoints === 3 ? "two or three" : "one or two"} things that actuall
 risk: the single thing that would make this worse, AND the CHECKABLE condition that would confirm it - a level, a date, a print, or a percentage the listener could actually look up. 16-26 words. "If markets fall" is not a tripwire; "if it closes below its summer low" is. Constructive, never bare doom.
 next: the one concrete thing ahead. 10-18 words.\nThe assembled script must run 120 to 190 spoken words in total: write full sentences, not clipped notes.
 
-NUMBER RULES: at most FIVE figures across ALL fields combined. Round for the ear: 34.3% is "thirty-four percent", $43,224 is "forty-three thousand dollars". Never read a decimal above one percent; a figure UNDER one percent keeps its decimal. Never describe a holding's size as a fraction (half, a third, a quarter): say the rounded percent.
+NUMBER RULES: at most FIVE figures across ALL fields combined. Round for the ear ONLY where rounding is harmless: at ten percent and above drop the decimal (34.3% is "thirty-four percent"), and BELOW ten percent keep it (1.5% is "one point five percent", never "two percent"; 0.2% is "zero point two percent"). $43,224 is "forty-three thousand dollars". Never describe a holding's size as a fraction (half, a third, a quarter): say the rounded percent.
 Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". Never speak as "we" about acting on their money. ${voiceLine}${earBan} No ticker codes, company names only.${nameLine}${figureLine}`;
 
         type Slots = { bottom_line: string; because: string; points: { name: string; point: string }[]; risk: string; next: string };
