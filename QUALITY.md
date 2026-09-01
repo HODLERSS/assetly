@@ -223,45 +223,46 @@ B1 100 · B2 84 · B3 75 · B4 75 · B5 100 · B6 88 · B7 100 · B8 100 · B9 9
 Caveat: two battery runs briefly overlapped on the same fixture account during this round, so these may be
 slightly pessimistic. Reported as measured rather than re-run for a friendlier number.
 
-**FINAL STATUS (2026-08-31, shipped: daily-brief v103 / narrate v36 / PWA index-DRwWxwKs.js).**
-Grid: 2 personas (novice55, pro) x 2 editions (assessment, close) x read+listen = 8 artifacts, 4 scored cells.
+**FINAL STATUS (2026-08-31 · shipped: daily-brief v104 / narrate v37 / PWA index-CUQ1W8Bp.js).**
 
-**The 95+ gate is NOT met.** The bar is all ten metrics at 95+ across TWO CONSECUTIVE rounds. Best measured
-result, on daily-brief v103 / narrate v35:
+**The 95+ gate is NOT met.** Last measured pair, majority-of-three judging, both rounds clean:
 
-| Metric | Round 1 | Round 2 |
+| Metric | R1 | R2 |
 |---|---|---|
 | B1 bluf_read | 100 | 100 |
-| B2 bluf_listen | 100 | 100 |
-| B3 number_diet | 100 | 100 |
-| B4 tier_read | 100 | 100 |
+| B2 bluf_listen | 100 | 92 |
+| **B3 number_diet** | **92** | **75** |
+| B4 tier_read | 88 | 100 |
 | B5 tier_listen | 100 | 100 |
 | B6 length | 100 | 100 |
 | B7 fidelity | 100 | 100 |
-| B8 understand | 100 | 92 |
+| B8 understand | 100 | 100 |
 | B9 opinion | 100 | 100 |
 | B10 delivery | 100 | 100 |
 
-**Round 1 was a perfect sweep - ten metrics at 100, all four cells clean.** It did not reproduce in round 2,
-which missed on one cell of one metric. A later partial round on v103/v36 showed misses on B1, B3 and B8,
-so the honest summary is: the ceiling is 100, the floor across a pair is roughly 92, and which cell drops
-varies run to run.
+A perfect 10/10 round was reached (v103/v35 R1, and again under majority judging) but never twice running.
 
-**Trajectory across the last four measured pairs:** 92/84 -> 92/92 -> 92/83 -> 100/92.
+**B3 is the blocker, and the remaining failure is REAL.** Example, four figures against a cap of three:
 
-**What is genuinely delivered and holding:** BLUF framing in every section (B1/B2 at 100 in the last three
-pairs), the number diet including the laundry lists that prompted this work (B3 reached 100 and held),
-tier-levelled vocabulary for both read and listen (B4/B5), the length budgets - read under 2 minutes,
-listen under 90 seconds at a normal pace (B6 at 100 throughout), figure fidelity between the written and
-spoken versions (B7), and an opinionated voice with a checkable tripwire (B9).
+> "NVDA gained 1.5% today, adding $16 to the position now up $104 total. The 4.8% stake captures AI
+> infrastructure buildout without overconcentrating."
 
-**Why it stops here.** Every remaining miss has been a single named defect, and three of the last four were
-side-effects of an earlier fix of mine - the tripwire requirement produced sentence fragments, the ear
-rounding rule turned 1.5% into "two percent", slot composition bypassed the beginner vocabulary map. The
-change rate outran the measurement rate. The next honest step is not another scrub but more samples per
-cell: with 4 cells and one judged sample each, a single borderline generation moves a metric 8 points, so
-the metric cannot distinguish a defect from variance without repetition. Raise samples per cell to 3 and
-score the median before chasing the last 8 points.
+That is the user's original complaint in miniature: one move restated three ways (percent, dollar change,
+cumulative dollar). The prompt already says "at most two numbers" and the model exceeds it.
+
+**Why it was not fixed, deliberately.** The sentence-level trimmer cannot reach it. Dropping sentence two
+brings it to three figures but deletes the judgement clause, trading B3 for B9 - the exact oscillation this
+document has recorded all session. The only remaining lever is a rewriting scrub INSIDE a sentence, and six
+of those caused defects earlier today, three of which corrupted figures. Stopping was the better call.
+
+**The fix, when someone returns to it:** drop the redundant restatement, not a sentence. A percent move and
+its dollar equivalent are one fact, so "gained 1.5%, adding $16" should keep one. That is deletion-only and
+does not touch the judgement clause. Verify against B9 and B6 before believing it.
+
+**Also measured, and worth keeping:** roughly half of the last dozen "failures" were the RULER, not the
+product - a hyphenated spoken decimal, calendar entries read as prose, and a digit inside a term of art
+("Tier 1"). Reading the evidence string rather than the score is what separated them, and twice it stopped
+a correct brief being "fixed".
 
 **Correction (Aug 31, daily-brief v94 / narrate v29).** An earlier version of this section called that cell's
 rotating failure "run-to-run variance rather than a fixable defect." That was wrong, and reading the per-cell
