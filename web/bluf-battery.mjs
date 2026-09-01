@@ -118,6 +118,16 @@ const MARKET_SENT = /\b(market|S&P|SPX|futures|volatility|VIX|the index|indices|
 // actually reads ("NVDA rose 1.5%, MARA fell 2.3%, JPM gained 4.4%"), was not - and the comma form
 // is the one the user complained about.
 const MOVE_VERB_G = /\b(slipped|fell|dropped|rose|gained|climbed|declined|advanced|sank|jumped|edged|ticked)\b/gi;
+// The complaint was notes that OPEN with a price move ("QQQM rose 0.1% today, representing 25.6% of
+// assets"), not notes that mention one at all. A note that leads with the judgement and puts the number
+// second is the fix working, so counting move verbs anywhere would punish exactly the behaviour asked for.
+// Fail only when a RUN of notes opens on the move.
+const opensWithMove = (note) => {
+  const first = String(note ?? "").split(/(?<=[.!?])\s/)[0] ?? "";
+  const clause = first.split(/,\s/)[0] ?? "";                 // the opening clause only
+  return MOVE_VERB.test(clause) && !MARKET_SENT.test(clause);
+};
+const leadsWithMoves = (positions) => positions.filter((p) => opensWithMove(p.note)).length >= 3;
 const wordedChain = (t) => {
   const sents = String(t ?? "").split(/(?<=[.!?])\s+/);
   if (sents.filter((x) => MOVE_VERB.test(x) && !MARKET_SENT.test(x)).length >= 3) return true;
@@ -293,7 +303,8 @@ worst: weakest sentence overall, quoted.`);
       // spot makes B1 stricter, and is what makes the per-edition note cap safe.
       B1_bluf_read: pct([ev(j, "bluf_read"),
         !TICKER_CHAIN.test([s.lede, ...(s.positions ?? []).map((p) => p.note), s.desk_view].join("\n")),
-        !wordedChain([s.lede, ...(s.positions ?? []).map((p) => p.note), s.desk_view].join(" "))]),
+        !wordedChain([s.lede, s.desk_view].join(" ")),
+        !leadsWithMoves(s.positions ?? [])]),
       B2_bluf_listen: pct([ev(j, "bluf_listen"), !TICKER_CHAIN.test(script), !wordedChain(script)]),
       B3_number_diet: pct([dietMisses(s, isAssess).length === 0, heard(script) <= 7, roundedOk(script)]),
       B4_tier_read: pct([ev(j, "tier_read"), !(novice && JARGON.test(read))]),
