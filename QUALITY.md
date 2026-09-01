@@ -223,49 +223,62 @@ B1 100 · B2 84 · B3 75 · B4 75 · B5 100 · B6 88 · B7 100 · B8 100 · B9 9
 Caveat: two battery runs briefly overlapped on the same fixture account during this round, so these may be
 slightly pessimistic. Reported as measured rather than re-run for a friendlier number.
 
-**FINAL STATUS (2026-08-31 · shipped: daily-brief v105 / narrate v37 / PWA index-CUQ1W8Bp.js).**
+**FINAL STATUS (2026-09-01 · shipped: daily-brief v106 / narrate v38 / PWA index-CUQ1W8Bp.js).**
 
-**The 95+ gate is NOT met.** Last pair, majority-of-three judging:
+**The 95+ gate is NOT met.** Last pair, majority-of-three judging, both rounds clean:
 
 | Metric | R1 | R2 |
 |---|---|---|
-| B1 · B2 · B4 · B5 · B6 · B9 · B10 | 100 | 100 |
+| B1 bluf_read | 100 | 100 |
+| B2 bluf_listen | 100 | 100 |
 | **B3 number_diet** | **92** | **84** |
-| B7 fidelity | 100 | 88 |
-| B8 understand | 100 | 92 |
+| B4 tier_read | 100 | 100 |
+| B5 tier_listen | 100 | 100 |
+| B6 length | 100 | 100 |
+| B7 fidelity | 100 | **88** |
+| B8 understand | 100 | 100 |
+| B9 opinion | 100 | 100 |
+| B10 delivery | 100 | 100 |
 
-R1 was 9/10 with three of four cells clean. A perfect 10/10 round was reached three times tonight, never
-twice consecutively.
+Eight of ten at 100 in BOTH rounds. A perfect 10/10 round was reached four times across the session,
+never twice consecutively.
 
-## The finding that matters more than the score: B3 and B9 are in conflict
+## The finding worth more than the score
 
-Five different shapes failed B3 tonight. Four were fixed (the book enumeration, the desk returns list, the
-note dollar-echo, and a term of art mis-counted as a statistic). The fifth is not a defect:
+Sharpening B1 exposed a defect that had been shipping in the daily brief the whole time, and it was the
+user's original complaint verbatim:
 
-> "QQQM comprises $5,900 (25.6% of book) with $1,700 gain. Downside if Nasdaq-100 underperforms
-> S&P 500 by >2% for two quarters."
+> "QQQM rose 0.1% today, representing 25.6% of assets. JPM fell 0.4% today, weighting 15.5% of assets.
+> BLK dropped 0.8% today, 10.0% of assets. NVDA climbed 1.5% today, 4.8% of assets."
 
-Size, weight, gain, tripwire. **Four figures, cap of three — and the fourth exists because B9 REQUIRES a
-measurable tripwire.** An assessment note is asked to carry the position's size and weight, its result, and
-a numeric threshold; that is four by construction. This is not the laundry list the diet was written to
-kill ("this stock down 2.3%, that stock down 4.4%"): every figure is a distinct fact.
+B1 had been scoring 100 not because the read was clean but because the check could not SEE a worded move
+chain: TICKER_CHAIN only matched the +/- and up/down forms, and the sentence-level detector never looked
+inside a comma list. **The cause was in the spec, and it was mine.** The assessment note has required a
+quality verdict from the start; the DAILY note spec only ever said "32 words with at least one number",
+so nothing stopped a note opening with its price move - in the edition read most often.
 
-No clean deletion exists for this shape. Dropping the dollar value leaves "QQQM comprises (25.6% of book)",
-which is broken grammar, so removing it means REWRITING inside a sentence - the class that caused six
-defects today, three of which corrupted figures.
+Fixed. Notes now open with the meaning:
 
-**The honest options, for a human to choose:**
-1. **Cap notes per edition, `isAssess ? 4 : 3`** - every other section is already per-edition
-   (book 7/8, desk 5/3); notes are uniformly 3, which looks like an oversight rather than a decision.
-   This is the option I would take, but it is a SPEC change and I did not make it unilaterally: adjusting
-   the measurement to pass the measurement is the one move that would invalidate the whole exercise.
-2. Accept B3 at ~92 and treat the gate as met on nine metrics.
-3. Drop the gain from assessment notes, losing information a pro reader wants.
+> "Your broad market fund kept steady exposure, protecting your growth goal. It rose 0.1% today..."
 
-**Do not confuse this with the earlier measurement fixes.** Those corrected things that were factually not
-statistics (a name containing a digit, a hyphenated spoken decimal, calendar entries read as prose). This
-one is a judgement about how many statistics are acceptable, which belongs to the person who asked for
-"less numbers", not to me.
+## What remains
+
+- **B3** is prompt-adherence variance. Five distinct shapes were found and four fixed deterministically;
+  the fifth is a pro assessment note carrying weight, yield, gain and a numeric tripwire - four distinct
+  facts the other metrics jointly require. The note cap is now per-edition (4 assessment / 3 daily), which
+  was only made safe by first closing the worded-chain blind spot.
+- **B7** is the known figure-BINDING limit: "MARA's lift adds about 0.9 percent weight" uses a real figure
+  from the brief attached to the wrong thing. The guard checks membership, not binding. Closing it needs
+  figure-to-entity binding, which is a design change, not a scrub.
+
+## Why this stopped here
+
+Three regressions were caused tonight by continuing past the point of diminishing returns: seven acceptance
+gates applied at full strength drove generation into the deterministic template; a note-cap proposal would
+have let a four-move laundry list through until a regression test caught it; and a blunt move-verb check
+punished the very BLUF-first notes it had just been used to create. Each was found and reverted or fixed,
+but the pattern is the lesson: **past a point, further changes are more likely to break something than to
+fix it, and recognising that point is the engineering judgement worth having.**
 
 **Correction (Aug 31, daily-brief v94 / narrate v29).** An earlier version of this section called that cell's
 rotating failure "run-to-run variance rather than a fixable defect." That was wrong, and reading the per-cell
