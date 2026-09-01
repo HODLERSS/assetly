@@ -55,7 +55,11 @@ const setBook = async () => {
 // and treating it as an opening tag deleted everything up to the next ">", hiding real figures from the check.
 const strip = (t) => String(t ?? "").replace(/<\/?[a-zA-Z][^>]*>/g, " ");
 // index/product names that merely contain digits are names, not numbers the reader must absorb
-const NAMEY = /\b(Nasdaq[-\s]?100|S&P[-\s]?500|Russell[-\s]?2000|FTSE[-\s]?100|Nikkei[-\s]?225|Dow[-\s]?30|MSCI[-\s]?\w+)\b/gi;
+// A digit inside a NAME or a term of art is not a statistic the reader has to absorb. Index names were
+// already excluded; "Tier 1 capital" and "top-10 holdings" are the same thing and were not, so a note
+// carrying three real figures (3% dividend, $1,100 gain, 12% threshold) was scored as four and failed
+// the diet. Names only - anything that is actually a measurement still counts.
+const NAMEY = /\b(Nasdaq[-\s]?100|S&P[-\s]?500|Russell[-\s]?2000|FTSE[-\s]?100|Nikkei[-\s]?225|Dow[-\s]?30|MSCI[-\s]?\w+|Tier[-\s]?[12]|top[-\s]?\d{1,2}|Big[-\s]?[45]|Fortune[-\s]?500)\b/gi;
 const wc = (t) => strip(t).split(/\s+/).filter(Boolean).length;
 const period = (t) => { const x = String(t ?? "").trim(); return x ? (/[.!?]$/.test(x) ? x : x + ".") : ""; };
 // sentence length is measured on PROSE only: names, watch chips, ideas and calendar entries are labels with
