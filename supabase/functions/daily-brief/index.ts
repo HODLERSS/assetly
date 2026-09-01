@@ -224,6 +224,10 @@ const NOVICE_MAP: [RegExp, string][] = [
 const noviceScrub = (t: string): string => {
   let x = t;
   for (const [re, plain] of NOVICE_MAP) x = x.replace(re, plain);
+  // A replacement that begins with a possessive collides with any article in front of the term it
+  // replaced: "a CET1 ratio below 12%" became "A its safety cushion of capital below twelve percent".
+  // Drop the stranded article - deletion only, and it cannot touch text the map did not rewrite.
+  x = x.replace(/\b([Aa]n?|[Tt]he)\s+(its|their|his|her)\b/g, (_m, art, poss) => (/^[A-Z]/.test(art) ? poss.charAt(0).toUpperCase() + poss.slice(1) : poss));
   // a lowercase replacement can land at a sentence start; the guard on the preceding character keeps
   // abbreviations ("U.S. stocks") from being re-capitalised
   return x.replace(/(^|(?<=[a-z0-9%)])[.!?]\s+)([a-z])/g, (_m, a, b) => a + b.toUpperCase());

@@ -74,7 +74,7 @@ const textOf = (s) => [
   ...(s.positions ?? []).map((p) => `POSITION ${p.name}: ${p.note} (watch: ${p.watch})`),
   `DESK VIEW: ${s.desk_view}`,
   ...(s.horizon ? [`HORIZON: ${s.horizon}`] : []),
-  ...((s.ideas ?? []).length ? [`IDEAS: ${(s.ideas ?? []).join(" | ")}`] : []),
+  ...((s.ideas ?? []).length ? [`IDEAS (a list of research gaps, not prose): ${(s.ideas ?? []).join(" | ")}`] : []),
   ...((s.calendar ?? []).length ? [`CALENDAR (a diary list, not prose): ${(s.calendar ?? []).join(" | ")}`] : []),
 ].join("\n");
 const nums = (t) => (strip(t).replace(NAMEY, "INDEX").match(/-?\d[\d,]*(?:\.\d+)?\s?%?|\$\s?[\d,]+/g) ?? []).filter((x) => !/^(19|20)\d\d$/.test(x.trim()));
