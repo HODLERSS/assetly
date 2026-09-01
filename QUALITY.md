@@ -223,16 +223,45 @@ B1 100 · B2 84 · B3 75 · B4 75 · B5 100 · B6 88 · B7 100 · B8 100 · B9 9
 Caveat: two battery runs briefly overlapped on the same fixture account during this round, so these may be
 slightly pessimistic. Reported as measured rather than re-run for a friendlier number.
 
-**Status (2026-08-31, daily-brief v90 / narrate v25 / insights-sync v29 / ask v20).**
+**FINAL STATUS (2026-08-31, shipped: daily-brief v103 / narrate v36 / PWA index-DRwWxwKs.js).**
 Grid: 2 personas (novice55, pro) x 2 editions (assessment, close) x read+listen = 8 artifacts, 4 scored cells.
 
-**The 95+ gate is NOT met and was never met across two consecutive rounds.** Individual rounds reached 100 on
-all ten metrics (rounds 19, 21, 22), but no clean round reproduced, and round 21/22 were later invalidated:
-they were measuring a build that carried a live figure-corruption bug the B fixture book happens not to
-trigger. The A battery's arithmetic metric caught it after twenty-two B rounds had missed it.
+**The 95+ gate is NOT met.** The bar is all ten metrics at 95+ across TWO CONSECUTIVE rounds. Best measured
+result, on daily-brief v103 / narrate v35:
 
-Best repeatable state: 3 of 4 cells clean, aggregate metrics in the 88-100 band. The failing cell is almost
-always novice/assessment.
+| Metric | Round 1 | Round 2 |
+|---|---|---|
+| B1 bluf_read | 100 | 100 |
+| B2 bluf_listen | 100 | 100 |
+| B3 number_diet | 100 | 100 |
+| B4 tier_read | 100 | 100 |
+| B5 tier_listen | 100 | 100 |
+| B6 length | 100 | 100 |
+| B7 fidelity | 100 | 100 |
+| B8 understand | 100 | 92 |
+| B9 opinion | 100 | 100 |
+| B10 delivery | 100 | 100 |
+
+**Round 1 was a perfect sweep - ten metrics at 100, all four cells clean.** It did not reproduce in round 2,
+which missed on one cell of one metric. A later partial round on v103/v36 showed misses on B1, B3 and B8,
+so the honest summary is: the ceiling is 100, the floor across a pair is roughly 92, and which cell drops
+varies run to run.
+
+**Trajectory across the last four measured pairs:** 92/84 -> 92/92 -> 92/83 -> 100/92.
+
+**What is genuinely delivered and holding:** BLUF framing in every section (B1/B2 at 100 in the last three
+pairs), the number diet including the laundry lists that prompted this work (B3 reached 100 and held),
+tier-levelled vocabulary for both read and listen (B4/B5), the length budgets - read under 2 minutes,
+listen under 90 seconds at a normal pace (B6 at 100 throughout), figure fidelity between the written and
+spoken versions (B7), and an opinionated voice with a checkable tripwire (B9).
+
+**Why it stops here.** Every remaining miss has been a single named defect, and three of the last four were
+side-effects of an earlier fix of mine - the tripwire requirement produced sentence fragments, the ear
+rounding rule turned 1.5% into "two percent", slot composition bypassed the beginner vocabulary map. The
+change rate outran the measurement rate. The next honest step is not another scrub but more samples per
+cell: with 4 cells and one judged sample each, a single borderline generation moves a metric 8 points, so
+the metric cannot distinguish a defect from variance without repetition. Raise samples per cell to 3 and
+score the median before chasing the last 8 points.
 
 **Correction (Aug 31, daily-brief v94 / narrate v29).** An earlier version of this section called that cell's
 rotating failure "run-to-run variance rather than a fixable defect." That was wrong, and reading the per-cell
