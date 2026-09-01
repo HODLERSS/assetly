@@ -89,7 +89,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
         Your holdings, your numbers — answered from your data.
       </p>
       {turns.length === 0 && (
-        <div className="chips" style={{ flexWrap: "wrap" }}>
+        <div className="chips wrap">
           {SUGGESTIONS.map((sug) => (
             <button key={sug} className="chip" onClick={() => void submit(sug)}>{sug}</button>
           ))}
@@ -110,7 +110,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
             )}
             {t.error && <div className="error-note" role="alert">{t.error}</div>}
             {i === turns.length - 1 && !busy && t.a && !t.error && (t.followups?.length ?? 0) > 0 && (
-              <div className="chips" style={{ flexWrap: "wrap", padding: 0 }} aria-label="Follow-up questions">
+              <div className="chips wrap" style={{ padding: 0 }} aria-label="Follow-up questions">
                 {t.followups!.map((f) => (
                   <button key={f} className="chip" onClick={() => void submit(f)}>{f}</button>
                 ))}
@@ -120,12 +120,10 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
         ))}
         <div ref={endRef} />
       </div>
-      <form
-        style={{ position: "fixed", left: 0, right: 0, bottom: "calc(52px + env(safe-area-inset-bottom))", maxWidth: 480, margin: "0 auto", padding: "8px 16px", background: "var(--as-bg)", display: "flex", gap: 8 }}
-        onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
+      <form className="ask-composer" onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
         <input aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
-               placeholder="Ask about your portfolio…" style={{ flex: 1, padding: 12, border: "1px solid var(--as-rule)", borderRadius: 22, background: "var(--as-surface)", minHeight: 44 }} />
-        <button className="btn" style={{ width: "auto", padding: "0 18px", borderRadius: 22 }} disabled={busy || !q.trim()}>{busy ? "…" : "Send"}</button>
+               placeholder="Ask about your portfolio…" />
+        <button className="btn" disabled={busy || !q.trim()}>{busy ? "…" : "Send"}</button>
       </form>
     </>
   );

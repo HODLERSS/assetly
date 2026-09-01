@@ -171,7 +171,26 @@ input, select { font: inherit; }
 .insights-foot { margin: 8px 0 0; font-size: 10.5px; color: var(--as-muted); }
 
 /* ASK chat */
-.chat { display: grid; gap: 10px; margin-bottom: 92px; }
+.chat { display: grid; gap: 10px; margin-bottom: calc(var(--as-composer-h) + 8px); }
+
+/* The composer docks directly on top of the tab bar. It used to hardcode its own idea of how tall
+   that bar is (52px + the safe-area inset), which is 17px short on a device with no inset — an
+   iPhone SE clipped the input and the Send button behind the tabs. It now measures off the same
+   two tokens the tab bar and the mini player use, so the three can never disagree again. */
+.ask-composer { position: fixed; left: 0; right: 0; z-index: 15;
+  bottom: calc(var(--as-tabbar-h) + var(--as-tabbar-pad));
+  max-width: 480px; margin: 0 auto; padding: 8px 16px;
+  background: var(--as-bg); border-top: 1px solid var(--as-rule);
+  display: flex; gap: 8px; align-items: flex-end; }
+body.has-miniplayer .ask-composer { bottom: calc(var(--as-tabbar-h) + var(--as-tabbar-pad) + var(--as-miniplayer-h)); }
+.ask-composer input { flex: 1; min-width: 0; padding: 12px 14px; min-height: 44px;
+  border: 1px solid var(--as-rule); border-radius: 22px; background: var(--as-surface); color: var(--as-ink); }
+.ask-composer .btn { flex: none; width: auto; padding: 0 18px; border-radius: 22px; min-height: 44px; }
+
+/* Suggestion and follow-up pills. `.chips` alone keeps every pill on one nowrap line and scrolls
+   sideways, which silently cuts a long question in half at the screen edge. These wrap instead. */
+.chips.wrap { flex-wrap: wrap; overflow-x: visible; }
+.chips.wrap .chip { white-space: normal; max-width: 100%; text-align: left; line-height: 1.35; padding: 9px 14px; }
 .bubble { max-width: 88%; padding: 10px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
 .bubble.user { justify-self: end; background: var(--as-primary); color: var(--as-on-primary); border-bottom-right-radius: 5px; }
 .bubble.ai { justify-self: start; background: var(--as-surface); border: 1px solid var(--as-rule); border-bottom-left-radius: 5px; }
@@ -216,7 +235,8 @@ input, select { font: inherit; }
 /* ---------- Now-playing mini player ----------
    Docked above the tab bar (Podcasts / YouTube Music pattern) so a brief keeps playing while the
    user moves between tabs. Rendered once at the App level, so it never unmounts. */
-:root { --as-tabbar-pad: max(env(safe-area-inset-bottom), 12px); --as-tabbar-h: 57px; --as-miniplayer-h: 76px; }
+:root { --as-tabbar-pad: max(env(safe-area-inset-bottom), 12px); --as-tabbar-h: 57px; --as-miniplayer-h: 76px;
+  --as-composer-h: 61px; }
 
 .miniplayer {
   position: fixed; left: 0; right: 0; z-index: 25;
