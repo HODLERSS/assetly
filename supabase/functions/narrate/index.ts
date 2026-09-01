@@ -115,7 +115,12 @@ const spokenFigureUnsupported = (script: string, allowed: string[]): boolean => 
 // to the listener: "keep JPMorgan Chase's dividend reliable and sustainable over." Two independent
 // judges flagged this before I did - the acceptance gates only ever checked that the script ENDS with
 // punctuation, never that the sentences inside it finish.
-const DANGLING = /\b(over|with|and|or|to|for|of|in|on|at|from|by|than|that|which|while|as|into|about|after|before|between|through|during)\s*[.!?]/i;
+// NARROWED after it degraded production. The first version banned every sentence-final preposition,
+// but that is standard English - "the fund you rely on.", "what the cash buffer is for." - so it
+// rejected good drafts, drove six sequential model calls per brief, and pushed narration to 573s or to
+// no script at all. Far worse than the defect it was chasing. Only words that CANNOT end an English
+// sentence remain; a truncation ending in a preposition is now missed, which is the right trade.
+const DANGLING = /\b(and|or|but|which|than|into|between|during|the|an?)\s*[.!?]/i;
 const hasDanglingSentence = (t: string) => DANGLING.test(String(t ?? "").replace(/<[^>]*>/g, " "));
 
 const EAR_JARGON = /\b(beta|alpha|ROE|ROIC|ROTCE|EBITDA|FCF|EPS|AUM|NII|NIM|CET\s?1|capex|basis points|multiple compression|valuation multiple|net interest (?:margin|income)|drawdown|Sharpe|duration|convexity|dry powder|megacap|tilt|cash drag|hash ?rate|free cash flow)\b/i;
