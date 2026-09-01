@@ -201,7 +201,12 @@ const NOVICE_MAP: [RegExp, string][] = [
   // consecutive quarters" and "core capital ratio drops below twelve percent" as things to WATCH
   [/\b(?:negative\s+)?(?:net new money|net new assets|net (?:out)?flows?)\s+(?:is\s+|turning\s+|going\s+)?negative\b/gi, "customers pulling money out"],
   [/\b(net new money|net new assets|net flows?)\b/gi, "money coming in from customers"],
-  [/\b(core capital ratio|capital ratio|CET1(?: ratio)?|tier 1(?: capital)?(?: ratio)?)\b/gi, "its safety cushion of capital"],
+  [/\b(common equity tier (?:one|1)(?: ratio)?|core capital ratio|capital ratio|CET1(?: ratio)?|tier (?:1|one)(?: capital)?(?: ratio)?)\b/gi, "its safety cushion of capital"],
+  // the spelled-out forms slip past an acronym-only map: a novice was handed "Common equity tier one
+  // ratio drops below twelve percent" as a thing to WATCH
+  [/\b(price[- ]to[- ]book|book value per share|P\/B)\b/gi, "what the company is worth on paper"],
+  [/\b(price[- ]to[- ]earnings|P\/E)(?: ratio)?\b/gi, "its price tag against profits"],
+  [/\b(loan cost gap|net interest spread)\b/gi, "the gap between what a bank earns and pays"],
   [/\bassets? under management\b/gi, "the money it manages for clients"],
   [/\b(deposit betas?|funding costs?)\b/gi, "what it pays for deposits"],
   [/\bAUM\b/g, "assets under management"], [/\bROE\b/g, "return on the owners' money"], [/\bROIC\b/g, "return on invested money"],
