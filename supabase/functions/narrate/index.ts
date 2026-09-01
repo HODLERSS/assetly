@@ -324,18 +324,20 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
         type Slots = { bottom_line: string; because: string; points: { name: string; point: string }[]; risk: string; next: string };
         const oneSentence = (x: unknown) => String(x ?? "").replace(/\s+/g, " ").trim();
         const FRAGMENT = /^(if|unless|when|because|while|although|though)\b[^,]*$/i;   // opener with no main clause
+        let lastTry = false;
         const okSlots = (o: unknown): o is Slots => {
           const v = o as Slots;
           if (!v || !oneSentence(v.bottom_line) || !oneSentence(v.because) || !oneSentence(v.risk)) return false;
           if (!Array.isArray(v.points) || v.points.length < 1 || v.points.length > nPoints) return false;
           if (!v.points.every((p) => p && !!oneSentence(p.point))) return false;
           const fields = [v.bottom_line, v.because, v.risk, v.next ?? "", ...v.points.map((p) => p.point)];
-          return !fields.some((f) => FRAGMENT.test(oneSentence(f).replace(/[.!?]+$/, "")));
+          return lastTry ? true : !fields.some((f) => FRAGMENT.test(oneSentence(f).replace(/[.!?]+$/, "")));
         };
         const period = (x: string) => (/[.!?]$/.test(x) ? x : x + ".");
         const weekday = dayLine.split(",")[0];
         const greet = ed === "morning" ? `Good morning, it's ${weekday}.` : `Good afternoon, it's ${weekday}.`;
         for (let a = 0; a < 3 && !spoken; a++) {
+          lastTry = a === 2;
           const raw = await askModel(key, "You write the parts of a spoken investment brief. Output only the JSON.", slotPrompt, 6000, a === 0 ? 45000 : 40000, "gpt-oss-120b");
           if (!okSlots(raw)) continue;
           const body = [
@@ -355,7 +357,16 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
           const jargon = beginner && EAR_JARGON.test(draft.replace(/<[^>]*>/g, " "));
           // a figure written in DIGITS must be in the brief too, not just the spelled ones
           const strayDigits = strayDigitFigure(draft);
-          if (heardW >= 104 && heardW <= 205 && heardFigs <= 6 && !FRACW0.test(draft) && !unsupported && !jargon && !strayDigits) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
+          // ESCALATING LENIENCY, the same lesson the free path already learned: seven gates applied at
+          // full strength on every attempt reject so often that generation falls through to the
+          // deterministic template, which is a holdings walkthrough - worse than anything these gates
+          // were protecting against. The last attempt therefore enforces only what changes MEANING
+          // (a figure the brief does not support, or jargon aimed at a beginner) and forgives the
+          // cosmetic caps. A slightly long script beats the template every time.
+          const meaningBad = unsupported || jargon || strayDigits || FRACW0.test(draft);
+          const tidyBad = heardFigs > 6;
+          const ok = a === 2 ? !meaningBad : !(meaningBad || tidyBad);
+          if (heardW >= 104 && heardW <= 205 && ok) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
           if (unsupported && a === 1) console.log("narrate: slot script spoke a figure the brief does not support");
         }
         if (!spoken) console.log("narrate: slot composition did not land, falling back to free composition");
