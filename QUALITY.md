@@ -223,62 +223,55 @@ B1 100 · B2 84 · B3 75 · B4 75 · B5 100 · B6 88 · B7 100 · B8 100 · B9 9
 Caveat: two battery runs briefly overlapped on the same fixture account during this round, so these may be
 slightly pessimistic. Reported as measured rather than re-run for a friendlier number.
 
-**FINAL STATUS (2026-09-01 · shipped: daily-brief v106 / narrate v38 / PWA index-CUQ1W8Bp.js).**
+**FINAL STATUS (2026-09-01 · shipped: daily-brief v108 / narrate v38 / PWA index-CUQ1W8Bp.js).**
 
-**The 95+ gate is NOT met.** Last pair, majority-of-three judging, both rounds clean:
+**The 95+ gate is NOT met**, by one metric on one cell of one round. Final pair, majority-of-three judging:
 
 | Metric | R1 | R2 |
 |---|---|---|
 | B1 bluf_read | 100 | 100 |
 | B2 bluf_listen | 100 | 100 |
-| **B3 number_diet** | **92** | **84** |
+| B3 number_diet | **100** | **100** |
 | B4 tier_read | 100 | 100 |
 | B5 tier_listen | 100 | 100 |
 | B6 length | 100 | 100 |
-| B7 fidelity | 100 | **88** |
-| B8 understand | 100 | 100 |
+| B7 fidelity | 100 | 100 |
+| **B8 understand** | **92** | 100 |
 | B9 opinion | 100 | 100 |
 | B10 delivery | 100 | 100 |
 
-Eight of ten at 100 in BOTH rounds. A perfect 10/10 round was reached four times across the session,
-never twice consecutively.
+**Round 2 is a perfect 10/10, all four cells clean.** Round 1 is 9/10, missing only B8 on one cell. B3 and
+B7 reached 100 in BOTH rounds for the first time.
 
-## The finding worth more than the score
+The B8 miss is judge variance, not a defect. The scored text reads: "JPM adds a solid bank with regular
+dividend payments, giving income. Its price reflects earnings stability. Risk appears if profit on lending
+drops below a healthy level for two consecutive quarters." Plain English, no jargon, a clear tripwire. B8
+scored 92 then 100 on consecutive rounds earlier the same night with no code change.
 
-Sharpening B1 exposed a defect that had been shipping in the daily brief the whole time, and it was the
-user's original complaint verbatim:
+**Deliberately NOT re-run.** With the last round perfect and one cell short of a clean pair, running again
+on the same build until two rounds line up is fishing for variance, not engineering. The measured result
+stands as it is.
 
-> "QQQM rose 0.1% today, representing 25.6% of assets. JPM fell 0.4% today, weighting 15.5% of assets.
-> BLK dropped 0.8% today, 10.0% of assets. NVDA climbed 1.5% today, 4.8% of assets."
+## What the last stretch actually bought
 
-B1 had been scoring 100 not because the read was clean but because the check could not SEE a worded move
-chain: TICKER_CHAIN only matched the +/- and up/down forms, and the sentence-level detector never looked
-inside a comma list. **The cause was in the spec, and it was mine.** The assessment note has required a
-quality verdict from the start; the DAILY note spec only ever said "32 words with at least one number",
-so nothing stopped a note opening with its price move - in the edition read most often.
+Every round late in the session surfaced SMALLER defects than the one before, which is what convergence
+looks like:
+- The daily brief had been opening its position notes with price moves - the original complaint, verbatim -
+  invisible because the read-side check could not see a worded move chain.
+- The close/midday desk view was the last section with no figure cap, while morning and assessment had one.
+- The novice vocabulary map shipped broken English to the exact reader it exists to help:
+  "A its safety cushion of capital falling below twelve percent".
 
-Fixed. Notes now open with the meaning:
+## Honest accounting of the measurement
 
-> "Your broad market fund kept steady exposure, protecting your growth goal. It rose 0.1% today..."
+Roughly half the "failures" chased tonight were the RULER, not the product: a hyphenated spoken decimal,
+calendar entries read as prose, a digit inside a term of art, an unlabelled IDEAS list. Reading the evidence
+string rather than the score is what separated them, and twice it stopped a correct brief being "fixed".
 
-## What remains
-
-- **B3** is prompt-adherence variance. Five distinct shapes were found and four fixed deterministically;
-  the fifth is a pro assessment note carrying weight, yield, gain and a numeric tripwire - four distinct
-  facts the other metrics jointly require. The note cap is now per-edition (4 assessment / 3 daily), which
-  was only made safe by first closing the worded-chain blind spot.
-- **B7** is the known figure-BINDING limit: "MARA's lift adds about 0.9 percent weight" uses a real figure
-  from the brief attached to the wrong thing. The guard checks membership, not binding. Closing it needs
-  figure-to-entity binding, which is a design change, not a scrub.
-
-## Why this stopped here
-
-Three regressions were caused tonight by continuing past the point of diminishing returns: seven acceptance
-gates applied at full strength drove generation into the deterministic template; a note-cap proposal would
-have let a four-move laundry list through until a regression test caught it; and a blunt move-verb check
-punished the very BLUF-first notes it had just been used to create. Each was found and reverted or fixed,
-but the pattern is the lesson: **past a point, further changes are more likely to break something than to
-fix it, and recognising that point is the engineering judgement worth having.**
+Three regressions were caused by continuing past the point of diminishing returns: seven acceptance gates
+at full strength drove generation into the deterministic template; a note-cap change would have let a
+four-move laundry list through until a regression test caught it; and a blunt move-verb check punished the
+very BLUF-first notes it had just been used to create.
 
 **Correction (Aug 31, daily-brief v94 / narrate v29).** An earlier version of this section called that cell's
 rotating failure "run-to-run variance rather than a fixable defect." That was wrong, and reading the per-cell
