@@ -312,19 +312,22 @@ You are a sharp, warm ${spec.who} talking to ONE client. Short sentences. Contra
 bottom_line: the ONE thing this means for their money, stated as a VERDICT, not a summary. 14-24 words. Never open with a greeting, never announce what this is, never start with "Today" or "This".
 because: why that verdict is true, with the structural fact behind it. 16-26 words. AT MOST ONE figure.
 points: the ${nPoints === 3 ? "two or three" : "one or two"} things that actually changed the picture. name = the company in plain words. point 16-28 words, AT MOST ONE figure each, and say why it matters rather than how it moved. NEVER walk through the holdings in turn.
-risk: the single thing that would make this worse, AND the CHECKABLE condition that would confirm it - a level, a date, a print, or a percentage the listener could actually look up. 16-26 words. "If markets fall" is not a tripwire; "if it closes below its summer low" is. Constructive, never bare doom.
-next: the one concrete thing ahead. 10-18 words.\nThe assembled script must run 120 to 190 spoken words in total: write full sentences, not clipped notes.
+risk: ONE COMPLETE SENTENCE with a subject and a verb, never a fragment: name the single thing that would make this worse, AND the CHECKABLE condition that would confirm it - a level, a date, a print, or a percentage the listener could actually look up. 16-26 words. "If markets fall" is not a tripwire; "if it closes below its summer low" is. Constructive, never bare doom.
+next: the one concrete thing ahead, as a COMPLETE SENTENCE. 10-18 words. Never start a field with If, Unless, When or Because unless the same sentence also carries the main clause after a comma.\nThe assembled script must run 120 to 190 spoken words in total: write full sentences, not clipped notes.
 
 NUMBER RULES: at most FIVE figures across ALL fields combined. Round for the ear ONLY where rounding is harmless: at ten percent and above drop the decimal (34.3% is "thirty-four percent"), and BELOW ten percent keep it (1.5% is "one point five percent", never "two percent"; 0.2% is "zero point two percent"). $43,224 is "forty-three thousand dollars". Never describe a holding's size as a fraction (half, a third, a quarter): say the rounded percent.
 Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". Never speak as "we" about acting on their money. ${voiceLine}${earBan} No ticker codes, company names only.${nameLine}${figureLine}`;
 
         type Slots = { bottom_line: string; because: string; points: { name: string; point: string }[]; risk: string; next: string };
         const oneSentence = (x: unknown) => String(x ?? "").replace(/\s+/g, " ").trim();
+        const FRAGMENT = /^(if|unless|when|because|while|although|though)\b[^,]*$/i;   // opener with no main clause
         const okSlots = (o: unknown): o is Slots => {
           const v = o as Slots;
-          return !!v && !!oneSentence(v.bottom_line) && !!oneSentence(v.because) && !!oneSentence(v.risk)
-            && Array.isArray(v.points) && v.points.length >= 1 && v.points.length <= nPoints
-            && v.points.every((p) => p && !!oneSentence(p.point));
+          if (!v || !oneSentence(v.bottom_line) || !oneSentence(v.because) || !oneSentence(v.risk)) return false;
+          if (!Array.isArray(v.points) || v.points.length < 1 || v.points.length > nPoints) return false;
+          if (!v.points.every((p) => p && !!oneSentence(p.point))) return false;
+          const fields = [v.bottom_line, v.because, v.risk, v.next ?? "", ...v.points.map((p) => p.point)];
+          return !fields.some((f) => FRAGMENT.test(oneSentence(f).replace(/[.!?]+$/, "")));
         };
         const period = (x: string) => (/[.!?]$/.test(x) ? x : x + ".");
         const weekday = dayLine.split(",")[0];
