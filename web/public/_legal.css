@@ -1,0 +1,17 @@
+:root{--as-bg:#F4F5F7;--as-surface:#FFF;--as-ink:#16181D;--as-muted:#5D636E;--as-primary:#2A3F92;--as-rule:#E2E4E9;--as-radius:6px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--as-bg:#0F1216;--as-surface:#161A21;--as-ink:#E9ECF1;--as-muted:#9BA3B0;--as-primary:#8AA0F2;--as-rule:#262B34}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--as-bg);color:var(--as-ink);font:16px/1.65 "Schibsted Grotesk",-apple-system,system-ui,sans-serif;padding:0 20px 80px}
+.wrap{max-width:660px;margin:0 auto}
+header{padding:56px 0 28px;border-bottom:1px solid var(--as-rule);margin-bottom:28px}
+.brand{display:inline-flex;align-items:center;gap:8px;color:var(--as-primary);font-weight:700;font-size:18px;letter-spacing:-.02em}
+h1{font-size:30px;line-height:1.15;letter-spacing:-.02em;margin-top:14px}
+h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--as-muted);margin:34px 0 10px}
+p,li{color:var(--as-ink);margin-bottom:10px}
+.sub{color:var(--as-muted)}
+ul{padding-left:20px}
+a{color:var(--as-primary)}
+table{width:100%;border-collapse:collapse;margin-top:6px}
+td,th{text-align:left;padding:9px 10px;border-bottom:1px solid var(--as-rule);font-size:14.5px;vertical-align:top}
+th{color:var(--as-muted);font-weight:600;white-space:nowrap}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--as-rule);font-size:13px;color:var(--as-muted)}
