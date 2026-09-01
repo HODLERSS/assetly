@@ -1003,12 +1003,27 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // is the exact laundry list this brief exists to replace, and desk_view's own spec already forbids
       // performance figures there. Sentence-level trimming could not reach it: dropping it left 17 words
       // against an 18-word floor. So drop it BY SHAPE instead, and only ever by deletion.
-      const RETURNS_LIST = /(?:returns?|performance)\b[^.]*?[-+\u2212]?\d[\d.]*\s?%[^.]*?[-+\u2212]?\d[\d.]*\s?%[^.]*?[-+\u2212]?\d[\d.]*\s?%|(?:[-+\u2212]\d[\d.]*\s?%[^.]*?){3,}/;
+      // A period is a sentence end ONLY when whitespace follows it; inside 2.6 it is a decimal.
+      // Using [^.] as the gap meant the pattern could not span "+2.6%" to "-30.2%", so the densest
+      // laundry list of the night - nineteen figures, every holding with weight and two returns -
+      // matched nothing. Third time a decimal point has broken one of these regexes.
+      const GAP = "(?:[^.]|\\.(?=\\d))*?";
+      const RETURNS_LIST = new RegExp(
+        `(?:returns?|performance)\\b${GAP}[-+\\u2212]?\\d[\\d.]*\\s?%${GAP}[-+\\u2212]?\\d[\\d.]*\\s?%${GAP}[-+\\u2212]?\\d[\\d.]*\\s?%`
+        + `|(?:[-+\\u2212]\\d[\\d.]*\\s?%${GAP}){3,}`);
       const dropReturnsList = (t: string) => {
         const sents = String(t ?? "").split(/(?<=[.;])\s+/).filter(Boolean);
         if (sents.length <= 1) return t;
         const kept = sents.filter((x) => !RETURNS_LIST.test(x));
-        return kept.length ? kept.join(" ") : t;   // never empty the section
+        if (kept.length) return kept.join(" ");
+        // Every sentence is an enumeration. The old guard returned the section UNTOUCHED to avoid
+        // emptying it, which let the worst case through intact: a single sentence carrying nineteen
+        // figures, every holding with its weight and two returns. Truncate to the opening claim
+        // instead - parentheticals stripped, first clause kept - which is a concentration statement,
+        // exactly what this section is for. Deletion only.
+        const one = String(sents[0] ?? t).replace(/\s*\([^)]*\)/g, "");
+        const head = one.split(/(?<!\d),\s*/)[0].replace(/[\s,;]+$/, "");
+        return head ? head + "." : t;
       };
       const trimStats = (t: string, cap: number, minWords = 26) => {
         const wcS = (x: string) => String(x).split(/\s+/).filter(Boolean).length;
