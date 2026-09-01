@@ -191,6 +191,34 @@ async function judge(prompt) {
   }
   return null;
 }
+/**
+ * MAJORITY-OF-THREE JUDGING. One judge call per cell made the battery too noisy to answer the question it
+ * exists to answer: B8 scored 92 and 100 on consecutive rounds with NO code change, because a single
+ * borderline verdict moves a metric 8 points across 4 cells. An evidence-bound judge should agree with
+ * itself; where it does not, that disagreement is noise, not a finding. Three calls run concurrently (so
+ * wall clock barely moves) and each flag takes the majority verdict. Evidence is kept from a run that
+ * actually voted the flag false, so a reported failure always carries the quote that justifies it.
+ */
+async function judgeVote(prompt, n = 3) {
+  const runs = (await Promise.all(Array.from({ length: n }, () => judge(prompt)))).filter(Boolean);
+  if (!runs.length) return null;
+  if (runs.length === 1) return runs[0];
+  const out = {};
+  const keys = [...new Set(runs.flatMap((r) => Object.keys(r)))];
+  for (const k of keys) {
+    if (k.endsWith("_evidence")) continue;
+    const votes = runs.map((r) => r[k]).filter((v) => typeof v === "boolean");
+    if (!votes.length) { out[k] = runs[0][k]; continue; }
+    const fails = votes.filter((v) => v === false).length;
+    out[k] = fails > votes.length / 2 ? false : true;
+    // a failure must arrive with the quote that justifies it
+    if (out[k] === false) {
+      const src = runs.find((r) => r[k] === false && String(r[k + "_evidence"] ?? "").trim());
+      if (src) out[k + "_evidence"] = src[k + "_evidence"];
+    }
+  }
+  return out;
+}
 const ev = (j, k) => j[k] !== false || !String(j[k + "_evidence"] ?? "").trim();
 
 await setBook(); await new Promise((r) => setTimeout(r, 2500));
@@ -213,7 +241,7 @@ for (const [pname, P] of Object.entries(PERSONAS)) {
     const fracLine = fracFound.length
       ? `The LISTEN script contains these fraction words: ${fracFound.join(", ")}. For EACH one, find the figure in the READ text it describes and compare.`
       : "The LISTEN script contains no fraction words, so this check PASSES automatically.";
-    const j = await judge(`Assetly writes a short ${isAssess ? "portfolio assessment" : "daily close brief"} (READ) and a spoken script (LISTEN) for ${P.desc}.
+    const j = await judgeVote(`Assetly writes a short ${isAssess ? "portfolio assessment" : "daily close brief"} (READ) and a spoken script (LISTEN) for ${P.desc}.
 READ:\n${read}\nLISTEN SCRIPT:\n${script}
 Return STRICT JSON {"bluf_read":bool,"bluf_read_evidence":str,"bluf_listen":bool,"bluf_listen_evidence":str,"tier_read":bool,"tier_read_evidence":str,"tier_listen":bool,"tier_listen_evidence":str,"clear":bool,"clear_evidence":str,"opinion":bool,"opinion_evidence":str,"construct":bool,"construct_evidence":str,"faithful":bool,"faithful_evidence":str,"worst":str}.
 bluf_read: every READ section opens with its conclusion, never a list of moves; evidence follows the point. To FAIL quote a section that buries its point; else pass.
