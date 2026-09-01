@@ -300,6 +300,9 @@ Deno.serve(async (req) => {
         // bottom-line-first structural instead of hoped-for. If anything about the slots looks wrong we
         // fall through to the original free-composition loop untouched, so the worst case is the old behaviour.
         const nPoints = isAssess ? 3 : 2;
+        const allowedDigits = new Set(allowed.map((x) => x.replace(/[$,%\s]/g, "")));
+        const strayDigitFigure = (x: string) => (x.replace(/<[^>]*>/g, " ").match(/\d[\d,]*(?:\.\d+)?/g) ?? [])
+          .some((n) => !allowedDigits.has(n.replace(/,/g, "")));
         const voiceLine = await voiceFor(String(row.user_id));
         const beginner = /BEGINNER/.test(voiceLine);
         const earBan = beginner
@@ -350,7 +353,9 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
           const unsupported = spokenFigureUnsupported(draft, allowed);
           const heardFigs = figs + spokenQuantities(draft).length;   // the diet counts what the EAR receives, spelled or not
           const jargon = beginner && EAR_JARGON.test(draft.replace(/<[^>]*>/g, " "));
-          if (heardW >= 104 && heardW <= 205 && heardFigs <= 6 && !FRACW0.test(draft) && !unsupported && !jargon) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
+          // a figure written in DIGITS must be in the brief too, not just the spelled ones
+          const strayDigits = strayDigitFigure(draft);
+          if (heardW >= 104 && heardW <= 205 && heardFigs <= 6 && !FRACW0.test(draft) && !unsupported && !jargon && !strayDigits) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
           if (unsupported && a === 1) console.log("narrate: slot script spoke a figure the brief does not support");
         }
         if (!spoken) console.log("narrate: slot composition did not land, falling back to free composition");

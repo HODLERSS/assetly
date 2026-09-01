@@ -61,7 +61,18 @@ const period = (t) => { const x = String(t ?? "").trim(); return x ? (/[.!?]$/.t
 // sentence length is measured on PROSE only: names, watch chips, ideas and calendar entries are labels with
 // no terminal punctuation, so concatenating them invents 40-word "sentences" no reader ever sees
 const proseOf = (s) => [s.lede, s.overnight, ...(s.positions ?? []).map((p) => p.note), s.desk_view, s.horizon ?? ""].map(period).filter(Boolean).join(" ");
-const textOf = (s) => [s.lede, s.overnight, ...(s.positions ?? []).flatMap((p) => [p.name, p.note, p.watch]), s.desk_view, s.horizon ?? "", ...(s.ideas ?? []), ...(s.calendar ?? [])].join("\n");
+// The judge was handed an unlabelled blob of lines, so it could not tell a CALENDAR entry from prose
+// and failed a perfectly good lede by quoting two diary dates run together as a "buried point".
+// Labelling does not soften the bar - it lets the judge hold each section to its own rule.
+const textOf = (s) => [
+  `LEDE: ${s.lede}`,
+  `BOOK: ${s.overnight}`,
+  ...(s.positions ?? []).map((p) => `POSITION ${p.name}: ${p.note} (watch: ${p.watch})`),
+  `DESK VIEW: ${s.desk_view}`,
+  ...(s.horizon ? [`HORIZON: ${s.horizon}`] : []),
+  ...((s.ideas ?? []).length ? [`IDEAS: ${(s.ideas ?? []).join(" | ")}`] : []),
+  ...((s.calendar ?? []).length ? [`CALENDAR (a diary list, not prose): ${(s.calendar ?? []).join(" | ")}`] : []),
+].join("\n");
 const nums = (t) => (strip(t).replace(NAMEY, "INDEX").match(/-?\d[\d,]*(?:\.\d+)?\s?%?|\$\s?[\d,]+/g) ?? []).filter((x) => !/^(19|20)\d\d$/.test(x.trim()));
 // the listener hears spelled-out quantities too ("twenty-six percent"), so the script diet counts those as well
 const WORDNUM = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|trillion)(?:[\s-](?:one|two|three|four|five|six|seven|eight|nine|hundred|thousand|million|billion))*\s+(?:percent|dollars?|won|times|basis points)/gi;
