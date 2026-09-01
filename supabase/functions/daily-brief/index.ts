@@ -970,6 +970,26 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const figuresIn = (t: string) => (String(t ?? "").match(/-?\d[\d,]*(?:\.\d+)?\s?%|\$\s?[\d,]+/g) ?? []).map((x) => x.trim());
       // never trim a section into a stub: losing the substance is worse than carrying one extra figure
       const RISK_CLAUSE = /\bthe risk:/i;
+      // A move stated as a percent and then restated in dollars is ONE fact wearing two hats:
+      // "gained 1.5% today, adding $16 to the position now up $104 total" is four figures for one event.
+      // Drop the dollar echo, never the move and never the judgement. Deletion only, and it fires ONLY
+      // when the field is already over its cap, so a compliant note is never touched.
+      const dropDollarEcho = (t: string, cap: number) => {
+        const text = String(t ?? "");
+        if (statCount(text) <= cap) return text;
+        const out = text.split(/(?<=[.;])\s+/).map((sent) => {
+          if (!/\d\s?%/.test(sent) || RISK_CLAUSE.test(sent)) return sent;   // no move here, or it is the risk
+          const end = (sent.match(/[.;]\s*$/) ?? [""])[0];
+          const body = end ? sent.slice(0, -end.length) : sent;
+          const segs = body.split(/(?<!\d),\s*/);
+          if (segs.length < 2) return sent;
+          // keep the first segment and anything carrying a percent or no figure at all;
+          // drop a trailing clause whose only content is dollar amounts
+          const kept = segs.filter((sg, i) => i === 0 || !/\$\s?[\d,]/.test(sg) || /\d\s?%/.test(sg));
+          return kept.length === segs.length ? sent : kept.join(", ") + end;
+        }).join(" ");
+        return statCount(out) < statCount(text) ? out : text;   // only accept a real reduction
+      };
       // "Recent 30-day returns: QQQM +1.5%, Nvidia +5.7%, Marathon +3.2%, JPMorgan -0.4%, BlackRock -0.8%."
       // is the exact laundry list this brief exists to replace, and desk_view's own spec already forbids
       // performance figures there. Sentence-level trimming could not reach it: dropping it left 17 words
@@ -1045,7 +1065,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // "on a 9.3% weight" clause leaves the move and its dollar impact, which is what the day is about
       const deWeightClause = (t: string) => edition === "assessment" ? t
         : (t ?? "").replace(/,?\s*(?:on|at|with|representing)\s+an?\s+(?:\w+\s+){0,2}-?[\d.]+%\s*(?:weight|stake|position|holding|slice)\b/gi, "");
-      sections.positions = sections.positions.map((p) => ({ ...p, note: safeField(p.note, tidy(deSemi(deAdvice(trimStats(deWeightClause(collapseRun(deWeightParens(p.note, 1))), 3, 18))))) }));
+      sections.positions = sections.positions.map((p) => ({ ...p, note: safeField(p.note, tidy(deSemi(deAdvice(trimStats(dropDollarEcho(deWeightClause(collapseRun(deWeightParens(p.note, 1))), 3), 3, 18))))) }));
       // a diet that starves the brief is worse than the redundancy it removed
       if (wcAll(sections) < dietFloor && wcAll(preDiet) >= wcAll(sections)) sections = preDiet;
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
