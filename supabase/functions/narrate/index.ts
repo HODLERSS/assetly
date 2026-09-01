@@ -375,9 +375,16 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
           // were protecting against. The last attempt therefore enforces only what changes MEANING
           // (a figure the brief does not support, or jargon aimed at a beginner) and forgives the
           // cosmetic caps. A slightly long script beats the template every time.
-          const meaningBad = unsupported || jargon || strayDigits || FRACW0.test(draft) || hasDanglingSentence(draft);
+          // The guard stack kept growing and the escalation did not keep pace: on novice/assessment every
+          // attempt failed SOMETHING, so narration fell through to the deterministic template - a holdings
+          // walkthrough, the single worst output this brief can produce, and it drags B2, B3 and B8 down
+          // together. Ranking matters: a FABRICATED FIGURE is the only defect worse than the template.
+          // Everything else (a jargon word, a stray digit, a fraction, a clipped sentence) is a blemish on
+          // a script that still beats reciting the holdings.
+          const fabricated = unsupported || strayDigits;
+          const meaningBad = fabricated || jargon || FRACW0.test(draft) || hasDanglingSentence(draft);
           const tidyBad = heardFigs > 6;
-          const ok = a === 2 ? !meaningBad : !(meaningBad || tidyBad);
+          const ok = a === 2 ? !fabricated : a === 1 ? !meaningBad : !(meaningBad || tidyBad);
           if (heardW >= 104 && heardW <= 205 && ok) spoken = draft;   // 104 + the appended sign-off clears the 100-word length bar
           if (unsupported && a === 1) console.log("narrate: slot script spoke a figure the brief does not support");
         }
