@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 const insightCache = new Map<string, Insight | null>();
 import type { Api, Insight } from "../lib/api";
 import { timeAgo } from "../lib/format";
+import { Icon } from "./Icon";
 
 // Assetly Intelligence — visually distinct from raw news: accent bar, labeled header,
 // no links. 3-5 opinionated bullets (7-day focus) + one-liners per horizon.
@@ -71,7 +72,7 @@ export function InsightsCard({ api, symbol, pollMs = 2000, onRefresh, refreshing
         <span className="insights-brand">Assetly Intelligence</span>
         {onRefresh ? (
           <button className="insights-toggle" onClick={onRefresh} disabled={refreshing} aria-label={`Refresh ${symbol} intelligence`}>
-            {refreshing ? <>Refreshing <span className="spin" aria-hidden="true">↻</span></> : <>{timeAgo(ins.generated_at)} · ↻</>}
+            {refreshing ? <>Refreshing <Icon name="refresh" size={12} className="spin" /></> : <>{timeAgo(ins.generated_at)} · <Icon name="refresh" size={12} /></>}
           </button>
         ) : <span className="sub num">{timeAgo(ins.generated_at)}</span>}
       </div>

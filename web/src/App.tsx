@@ -16,6 +16,7 @@ import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
 import { SettingsScreen } from "./screens/Settings";
 import { AskScreen } from "./screens/Ask";
+import { Icon } from "./components/Icon";
 
 export type Tab = "home" | "news" | "ask" | "settings";
 export type View =
@@ -313,7 +314,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       {notice && (noticeKind === "warn"
         ? <div className="error-note" role="status">{notice}</div>
         : <div className={"status-note" + (noticeKind === "ok" ? " ok" : "")} role="status" data-testid="brokerage-notice">
-            <span className="lead">{noticeKind === "busy" ? <span className="progress-dot" aria-hidden="true" /> : <span aria-hidden="true">✓</span>}{notice}</span>
+            <span className="lead">{noticeKind === "busy" ? <span className="progress-dot" aria-hidden="true" /> : <Icon name="check" />}{notice}</span>
           </div>)}
       {error && (
         <div className="error-note" role="alert">

@@ -227,7 +227,9 @@ body.has-miniplayer .ask-composer { bottom: calc(var(--as-tabbar-h) + var(--as-t
 @keyframes askblink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 @media (prefers-reduced-motion: reduce) { .tab-alert { animation: none; } }
 
-/* intelligence refresh: the ↻ glyph itself spins while a regeneration runs */
+/* inline glyphs sit on the text baseline and never shrink inside a flex row */
+svg.icon { display: inline-block; vertical-align: -0.15em; flex: none; }
+/* intelligence refresh: the refresh glyph itself spins while a regeneration runs */
 .spin { display: inline-block; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; opacity: 0.6; } }

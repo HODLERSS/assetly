@@ -3,6 +3,7 @@ import type { Api, Lot, PortfolioRow } from "../lib/api";
 import { glClass, labelParts, money, moneyExact, priceAsOf, signedMoney, signedPct } from "../lib/format";
 import { PriceChart } from "../components/PriceChart";
 import { InsightsCard } from "../components/InsightsCard";
+import { Icon } from "../components/Icon";
 
 // Canvas 2c + 3i + the remove flow (gap screen g1): detail, every lot editable, delete with confirm.
 export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr = "KRW" }: {
@@ -73,7 +74,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr 
         {lotsLoaded && lots.length === 0 && <p className="empty">No lots yet.</p>}
         {!lotsLoaded && <div className="row" aria-busy="true" aria-label="Loading lots"><span className="sub">Loading lots…</span></div>}
       </div>
-      {!cashish && <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 0 16px" }}>{row.source === "snaptrade" ? `⚡ Synced from ${row.account_label ?? "your brokerage"} — shares and cost refresh automatically.` : row.account_label ? `Imported from ${row.account_label} (no longer synced). The average is derived from lots.` : "The average is derived from lots — never typed."}</p>}
+      {!cashish && <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 0 16px" }}>{row.source === "snaptrade" ? <><Icon name="bolt" size={12} /> Synced from {row.account_label ?? "your brokerage"} — shares and cost refresh automatically.</> : row.account_label ? `Imported from ${row.account_label} (no longer synced). The average is derived from lots.` : "The average is derived from lots — never typed."}</p>}
 
       {err && <div className="error-note" role="alert">{err}</div>}
       {lots.length === 1 && (

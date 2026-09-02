@@ -21,9 +21,24 @@ function parseRss(xml: string, symbol: string, source: string): Item[] {
     if (!title || !link) continue;
     let published: string | null = null;
     if (pub) { const d = new Date(pub); if (!isNaN(+d)) published = d.toISOString(); }
-    items.push({ symbol, title: title.slice(0, 500), url: link.slice(0, 1000), source, published_at: published });
+    const [head, pub] = splitPublisher(title, source);
+    items.push({ symbol, title: head.slice(0, 500), url: link.slice(0, 1000), source: pub, published_at: published });
   }
   return items;
+}
+
+// Google News (and its Korean edition) is an aggregator: every title arrives as
+// "<headline> - <publisher>", and the publisher is the byline the reader actually wants. Split on the
+// LAST " - " so a headline that contains a dash keeps it; leave the title alone when the tail does not
+// look like a publisher name (too long, empty, or the whole title).
+const AGGREGATORS = new Set(["Google News", "K-News"]);
+export function splitPublisher(title: string, source: string): [string, string] {
+  if (!AGGREGATORS.has(source)) return [title, source];
+  const i = title.lastIndexOf(" - ");
+  if (i < 8) return [title, source];
+  const head = title.slice(0, i).trim(), pub = title.slice(i + 3).trim();
+  if (!head || !pub || pub.length > 60) return [title, source];
+  return [head, pub];
 }
 
 async function fetchText(url: string): Promise<string | null> {
@@ -88,6 +103,7 @@ Deno.serve(async (req) => {
   if (url.searchParams.get("fixture") === "1") {
     // Test hook: parse caller-provided RSS bodies through the real parser (no network).
     for (const f of body.feeds ?? []) items.push(...parseRss(f.xml, f.symbol, f.source ?? "fixture"));
+    if (url.searchParams.get("dry") === "1") return json({ ok: true, rows: items });   // parse only, write nothing
   } else {
     for (const s of targets) items.push(...await newsFor(s.symbol, s.yahoo ?? s.symbol, s.name));
   }

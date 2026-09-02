@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
 import { labelParts, timeAgo } from "../lib/format";
 import { InsightsCard } from "../components/InsightsCard";
+import { Icon } from "../components/Icon";
 
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
 export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen, onRefreshSymbol, symbolRefreshing = {}, symbolFresh = {} }: {
@@ -81,7 +82,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
           <div className="insights-head">
             <span className="insights-brand">Assetly Intelligence</span>
             <button className="insights-toggle" onClick={() => onRefreshInsights?.()} disabled={insightsRefreshing} aria-label="Refresh Assetly Intelligence">
-              {insightsRefreshing ? <>Refreshing <span className="spin" aria-hidden="true">↻</span></> : <>{timeAgo(top5!.generated_at)} · ↻</>}
+              {insightsRefreshing ? <>Refreshing <Icon name="refresh" size={12} className="spin" /></> : <>{timeAgo(top5!.generated_at)} · <Icon name="refresh" size={12} /></>}
             </button>
           </div>
           {/* the portfolio read that used to live on the Holdings tab */}

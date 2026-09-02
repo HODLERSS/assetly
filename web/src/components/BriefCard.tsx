@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Api, BriefEdition, DailyBrief } from "../lib/api";
 import { getSnapshot, load as loadTrack, subscribe, toggle as togglePlayer } from "../lib/player";
+import { Icon } from "./Icon";
 
 // The Daily Brief — three personal research notes a trading day: morning (pre-open),
 // midday pulse (11am CT), closing note (post-close) — plus the Portfolio Assessment, the
@@ -61,11 +62,11 @@ export function BriefCard({ api }: { api: Api }) {
         <span className="insights-actions">
           {brief.audio_path && (
             <button className="insights-toggle" onClick={toggleAudio} aria-label={playing ? "Pause narration" : "Listen to your brief"} data-testid="brief-listen">
-              <span className="ico" aria-hidden="true">{playing ? "❚❚" : "▶"}</span>
+              <Icon name={playing ? "pause" : "play"} size={15} />
             </button>
           )}
           <button className="insights-toggle" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Close the brief" : meta.read}>
-            <span className="ico" aria-hidden="true">{open ? "✕" : "📖"}</span>
+            <Icon name={open ? "close" : "book"} size={16} />
           </button>
         </span>
       </div>

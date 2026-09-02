@@ -3,6 +3,7 @@ import type { Api, PortfolioRow } from "../lib/api";
 import { BriefCard } from "../components/BriefCard";
 import { isMarketOpen, marketOf, moverEligible, moverMode, sessionLabel } from "../lib/markets";
 import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyExact, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
+import { Icon } from "../components/Icon";
 
 // Canvas 2a: net worth, movers, market pulse.
 const DETAIL_KEY = "assetly-nw-detail";
@@ -49,7 +50,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
         <p style={{ marginBottom: 14 }}>No runners on the track.</p>
         <button className="btn" style={{ marginBottom: 10 }} onClick={async () => {
           try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } catch { /* button stays */ }
-        }}>⚡ Connect your brokerage</button>
+        }}><Icon name="bolt" /> Connect your brokerage</button>
         <button className="btn secondary" onClick={onAdd}>Add positions manually</button>
       </div>
     );
@@ -127,8 +128,8 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
       </section>
       {briefBanner && (
         <div className="status-note ok" role="status" data-testid="brief-banner">
-          <span className="lead"><span aria-hidden="true">✓</span>{briefBanner.edition === "assessment" ? "Your portfolio assessment is ready" : "Your brief is ready"}{briefBanner.audio ? " · tap ▶ Listen below" : ""}</span>
-          <button className="chip" onClick={onBriefBannerDone} aria-label="Dismiss">✕</button>
+          <span className="lead"><Icon name="check" />{briefBanner.edition === "assessment" ? "Your portfolio assessment is ready" : "Your brief is ready"}{briefBanner.audio ? <> · tap <Icon name="play" size={10} /> Listen below</> : ""}</span>
+          <button className="chip" onClick={onBriefBannerDone} aria-label="Dismiss"><Icon name="close" size={12} /></button>
         </div>
       )}
       <BriefCard api={api} />
@@ -163,7 +164,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
         <span style={{ display: "flex", gap: 8 }}>
           <button className="chip" aria-label="Import from brokerage" onClick={async () => {
             try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } catch { /* connect button stays */ }
-          }}>⚡ Import</button>
+          }}><Icon name="bolt" size={12} /> Import</button>
           <button className="chip" onClick={onAdd} aria-label="Add position">+ Add</button>
         </span>
       </div>
@@ -201,7 +202,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
             <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
               <span>
                 <span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span><br />
-                <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{ACCT[r.account] ? ` · ${ACCT[r.account]}` : ""}{r.source === "snaptrade" ? " · ⚡" : ""}{r.kind === "cash" || r.kind === "debt" ? "" : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
+                <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{ACCT[r.account] ? ` · ${ACCT[r.account]}` : ""}{r.source === "snaptrade" ? <> · <Icon name="bolt" size={10} /></> : ""}{r.kind === "cash" || r.kind === "debt" ? "" : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
               </span>
               <span className="right">
                 <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span><br />

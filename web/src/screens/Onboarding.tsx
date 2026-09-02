@@ -4,6 +4,7 @@ import { INVESTOR_DEFAULT } from "../lib/api";
 import { InvestorQuiz } from "../components/InvestorQuiz";
 import { marketOf } from "../lib/markets";
 import { openConnectPortal, platformTag } from "../lib/native";
+import { Icon } from "../components/Icon";
 
 // Setup: connect a brokerage (positions import in seconds) OR add the first
 // position manually. After the OAuth return, this screen shows the live import
@@ -110,7 +111,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
             </p>
           </>)}
           {importDone && n > 0 && (<>
-            <p style={{ margin: 0, fontWeight: 600, color: "var(--as-gain)" }}>✓ Imported {n} position{n === 1 ? "" : "s"}</p>
+            <p style={{ margin: 0, fontWeight: 600, color: "var(--as-gain)" }}><Icon name="check" /> Imported {n} position{n === 1 ? "" : "s"}</p>
             <p className="sub" style={{ margin: "6px 0 0" }}>
               {imported.slice(0, 4).map((r) => r.symbol).join(" · ")}{n > 4 ? ` · +${n - 4} more` : ""}
             </p>
@@ -151,7 +152,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
             setErr(null); setBusy(true);
             try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); }
             catch (e) { setErr(e instanceof Error ? e.message : "Could not start the brokerage link."); setBusy(false); }
-          }}>⚡ Connect your brokerage</button>
+          }}><Icon name="bolt" /> Connect your brokerage</button>
           <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 2px 0" }}>
             Robinhood, Fidelity, Schwab, and more. Positions and cost basis import in seconds.
             Read-only — Assetly can never trade or move money.
