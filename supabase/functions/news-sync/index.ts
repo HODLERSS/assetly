@@ -21,8 +21,8 @@ function parseRss(xml: string, symbol: string, source: string): Item[] {
     if (!title || !link) continue;
     let published: string | null = null;
     if (pub) { const d = new Date(pub); if (!isNaN(+d)) published = d.toISOString(); }
-    const [head, pub] = splitPublisher(title, source);
-    items.push({ symbol, title: head.slice(0, 500), url: link.slice(0, 1000), source: pub, published_at: published });
+    const [headline, publisher] = splitPublisher(title, source);
+    items.push({ symbol, title: headline.slice(0, 500), url: link.slice(0, 1000), source: publisher, published_at: published });
   }
   return items;
 }
@@ -88,23 +88,25 @@ Deno.serve(async (req) => {
   );
   const url = new URL(req.url);
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
-  // News only for symbols someone actually holds — the catalog is unbounded now.
-  const { data: heldRows, error: hErr } = await admin.from("holdings").select("symbol");
-  if (hErr) return json({ ok: false, error: hErr.message }, 500);
-  const held = new Set((heldRows ?? []).map((h) => h.symbol));
-  const { data: symbols, error } = await admin
-    .from("symbols").select("symbol, yahoo, name").eq("active", true).not("kind", "in", "(cash,debt)");
-  if (error) return json({ ok: false, error: error.message }, 500);
-  const only = url.searchParams.get("symbols")?.split(",") ??
-    (Array.isArray(body.symbols) && body.symbols.length ? body.symbols.map(String).slice(0, 25) : undefined);   // a whole book on manual refresh
-  const targets = (symbols ?? []).filter((s) => (only ? only.includes(s.symbol) : held.has(s.symbol)));
-
   let items: Item[] = [];
+  let targetCount = 0;
   if (url.searchParams.get("fixture") === "1") {
-    // Test hook: parse caller-provided RSS bodies through the real parser (no network).
+    // Test hook: parse caller-provided RSS bodies through the real parser (no network, and with
+    // dry=1 no database either — the parsed rows come straight back).
     for (const f of body.feeds ?? []) items.push(...parseRss(f.xml, f.symbol, f.source ?? "fixture"));
-    if (url.searchParams.get("dry") === "1") return json({ ok: true, rows: items });   // parse only, write nothing
+    if (url.searchParams.get("dry") === "1") return json({ ok: true, rows: items });
   } else {
+    // News only for symbols someone actually holds — the catalog is unbounded now.
+    const { data: heldRows, error: hErr } = await admin.from("holdings").select("symbol");
+    if (hErr) return json({ ok: false, error: hErr.message }, 500);
+    const held = new Set((heldRows ?? []).map((h) => h.symbol));
+    const { data: symbols, error } = await admin
+      .from("symbols").select("symbol, yahoo, name").eq("active", true).not("kind", "in", "(cash,debt)");
+    if (error) return json({ ok: false, error: error.message }, 500);
+    const only = url.searchParams.get("symbols")?.split(",") ??
+      (Array.isArray(body.symbols) && body.symbols.length ? body.symbols.map(String).slice(0, 25) : undefined);   // a whole book on manual refresh
+    const targets = (symbols ?? []).filter((s) => (only ? only.includes(s.symbol) : held.has(s.symbol)));
+    targetCount = targets.length;
     for (const s of targets) items.push(...await newsFor(s.symbol, s.yahoo ?? s.symbol, s.name));
   }
 
@@ -124,5 +126,5 @@ Deno.serve(async (req) => {
     if (upErr) return json({ ok: false, error: upErr.message }, 500);
     wrote = count ?? rows.length;
   }
-  return json({ ok: true, symbols: targets.length, parsed: items.length, stored: wrote });
+  return json({ ok: true, symbols: targetCount, parsed: items.length, stored: wrote });
 });
