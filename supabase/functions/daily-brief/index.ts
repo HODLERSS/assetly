@@ -270,6 +270,13 @@ const fitCap = (t: string, cap: number, mustKeep?: RegExp): string => {
   return out;
 };
 
+// A call's age, spelled out for the memo writers: a quarter-old transcript otherwise reads as this week's news.
+const callAgeLine = (publishedAt: unknown, briefDate: string): string => {
+  const t = +new Date(String(publishedAt ?? "")), d = +new Date(briefDate + "T00:00:00Z");
+  if (!Number.isFinite(t)) return "date unknown";
+  const age = Math.max(0, Math.floor((d - t) / 86400000));
+  return age <= 7 ? `${age} days ago, fresh` : `${age} days ago, BACKGROUND not news: nothing in it was just reported`;
+};
 const STYLE_RULES = `BLUF LAW: every section opens with its CONCLUSION in the first sentence; evidence and numbers come after. Never open any section with a chain of ticker-and-percent moves; say what it all means first, then the one or two moves that prove it. This applies to EVERY position note as well: open with what the move MEANS for this owner ("Your biggest holding barely moved"), then give the move and its number in the next sentence. A note that opens "TICKER fell 0.7% today" is a failure.
 NUMBER DIET: numbers are seasoning, not the meal. Use the ONE number that carries each point; never two numbers in one sentence unless comparing them; a section never needs more than three.
 OPINION: have a view. One confident, fact-backed judgment per section is expected ("this is the book's real risk", "this print matters more than the headline"); never wishy-washy, never hedged into mush. Opinions about quality and risk, never buy/sell instructions.
@@ -490,7 +497,7 @@ Deno.serve(async (req) => {
             const h = (hist ?? []).map((x) => ({ ts: String(x.ts), price: Number(x.price) }));
             perf.push(`${dispN} 30d ${pctOver(h, 30)}, 1y ${pctOver(h, 365)}`);
             const memoPrompt = `Quality memo on ${dispN} (${r.symbol}), ${w(r).toFixed(1)}% of a private investor's assets. Performance: 30d ${pctOver(h, 30)}, 1y ${pctOver(h, 365)}.
-${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}):\n${String(tr[0].content).slice(0, 4000)}` : "No earnings call on file."}
+${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}, ${callAgeLine(tr[0].published_at, briefDate)}):\n${String(tr[0].content).slice(0, 4000)}` : "No earnings call on file."}
 ${(fils ?? []).length ? `Filings: ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}
 News (14d):\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- none"}
 ${ins?.[0] ? `Desk's recent take: ${(ins[0].bullets as string[]).slice(0, 3).join(" ")}` : ""}
@@ -712,7 +719,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
             ]);
             const h = (hist ?? []).map((x) => ({ ts: String(x.ts), price: Number(x.price) }));
             const memoPrompt = `Internal analyst memo on ${dispN} (${r.symbol}) for a portfolio where it is ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets. Day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}, 30d ${pctOver(h, 30)}, 1y ${pctOver(h, 365)}.
-${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}):\n${String(tr[0].content).slice(0, 4000)}` : "No earnings call on file."}
+${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}, ${callAgeLine(tr[0].published_at, briefDate)}):\n${String(tr[0].content).slice(0, 4000)}` : "No earnings call on file."}
 ${(fils ?? []).length ? `Filings: ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}
 News (14d):\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- none"}
 

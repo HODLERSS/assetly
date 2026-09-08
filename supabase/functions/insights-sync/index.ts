@@ -83,6 +83,27 @@ function staleInsight(genMs: number, mkt: "US" | "KR" | null, now = new Date()):
   const m = minsSinceOpen(mkt, now);
   return m !== null && m >= OPEN_GATE && genMs < now.getTime() - m * 60000;
 }
+/** Days since an earnings call was published (null when there is no call on file). */
+function callAgeDays(publishedAt: unknown, now = new Date()): number | null {
+  const t = +new Date(String(publishedAt ?? ""));
+  return Number.isFinite(t) ? Math.max(0, Math.floor((now.getTime() - t) / 86400000)) : null;
+}
+const CALL_FRESH_DAYS = 7;
+/** What the model must know about the call's age. A quarter-old transcript reads like today's news
+ *  without this: "Reddit just posted its 8th straight quarter" shipped 40 days after the call (2026-09-08). */
+function callAgeNote(publishedAt: unknown, now = new Date()): string {
+  const age = callAgeDays(publishedAt, now);
+  if (age === null) return "";
+  const iso = String(publishedAt).slice(0, 10);
+  if (age <= CALL_FRESH_DAYS) return `That call is ${age} day${age === 1 ? "" : "s"} old (${iso}): its results are fresh news.`;
+  return `That call was ${age} days ago (${iso}), long before today. It is BACKGROUND, not news: nothing in it was "just" reported. Never write just, today, this week, fresh, new, or latest about anything from it; date it ("the ${iso.slice(5)} call", "last quarter") or frame it as still true. Only the dated headlines and the price windows are current.`;
+}
+/** Deterministic backstop: with a stale call, "just posted/reported ..." is a dating error, never a fact. */
+const STALE_JUST = /\b(just|freshly|newly)\s+(posted|reported|printed|delivered|hit|logged|notched|announced|beat|put up|turned in|closed|grew|guided|raised|lifted|showed|confirmed)\b/gi;
+function deJust(text: string, callAge: number | null): string {
+  if (callAge === null || callAge <= CALL_FRESH_DAYS) return text;
+  return text.replace(STALE_JUST, "$2");
+}
 function sessNote(mkt: "US" | "KR", now = new Date()): string {
   const m = minsSinceOpen(mkt, now);
   const name = mkt === "US" ? "US market" : "Korean market";
@@ -269,21 +290,23 @@ Deno.serve(async (req) => {
         content = JSON.stringify(body.canned ?? { bullets: ["fixture bullet one", "fixture bullet two", "fixture bullet three"], windows: { d7: "flat week", d30: "quiet month", d60: "range-bound", y1: "recovering", y2: "volatile" } });
       } else {
         const mkt = mktOf(symbol);
-        const prompt = `Company: ${srow?.name ?? symbol} (${symbol}). Current price ${price}. Price change by window: ${JSON.stringify(perf)}.
+        const prompt = `TODAY is ${new Date().toISOString().slice(0, 10)}.
+Company: ${srow?.name ?? symbol} (${symbol}). Current price ${price}. Price change by window: ${JSON.stringify(perf)}.
 Session: ${mkt ? sessNote(mkt) : "Crypto trades 24/7; day changes are rolling."}
 Headlines from the last 7 days (${n30 ?? 0} stories in 30d):
 ${(news7 ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (no fresh headlines)"}
-${(fils ?? []).length ? `\nSEC filings (last 9 months): ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}${latestTr ? `\nLatest earnings call ("${latestTr.title}", ${latestTr.published_at}):\n${String(latestTr.content).slice(0, 7000)}\n${(tr ?? []).slice(1).length ? "Older calls on file: " + (tr ?? []).slice(1).map((t) => t.title).join(" | ") : ""}` : "\n(no earnings transcript on file yet)"}
+${(fils ?? []).length ? `\nSEC filings (last 9 months): ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}${latestTr ? `\nLatest earnings call ("${latestTr.title}", ${latestTr.published_at}):\n${String(latestTr.content).slice(0, 7000)}\n${callAgeNote(latestTr.published_at)}\n${(tr ?? []).slice(1).length ? "Older calls on file: " + (tr ?? []).slice(1).map((t) => t.title).join(" | ") : ""}` : "\n(no earnings transcript on file yet)"}
 
 Return STRICT JSON: {"bullets": [3-4 strings], "trend": str}.
-bullets: the sharpest takes on what matters RIGHT NOW, synthesizing news, the earnings call, and price action. Each 10-15 words MAX. Interpret, never restate headlines. Refer to the company by NAME, never numeric KRX codes. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons.
+bullets: the sharpest takes on what matters RIGHT NOW, synthesizing news, the earnings call, and price action. Respect the call's age above: a call older than a week is context for a take, never the news itself. Each 10-15 words MAX. Interpret, never restate headlines. Refer to the company by NAME, never numeric KRX codes. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons.
 trend: ONE sentence, max 20 words, covering the recent move and the longer-term picture together.`;
         content = await askMaraFb(key, model, prompt);
       }
       const parsed = content ? parseInsight(content) : null;
       if (!parsed) { errors.push(symbol + ": unparseable raw[" + String(content).slice(0, 260).replace(/\n/g, " ") + "]"); continue; }
+      const trAge = callAgeDays(latestTr?.published_at);
       const { error: upErr } = await admin.from("insights").insert({
-        symbol, bullets: parsed.bullets, windows: parsed.windows, model,
+        symbol, bullets: parsed.bullets.map((b) => deJust(b, trAge)), windows: parsed.windows, model,
       });
       if (upErr) errors.push(symbol + ": " + upErr.message); else wrote++;
     } catch (e) { errors.push(symbol + ": " + (e instanceof Error ? e.message : String(e))); }
@@ -342,14 +365,15 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
         admin.from("transcripts").select("symbol,title,published_at").in("symbol", sigSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(30),
         admin.from("news").select("symbol,title,source,published_at").in("symbol", sigSyms).gte("published_at", since7).order("published_at", { ascending: false }).limit(80),
       ]);
-      const callLines = sigSyms.map((sy) => { const t = (trs ?? []).find((x) => x.symbol === sy); return t ? `- ${nOf(sy)}: ${String(t.title).slice(0, 80)} (call date ${String(t.published_at).slice(0, 10)})` : null; }).filter(Boolean).join("\n");
+      const callLines = sigSyms.map((sy) => { const t = (trs ?? []).find((x) => x.symbol === sy); return t ? `- ${nOf(sy)}: ${String(t.title).slice(0, 80)} (call date ${String(t.published_at).slice(0, 10)}, ${callAgeDays(t.published_at) ?? "?"} days ago${(callAgeDays(t.published_at) ?? 0) > CALL_FRESH_DAYS ? ", background, not news" : ", fresh"})` : null; }).filter(Boolean).join("\n");
       const newsLines = sigSyms.map((sy) => (nws ?? []).filter((x) => x.symbol === sy).slice(0, 2).map((x) => `- ${nOf(sy)} [${x.source}]: ${String(x.title).slice(0, 90)}`).join("\n")).filter(Boolean).join("\n");
       let content: string | null;
       let prompt = "";
       if (fixture) {
         content = JSON.stringify(body.cannedPortfolio ?? { bullets: ["portfolio fixture one", "portfolio fixture two", "portfolio fixture three"], news5: ["fixture signal one", "fixture signal two", "fixture signal three", "fixture signal four", "fixture signal five"] });
       } else {
-        prompt = `A retail investor's portfolio (total assets $${Math.round(total)}, debt $${Math.round(debt)}):
+        prompt = `TODAY is ${new Date().toISOString().slice(0, 10)}.
+A retail investor's portfolio (total assets $${Math.round(total)}, debt $${Math.round(debt)}):
 Market sessions right now: ${userMkts.map((mk) => sessNote(mk)).join(" ")}
 ${desc}
 Latest earnings calls on file:
@@ -361,7 +385,7 @@ ${[...latestBySym.entries()].map(([sym, b]) => `- ${nOf(sym)}: ${b}`).join("\n")
 
 Return STRICT JSON: {"bullets": [exactly 3 strings], "news5": [exactly 5 strings]}. You are their portfolio strategist.
 Bullet 1: the ONLY price bullet. Recent moves that mattered, with numbers.
-Bullet 2: the most decision-relevant company signal right now: an earnings call (state its date), interview, filing, or news. Any holding qualifies, not just the largest position.
+Bullet 2: the most decision-relevant company signal right now: an earnings call (state its date; a call marked background was weeks ago and was NOT just reported, so never write just, today, this week, or fresh about it), interview, filing, or news. Any holding qualifies, not just the largest position.
 Bullet 3: a mid-term signal a value investor should note: valuation, fundamentals trend, or upcoming catalyst.
 Each bullet 15 words MAX. Spread coverage across different holdings when the signals warrant it.
 news5: the top 5 signals from this week across their holdings, RANKED by importance to THIS portfolio (weight by position size and decision impact). Each 10 words MAX, names the company (US ticker OK; Korean companies by NAME), no two about the same story.
@@ -376,8 +400,10 @@ Respect the session notes: never present the last session's move as happening to
         parsed = retry ? parseInsight(retry) : null;
       }
       if (!parsed) { errors.push("user " + uid.slice(0, 8) + ": unparseable"); continue; }
+      const freshestCall = Math.min(...sigSyms.map((sy) => callAgeDays((trs ?? []).find((x) => x.symbol === sy)?.published_at) ?? Infinity));
+      const pAge = Number.isFinite(freshestCall) ? freshestCall : null;
       const isNovice = ["novice", "intermediate"].includes(topLevel(toArr((invRow?.investor as Investor | null | undefined)?.level, ["novice"])));
-      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => isNovice ? noviceScrub(x) : x);
+      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => deJust(isNovice ? noviceScrub(x) : x, pAge));
       const { error: piErr } = await admin.from("portfolio_insights").insert({ user_id: uid, bullets: scrubB(parsed.bullets).slice(0, 3), news5: parsed.news5 ? scrubB(parsed.news5) : parsed.news5, model });
       if (piErr) errors.push("user " + uid.slice(0, 8) + ": " + piErr.message); else pWrote++;
     } catch (e) { errors.push("user: " + (e instanceof Error ? e.message : String(e))); }
