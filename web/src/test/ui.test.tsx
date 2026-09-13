@@ -1572,3 +1572,28 @@ describe("U47 device voice when there is no MP3", () => {
     expect(within(card).queryByTestId("brief-listen")).toBeNull();
   });
 });
+
+describe("U48 weekend read", () => {
+  const sec = { lede: "The book ended the week higher, with QQQM doing the lifting.", overnight: "Week that was: QQQM +1.8%, MARA +6.2%.",
+    positions: [{ name: "MARA", note: "The AI joint venture changes the revenue mix; the stock rose 6.2% on the week.", watch: "Long Ridge close" }],
+    desk_view: "Direction: concentration in one tech index decides the next five sessions.", calendar: ["Next US session Mon Sep 14", "Next KRX session Mon Sep 14"] };
+  it("renders the Weekend Read with its own labels", async () => {
+    const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([{ brief_date: "2026-09-13", edition: "weekend", generated_at: new Date().toISOString(), sections: sec, audio_path: null, script: null }]) });
+    render(<App api={api} />);
+    const card = await screen.findByTestId("brief-card");
+    expect(card.textContent).toContain("Weekend Read");
+    expect(card.textContent).toContain("ended the week higher");
+    await userEvent.click(within(card).getByRole("button", { name: /read · 2 min/i }));
+    const body = await screen.findByTestId("brief-body");
+    expect(body.textContent).toContain("The week that was");
+    expect(body.textContent).toContain("At your companies");
+    expect(body.textContent).toContain("Next: Long Ridge close");
+    expect(body.textContent).toContain("Next US session Mon Sep 14");
+  });
+  it("a weekday holiday is a Holiday Read", async () => {
+    const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([{ brief_date: "2026-09-07", edition: "weekend", generated_at: new Date().toISOString(), sections: sec, audio_path: null, script: null }]) });
+    render(<App api={api} />);
+    const card = await screen.findByTestId("brief-card");
+    expect(card.textContent).toContain("Holiday Read");
+  });
+});

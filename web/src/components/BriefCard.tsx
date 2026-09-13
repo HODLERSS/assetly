@@ -14,6 +14,8 @@ const ED_META: Record<BriefEdition, { title: string; tape: string; positions: st
   midday: { title: "Midday Pulse", tape: "The tape now", positions: "Your positions", desk: "Desk view", watch: "Watch", read: "Read · 2 min", chip: "Midday" },
   close: { title: "Closing Note", tape: "Today's tape", positions: "Your positions", desk: "Desk view", watch: "Watch", read: "Read · 2 min", chip: "Close" },
   assessment: { title: "Portfolio Assessment", tape: "Your book", positions: "Quality read", desk: "Structure & risk", watch: "Tripwire", read: "Read · 2 min", chip: "Assessment" },
+  // no session today (weekend or a market holiday): direction and company developments, never a tape
+  weekend: { title: "Weekend Read", tape: "The week that was", positions: "At your companies", desk: "Direction", watch: "Next", read: "Read · 2 min", chip: "Weekend" },
 };
 
 export function BriefCard({ api }: { api: Api }) {
@@ -36,7 +38,9 @@ export function BriefCard({ api }: { api: Api }) {
 
   if (!briefs?.length) return null;
   const brief = (picked && briefs.find((b) => b.edition === picked)) ?? briefs[briefs.length - 1];
-  const meta = ED_META[brief.edition];
+  const meta = ED_META[brief.edition] ?? ED_META.morning;
+  const dow = new Date(brief.brief_date + "T12:00:00Z").getUTCDay();
+  const title = brief.edition === "weekend" && dow !== 0 && dow !== 6 ? "Holiday Read" : meta.title;
   const dateLabel = new Date(brief.brief_date + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   // switching edition does NOT stop playback: the mini player keeps whatever is loaded, so you can
@@ -53,7 +57,7 @@ export function BriefCard({ api }: { api: Api }) {
   const canListen = !!brief.audio_path || voiceOnly;
   const toggleAudio = () => {
     if (isThis) { togglePlayer(); return; }
-    const track = { id: trackId, title: meta.title, subtitle: dateLabel, date: brief.brief_date };
+    const track = { id: trackId, title, subtitle: dateLabel, date: brief.brief_date };
     const path = brief.audio_path;
     // handed a RESOLVER, not a URL: the signed link expires and the player re-signs it on its own
     if (path) { void loadTrack(track, () => api.getBriefAudioUrl(path)); return; }
@@ -62,9 +66,9 @@ export function BriefCard({ api }: { api: Api }) {
 
   const s = brief.sections;
   return (
-    <section className="card insights" data-testid="brief-card" aria-label={`Your ${meta.title.toLowerCase()}`}>
+    <section className="card insights" data-testid="brief-card" aria-label={`Your ${title.toLowerCase()}`}>
       <div className="insights-head">
-        <span className="insights-brand">{meta.title} · {dateLabel}</span>
+        <span className="insights-brand">{title} · {dateLabel}</span>
         <span className="insights-actions">
           {voiceOnly && <span className="sub" data-testid="brief-voice-label" style={{ fontSize: 10.5, alignSelf: "center" }}>Device voice</span>}
           {canListen && (
@@ -81,7 +85,7 @@ export function BriefCard({ api }: { api: Api }) {
         <div className="chips" style={{ padding: "6px 0 8px" }} role="group" aria-label="Brief editions">
           {briefs.map((b) => (
             <button key={b.edition} className="chip" aria-pressed={b.edition === brief.edition} onClick={() => pick(b.edition)}>
-              {ED_META[b.edition].chip}
+              {(ED_META[b.edition] ?? ED_META.morning).chip}
             </button>
           ))}
         </div>

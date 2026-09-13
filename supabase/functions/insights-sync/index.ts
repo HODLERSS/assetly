@@ -60,19 +60,80 @@ async function askMaraFb(key: string, model: string, prompt: string, maxTokens =
   return await askMara(key, FAST_MODEL, prompt, maxTokens);
 }
 
-// ---- market sessions (mirror of web/src/lib/markets.ts) ----
-const US_HOL = new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25","2027-01-01"]);
-const KR_HOL = new Set(["2026-01-01","2026-03-02","2026-05-01","2026-05-05","2026-06-03","2026-06-06","2026-08-17","2026-10-05","2026-10-09","2026-12-25","2026-12-31","2027-01-01"]);
-function minsSinceOpen(mkt: "US" | "KR", now = new Date()): number | null {
-  const tz = mkt === "US" ? "America/New_York" : "Asia/Seoul";
+// ---- trading calendar (mirror of web/src/lib/markets.ts; lunar KR holidays are listed explicitly) ----
+// Every prompt that mentions a "day" move gets these lines, so the model knows WHICH session a figure
+// belongs to and how long ago that session ended. Caught 2026-09-11: a Friday 3:30 PM CT note said the
+// Korean names "fell 1.5% today" about a Seoul session that had closed 14 hours earlier.
+type Mkt = "US" | "KR";
+const HOL: Record<Mkt, Set<string>> = {
+  US: new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25","2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05","2027-09-06","2027-11-25","2027-12-24"]),
+  KR: new Set(["2026-01-01","2026-02-16","2026-02-17","2026-02-18","2026-03-02","2026-05-01","2026-05-05","2026-05-25","2026-06-03","2026-06-06","2026-08-17","2026-09-24","2026-09-25","2026-10-05","2026-10-09","2026-12-25","2026-12-31","2027-01-01","2027-02-08","2027-02-09","2027-02-10","2027-03-01","2027-05-05","2027-05-13","2027-06-07","2027-08-16","2027-09-14","2027-09-15","2027-09-16","2027-10-04","2027-10-11","2027-12-31"]),
+};
+const TZ: Record<Mkt, string> = { US: "America/New_York", KR: "Asia/Seoul" };
+const OPEN_MIN: Record<Mkt, number> = { US: 570, KR: 540 };    // 9:30 ET, 9:00 KST
+const CLOSE_MIN: Record<Mkt, number> = { US: 960, KR: 930 };   // 4:00 PM ET, 3:30 PM KST
+function zonedParts(now: Date, tz: string): { ymd: string; dow: number; minutes: number } {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", hour: "numeric", minute: "numeric", hour12: false, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   const dow = ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[get("weekday")] ?? 0;
-  const ymd = `${get("year")}-${get("month")}-${get("day")}`;
-  if (dow < 1 || dow > 5 || (mkt === "US" ? US_HOL : KR_HOL).has(ymd)) return null;
-  const mins = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
-  const open = mkt === "US" ? 570 : 540;
-  return mins >= open ? mins - open : null;
+  return { ymd: `${get("year")}-${get("month")}-${get("day")}`, dow, minutes: (Number(get("hour")) % 24) * 60 + Number(get("minute")) };
+}
+const ymdShift = (ymd: string, days: number): string => { const d = new Date(ymd + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+const dowOf = (ymd: string): number => new Date(ymd + "T12:00:00Z").getUTCDay();
+const isTradingDay = (mkt: Mkt, ymd: string): boolean => { const d = dowOf(ymd); return d >= 1 && d <= 5 && !HOL[mkt].has(ymd); };
+const prevTradingDay = (mkt: Mkt, ymd: string): string => { let x = ymd; do x = ymdShift(x, -1); while (!isTradingDay(mkt, x)); return x; };
+const nextTradingDay = (mkt: Mkt, ymd: string): string => { let x = ymd; do x = ymdShift(x, 1); while (!isTradingDay(mkt, x)); return x; };
+function tzOffsetMin(epoch: number, tz: string): number {
+  const s = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" }).formatToParts(new Date(epoch)).find((p) => p.type === "timeZoneName")?.value ?? "GMT";
+  const m = s.match(/([+-])(\d{2}):?(\d{2})?/);
+  return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0)) : 0;
+}
+/** Epoch ms of a wall-clock minute on a date in a zone (DST-safe: the offset is read at that instant). */
+function zonedEpoch(ymd: string, minutes: number, tz: string): number {
+  const [y, mo, d] = ymd.split("-").map(Number);
+  const naive = Date.UTC(y, mo - 1, d, 0, minutes);
+  return naive - tzOffsetMin(naive, tz) * 60000;
+}
+type MarketState = { mkt: Mkt; ymd: string; dow: number; tradingToday: boolean; holidayToday: boolean; phase: "pre" | "open" | "post" | "closed"; minutesIn: number; lastSessionDate: string; lastCloseEpoch: number; hoursSinceClose: number; nextSessionDate: string; hoursToNextOpen: number; upcomingHolidays: string[] };
+function marketState(mkt: Mkt, now = new Date()): MarketState {
+  const z = zonedParts(now, TZ[mkt]);
+  const tradingToday = isTradingDay(mkt, z.ymd);
+  const phase: MarketState["phase"] = !tradingToday ? "closed" : z.minutes < OPEN_MIN[mkt] ? "pre" : z.minutes < CLOSE_MIN[mkt] ? "open" : "post";
+  const lastSessionDate = phase === "open" || phase === "post" ? z.ymd : prevTradingDay(mkt, z.ymd);
+  const lastCloseEpoch = zonedEpoch(lastSessionDate, CLOSE_MIN[mkt], TZ[mkt]);
+  const nextSessionDate = phase === "pre" ? z.ymd : nextTradingDay(mkt, z.ymd);
+  const nextOpenEpoch = zonedEpoch(nextSessionDate, OPEN_MIN[mkt], TZ[mkt]);
+  const horizon = ymdShift(z.ymd, 10);
+  return { mkt, ymd: z.ymd, dow: z.dow, tradingToday, holidayToday: HOL[mkt].has(z.ymd), phase, minutesIn: phase === "open" ? z.minutes - OPEN_MIN[mkt] : 0,
+    lastSessionDate, lastCloseEpoch, hoursSinceClose: phase === "open" ? 0 : Math.max(0, (now.getTime() - lastCloseEpoch) / 3600000),
+    nextSessionDate, hoursToNextOpen: Math.max(0, (nextOpenEpoch - now.getTime()) / 3600000),
+    upcomingHolidays: [...HOL[mkt]].filter((h) => h > z.ymd && h <= horizon).sort() };
+}
+const dayName = (ymd: string): string => new Date(ymd + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
+const weekdayOf = (ymd: string): string => dayName(ymd).split(",")[0];
+const spanText = (h: number): string => h < 1.5 ? `${Math.max(1, Math.round(h * 60))} minutes` : h < 48 ? `${Math.round(h)} hours` : `${Math.round(h / 24)} days`;
+/** Is a day figure from this market "today's tape"? Open now, or closed under 3 hours ago. */
+const isLiveTape = (s: MarketState): boolean => s.phase === "open" || (s.phase === "post" && s.hoursSinceClose < 3);
+/** One deterministic sentence per market for the prompts: what session the day figures belong to, how stale it is, what comes next. */
+function sessionLine(mkt: Mkt, now = new Date()): string {
+  const s = marketState(mkt, now);
+  const name = mkt === "US" ? "US market" : "Korean market (KRX)";
+  const hol = s.upcomingHolidays.length ? `; ${mkt} market holiday${s.upcomingHolidays.length > 1 ? "s" : ""} ahead: ${s.upcomingHolidays.map(dayName).join(", ")}` : "";
+  const next = `Next ${mkt} session: ${dayName(s.nextSessionDate)}, opens in ${spanText(s.hoursToNextOpen)}${hol}.`;
+  if (s.phase === "open") return `${name}: OPEN now, ${s.minutesIn} minutes into the ${dayName(s.ymd)} session. ${mkt} day changes are today's live tape. ${next}`;
+  const closedWhy = s.phase === "closed" ? (s.holidayToday ? " Closed today for a market holiday." : " Closed today (weekend).") : s.phase === "pre" ? " Not open yet today." : "";
+  const ago = s.phase === "post" && s.hoursSinceClose < 3 ? "just closed" : `closed ${spanText(s.hoursSinceClose)} ago`;
+  const which = s.phase === "post" ? `today's ${dayName(s.ymd)} session` : `its last session, ${dayName(s.lastSessionDate)}`;
+  const law = isLiveTape(s) ? `${mkt} day changes are today's final moves.`
+    : s.phase === "post" ? `${mkt} day changes are from today's session, which ended ${spanText(s.hoursSinceClose)} ago: past tense ("in today's session"), never "now", "this morning" or "live".`
+    : `${mkt} day changes are from that ${weekdayOf(s.lastSessionDate)} session, NOT today's tape: write "in ${weekdayOf(s.lastSessionDate)}'s session", never "today", "now" or "this morning".`;
+  return `${name}: ${ago} (${which}).${closedWhy} ${law} ${next}`;
+}
+function minsSinceOpen(mkt: "US" | "KR", now = new Date()): number | null {
+  const st = marketState(mkt, now);
+  if (!st.tradingToday) return null;
+  const z = zonedParts(now, TZ[mkt]);
+  return z.minutes >= OPEN_MIN[mkt] ? z.minutes - OPEN_MIN[mkt] : null;
 }
 const OPEN_GATE = 10;   // minutes after the bell before the new day's tape is trusted
 /** Stale = older than 50min, OR written before today's open once that market has
@@ -104,13 +165,7 @@ function deJust(text: string, callAge: number | null): string {
   if (callAge === null || callAge <= CALL_FRESH_DAYS) return text;
   return text.replace(STALE_JUST, "$2");
 }
-function sessNote(mkt: "US" | "KR", now = new Date()): string {
-  const m = minsSinceOpen(mkt, now);
-  const name = mkt === "US" ? "US market" : "Korean market";
-  if (m === null) return `${name} has NOT opened today. Any day-change figure is from the LAST completed session. Never call it today's move.`;
-  if (m < 390) return `${name} opened ${m} minutes ago. Day changes are TODAY's live tape.`;
-  return `${name} finished today's session. Day changes are today's final moves.`;
-}
+function sessNote(mkt: "US" | "KR", now = new Date()): string { return sessionLine(mkt, now); }
 
 
 // ---- reader profile: the 6 sign-up answers steer VOICE, EMPHASIS and PURPOSE, never the facts ----
@@ -256,7 +311,14 @@ Deno.serve(async (req) => {
   const kindOf = new Map((kindRows ?? []).map((k) => [k.symbol, String(k.kind)]));
   const mktOf = (sy: string): "US" | "KR" | null =>
     kindOf.get(sy) === "crypto" ? null : (sy.endsWith(".KS") || sy.endsWith(".KQ") ? "KR" : "US");
-  if (!only && !force) targets = targets.filter((sy) => staleInsight(age.get(sy) ?? 0, mktOf(sy)));
+  // Newest headline per target: on a day its market is closed, a symbol regenerates only when there is something
+  // new to say (a take rewritten hourly from the same Friday data is repetition, not insight).
+  const { data: newsRows } = await admin.from("news").select("symbol,published_at").in("symbol", targets)
+    .gte("published_at", new Date(Date.now() - 4 * 86400000).toISOString()).order("published_at", { ascending: false }).limit(1500);
+  const newestNews = new Map<string, number>();
+  for (const n of newsRows ?? []) if (!newestNews.has(n.symbol)) newestNews.set(n.symbol, +new Date(String(n.published_at)));
+  const worthRegen = (sy: string): boolean => { const mk = mktOf(sy); if (!mk || marketState(mk).tradingToday) return true; return (newestNews.get(sy) ?? 0) > (age.get(sy) ?? 0); };
+  if (!only && !force) targets = targets.filter((sy) => staleInsight(age.get(sy) ?? 0, mktOf(sy)) && worthRegen(sy));
   if (force) targets = [];                                    // force = refresh the portfolio layer only
   targets = targets.sort((a, b) =>
     (age.get(a) ?? 0) - (age.get(b) ?? 0) || (invested.get(b) ?? 0) - (invested.get(a) ?? 0)).slice(0, 16);
@@ -298,7 +360,7 @@ ${(news7 ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (no fr
 ${(fils ?? []).length ? `\nSEC filings (last 9 months): ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}${latestTr ? `\nLatest earnings call ("${latestTr.title}", ${latestTr.published_at}):\n${String(latestTr.content).slice(0, 7000)}\n${callAgeNote(latestTr.published_at)}\n${(tr ?? []).slice(1).length ? "Older calls on file: " + (tr ?? []).slice(1).map((t) => t.title).join(" | ") : ""}` : "\n(no earnings transcript on file yet)"}
 
 Return STRICT JSON: {"bullets": [3-4 strings], "trend": str}.
-bullets: the sharpest takes on what matters RIGHT NOW, synthesizing news, the earnings call, and price action. Respect the call's age above: a call older than a week is context for a take, never the news itself. Each 10-15 words MAX. Interpret, never restate headlines. Refer to the company by NAME, never numeric KRX codes. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons.
+bullets: the sharpest takes on what matters RIGHT NOW, synthesizing news, the earnings call, and price action. Respect the call's age above: a call older than a week is context for a take, never the news itself. DAY-CHANGE LAW: a day figure is today's tape only while the market is open or closed under 3 hours; otherwise it is past tense with the session named, and on a day the market is closed the takes are about the week and the news, never a move. Each 10-15 words MAX. Interpret, never restate headlines. Refer to the company by NAME, never numeric KRX codes. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons.
 trend: ONE sentence, max 20 words, covering the recent move and the longer-term picture together.`;
         content = await askMaraFb(key, model, prompt);
       }
@@ -345,6 +407,11 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       // Same session-aware staleness as symbols: skip only while genuinely current.
       if (!fixture && !force && !userMkts.some((mk) => staleInsight(lastPi.get(uid) ?? 0, mk))
           && Date.now() - (lastPi.get(uid) ?? 0) <= 50 * 60000) continue;
+      // No held market trades today: only new headlines justify another portfolio take
+      if (!fixture && !force && userMkts.length && userMkts.every((mk) => !marketState(mk).tradingToday)) {
+        const { count } = await admin.from("news").select("id", { count: "exact", head: true }).in("symbol", rows.map((r) => r.symbol)).gte("published_at", new Date(lastPi.get(uid) ?? 0).toISOString());
+        if (!(count ?? 0)) continue;
+      }
       const usd = (r: (typeof rows)[number]) => Number(r.value ?? 0) / (fxMap.get(String(r.currency)) ?? 1);
       const assets = rows.filter((r) => r.kind !== "debt");
       const debt = rows.filter((r) => r.kind === "debt").reduce((a, r) => a + usd(r), 0);
@@ -374,7 +441,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       } else {
         prompt = `TODAY is ${new Date().toISOString().slice(0, 10)}.
 A retail investor's portfolio (total assets $${Math.round(total)}, debt $${Math.round(debt)}):
-Market sessions right now: ${userMkts.map((mk) => sessNote(mk)).join(" ")}
+SESSIONS (deterministic; obey over any instinct):\n${userMkts.map((mk) => sessNote(mk)).join("\n")}
 ${desc}
 Latest earnings calls on file:
 ${callLines || "- (none)"}
@@ -384,7 +451,7 @@ Sharpest current takes per holding:
 ${[...latestBySym.entries()].map(([sym, b]) => `- ${nOf(sym)}: ${b}`).join("\n") || "- (none yet)"}
 
 Return STRICT JSON: {"bullets": [exactly 3 strings], "news5": [exactly 5 strings]}. You are their portfolio strategist.
-Bullet 1: the ONLY price bullet. Recent moves that mattered, with numbers.
+Bullet 1: the ONLY price bullet. Moves from a market that is today's tape per SESSIONS, with numbers; a market whose session ended more than 3 hours ago is past tense with the session named; if no held market traded today, this bullet is the WEEK's direction (say "this week"), never "today".
 Bullet 2: the most decision-relevant company signal right now: an earnings call (state its date; a call marked background was weeks ago and was NOT just reported, so never write just, today, this week, or fresh about it), interview, filing, or news. Any holding qualifies, not just the largest position.
 Bullet 3: a mid-term signal a value investor should note: valuation, fundamentals trend, or upcoming catalyst.
 Each bullet 15 words MAX. Spread coverage across different holdings when the signals warrant it.

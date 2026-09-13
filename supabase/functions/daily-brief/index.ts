@@ -52,6 +52,77 @@ let lastMeta = "";   // finish_reason + content length of the most recent call (
 // FAST model for composition steps (editor, compact, fact-check) of the assessment: M2.7 burns its whole token
 // budget thinking on that prompt shape (HTTP 400 "truncated" after ~85s); gpt-oss-120b writes it validly in ~20s.
 const FAST_MODEL = "gpt-oss-120b";
+
+// ---- trading calendar (mirror of web/src/lib/markets.ts; lunar KR holidays are listed explicitly) ----
+// Every prompt that mentions a "day" move gets these lines, so the model knows WHICH session a figure
+// belongs to and how long ago that session ended. Caught 2026-09-11: a Friday 3:30 PM CT note said the
+// Korean names "fell 1.5% today" about a Seoul session that had closed 14 hours earlier.
+type Mkt = "US" | "KR";
+const HOL: Record<Mkt, Set<string>> = {
+  US: new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25","2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05","2027-09-06","2027-11-25","2027-12-24"]),
+  KR: new Set(["2026-01-01","2026-02-16","2026-02-17","2026-02-18","2026-03-02","2026-05-01","2026-05-05","2026-05-25","2026-06-03","2026-06-06","2026-08-17","2026-09-24","2026-09-25","2026-10-05","2026-10-09","2026-12-25","2026-12-31","2027-01-01","2027-02-08","2027-02-09","2027-02-10","2027-03-01","2027-05-05","2027-05-13","2027-06-07","2027-08-16","2027-09-14","2027-09-15","2027-09-16","2027-10-04","2027-10-11","2027-12-31"]),
+};
+const TZ: Record<Mkt, string> = { US: "America/New_York", KR: "Asia/Seoul" };
+const OPEN_MIN: Record<Mkt, number> = { US: 570, KR: 540 };    // 9:30 ET, 9:00 KST
+const CLOSE_MIN: Record<Mkt, number> = { US: 960, KR: 930 };   // 4:00 PM ET, 3:30 PM KST
+function zonedParts(now: Date, tz: string): { ymd: string; dow: number; minutes: number } {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", hour: "numeric", minute: "numeric", hour12: false, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const dow = ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[get("weekday")] ?? 0;
+  return { ymd: `${get("year")}-${get("month")}-${get("day")}`, dow, minutes: (Number(get("hour")) % 24) * 60 + Number(get("minute")) };
+}
+const ymdShift = (ymd: string, days: number): string => { const d = new Date(ymd + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+const dowOf = (ymd: string): number => new Date(ymd + "T12:00:00Z").getUTCDay();
+const isTradingDay = (mkt: Mkt, ymd: string): boolean => { const d = dowOf(ymd); return d >= 1 && d <= 5 && !HOL[mkt].has(ymd); };
+const prevTradingDay = (mkt: Mkt, ymd: string): string => { let x = ymd; do x = ymdShift(x, -1); while (!isTradingDay(mkt, x)); return x; };
+const nextTradingDay = (mkt: Mkt, ymd: string): string => { let x = ymd; do x = ymdShift(x, 1); while (!isTradingDay(mkt, x)); return x; };
+function tzOffsetMin(epoch: number, tz: string): number {
+  const s = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" }).formatToParts(new Date(epoch)).find((p) => p.type === "timeZoneName")?.value ?? "GMT";
+  const m = s.match(/([+-])(\d{2}):?(\d{2})?/);
+  return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0)) : 0;
+}
+/** Epoch ms of a wall-clock minute on a date in a zone (DST-safe: the offset is read at that instant). */
+function zonedEpoch(ymd: string, minutes: number, tz: string): number {
+  const [y, mo, d] = ymd.split("-").map(Number);
+  const naive = Date.UTC(y, mo - 1, d, 0, minutes);
+  return naive - tzOffsetMin(naive, tz) * 60000;
+}
+type MarketState = { mkt: Mkt; ymd: string; dow: number; tradingToday: boolean; holidayToday: boolean; phase: "pre" | "open" | "post" | "closed"; minutesIn: number; lastSessionDate: string; lastCloseEpoch: number; hoursSinceClose: number; nextSessionDate: string; hoursToNextOpen: number; upcomingHolidays: string[] };
+function marketState(mkt: Mkt, now = new Date()): MarketState {
+  const z = zonedParts(now, TZ[mkt]);
+  const tradingToday = isTradingDay(mkt, z.ymd);
+  const phase: MarketState["phase"] = !tradingToday ? "closed" : z.minutes < OPEN_MIN[mkt] ? "pre" : z.minutes < CLOSE_MIN[mkt] ? "open" : "post";
+  const lastSessionDate = phase === "open" || phase === "post" ? z.ymd : prevTradingDay(mkt, z.ymd);
+  const lastCloseEpoch = zonedEpoch(lastSessionDate, CLOSE_MIN[mkt], TZ[mkt]);
+  const nextSessionDate = phase === "pre" ? z.ymd : nextTradingDay(mkt, z.ymd);
+  const nextOpenEpoch = zonedEpoch(nextSessionDate, OPEN_MIN[mkt], TZ[mkt]);
+  const horizon = ymdShift(z.ymd, 10);
+  return { mkt, ymd: z.ymd, dow: z.dow, tradingToday, holidayToday: HOL[mkt].has(z.ymd), phase, minutesIn: phase === "open" ? z.minutes - OPEN_MIN[mkt] : 0,
+    lastSessionDate, lastCloseEpoch, hoursSinceClose: phase === "open" ? 0 : Math.max(0, (now.getTime() - lastCloseEpoch) / 3600000),
+    nextSessionDate, hoursToNextOpen: Math.max(0, (nextOpenEpoch - now.getTime()) / 3600000),
+    upcomingHolidays: [...HOL[mkt]].filter((h) => h > z.ymd && h <= horizon).sort() };
+}
+const dayName = (ymd: string): string => new Date(ymd + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
+const weekdayOf = (ymd: string): string => dayName(ymd).split(",")[0];
+const spanText = (h: number): string => h < 1.5 ? `${Math.max(1, Math.round(h * 60))} minutes` : h < 48 ? `${Math.round(h)} hours` : `${Math.round(h / 24)} days`;
+/** Is a day figure from this market "today's tape"? Open now, or closed under 3 hours ago. */
+const isLiveTape = (s: MarketState): boolean => s.phase === "open" || (s.phase === "post" && s.hoursSinceClose < 3);
+/** One deterministic sentence per market for the prompts: what session the day figures belong to, how stale it is, what comes next. */
+function sessionLine(mkt: Mkt, now = new Date()): string {
+  const s = marketState(mkt, now);
+  const name = mkt === "US" ? "US market" : "Korean market (KRX)";
+  const hol = s.upcomingHolidays.length ? `; ${mkt} market holiday${s.upcomingHolidays.length > 1 ? "s" : ""} ahead: ${s.upcomingHolidays.map(dayName).join(", ")}` : "";
+  const next = `Next ${mkt} session: ${dayName(s.nextSessionDate)}, opens in ${spanText(s.hoursToNextOpen)}${hol}.`;
+  if (s.phase === "open") return `${name}: OPEN now, ${s.minutesIn} minutes into the ${dayName(s.ymd)} session. ${mkt} day changes are today's live tape. ${next}`;
+  const closedWhy = s.phase === "closed" ? (s.holidayToday ? " Closed today for a market holiday." : " Closed today (weekend).") : s.phase === "pre" ? " Not open yet today." : "";
+  const ago = s.phase === "post" && s.hoursSinceClose < 3 ? "just closed" : `closed ${spanText(s.hoursSinceClose)} ago`;
+  const which = s.phase === "post" ? `today's ${dayName(s.ymd)} session` : `its last session, ${dayName(s.lastSessionDate)}`;
+  const law = isLiveTape(s) ? `${mkt} day changes are today's final moves.`
+    : s.phase === "post" ? `${mkt} day changes are from today's session, which ended ${spanText(s.hoursSinceClose)} ago: past tense ("in today's session"), never "now", "this morning" or "live".`
+    : `${mkt} day changes are from that ${weekdayOf(s.lastSessionDate)} session, NOT today's tape: write "in ${weekdayOf(s.lastSessionDate)}'s session", never "today", "now" or "this morning".`;
+  return `${name}: ${ago} (${which}).${closedWhy} ${law} ${next}`;
+}
+
 async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs = 30000, model?: string): Promise<Record<string, unknown> | null> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -317,12 +388,19 @@ Deno.serve(async (req) => {
     }
   }
   const noAudio = body.noAudio === true;   // battery/test runs must not spend TTS quota
-  type Edition = "morning" | "midday" | "close" | "assessment";
-  const validEd = (x: unknown): x is Edition => x === "morning" || x === "midday" || x === "close" || x === "assessment";
+  type Edition = "morning" | "midday" | "close" | "assessment" | "weekend";
+  const validEd = (x: unknown): x is Edition => x === "morning" || x === "midday" || x === "close" || x === "assessment" || x === "weekend";
   const edRaw = url.searchParams.get("edition") ?? (body as { edition?: unknown }).edition;
   const utcMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();   // close = 4:05 PM ET (20:05 UTC), never before the bell
   // "assessment" is never chosen by the clock: it is requested explicitly (orchestrator / brief-retry) and always forced
-  const edition: Edition = validEd(edRaw) ? edRaw : utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
+  const clockResolved = !validEd(edRaw);
+  let edition: Edition = validEd(edRaw) ? edRaw : utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
+  // No US session today (weekend or market holiday): the clock-resolved daily editions collapse into ONE weekend /
+  // holiday read, written after 9 AM ET. An explicit edition (batteries, operators, brief-retry) is honored as asked.
+  if (clockResolved && !marketState("US").tradingToday) {
+    edition = "weekend";
+    if (zonedParts(new Date(), TZ.US).minutes < 9 * 60) return json({ ok: true, users: 0, wrote: 0, reason: "weekend read waits for 9 AM ET" });
+  }
   if (edition === "assessment" && !force && !fixture) return json({ ok: false, error: "assessment requires force" }, 400);
 
   let key = "";
@@ -435,6 +513,8 @@ Deno.serve(async (req) => {
       }
       const earnLine = nextEarn.join("; ") || "(none on file)";
       const dateLaw = `TODAY is ${briefDate}. Anything dated before today is the PAST and must NOT appear in calendar or watch. Earnings dates may come ONLY from NEXT EARNINGS ESTIMATES, always labeled (est); never invent a date.`;
+      const krHeldAny = holdings.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"));
+      const sessionLaw = `SESSIONS (deterministic; obey over any instinct):\n${sessionLine("US")}${krHeldAny ? "\n" + sessionLine("KR") : ""}\nDAY-CHANGE LAW: a holding's "day" figure belongs to ITS market's session above. Only a market that is OPEN or closed under 3 hours ago is today's tape. Anything older is past tense with the session named ("in Friday's Seoul session"), mentioned at most once, and never in the lede unless it moved over 3% or has fresh news. Never add a "today" gain or loss across markets whose sessions ended more than 3 hours apart: keep them apart ("US names +$X in today's session; the Korean names were flat in Friday's").`;
 
       // yesterday for continuity
       const { data: prev } = await admin.from("daily_briefs").select("brief_date, sections, memos").eq("user_id", uid)
@@ -704,6 +784,65 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         // cash and debt are book facts, never positions (guaranteed in code)
         sections.positions = sections.positions.filter((p) => !/^\$?(cash|debt)\b/i.test(p.name.trim()));
         if (!sections.positions.length) { errors.push(uid.slice(0, 8) + ": assessment had no equity positions"); continue; }
+      } else if (edition === "weekend") {
+        // ---- WEEKEND / HOLIDAY READ: no US session today. Direction and developments, never a tape. ----
+        const krHeldW = holdings.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"));
+        const usS = marketState("US"), krS = marketState("KR");
+        const sinceClose = new Date(Math.min(usS.lastCloseEpoch, krHeldW ? krS.lastCloseEpoch : usS.lastCloseEpoch)).toISOString();
+        const { data: prevWeekend } = await admin.from("daily_briefs").select("generated_at, sections").eq("user_id", uid).eq("edition", "weekend")
+          .gte("brief_date", ymdShift(briefDate, -3)).lt("brief_date", briefDate).order("generated_at", { ascending: false }).limit(1).maybeSingle();
+        const newsSince = prevWeekend ? String(prevWeekend.generated_at) : sinceClose;
+        const { data: newNews } = await admin.from("news").select("symbol,title,source,published_at").in("symbol", holdings.slice(0, 12).map((r) => r.symbol))
+          .gte("published_at", newsSince).order("published_at", { ascending: false }).limit(40);
+        // Sunday's (or a second holiday's) read only earns its place with new information since the previous one
+        if (prevWeekend && !force && !(newNews ?? []).length) { errors.push(uid.slice(0, 8) + ": weekend read skipped, nothing new since the last one"); continue; }
+        const nameBy = new Map(holdings.map((r) => [r.symbol, krName(r.symbol, r.nickname, r.name)]));
+        const weekLines: string[] = [];
+        for (const r of holdings.slice(0, 10)) {
+          const { data: hist } = await admin.from("price_history").select("ts,price").eq("symbol", r.symbol).gte("ts", new Date(Date.now() - 9 * 86400000).toISOString()).order("ts", { ascending: true }).limit(400);
+          weekLines.push(`${nameBy.get(r.symbol)}: week ${pctOver((hist ?? []).map((x) => ({ ts: String(x.ts), price: Number(x.price) })), 7)}, ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets`);
+        }
+        const newsLines = (newNews ?? []).slice(0, 24).map((n) => `- ${nameBy.get(n.symbol) ?? n.symbol} [${n.source}, ${String(n.published_at).slice(0, 10)}]: ${String(n.title).slice(0, 110)}`).join("\n");
+        const statsNoDay = statsLines.replace(/, day [^,]*/g, "");
+        const prevCtx = prevWeekend ? `PREVIOUS READ (never repeat a sentence from it; cover only what is NEW since): lede "${(prevWeekend.sections as Sections).lede}" · direction "${(prevWeekend.sections as Sections).desk_view}"`
+          : (prev ? `LAST DAILY NOTE (for continuity): lede "${(prev.sections as { lede?: string })?.lede ?? ""}"` : "");
+        const kind = usS.holidayToday ? "HOLIDAY" : "WEEKEND";
+        const writerPrompt = `Write the ${briefDate} ${kind} READ (${dayName(briefDate)}) for ONE investor. No market they hold is trading today, so this is NOT a daily note: there is no tape, no "today's move", nothing "this morning". Its job is direction and developments: (1) where the book stands after the week and what it is exposed to going into the next sessions, (2) what actually happened at the companies they own since the last close, (3) the calendar: the next session for every market they hold, any market holiday ahead, and dated events.
+
+SESSIONS (deterministic; obey over any instinct):
+${sessionLine("US")}${krHeldW ? "\n" + sessionLine("KR") : ""}
+
+PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
+Total assets $${Math.round(total)}.
+${statsNoDay}
+WEEK MOVES (deterministic; the ONLY move numbers allowed, and they are WEEK numbers):
+${weekLines.join("\n") || "- none"}
+NEWS SINCE THE LAST CLOSE (${(newNews ?? []).length} items):
+${newsLines || "- none: say so plainly and lean on structure and the calendar"}
+NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
+${dateLaw}
+${prevCtx}
+
+Return STRICT JSON:
+{"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}
+lede: the one thing this ${kind.toLowerCase()} changes or confirms about the book, stated as a consequence for the reader. <= 30 words.
+overnight: THE WEEK THAT WAS: the book's direction over the week and the two or three holdings that drove it, with their WEEK numbers from WEEK MOVES (never a day number). <= 55 words.
+positions: the 1-4 holdings with NEW information since the last close (news, filings, calls), each note <= 32 words that OPENS WITH WHAT IT MEANS for this owner and then gives the fact; watch <= 10 words naming the next concrete event, date or level. A holding with nothing new is NOT listed. If nothing is new anywhere, list the largest holding once with its setup for the next session.
+desk_view: DIRECTION into the next sessions: the one structural exposure or catalyst that decides the next five trading days for this book. No single-day numbers. <= 40 words.
+calendar: first the next session date for each market they hold (name any market holiday ahead), then up to 2 dated events from NEXT EARNINGS ESTIMATES or dated headlines. <= 10 words each.
+FORBIDDEN WORDS: today, tonight, this morning, overnight, live, and any day move presented as current.
+${STYLE_RULES}\n${READER}`;
+        let draft = await askModel(key, "You are the editor of a one-reader research desk writing the weekend read. Direction and developments, never a tape. Think briefly, then write.", writerPrompt, 16000, 60000);
+        if ((!draft || !validSections(draft)) && elapsed() < 100) {
+          draft = await askModel(key, "You are the editor of a one-reader research desk. Think briefly. Output the exact JSON shape requested.", writerPrompt, 16000, 40000, FAST_MODEL);
+        }
+        if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": weekend writer failed [" + lastMeta + "]"); continue; }
+        // no session today: the words that only belong to a live tape are removed in code
+        const nowWord = kind === "HOLIDAY" ? "over the holiday" : "this weekend";
+        const deDay = (t: string) => String(t ?? "").replace(/\btoday's\b/gi, "the latest").replace(/\btoday\b/gi, nowWord).replace(/\btonight\b/gi, "at the next open").replace(/\bthis morning\b/gi, nowWord);
+        draft.lede = deDay(draft.lede); draft.overnight = deDay(draft.overnight); draft.desk_view = deDay(draft.desk_view);
+        draft.positions = draft.positions.map((p) => ({ ...p, note: deDay(p.note), watch: deDay(p.watch) }));
+        sections = draft;
       } else if (edition === "morning") {
         // ---- stage 1: analyst memos, parallel over top holdings ----
         const memoTargets = holdings.slice(0, 5);
@@ -750,6 +889,7 @@ Total assets $${Math.round(total)}.
 ${statsLines}
 NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
 ${dateLaw}
+${sessionLaw}
 
 ANALYST MEMOS:
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: changed: ${m.changed}. promises: ${m.promise_check}. bull: ${m.bull}. bear: ${m.bear}. watch: ${m.watch}`).join("\n")}
@@ -818,12 +958,21 @@ Return STRICT JSON {"name": "${dispN}", "changed": str, "watch": str}. changed: 
         const { data: freshNews } = await admin.from("news").select("symbol,title").in("symbol", holdings.slice(0, 8).map((r) => r.symbol))
           .gte("published_at", since8h).order("published_at", { ascending: false }).limit(12);
         const freshHeads = (freshNews ?? []).map((n) => `- ${nameBy.get(n.symbol) ?? n.symbol}: ${String(n.title).slice(0, 90)}`).join("\n");
-        const dayPnl = assets.reduce((a, r) => r.change_pct === null ? a : a + usd(Number(r.value ?? 0), r.currency) * (Number(r.change_pct) / 100) / (1 + Number(r.change_pct) / 100), 0);
+        const pnlOf = (rs: typeof assets) => rs.reduce((a, r) => r.change_pct === null ? a : a + usd(Number(r.value ?? 0), r.currency) * (Number(r.change_pct) / 100) / (1 + Number(r.change_pct) / 100), 0);
+        const dayPnl = pnlOf(assets);
         const dayPct = total > 0 ? (dayPnl / (total - dayPnl) * 100) : 0;
-        const pnlLine = `DAY P&L: ${dayPnl >= 0 ? "+" : "-"}$${Math.abs(Math.round(dayPnl)).toLocaleString("en-US")} (${dayPnl >= 0 ? "+" : ""}${dayPct.toFixed(1)}%)`;
+        const fmtP = (v: number) => `${v >= 0 ? "+" : "-"}$${Math.abs(Math.round(v)).toLocaleString("en-US")}`;
+        const krRows = assets.filter((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"));
+        const usS = marketState("US"), krS = marketState("KR");
+        const sessTag = (st: MarketState, seoul: boolean) => isLiveTape(st) ? `today's ${seoul ? "Seoul " : ""}session` : `${weekdayOf(st.lastSessionDate)}'s ${seoul ? "Seoul " : ""}session, closed ${spanText(st.hoursSinceClose)} ago`;
+        // two markets, two sessions: a Friday 3:30 PM CT note must not fold a Seoul close from 14 hours earlier into "today"
+        const pnlLine = krRows.length
+          ? `DAY P&L, US and crypto names (${sessTag(usS, false)}): ${fmtP(pnlOf(assets.filter((r) => !krRows.includes(r))))}; Korean names (${sessTag(krS, true)}): ${fmtP(pnlOf(krRows))}`
+          : `DAY P&L: ${fmtP(dayPnl)} (${dayPnl >= 0 ? "+" : ""}${dayPct.toFixed(1)}%)`;
         const mSec = morningRow ? morningRow.sections as Sections : null;
         const morningCtx = mSec ? `THIS MORNING'S BRIEF (build on it, never repeat a sentence from it): lede "${mSec.lede}" \u00b7 tape "${mSec.overnight}" \u00b7 desk view "${mSec.desk_view}" \u00b7 watches: ${mSec.positions.map((p) => `${p.name}: ${p.watch}`).join("; ")}` : "(no morning brief today; write standalone, no references to an earlier note)";
-        const isFri = new Date(briefDate + "T12:00:00Z").getUTCDay() === 5;
+        const nextUS = nextTradingDay("US", briefDate);
+        const isFri = Math.round((+new Date(nextUS + "T12:00:00Z") - +new Date(briefDate + "T12:00:00Z")) / 86400000) > 1;   // a gap before the next session (weekend OR holiday), not literally Friday
         const krHeld = holdings.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"));
         // STYLE_RULES hoisted to module scope (shared with the assessment)
         const dataBlock = `MARKET NOW: ${mktLive || "(no market data)"}
@@ -837,6 +986,7 @@ ${statsLines}
 
 NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
 ${dateLaw}
+${sessionLaw}
 DESK CONTEXT (from the morning work):
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.changed ?? ""}${m.bull ? `. bull: ${m.bull}` : ""}${m.bear ? `. bear: ${m.bear}` : ""}. watch: ${m.watch ?? ""}`).join("\n") || "- none"}
 ${morningCtx}`;
@@ -855,17 +1005,17 @@ QUIET-BOOK LAW: if no holding moved more than 1.5% and there is no fresh news, S
 CONTINUITY LAW: a claim already made in the morning brief may only reappear if you ADVANCE it with new evidence from today's session; restating it in different words is a failure. Cover what the morning could not know.
 calendar: 0-3 items for this afternoon or tonight, <= 10 words each.
 ${STYLE_RULES}\n${READER}`
-          : `Write the ${briefDate} CLOSING NOTE (published minutes after the 4:00 PM Eastern close${isFri ? "; it is FRIDAY, so set up the WEEK AHEAD" : ""}) for ONE investor. Your job: settle what today meant for their money and arm them for the next session.
+          : `Write the ${briefDate} CLOSING NOTE (published minutes after the 4:00 PM Eastern close${isFri ? "; the next US session is ${dayName(nextUS)}, so set up the SESSIONS AHEAD" : ""}) for ONE investor. Your job: settle what today meant for their money and arm them for the next session.
 
 ${dataBlock}
 
 ${shape}
 lede: the day's story for THIS portfolio in one breath: the DAY P&L number, then a consequence clause ("which leaves...", "which means...") saying what it changes about their position. A move recap with no consequence is a failure. <= 30 words.
 overnight: OPEN WITH THE CONCLUSION in a short clause (what the session did to this book: "A quiet day left the book barely changed" - plain words, never trading-desk slang like "tape"), THEN at least THREE literal numbers copied from MARKET NOW with their EXACT labels, plus the portfolio day P&L. Never open this section with a bare list of levels. <= 55 words.
-positions: the 1-4 holdings that defined the day, ordered by importance to THIS portfolio: any holding above 35% of assets MUST appear, with its day number and weight, before smaller names. The largest holding gets the MOST substantive note; spend both its allowed numbers there. note <= 30 words: what happened AND what it means beyond today, with the day number. AT MOST TWO numbers in the note.${noteSplit} watch <= 10 words naming a concrete ${isFri ? "next-week" : "tonight-or-tomorrow"} catalyst, level, or event (after-hours earnings, data time, KRX open); any date must be a REAL FUTURE date (after ${briefDate}), never past. For crypto assets: a price level, ETF flow print, protocol event, or dated macro print. NEVER verbs like monitor, watch, track.
-desk_view: the setup for ${isFri ? "next week" : "tomorrow"}: the one structural risk or opportunity to sleep on. No single-day numbers. <= 40 words.
+positions: the 1-4 holdings that defined the day, ordered by importance to THIS portfolio: any holding above 35% of assets MUST appear, with its day number and weight, before smaller names. The largest holding gets the MOST substantive note; spend both its allowed numbers there. note <= 30 words: what happened AND what it means beyond today, with the day number. AT MOST TWO numbers in the note.${noteSplit} watch <= 10 words naming a concrete ${isFri ? "next-session" : "tonight-or-tomorrow"} catalyst, level, or event (after-hours earnings, data time, KRX open); any date must be a REAL FUTURE date (after ${briefDate}), never past. For crypto assets: a price level, ETF flow print, protocol event, or dated macro print. NEVER verbs like monitor, watch, track.
+desk_view: the setup for ${isFri ? dayName(nextUS) : "tomorrow"}: the one structural risk or opportunity to sleep on. No single-day numbers. <= 40 words.
 CONTINUITY LAW: a claim already made in the morning brief may only reappear if you ADVANCE it (resolved, worsened, confirmed by the close); restating it in different words is a failure.
-calendar: 0-3 items: tonight's after-hours reports, ${isFri ? "next week's" : "tomorrow's"} data or earnings. <= 10 words each.${krHeld ? `\nTheir Korean holdings trade TONIGHT (KRX opens 9:00 PM Eastern). If a Korean name has a catalyst, put it in positions or calendar.` : ""}
+calendar: 0-3 items: tonight's after-hours reports, ${isFri ? dayName(nextUS) + "'s" : "tomorrow's"} data or earnings. <= 10 words each.${krHeld ? (marketState("KR").nextSessionDate === ymdShift(briefDate, 1) ? `\nTheir Korean holdings trade TONIGHT (KRX opens 9:00 PM Eastern). If a Korean name has a catalyst, put it in positions or calendar.` : `\nTheir Korean holdings next trade on ${dayName(marketState("KR").nextSessionDate)} (KRX is closed before that). If a Korean name has a catalyst, put it in positions or calendar.`) : ""}
 ${STYLE_RULES}\n${READER}`;
         let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly, then write.", writerPrompt, 20000, 60000);
         // Retrying M2.7 after it already timed out just burns the budget again (two aborts = 105s, which used
