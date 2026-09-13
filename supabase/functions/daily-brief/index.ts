@@ -803,6 +803,9 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           weekLines.push(`${nameBy.get(r.symbol)}: week ${pctOver((hist ?? []).map((x) => ({ ts: String(x.ts), price: Number(x.price) })), 7)}, ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets`);
         }
         const newsLines = (newNews ?? []).slice(0, 24).map((n) => `- ${nameBy.get(n.symbol) ?? n.symbol} [${n.source}, ${String(n.published_at).slice(0, 10)}]: ${String(n.title).slice(0, 110)}`).join("\n");
+        // the positions list is decided in code: only companies with something new since the close may appear
+        const newsSyms = [...new Set((newNews ?? []).map((n) => n.symbol))].filter((sy) => nameBy.has(sy));
+        const eligible = newsSyms.length ? newsSyms.map((sy) => nameBy.get(sy)).join(", ") : `${nameBy.get(holdings[0]?.symbol ?? "") ?? "the largest holding"} only (nothing new anywhere)`;
         const statsNoDay = statsLines.replace(/, day [^,]*/g, "");
         const prevCtx = prevWeekend ? `PREVIOUS READ (never repeat a sentence from it; cover only what is NEW since): lede "${(prevWeekend.sections as Sections).lede}" · direction "${(prevWeekend.sections as Sections).desk_view}"`
           : (prev ? `LAST DAILY NOTE (for continuity): lede "${(prev.sections as { lede?: string })?.lede ?? ""}"` : "");
@@ -827,7 +830,7 @@ Return STRICT JSON:
 {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}
 lede: the one thing this ${kind.toLowerCase()} changes or confirms about the book, stated as a consequence for the reader. <= 30 words.
 overnight: THE WEEK THAT WAS: the book's direction over the week and the two or three holdings that drove it, with their WEEK numbers from WEEK MOVES (never a day number). <= 55 words.
-positions: the 1-4 holdings with NEW information since the last close (news, filings, calls), each note <= 32 words that OPENS WITH WHAT IT MEANS for this owner and then gives the fact; watch <= 10 words naming the next concrete event, date or level. A holding with nothing new is NOT listed. If nothing is new anywhere, list the largest holding once with its setup for the next session.
+positions: ONLY from this list, 1-4 of them: ${eligible}. Each note <= 32 words that OPENS WITH WHAT IT MEANS for this owner and then gives the NEW fact from NEWS SINCE THE LAST CLOSE (the story, the filing, the call), never a restated week move; watch <= 10 words naming the next concrete event, date or level. A holding not on the list must not appear.
 desk_view: DIRECTION into the next sessions: the one structural exposure or catalyst that decides the next five trading days for this book. No single-day numbers. <= 40 words.
 calendar: first the next session date for each market they hold (name any market holiday ahead), then up to 2 dated events from NEXT EARNINGS ESTIMATES or dated headlines. <= 10 words each.
 FORBIDDEN WORDS: today, tonight, this morning, overnight, live, and any day move presented as current.
