@@ -117,7 +117,8 @@ const METRICS = () => {
   const vp = document.querySelector('meta[name="viewport"]')?.content ?? ""; if (!/viewport-fit=cover/.test(vp)) meta.push("viewport meta lacks viewport-fit=cover");
   if (!document.querySelector('meta[name="theme-color"]')) meta.push("no theme-color meta");
   const ta = getComputedStyle(document.body).touchAction; if (!/manipulation/.test(ta)) meta.push("touch-action manipulation not set on body");
-  if (window.__cls > 0.1) meta.push(`CLS ${window.__cls.toFixed(3)}`);
+  if (window.__cls > 0.1) meta.push(`CLS ${window.__cls.toFixed(3)} from ${window.__clsSrc.slice(-4).join(" | ")}`);
+  window.__cls = 0; window.__clsSrc = [];   // per screen: the next screen starts from zero
   out.M10_stable_and_meta = { pass: meta.length === 0, detail: meta };
   return out;
 };
@@ -128,7 +129,7 @@ for (const [name, w, h] of DEVICES) {
   if (ONLY && !ONLY.includes(name)) continue;
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: UA, locale: "en-US", colorScheme: process.env.DARK ? "dark" : "light" });
   const page = await ctx.newPage();
-  await page.addInitScript(() => { window.__cls = 0; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: "layout-shift", buffered: true }); } catch {} });
+  await page.addInitScript(() => { window.__cls = 0; window.__clsSrc = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) { window.__cls += e.value; if (e.value > 0.01) window.__clsSrc.push(e.value.toFixed(3) + ":" + (e.sources || []).map((x) => x.node && x.node.nodeType === 1 ? x.node.tagName.toLowerCase() + "." + String(x.node.className).split(" ").slice(0, 2).join(".") : "?").join(",")); } }).observe({ type: "layout-shift", buffered: true }); } catch {} });
   await page.goto(URL_);
   await page.evaluate((s) => localStorage.setItem("sb-hhdpthrfmsdmxdrfckxq-auth-token", JSON.stringify(s)), auth.session);
   await page.goto(URL_);
