@@ -1065,6 +1065,15 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections = scrubDeep(sections) as Sections;
       // The diet runs AFTER the expansion loop that enforces the length floor, so an aggressive trim can
       // starve a brief back below it. Snapshot first and keep the trim only if the brief stays long enough.
+      // A daily edition written on a day the US market did not trade (operator-forced, or a holiday tick): the
+      // day figures are the last session's, and the words that would claim otherwise are fixed in code.
+      if (sections && edition !== "weekend" && edition !== "assessment" && !marketState("US").tradingToday) {
+        const last = weekdayOf(marketState("US").lastSessionDate);
+        const fix = (t: string) => String(t ?? "").replace(/\btoday's\b/gi, `${last}'s`).replace(/\btoday\b/gi, `on ${last}`)
+          .replace(/\b(on the day|this session|the session|today's session)\b/gi, `${last}'s session`).replace(/\btonight\b/gi, "before the next open");
+        sections.lede = fix(sections.lede); sections.overnight = fix(sections.overnight); sections.desk_view = fix(sections.desk_view);
+        sections.positions = sections.positions.map((p) => ({ ...p, note: fix(p.note), watch: fix(p.watch) }));
+      }
       const wcAll = (o: Sections) => [o.lede, o.overnight, o.desk_view, o.horizon ?? "", ...(o.ideas ?? []), ...o.positions.flatMap((q) => [q.name, q.note, q.watch])].join(" ").split(/\s+/).filter(Boolean).length;
       const preDiet = JSON.parse(JSON.stringify(sections)) as Sections;
       // POST-PROCESSING SAFETY NET. Every number-corrupting bug in this pipeline shared one signature: the
