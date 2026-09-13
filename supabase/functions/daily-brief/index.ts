@@ -1130,6 +1130,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
         audio_path: null,   // new text => stale audio; narrate re-runs for this row
+        script: null,       // ...and re-composes the spoken script
       }, { onConflict: "user_id,brief_date,edition" });
       if (upErr) errors.push(uid.slice(0, 8) + ": " + (upErr as { message: string }).message); else wrote++;
       // ---- audio narration: handed to the dedicated `narrate` function (own wall clock, retries, fallback) ----

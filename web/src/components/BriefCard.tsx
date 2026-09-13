@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Api, BriefEdition, DailyBrief } from "../lib/api";
-import { getSnapshot, load as loadTrack, subscribe, toggle as togglePlayer } from "../lib/player";
+import { getSnapshot, load as loadTrack, loadSpeech, subscribe, toggle as togglePlayer } from "../lib/player";
+import { hasDeviceVoice } from "../lib/speech";
 import { Icon } from "./Icon";
 
 // The Daily Brief — three personal research notes a trading day: morning (pre-open),
@@ -46,12 +47,17 @@ export function BriefCard({ api }: { api: Api }) {
   const isThis = player.track?.id === trackId;
   const playing = isThis && player.playing;
 
+  // No MP3 (ElevenLabs quota gone, or the sweep has not reached this row) but a script exists: the device
+  // voice reads it. The button never vanishes on the reader; it just says which voice they get.
+  const voiceOnly = !brief.audio_path && !!brief.script && hasDeviceVoice();
+  const canListen = !!brief.audio_path || voiceOnly;
   const toggleAudio = () => {
-    const path = brief.audio_path;
-    if (!path) return;
     if (isThis) { togglePlayer(); return; }
+    const track = { id: trackId, title: meta.title, subtitle: dateLabel, date: brief.brief_date };
+    const path = brief.audio_path;
     // handed a RESOLVER, not a URL: the signed link expires and the player re-signs it on its own
-    void loadTrack({ id: trackId, title: meta.title, subtitle: dateLabel, date: brief.brief_date }, () => api.getBriefAudioUrl(path));
+    if (path) { void loadTrack(track, () => api.getBriefAudioUrl(path)); return; }
+    if (brief.script) loadSpeech(track, brief.script);
   };
 
   const s = brief.sections;
@@ -60,8 +66,9 @@ export function BriefCard({ api }: { api: Api }) {
       <div className="insights-head">
         <span className="insights-brand">{meta.title} · {dateLabel}</span>
         <span className="insights-actions">
-          {brief.audio_path && (
-            <button className="insights-toggle" onClick={toggleAudio} aria-label={playing ? "Pause narration" : "Listen to your brief"} data-testid="brief-listen">
+          {voiceOnly && <span className="sub" data-testid="brief-voice-label" style={{ fontSize: 10.5, alignSelf: "center" }}>Device voice</span>}
+          {canListen && (
+            <button className="insights-toggle" onClick={toggleAudio} aria-label={playing ? "Pause narration" : voiceOnly ? "Listen to your brief with your device voice" : "Listen to your brief"} data-testid="brief-listen">
               <Icon name={playing ? "pause" : "play"} size={15} />
             </button>
           )}

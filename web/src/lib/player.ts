@@ -10,10 +10,14 @@
 //    no matter which screen is on top (or none, when the app is backgrounded).
 //  - setPositionState keeps the lock-screen scrubber honest, including at non-1x speeds.
 
+import { VoiceEngine } from "./speech";
+
 export type Track = { id: string; title: string; subtitle: string; date?: string };
+export type Source = "audio" | "voice";   // an MP3 from storage, or the device voice reading the script
 
 export type PlayerState = {
   track: Track | null;
+  source: Source;
   playing: boolean;
   loading: boolean;
   position: number;
@@ -33,7 +37,7 @@ const readRate = (): number => {
   } catch { return 1; }                                 // private mode, or storage blocked entirely
 };
 
-let state: PlayerState = { track: null, playing: false, loading: false, position: 0, duration: 0, rate: readRate(), error: null };
+let state: PlayerState = { track: null, source: "audio", playing: false, loading: false, position: 0, duration: 0, rate: readRate(), error: null };
 const listeners = new Set<() => void>();
 const emit = () => { for (const l of listeners) l(); };
 const set = (patch: Partial<PlayerState>) => {
@@ -48,6 +52,7 @@ export const subscribe = (l: () => void) => { listeners.add(l); return () => { l
 export const getSnapshot = () => state;
 
 let el: HTMLAudioElement | null = null;
+let engine: VoiceEngine | null = null;               // the device voice, created on first use
 let resolveUrl: (() => Promise<string | null>) | null = null;   // re-signable: storage URLs expire
 let retried = false;
 
@@ -111,7 +116,9 @@ const recover = async () => {
  */
 export const load = async (track: Track, resolver: () => Promise<string | null>) => {
   const a = ensureElement();
-  if (state.track?.id === track.id && a.src) { await play(); return; }   // same brief: resume, never restart
+  if (state.source === "audio" && state.track?.id === track.id && a.src) { await play(); return; }   // same brief: resume, never restart
+  engine?.stop();
+  set({ source: "audio" });
   // synchronous unlock inside the gesture; it rejects with no src and that is fine, the element is now blessed
   try { void a.play().catch(() => {}); a.pause(); } catch { /* not unlockable here */ }
   retried = false;
@@ -127,17 +134,41 @@ export const load = async (track: Track, resolver: () => Promise<string | null>)
   await play();
 };
 
+/**
+ * Start the device voice on a brief's script (no MP3 available). Synchronous end to end, so it stays
+ * inside the user gesture that Safari and Chrome require for the first speak() of a session.
+ */
+export const loadSpeech = (track: Track, script: string) => {
+  if (state.source === "voice" && state.track?.id === track.id && engine && engine.chunkCount) { void play(); return; }
+  if (el) { el.pause(); el.removeAttribute("src"); el.load(); }
+  resolveUrl = null; retried = false;
+  engine ??= new VoiceEngine({
+    onStart: () => set({ playing: true, loading: false, error: null }),
+    onProgress: (p) => set({ position: p }),
+    onEnd: () => set({ playing: false, position: 0 }),
+    onError: (m) => set({ playing: false, loading: false, error: m }),
+  });
+  engine.stop();
+  engine.rate = state.rate;
+  engine.load(script);
+  set({ source: "voice", track, loading: false, error: null, position: 0, duration: engine.duration, playing: false });
+  wireMediaSession(track);
+  engine.play(0);
+};
+
 export const play = async () => {
+  if (state.source === "voice") { if (engine) { engine.resume(); set({ playing: true, error: null }); } return; }
   const a = el;
   if (!a || !a.src) return;
   try { await a.play(); set({ playing: true, loading: false, error: null }); }
   catch { set({ playing: false, loading: false, error: "Tap play to start the audio." }); }
 };
 
-export const pause = () => { el?.pause(); set({ playing: false }); };
+export const pause = () => { if (state.source === "voice") { engine?.pause(); set({ playing: false }); return; } el?.pause(); set({ playing: false }); };
 export const toggle = () => { if (state.playing) pause(); else void play(); };
 
 export const seek = (t: number) => {
+  if (state.source === "voice") { if (!engine) return; const c = Math.max(0, Math.min(t, state.duration || 0)); engine.seekTo(c); set({ position: engine.position() }); return; }
   if (!el) return;
   const d = Number.isFinite(el.duration) ? el.duration : state.duration;
   const clamped = Math.max(0, Math.min(t, d || 0));
@@ -150,6 +181,7 @@ export const skip = (delta: number) => seek((el?.currentTime ?? state.position) 
 
 export const setRate = (r: number) => {
   if (el) el.playbackRate = r;
+  if (engine) { engine.setRate(r); if (state.source === "voice") set({ duration: engine.duration }); }
   set({ rate: r });
   try { localStorage.setItem(RATE_KEY, String(r)); } catch { /* storage blocked: this session only */ }
   positionState();
@@ -158,12 +190,13 @@ export const setRate = (r: number) => {
 export const cycleRate = () => setRate(RATES[(RATES.indexOf(state.rate as typeof RATES[number]) + 1) % RATES.length]);
 
 export const stop = () => {
+  engine?.stop();
   el?.pause();
   if (el) { el.removeAttribute("src"); el.load(); }
   resolveUrl = null;
   retried = false;
   if ("mediaSession" in navigator) { try { navigator.mediaSession.metadata = null; } catch { /* ignore */ } }
-  set({ track: null, playing: false, loading: false, position: 0, duration: 0, error: null });
+  set({ track: null, source: "audio", playing: false, loading: false, position: 0, duration: 0, error: null });
 };
 
 /** mm:ss for the ear-time readouts; a brief is always under an hour. */
@@ -175,7 +208,8 @@ export const clock = (s: number) => {
 /** Test seam: drop the singleton so each test starts from silence. */
 export const __resetPlayer = () => {
   try { el?.pause(); } catch { /* jsdom */ }
-  el = null; resolveUrl = null; retried = false;
-  state = { track: null, playing: false, loading: false, position: 0, duration: 0, rate: 1, error: null };
+  try { engine?.stop(); } catch { /* jsdom */ }
+  el = null; engine = null; resolveUrl = null; retried = false;
+  state = { track: null, source: "audio", playing: false, loading: false, position: 0, duration: 0, rate: 1, error: null };
   emit();
 };

@@ -1,8 +1,9 @@
 // UI flow battery — jsdom + Testing Library with a stubbed data layer and mocked auth.
 // Covers the end-to-end user experience surface: auth, onboarding, add/edit/remove,
 // prices, news filter, errors, empty states, settings.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, screen, within, waitFor } from "@testing-library/react";
+import { __resetPlayer } from "../lib/player";
 import userEvent from "@testing-library/user-event";
 
 const oauthSpy = vi.fn().mockResolvedValue({ data: {}, error: null });
@@ -1522,5 +1523,52 @@ describe("U52 appearance", () => {
     const row2 = await openSettings(stubApi());
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(within(row2).getByRole("button", { name: "Dark" }).getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("U47 device voice when there is no MP3", () => {
+  const sec = { lede: "Cash drags the book while QQQM carries the day.", overnight: "S&P500 index 6,470 (+0.4%), VIX 14.1.",
+    positions: [{ name: "QQQM", note: "Up 0.9%, the steady core.", watch: "Fed decision Wednesday" }], desk_view: "Concentration unchanged.", calendar: [] };
+  const SCRIPT = `Good evening. Here's your closing note. <break time="0.7s" /> Cash drags the book while Invesco Nasdaq 100 carries the day. <break time="0.6s" /> That's your brief. Talk soon.`;
+  class FakeUtterance { text: string; voice: unknown = null; lang = ""; rate = 1; onend: unknown = null; onerror: unknown = null; constructor(t: string) { this.text = t; } }
+  let spoken: { text: string }[];
+  beforeEach(() => {
+    spoken = [];
+    __resetPlayer();   // the player is a module singleton: a brief left "playing" by one test relabels the button in the next
+    vi.stubGlobal("speechSynthesis", { speak: vi.fn((u: { text: string }) => { spoken.push(u); }), cancel: vi.fn(), getVoices: () => [], addEventListener: vi.fn() });
+    vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
+  });
+  afterEach(() => { __resetPlayer(); vi.unstubAllGlobals(); });
+  it("shows Listen with a 'Device voice' label and speaks the script on tap", async () => {
+    const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([{ brief_date: "2026-09-13", edition: "close", generated_at: new Date().toISOString(), sections: sec, audio_path: null, script: SCRIPT }]) });
+    render(<App api={api} />);
+    const card = await screen.findByTestId("brief-card");
+    expect(within(card).getByTestId("brief-voice-label").textContent).toBe("Device voice");
+    await userEvent.click(within(card).getByRole("button", { name: /listen to your brief with your device voice/i }));
+    expect(spoken.map((u) => u.text)[0]).toBe("Good evening. Here's your closing note.");
+    expect(api.getBriefAudioUrl).not.toHaveBeenCalled();
+    const mp = await screen.findByTestId("mini-player");
+    expect(mp.textContent).toContain("Device voice");
+    expect(within(card).getByRole("button", { name: /pause narration/i })).toBeTruthy();
+  });
+  it("an MP3 still wins over the device voice, and no script means no button", async () => {
+    const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([
+      { brief_date: "2026-09-13", edition: "morning", generated_at: "2026-09-13T12:00:00Z", sections: sec, audio_path: null, script: null },
+      { brief_date: "2026-09-13", edition: "close", generated_at: "2026-09-13T20:00:00Z", sections: sec, audio_path: "u-test/2026-09-13-close.mp3", script: SCRIPT },
+    ]) });
+    render(<App api={api} />);
+    const card = await screen.findByTestId("brief-card");
+    expect(within(card).queryByTestId("brief-voice-label")).toBeNull();
+    expect(within(card).getByRole("button", { name: "Listen to your brief" })).toBeTruthy();
+    await userEvent.click(within(card).getByRole("button", { name: "Morning" }));
+    const card2 = await screen.findByTestId("brief-card");
+    expect(within(card2).queryByTestId("brief-listen")).toBeNull();
+  });
+  it("without a speech engine the card falls back to read-only", async () => {
+    vi.stubGlobal("speechSynthesis", undefined);
+    const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([{ brief_date: "2026-09-13", edition: "close", generated_at: new Date().toISOString(), sections: sec, audio_path: null, script: SCRIPT }]) });
+    render(<App api={api} />);
+    const card = await screen.findByTestId("brief-card");
+    expect(within(card).queryByTestId("brief-listen")).toBeNull();
   });
 });

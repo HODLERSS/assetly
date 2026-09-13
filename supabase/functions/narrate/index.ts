@@ -1,7 +1,8 @@
 // Narrate: turn a stored brief into audio. One job, its own 150s wall clock, idempotent, resilient.
 //   - script: M2.7 with a TIGHT budget (35s, one retry), else a deterministic script assembled from the
 //     sections — TTS always has input, the text API's slow waves can't starve narration.
-//   - TTS: ElevenLabs with 3 attempts (backoff), then upload + audio_path.
+//   - TTS: ElevenLabs with 3 attempts (backoff), then upload + audio_path. The script itself is saved on the row
+//     first, so the app's device voice can read it when the ElevenLabs quota is gone (checked once per run).
 //   - callers: daily-brief (fire-and-forget after every write), the backfill sweep (rows missing audio),
 //     and the orchestrator. Auth: internal token, service role, or the owning user.
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -269,7 +270,7 @@ Deno.serve(async (req) => {
   const edition = typeof body.edition === "string" ? body.edition : null;
 
   // target rows: a specific brief, or (sweep mode) every real-user brief from the last 2 days missing audio
-  let q = admin.from("daily_briefs").select("id, user_id, brief_date, edition, sections, audio_path").is("audio_path", null)
+  let q = admin.from("daily_briefs").select("id, user_id, brief_date, edition, sections, audio_path, script").is("audio_path", null)
     .gte("brief_date", new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10));
   if (uid) q = q.eq("user_id", uid);
   if (briefDate) q = q.eq("brief_date", briefDate);
@@ -287,6 +288,15 @@ Deno.serve(async (req) => {
   const voice = Deno.env.get("ELEVEN_VOICE_ID") ?? "JBFqnCBsd6RMkjVDRZzb";
 
   const scriptOnly = body.script_only === true;
+  // ElevenLabs quota, checked ONCE per run: below the margin the script is still composed and saved (the app
+  // reads it with the device voice) and no TTS call is made, so an exhausted plan degrades on purpose, not on a 402.
+  let ttsLeft: number | null = null;   // characters left; null = unknown, let the call decide
+  if (!scriptOnly) {
+    try {
+      const sr = await fetch("https://api.elevenlabs.io/v1/user/subscription", { headers: { "xi-api-key": ek } });
+      if (sr.ok) { const sj = await sr.json(); const lim = Number(sj?.character_limit ?? 0), used = Number(sj?.character_count ?? 0); if (lim > 0) ttsLeft = lim - used; }
+    } catch { /* unknown: the TTS call reports 402 on its own */ }
+  }
   let narrated = 0; const errors: string[] = []; const scripts: Record<string, string> = {};
   for (const row of rows) {
     // Test accounts never spend TTS credits by default. An OPERATOR holding the internal token can opt a
@@ -317,7 +327,11 @@ Deno.serve(async (req) => {
       const nameLine = names.length ? `\nSPEECH NAMES (say these, never spell a ticker letter by letter): ${names.map(([k, v]) => `${k} = ${v}`).join("; ")}` : "";
       // ---- script: tight-budget model call, else deterministic fallback ----
       let spoken: string | null = null;
-      if (key) {
+      // A saved script (this row already ran once, TTS was the part that failed) is reused as-is: it was
+      // normalized when it was written, and re-composing it every 10-minute sweep would spend a model call.
+      const savedScript = typeof row.script === "string" && row.script.length > 80 ? row.script : null;
+      if (savedScript) spoken = savedScript;
+      else if (key) {
         // ---- SLOT COMPOSITION (preferred) ----------------------------------------------------
         // Free composition scored after the fact plateaus: the model buries the verdict and pads,
         // so BLUF and understandability sat at 92 no matter how the prompt was worded. Here the MODEL
@@ -455,10 +469,14 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
       if (!spoken) { spoken = fallbackScript(s, dayLine, ed); usedFallback = true; }
       // normalize, round, name the companies, then guarantee the sign-off BEFORE the script_only return,
       // so the script an operator inspects is exactly the one a listener hears
-      spoken = roundEar(spoken);
-      spoken = sayNames(earNumbers(spoken.replace(/(\d+(?:\.\d+)?)\s?percent/gi, "$1%").replace(/(\d[\d,]*(?:\.\d+)?)\s?dollars/gi, "$$$1")), names);   // normalize then round: every spoken number comes out rounded, tickers come out as company names
-      if (!/(talk soon|see you|that's your|that’s your)/i.test(spoken.slice(-120))) spoken += ` <break time="0.6s" /> ${isAssess ? "That's your assessment." : "That's your brief."} Talk soon.`;
+      if (!savedScript) {
+        spoken = roundEar(spoken);
+        spoken = sayNames(earNumbers(spoken.replace(/(\d+(?:\.\d+)?)\s?percent/gi, "$1%").replace(/(\d[\d,]*(?:\.\d+)?)\s?dollars/gi, "$$$1")), names);   // normalize then round: every spoken number comes out rounded, tickers come out as company names
+        if (!/(talk soon|see you|that's your|that’s your)/i.test(spoken.slice(-120))) spoken += ` <break time="0.6s" /> ${isAssess ? "That's your assessment." : "That's your brief."} Talk soon.`;
+        await admin.from("daily_briefs").update({ script: spoken }).eq("id", row.id);
+      }
       if (scriptOnly) { scripts[`${row.brief_date}-${ed}`] = spoken; narrated++; continue; }
+      if (ttsLeft !== null && ttsLeft < spoken.length + 100) { errors.push(`${String(row.user_id).slice(0, 8)}: tts quota (${ttsLeft} chars left); script saved for the device voice`); continue; }
       // ---- TTS: 3 attempts with backoff ----
       let audio: Uint8Array | null = null;
       for (let a = 0; a < 3 && !audio; a++) {
@@ -477,6 +495,7 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
       const { error: upE } = await admin.storage.from("briefs-audio").upload(path, audio, { contentType: "audio/mpeg", upsert: true });
       if (upE) { errors.push(`${String(row.user_id).slice(0, 8)}: upload ${upE.message}`); continue; }
       await admin.from("daily_briefs").update({ audio_path: path }).eq("id", row.id);
+      if (ttsLeft !== null) ttsLeft -= spoken.length;
       narrated++;
       if (usedFallback) errors.push(`${String(row.user_id).slice(0, 8)}: fallback script`);   // informational
     } catch (e) { errors.push(String(row.user_id).slice(0, 8) + ": " + (e instanceof Error ? e.message : String(e))); }

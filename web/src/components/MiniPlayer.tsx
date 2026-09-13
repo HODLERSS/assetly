@@ -29,7 +29,7 @@ export function MiniPlayer() {
         <div className="mp-what">
           <span className="mp-title">{s.track.title}</span>
           <span className="mp-sub">
-            {s.error ? s.error : s.loading ? "Loading audio" : s.track.subtitle}
+            {s.error ? s.error : s.loading ? "Loading audio" : s.source === "voice" ? `${s.track.subtitle} · Device voice` : s.track.subtitle}
           </span>
         </div>
         <div className="mp-controls">
