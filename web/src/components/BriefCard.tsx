@@ -36,7 +36,15 @@ export function BriefCard({ api }: { api: Api }) {
     return () => { live = false; };
   }, [api]);
 
-  if (!briefs?.length) return null;
+  // Reserve the card's footprint while the first fetch is in flight: a card that pops in above "Movers"
+  // after paint shoves the whole screen down (measured 0.18 CLS on an iPhone SE).
+  if (briefs === undefined) return (
+    <section className="card insights" data-testid="brief-card-pending" aria-busy="true" aria-label="Loading your brief" style={{ minHeight: 132 }}>
+      <div className="insights-head"><span className="insights-brand">Your brief</span></div>
+      <div className="skel-line" style={{ width: "92%" }} /><div className="skel-line" style={{ width: "78%" }} /><div className="skel-line" style={{ width: "60%" }} />
+    </section>
+  );
+  if (!briefs.length) return null;
   const brief = (picked && briefs.find((b) => b.edition === picked)) ?? briefs[briefs.length - 1];
   const meta = ED_META[brief.edition] ?? ED_META.morning;
   const dow = new Date(brief.brief_date + "T12:00:00Z").getUTCDay();
@@ -52,7 +60,7 @@ export function BriefCard({ api }: { api: Api }) {
   const playing = isThis && player.playing;
 
   // No MP3 (ElevenLabs quota gone, or the sweep has not reached this row) but a script exists: the device
-  // voice reads it. The button never vanishes on the reader; it just says which voice they get.
+  // voice reads it. The button never vanishes on the reader; only the accessible name says which voice they get.
   const voiceOnly = !brief.audio_path && !!brief.script && hasDeviceVoice();
   const canListen = !!brief.audio_path || voiceOnly;
   const toggleAudio = () => {
@@ -70,7 +78,6 @@ export function BriefCard({ api }: { api: Api }) {
       <div className="insights-head">
         <span className="insights-brand">{title} · {dateLabel}</span>
         <span className="insights-actions">
-          {voiceOnly && <span className="sub" data-testid="brief-voice-label" style={{ fontSize: 10.5, alignSelf: "center" }}>Device voice</span>}
           {canListen && (
             <button className="insights-toggle" onClick={toggleAudio} aria-label={playing ? "Pause narration" : voiceOnly ? "Listen to your brief with your device voice" : "Listen to your brief"} data-testid="brief-listen">
               <Icon name={playing ? "pause" : "play"} size={15} />
@@ -93,27 +100,27 @@ export function BriefCard({ api }: { api: Api }) {
       <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, fontWeight: open ? 400 : 500 }}>{s.lede}</p>
       {open && (
         <div data-testid="brief-body">
-          <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 10.5 }}>{meta.tape}</p>
+          <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>{meta.tape}</p>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>{s.overnight}</p>
-          <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 10.5 }}>{meta.positions}</p>
+          <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>{meta.positions}</p>
           {s.positions.map((p, i) => (
             <p key={i} style={{ margin: "0 0 7px", fontSize: 13, lineHeight: 1.5 }}>
               <strong>{p.name}</strong> — {p.note}{" "}
               <span className="sub">{meta.watch}: {p.watch}</span>
             </p>
           ))}
-          <p className="sub" style={{ margin: "6px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 10.5 }}>{meta.desk}</p>
+          <p className="sub" style={{ margin: "6px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>{meta.desk}</p>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>{s.desk_view}</p>
           {brief.edition === "assessment" && s.horizon && (<>
-            <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 10.5 }}>Horizons</p>
+            <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>Horizons</p>
             <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }} data-testid="brief-horizon">{s.horizon}</p>
           </>)}
           {brief.edition === "assessment" && (s.ideas?.length ?? 0) > 0 && (<>
-            <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 10.5 }}>Gaps & ideas</p>
+            <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>Gaps & ideas</p>
             {s.ideas!.map((c, i) => <p key={i} style={{ margin: "0 0 3px", fontSize: 13, lineHeight: 1.5 }} data-testid="brief-idea">· {c}</p>)}
           </>)}
           {(s.calendar?.length ?? 0) > 0 && (<>
-            <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 10.5 }}>Calendar</p>
+            <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>Calendar</p>
             {s.calendar.map((c, i) => <p key={i} className="sub" style={{ margin: "0 0 2px", fontSize: 12.5 }}>{c}</p>)}
           </>)}
           <p className="insights-foot">Not financial advice</p>

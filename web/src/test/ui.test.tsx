@@ -990,7 +990,7 @@ describe("U14 accounts + cash", () => {
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await within(await screen.findByTestId("positions-card")).findByText(/Invesco Nasdaq 100/);
     const subs = Array.from(document.querySelectorAll("span.sub")).map((e) => (e.textContent ?? "").trim());
-    expect(subs.some((t) => t.startsWith("24 sh · avg"))).toBe(true);     // brokerage row untagged
+    expect(subs.some((t) => /^24 sh · (\$|₩|avg)/.test(t))).toBe(true);     // brokerage row untagged; the figure is the live price, or avg cost when no quote
     expect(subs.some((t) => /24 sh · (401k|IRA)/.test(t))).toBe(false);
     expect(subs.some((t) => /40 sh · 401k/.test(t))).toBe(true);          // 401k row tagged
     expect(subs).toContain("cash balance");                               // no noisy avg on cash
@@ -1543,12 +1543,13 @@ describe("U47 device voice when there is no MP3", () => {
     const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([{ brief_date: "2026-09-13", edition: "close", generated_at: new Date().toISOString(), sections: sec, audio_path: null, script: SCRIPT }]) });
     render(<App api={api} />);
     const card = await screen.findByTestId("brief-card");
-    expect(within(card).getByTestId("brief-voice-label").textContent).toBe("Device voice");
+    expect(within(card).queryByTestId("brief-voice-label")).toBeNull();   // no visible badge: the button itself is the affordance
     await userEvent.click(within(card).getByRole("button", { name: /listen to your brief with your device voice/i }));
     expect(spoken.map((u) => u.text)[0]).toBe("Good evening. Here's your closing note.");
     expect(api.getBriefAudioUrl).not.toHaveBeenCalled();
     const mp = await screen.findByTestId("mini-player");
-    expect(mp.textContent).toContain("Device voice");
+    expect(mp.textContent).toContain("Closing Note");
+    expect(mp.textContent).not.toContain("Device voice");
     expect(within(card).getByRole("button", { name: /pause narration/i })).toBeTruthy();
   });
   it("an MP3 still wins over the device voice, and no script means no button", async () => {
@@ -1558,7 +1559,6 @@ describe("U47 device voice when there is no MP3", () => {
     ]) });
     render(<App api={api} />);
     const card = await screen.findByTestId("brief-card");
-    expect(within(card).queryByTestId("brief-voice-label")).toBeNull();
     expect(within(card).getByRole("button", { name: "Listen to your brief" })).toBeTruthy();
     await userEvent.click(within(card).getByRole("button", { name: "Morning" }));
     const card2 = await screen.findByTestId("brief-card");

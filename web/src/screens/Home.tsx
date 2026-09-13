@@ -202,7 +202,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
             <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
               <span>
                 <span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span><br />
-                <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{ACCT[r.account] ? ` · ${ACCT[r.account]}` : ""}{r.source === "snaptrade" ? <> · <Icon name="bolt" size={10} /></> : ""}{r.kind === "cash" || r.kind === "debt" ? "" : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
+                <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${r.qty ?? 0} ${r.kind === "crypto" ? r.symbol : "sh"}`}{ACCT[r.account] ? ` · ${ACCT[r.account]}` : ""}{r.source === "snaptrade" ? <> · <Icon name="bolt" size={10} /></> : ""}{r.kind === "cash" || r.kind === "debt" ? "" : r.price !== null ? ` · ${moneyExact(r.price, r.currency)}` : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
               </span>
               <span className="right">
                 <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span><br />

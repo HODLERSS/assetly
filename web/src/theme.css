@@ -72,7 +72,7 @@ input, select { font: inherit; }
 .tabbar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--as-surface);
   border-top: 1px solid var(--as-rule); padding-bottom: var(--as-tabbar-pad); max-width: 480px; margin: 0 auto; z-index: 20; }
 .tabbar button { flex: 1; background: none; border: 0; padding: 8px 0 6px; color: var(--as-muted);
-  font-size: 10.5px; line-height: 1.35; font-weight: 600; display: flex; flex-direction: column; gap: 3px; align-items: center; min-height: 56px; }
+  font-size: 11px; line-height: 1.35; font-weight: 600; display: flex; flex-direction: column; gap: 3px; align-items: center; min-height: 56px; }
 .tabbar button[aria-current="page"] { color: var(--as-primary); }
 .tabbar button svg { display: block; opacity: .9; }
 .tabbar button[aria-current="page"] svg { opacity: 1; }
@@ -89,6 +89,10 @@ input, select { font: inherit; }
   background: none; border-left: 0; border-right: 0; border-top: 0; text-align: left; color: inherit; }
 .row:last-child { border-bottom: 0; }
 .row:active { background: var(--as-hover); }
+/* Two lines a side, never three: the name line truncates with an ellipsis instead of wrapping under the
+   value column (the iPhone SE showed "Invesco Nasdaq 100" spilling onto a third line). */
+.row > span:first-child:has(> .sym) { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .right { flex: none; white-space: nowrap; }
 .row .sym { font-weight: 600; }
 .row .sub { font-size: 12px; color: var(--as-muted); }
 .row .right { text-align: right; }
@@ -106,10 +110,19 @@ input, select { font: inherit; }
   background: var(--as-surface); min-height: 44px; }
 .field input.num { text-align: right; }
 
-.chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 10px; }
-.chip { border: 1px solid var(--as-rule); background: var(--as-surface); border-radius: 999px;
-  padding: 8px 14px; font-size: 13px; font-weight: 600; white-space: nowrap; min-height: 36px; }
-.chip[aria-pressed="true"] { background: var(--as-primary); color: var(--as-on-primary); border-color: var(--as-primary); }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 6px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+/* A chip is a 36px pill inside a 44px tap target (Apple HIG minimum): the button is the hit area, the
+   pseudo-element paints the pill, so rows of chips stay light while every one of them is easy to hit. */
+.chip { position: relative; isolation: isolate; border: 0; background: none; border-radius: 999px; color: var(--as-ink);
+  padding: 0 14px; font-size: 13px; font-weight: 600; white-space: nowrap; min-height: 44px; min-width: 44px;
+  display: inline-flex; align-items: center; justify-content: center; }
+.chip::before { content: ""; position: absolute; left: 0; right: 0; top: 4px; bottom: 4px; z-index: -1; border-radius: 999px;
+  border: 1px solid var(--as-rule); background: var(--as-surface); }
+.chip[aria-pressed="true"] { color: var(--as-on-primary); }
+.chip[aria-pressed="true"]::before { background: var(--as-primary); border-color: var(--as-primary); }
+.chip:active::before { background: var(--as-hover); }
+.chip[aria-pressed="true"]:active::before { background: var(--as-primary); opacity: .85; }
 
 .sheet-back { position: fixed; inset: 0; background: rgba(22,24,29,.4); display: flex; align-items: flex-end; z-index: 30; }
 .sheet { background: var(--as-surface); border-radius: 14px 14px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
@@ -137,7 +150,7 @@ input, select { font: inherit; }
    progress meter measuring nothing — two colours, no meaning. A single line is the honest version. */
 .nw-rule { height: 2px; background: var(--as-primary); border-radius: 1px; margin-top: 12px; }
 /* the disclosure for the assets/debt and per-market lines: small, quiet, and out of the way */
-.nw-more { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 6px 0; min-height: 36px;
+.nw-more { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 6px 0; min-height: 44px;
   background: none; border: 0; cursor: pointer; font: 11.5px/1 var(--as-font-num); color: var(--as-muted); }
 .nw-more:hover { color: var(--as-primary); }
 .nw-more svg { transition: transform 160ms ease; }
@@ -153,22 +166,23 @@ input, select { font: inherit; }
 
 /* Assetly Intelligence — distinct from news rows */
 .card.insights { border-left: 3px solid var(--as-primary); padding: 12px 14px; margin: 12px 0; }
-.insights-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.insights-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; min-height: 24px; }
+.insights-head .insights-brand { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .insights-brand { font: 700 12px/1 var(--as-font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--as-primary); }
 .insights-list { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 .insights-list li { font-size: 13.5px; line-height: 1.45; }
-.insights-toggle { background: none; border: 0; color: var(--as-primary); font: 600 12px/1 var(--as-font-ui); padding: 0; min-height: 32px;
+.insights-toggle { background: none; border: 0; color: var(--as-primary); font: 600 12px/1 var(--as-font-ui); padding: 0 2px; min-height: 44px;
   display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .insights-toggle .ico { font-size: 14px; line-height: 1; }
 /* Listen / Read are icon-only: keep a real 44px tap target and no text gap */
-.insights-actions .insights-toggle { min-width: 34px; min-height: 34px; display: inline-flex;
+.insights-actions .insights-toggle { min-width: 44px; min-height: 44px; display: inline-flex;
   align-items: center; justify-content: center; gap: 0; }
-.insights-actions { display: inline-flex; align-items: center; gap: 14px; }
+.insights-actions { display: inline-flex; align-items: center; gap: 4px; margin: -10px -10px -10px 0; }
 .insights-horizons { margin: 4px 0 0; display: grid; gap: 3px; }
 .insights-horizons div { display: flex; gap: 10px; font-size: 12.5px; }
 .insights-horizons dt { color: var(--as-muted); min-width: 30px; font-weight: 600; }
 .insights-horizons dd { margin: 0; }
-.insights-foot { margin: 8px 0 0; font-size: 10.5px; color: var(--as-muted); }
+.insights-foot { margin: 8px 0 0; font-size: 11px; color: var(--as-muted); }
 
 /* ASK chat */
 .chat { display: grid; gap: 10px; margin-bottom: calc(var(--as-composer-h) + 8px); }
@@ -190,13 +204,13 @@ body.has-miniplayer .ask-composer { bottom: calc(var(--as-tabbar-h) + var(--as-t
 /* Suggestion and follow-up pills. `.chips` alone keeps every pill on one nowrap line and scrolls
    sideways, which silently cuts a long question in half at the screen edge. These wrap instead. */
 .chips.wrap { flex-wrap: wrap; overflow-x: visible; }
-.chips.wrap .chip { white-space: normal; max-width: 100%; text-align: left; line-height: 1.35; padding: 9px 14px; }
+.chips.wrap .chip { white-space: normal; max-width: 100%; text-align: left; line-height: 1.35; padding: 4px 14px; }
 .bubble { max-width: 88%; padding: 10px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
 .bubble.user { justify-self: end; background: var(--as-primary); color: var(--as-on-primary); border-bottom-right-radius: 5px; }
 .bubble.ai { justify-self: start; background: var(--as-surface); border: 1px solid var(--as-rule); border-bottom-left-radius: 5px; }
 .bubble .md-li { position: relative; padding-left: 14px; }
 .bubble .md-li::before { content: "\2022"; position: absolute; left: 2px; color: var(--as-primary); }
-.bubble-foot { margin: 6px 0 0; font-size: 10px; color: var(--as-muted); }
+.bubble-foot { margin: 6px 0 0; font-size: 11px; color: var(--as-muted); }
 .bubble.typing { display: inline-flex; gap: 5px; align-items: center; min-height: 40px; }
 .bubble.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--as-muted); animation: tblink 1.2s infinite; }
 .bubble.typing i:nth-child(2) { animation-delay: .2s; } .bubble.typing i:nth-child(3) { animation-delay: .4s; }
@@ -276,7 +290,7 @@ svg.icon { display: inline-block; vertical-align: -0.15em; flex: none; }
 .mp-close { color: var(--as-muted); min-width: 38px; }
 
 .mp-seek { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
-.mp-time { font: 500 10.5px var(--as-font-num); font-feature-settings: "tnum"; color: var(--as-muted);
+.mp-time { font: 500 11px var(--as-font-num); font-feature-settings: "tnum"; color: var(--as-muted);
   min-width: 34px; text-align: center; flex-shrink: 0; }
 .mp-track { flex: 1; display: block; }
 /* the filled portion is painted with a gradient stop at --mp-pct so the bar reads at a glance */
@@ -302,3 +316,11 @@ svg.icon { display: inline-block; vertical-align: -0.15em; flex: none; }
 
 /* keep the last row of content clear of the bar */
 body.has-miniplayer .screen { padding-bottom: calc(88px + var(--as-miniplayer-h) + var(--as-tabbar-pad)); }
+
+/* ---------- mobile hygiene (applied last: the `font` shorthands above reset font-feature-settings) ----------
+   Every figure that lines up with another is tabular; every control answers a tap without the 300ms
+   double-tap-zoom wait; the tap highlight is the brand hover tint, not WebKit's grey. */
+.num, .net, .day, .row .right, .mp-time, .mp-sub, .mp-rate, .status-line, .nw-more, .nw-detail { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
+button, a, input, select, [role="button"] { touch-action: manipulation; }
+.row:active, .chip:active, .insights-toggle:active, .nw-more:active, .mp-btn:active { -webkit-tap-highlight-color: transparent; }
