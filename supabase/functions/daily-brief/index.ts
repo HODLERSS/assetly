@@ -59,7 +59,7 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
     signal: ac.signal,
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: model ?? Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7",
+      model: model ?? Deno.env.get("MARA_MODEL") ?? "MiniMax-M3",
       messages: [
         { role: "system", content: system + " Respond with the JSON object ONLY, first character '{'. Never write prose outside the JSON." },
         { role: "user", content: prompt },
@@ -331,7 +331,7 @@ Deno.serve(async (req) => {
     if (!key) { const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" }); key = data ?? ""; }
     if (!key) return json({ ok: false, error: "not configured" }, 500);
   }
-  const model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7";
+  const model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3";
 
   // Brief date = US Eastern trading day.
   const etParts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());

@@ -1,4 +1,4 @@
-// Assetly insights-sync — hourly, per held symbol: MARA Cloud (MiniMax M2.7) turns the
+// Assetly insights-sync — hourly, per held symbol: MARA Cloud (MiniMax M3) turns the
 // last 7 days of headlines, the latest earnings-call transcript, and multi-horizon price
 // action into 3-5 opinionated bullets plus one-line takes for 7D/30D/60D/1Y/2Y.
 // Stored in public.insights; rendered clearly separated from raw news. Fixture mode for tests.
@@ -44,7 +44,7 @@ async function askMara(key: string, model: string, prompt: string, maxTokens = 1
   return c;
 }
 
-// MiniMax-M2.7 + json_object can exhaust its token budget on the longest prompt shapes and return
+// MiniMax-M2.7 (the model before M3, 2026-09-13) + json_object could exhaust its token budget on the longest prompt shapes and return
 // HTTP 400 "Model did not output valid JSON. The output was truncated" - which used to kill the whole
 // insight for that user. gpt-oss-120b writes the same shape validly, so every call falls back to it.
 const FAST_MODEL = "gpt-oss-120b";
@@ -233,7 +233,7 @@ Deno.serve(async (req) => {
     const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" });
     key = data ?? "";
   }
-  const model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7";
+  const model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3";
   if (!key && !fixture) return json({ ok: false, error: "mara_api_key not configured" }, 500);
 
   const { data: heldRows, error: hErr } = await admin.from("holdings").select("symbol");

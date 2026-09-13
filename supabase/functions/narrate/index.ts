@@ -26,7 +26,7 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
   const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), timeoutMs);
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
     signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: model ?? Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7", temperature: 0.25, max_tokens: maxTokens, response_format: { type: "json_object" },
+    body: JSON.stringify({ model: model ?? Deno.env.get("MARA_MODEL") ?? "MiniMax-M3", temperature: 0.25, max_tokens: maxTokens, response_format: { type: "json_object" },
       messages: [{ role: "system", content: system + " Respond with the JSON object ONLY, first character '{'." }, { role: "user", content: prompt }] }),
   }).catch(() => null);
   clearTimeout(timer);

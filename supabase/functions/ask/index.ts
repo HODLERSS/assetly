@@ -1,6 +1,6 @@
 // Assetly ASK — direct, analytical answers about YOUR portfolio, grounded in the DB.
 // Deterministic stats are computed server-side and handed to the model, so numbers
-// are never hallucinated. MARA Cloud MiniMax M2.7.
+// are never hallucinated. MARA Cloud MiniMax M3.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const CORS = {
@@ -266,7 +266,7 @@ Answer as THEIR analyst (see the reader profile): direct, specific, tight. Groun
     signal: ac.signal,
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7",
+      model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M3",
       messages: [
         { role: "system", content: 'You are a direct, analytical portfolio assistant. Respond ONLY with strict JSON: {"answer": "...", "followups": ["...", "..."]}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, 80 words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no disclaimers. Refer to Korean companies by name, never numeric KRX codes; write won amounts with the \u20a9 sign. The followups value: AFTER writing the answer, reread it and offer 2-3 natural next questions this user would ask, each under 12 words, ending with ?, answerable from their portfolio stats, news, SEC filings, or earnings-call data, and never repeating the question just answered.' },
         { role: "user", content: prompt },

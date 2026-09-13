@@ -45,7 +45,7 @@ async function askModel(key: string, prompt: string, maxTokens: number): Promise
   const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7",
+      model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M3",
       messages: [
         { role: "system", content: "You are a sharp buy-side equity analyst. Respond with the JSON object ONLY, first character '{'. Be fast and decisive, no deliberation. Never write analysis prose outside the JSON." },
         { role: "user", content: prompt },
@@ -129,7 +129,7 @@ Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes. 
     if (!parsed) return false;
     const { error: e } = await admin.from("insights").insert({
       symbol, bullets: parsed.bullets, windows: parsed.windows,
-      model: fixture ? "fixture" : (Deno.env.get("MARA_MODEL") ?? "MiniMax-M2.7"),
+      model: fixture ? "fixture" : (Deno.env.get("MARA_MODEL") ?? "MiniMax-M3"),
     });
     return !e;
   };
