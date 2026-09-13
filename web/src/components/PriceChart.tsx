@@ -101,7 +101,14 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
         )}
       </div>
 
-      {pts === null && <div className="chart-skeleton" aria-busy="true" aria-label="Loading chart" />}
+      {pts === null && (
+        // same footprint as the loaded chart (the 320x96 viewBox scaled to the card, plus the L/H line),
+        // so the lots and the Remove button below do not jump when the history lands
+        <div aria-busy="true" aria-label="Loading chart">
+          <div className="chart-skeleton" style={{ height: "auto", aspectRatio: "320 / 96" }} />
+          <div style={{ height: 22 }} />
+        </div>
+      )}
       {pts !== null && !view && (
         <p className="empty" style={{ padding: "22px 8px" }}>
           Not enough history yet — it builds as we track {symbol}.

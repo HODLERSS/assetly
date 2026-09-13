@@ -54,7 +54,7 @@ export function InsightsCard({ api, symbol, pollMs = 2000, onRefresh, refreshing
   if (ins === undefined) return null;                     // quiet while loading
   if (ins === null) {
     return (
-      <section className="card insights" data-testid="insights-pending" aria-busy="true" aria-label={`Preparing insights for ${symbol}`}>
+      <section className="card insights" data-testid="insights-pending" aria-busy="true" aria-label={`Preparing insights for ${symbol}`} style={{ minHeight: 196 }}>
         <div className="insights-head">
           <span className="insights-brand">Assetly Intelligence</span>
         </div>

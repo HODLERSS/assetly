@@ -116,7 +116,11 @@ input, select { font: inherit; }
    pseudo-element paints the pill, so rows of chips stay light while every one of them is easy to hit. */
 .chip { position: relative; isolation: isolate; border: 0; background: none; border-radius: 999px; color: var(--as-ink);
   padding: 0 14px; font-size: 13px; font-weight: 600; white-space: nowrap; min-height: 44px; min-width: 44px;
-  display: inline-flex; align-items: center; justify-content: center; }
+  display: inline-flex; align-items: center; justify-content: center;
+  /* never shrink: an explicit min-width drops the flex item's content-based minimum, and Safari then squeezed a
+     crowded News row into 44px circles with the labels spilling over each other (seen 2026-09-13) */
+  flex: 0 0 auto; }
+.chips > * { flex: 0 0 auto; }
 .chip::before { content: ""; position: absolute; left: 0; right: 0; top: 4px; bottom: 4px; z-index: -1; border-radius: 999px;
   border: 1px solid var(--as-rule); background: var(--as-surface); }
 .chip[aria-pressed="true"] { color: var(--as-on-primary); }
@@ -204,7 +208,7 @@ body.has-miniplayer .ask-composer { bottom: calc(var(--as-tabbar-h) + var(--as-t
 /* Suggestion and follow-up pills. `.chips` alone keeps every pill on one nowrap line and scrolls
    sideways, which silently cuts a long question in half at the screen edge. These wrap instead. */
 .chips.wrap { flex-wrap: wrap; overflow-x: visible; }
-.chips.wrap .chip { white-space: normal; max-width: 100%; text-align: left; line-height: 1.35; padding: 4px 14px; }
+.chips.wrap .chip { white-space: normal; max-width: 100%; text-align: left; line-height: 1.35; padding: 4px 14px; flex: 0 1 auto; }
 .bubble { max-width: 88%; padding: 10px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
 .bubble.user { justify-self: end; background: var(--as-primary); color: var(--as-on-primary); border-bottom-right-radius: 5px; }
 .bubble.ai { justify-self: start; background: var(--as-surface); border: 1px solid var(--as-rule); border-bottom-left-radius: 5px; }

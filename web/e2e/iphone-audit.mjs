@@ -4,7 +4,7 @@
 // Signs in as the cloud fixture (its book should be seeded), walks Home, Home with the brief open, the
 // mini player, a position, News, Ask and Settings, and prints one PASS/FAIL line per metric per device
 // plus the offending elements. Screenshots land in e2e-shots/audit-<device>-<screen>.png.
-import { chromium } from "playwright";
+import { chromium, webkit } from "playwright";
 import { createClient } from "@supabase/supabase-js";
 import { mkdirSync } from "fs";
 
@@ -46,6 +46,7 @@ const METRICS = () => {
     const rects = [...e.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim()).flatMap((n) => { const rg = document.createRange(); rg.selectNodeContents(n); return [...rg.getClientRects()]; });
     const lines = new Set(rects.map((r) => Math.round(r.top)));
     if (lines.size > 1 || (e.matches(".chip, .btn, .edit-pill, .insights-brand, .mp-title, .mp-sub, .h1") && e.getBoundingClientRect().height > lh * 1.6 + 26)) wrapped.push(tag(e) + ` lines=${lines.size}`);
+    else if (rects.length) { const box = e.getBoundingClientRect(); const tw = Math.max(...rects.map((r) => r.right)) - Math.min(...rects.map((r) => r.left)); if (tw > box.width + 1 && getComputedStyle(e).textOverflow !== "ellipsis") wrapped.push(tag(e) + ` text ${Math.round(tw)}px spills out of ${Math.round(box.width)}px box`); }
   }
   out.M2_labels_one_line = { pass: wrapped.length === 0, detail: wrapped.slice(0, 8) };
   // M3 tap targets: every interactive element at least 44 tall and 44 wide (Apple HIG), inline text links excepted
@@ -123,7 +124,7 @@ const METRICS = () => {
   return out;
 };
 
-const browser = await chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
+const browser = process.env.PW_ENGINE === "webkit" ? await webkit.launch() : await chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
 const summary = {};
 for (const [name, w, h] of DEVICES) {
   if (ONLY && !ONLY.includes(name)) continue;
@@ -136,7 +137,7 @@ for (const [name, w, h] of DEVICES) {
   await page.getByTestId("net-worth").waitFor({ timeout: 30000 });
   await page.waitForTimeout(2500);
   const results = {};
-  const shot = async (screen) => { await page.waitForTimeout(600); await page.screenshot({ path: `${OUT}audit-${name}-${screen}${process.env.DARK ? "-dark" : ""}.png` }); const m = await page.evaluate(METRICS); results[screen] = m; };
+  const shot = async (screen) => { await page.waitForTimeout(600); await page.screenshot({ path: `${OUT}audit-${name}-${screen}${process.env.DARK ? "-dark" : ""}${process.env.PW_ENGINE === "webkit" ? "-webkit" : ""}.png` }); const m = await page.evaluate(METRICS); results[screen] = m; };
   await shot("home");
   // the brief open, then the device voice player
   const card = page.getByTestId("brief-card");
