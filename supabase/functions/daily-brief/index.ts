@@ -498,9 +498,12 @@ Deno.serve(async (req) => {
       if (krEdition && !assets.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"))) continue;   // no Korean sleeve, no Seoul edition
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
         .sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
+      // On a Seoul edition every US day figure is labelled with its session, so "AMD rose 2.5%" cannot read as live
+      const usTag = krEdition ? (() => { const st = marketState("US"); return isLiveTape(st) ? "" : ` [${weekdayOf(st.lastSessionDate)}'s US session, past]`; })() : "";
       const statsLines = rows.map((r) => {
         const sign = r.kind === "debt" ? -1 : 1;
-        return `${krName(r.symbol, r.nickname, r.name)}: $${Math.round(sign * usd(Number(r.value ?? 0), r.currency))} (${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets), day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}, total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
+        const tagFor = r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ") || r.symbol.startsWith("$") || r.kind === "crypto" ? "" : usTag;
+        return `${krName(r.symbol, r.nickname, r.name)}: $${Math.round(sign * usd(Number(r.value ?? 0), r.currency))} (${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets), day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}${tagFor}, total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
       }).join("\n");
 
       // deterministic next-earnings estimates: last call date + ~91d, rolled past today. The ONLY earnings dates the model may use.
@@ -1103,6 +1106,12 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // starve a brief back below it. Snapshot first and keep the trim only if the brief stays long enough.
       // A daily edition written on a day the US market did not trade (operator-forced, or a holiday tick): the
       // day figures are the last session's, and the words that would claim otherwise are fixed in code.
+      if (sections && krEdition) {
+        const krNames = new Set(holdings.filter((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ")).map((r) => krName(r.symbol, r.nickname, r.name).toLowerCase()));
+        const isKr = (p: { name: string }) => { const n = String(p.name ?? "").toLowerCase(); return [...krNames].some((k) => n.includes(k) || k.includes(n)) || /hynix|samsung|kospi|하이닉스|삼성|korean|korea/i.test(n); };
+        const kr = sections.positions.filter(isKr), us = sections.positions.filter((p) => !isKr(p));
+        sections.positions = [...kr, ...us.slice(0, 1)];
+      }
       const scrubMkt: "US" | "KR" = krEdition ? "KR" : "US";
       if (sections && edition !== "weekend" && edition !== "assessment" && !marketState(scrubMkt).tradingToday) {
         const last = weekdayOf(marketState(scrubMkt).lastSessionDate);
