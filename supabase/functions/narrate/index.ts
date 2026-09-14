@@ -193,7 +193,7 @@ const earNumbers = (t: string) => t
 // The fallback ships to a real listener whenever the model wanes, so it obeys the same laws as the written
 // script: bottom line first, only the two positions that matter, no stat line read aloud, no laundry list.
 function fallbackScript(s: Sections, dayLine: string, edition: string): string {
-  const greet = edition === "kr_open" ? `Seoul is open. Here's your Seoul open pulse for ${dayLine}.` : edition === "kr_close" ? `Seoul has closed. Here's your Seoul closing note for ${dayLine}.` : edition === "weekend" ? `Hi, it's ${dayLine}. Here's your weekend read.` : edition === "assessment" ? `Hi, it's ${dayLine}. Here's your portfolio assessment.` : edition === "close" ? `Good evening, it's ${dayLine}. Here's your closing note.` : edition === "midday" ? `It's ${dayLine}, midday. Here's your pulse.` : `Good morning, it's ${dayLine}. Here's your brief.`;
+  const greet = edition === "kr_open" ? `Korea is open. Here's your Korea open pulse for ${dayLine}.` : edition === "kr_close" ? `Korea has closed. Here's your Korea closing note for ${dayLine}.` : edition === "weekend" ? `Hi, it's ${dayLine}. Here's your weekend read.` : edition === "assessment" ? `Hi, it's ${dayLine}. Here's your portfolio assessment.` : edition === "close" ? `Good evening, it's ${dayLine}. Here's your closing note.` : edition === "midday" ? `It's ${dayLine}, midday. Here's your pulse.` : `Good morning, it's ${dayLine}. Here's your brief.`;
   const say = (t: string) => earNumbers(String(t ?? "").trim());
   const firstSentence = (t: string) => (String(t ?? "").split(/(?<=[.!?])\s+/)[0] ?? "").trim();
   const top = (s.positions ?? []).slice(0, 2);   // two names, not a walkthrough
@@ -312,8 +312,8 @@ Deno.serve(async (req) => {
         : ed === "close" ? { len: "a 75-to-90 second (170-210 word)", who: "end-of-day", floor: 130 }
         : ed === "assessment" ? { len: "a 75-to-90 second (170-215 word)", who: "portfolio-strategist", floor: 130 }
         : ed === "weekend" ? { len: "a 75-to-90 second (170-210 word)", who: "weekend-desk (direction and company news, no tape)", floor: 130 }
-        : ed === "kr_open" ? { len: "a 60-to-80 second (150-190 word)", who: "Seoul-open desk (Korean names first, US names past tense)", floor: 110 }
-        : ed === "kr_close" ? { len: "a 75-to-90 second (170-210 word)", who: "Seoul-close desk (Korean names first, then the US open)", floor: 130 }
+        : ed === "kr_open" ? { len: "a 60-to-80 second (150-190 word)", who: "Korea-open desk (Korean names first, US names past tense)", floor: 110 }
+        : ed === "kr_close" ? { len: "a 75-to-90 second (170-210 word)", who: "Korea-close desk (Korean names first, then the US open)", floor: 130 }
         : { len: "a 75-to-90 second (170-210 word)", who: "morning-desk", floor: 130 };
       // The FIDELITY law alone did not stop an invented threshold ("below seventy thousand dollars" with no
       // such figure anywhere in the brief), so the allowed figures are handed over explicitly.
@@ -377,7 +377,7 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
         };
         const period = (x: string) => (/[.!?]$/.test(x) ? x : x + ".");
         const weekday = dayLine.split(",")[0];
-        const greet = ed === "kr_open" ? `Seoul is open, it's ${weekday} there. Here's your Seoul open pulse.` : ed === "kr_close" ? `Seoul has closed for ${weekday}. Here's your Seoul closing note.` : ed === "weekend" ? `Hi, it's ${weekday}. Here's your weekend read.` : ed === "morning" ? `Good morning, it's ${weekday}.` : `Good afternoon, it's ${weekday}.`;
+        const greet = ed === "kr_open" ? `Korea is open, it's ${weekday} there. Here's your Korea open pulse.` : ed === "kr_close" ? `Korea has closed for ${weekday}. Here's your Korea closing note.` : ed === "weekend" ? `Hi, it's ${weekday}. Here's your weekend read.` : ed === "morning" ? `Good morning, it's ${weekday}.` : `Good afternoon, it's ${weekday}.`;
         for (let a = 0; a < 3 && !spoken; a++) {
           lastTry = a === 2;
           const raw = await askModel(key, "You write the parts of a spoken investment brief. Output only the JSON.", slotPrompt, 6000, a === 0 ? 45000 : 40000, "gpt-oss-120b");

@@ -16,9 +16,9 @@ const ED_META: Record<BriefEdition, { title: string; tape: string; positions: st
   assessment: { title: "Portfolio Assessment", tape: "Your book", positions: "Quality read", desk: "Structure & risk", watch: "Tripwire", read: "Read · 2 min", chip: "Assessment" },
   // no session today (weekend or a market holiday): direction and company developments, never a tape
   weekend: { title: "Weekend Read", tape: "The week that was", positions: "At your companies", desk: "Direction", watch: "Next", read: "Read · 2 min", chip: "Weekend" },
-  // Seoul editions for books that hold Korean names: written on the KRX clock, dated in Korea time
-  kr_open: { title: "Seoul Open", tape: "Seoul now", positions: "Your Korean names", desk: "Desk view", watch: "Watch", read: "Read · 2 min", chip: "Seoul open" },
-  kr_close: { title: "Seoul Close", tape: "Seoul's session", positions: "Your Korean names", desk: "Into the US open", watch: "Watch", read: "Read · 2 min", chip: "Seoul close" },
+  // Korea editions for books that hold Korean names: written on the KRX clock, dated in Korea time
+  kr_open: { title: "Korea Open", tape: "Korea now", positions: "Your Korean names", desk: "Desk view", watch: "Watch", read: "Read · 2 min", chip: "Korea open" },
+  kr_close: { title: "Korea Close", tape: "Korea's session", positions: "Your Korean names", desk: "Into the US open", watch: "Watch", read: "Read · 2 min", chip: "Korea close" },
 };
 
 export function BriefCard({ api }: { api: Api }) {

@@ -63,7 +63,7 @@ async function askMaraFb(key: string, model: string, prompt: string, maxTokens =
 // ---- trading calendar (mirror of web/src/lib/markets.ts; lunar KR holidays are listed explicitly) ----
 // Every prompt that mentions a "day" move gets these lines, so the model knows WHICH session a figure
 // belongs to and how long ago that session ended. Caught 2026-09-11: a Friday 3:30 PM CT note said the
-// Korean names "fell 1.5% today" about a Seoul session that had closed 14 hours earlier.
+// Korean names "fell 1.5% today" about a Korean session that had closed 14 hours earlier.
 type Mkt = "US" | "KR";
 const HOL: Record<Mkt, Set<string>> = {
   US: new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25","2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05","2027-09-06","2027-11-25","2027-12-24"]),
@@ -141,7 +141,7 @@ const FRESH_OPEN_MIN = 30, FRESH_CLOSED_MIN = 50;
 /** Stale = older than the tempo for that market (30 min while it trades, 50 min otherwise), OR written
  *  before today's open once the market has traded >= 10 min, OR written before the close once the close
  *  is >= 5 min old (the closing numbers deserve a fresh take within the hour). Two-market books get both
- *  tempos: a Korean name refreshes on the Seoul clock, a US name on the New York clock. */
+ *  tempos: a Korean name refreshes on the Korea clock, a US name on the New York clock. */
 function staleInsight(genMs: number, mkt: "US" | "KR" | null, now = new Date()): boolean {
   const st = mkt ? marketState(mkt, now) : null;
   const fresh = st?.phase === "open" ? FRESH_OPEN_MIN : FRESH_CLOSED_MIN;

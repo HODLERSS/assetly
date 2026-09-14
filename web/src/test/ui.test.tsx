@@ -1599,22 +1599,22 @@ describe("U48 weekend read", () => {
 });
 
 
-describe("U49 Seoul editions", () => {
-  const sec = { lede: "Seoul opened soft for your Korean sleeve, with SK hynix down 5.3%.", overnight: "KOSPI 6,850 (-1.2%), USDKRW 1,342.", positions: [{ name: "SK hynix", note: "The DRAM shortage story met profit-taking; down 5.3% at 51% of the book.", watch: "KRX close 3:30 PM KST" }], desk_view: "The Korean sleeve sets the tone into the US open.", calendar: ["US market opens Mon Sep 14 9:30 AM ET"] };
-  it("renders the Seoul Open pulse with its own labels and chip", async () => {
+describe("U49 Korea editions", () => {
+  const sec = { lede: "Korea opened soft for your Korean sleeve, with SK hynix down 5.3%.", overnight: "KOSPI 6,850 (-1.2%), USDKRW 1,342.", positions: [{ name: "SK hynix", note: "The DRAM shortage story met profit-taking; down 5.3% at 51% of the book.", watch: "KRX close 3:30 PM KST" }], desk_view: "The Korean sleeve sets the tone into the US open.", calendar: ["US market opens Mon Sep 14 9:30 AM ET"] };
+  it("renders the Korea Open pulse with its own labels and chip", async () => {
     const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([
       { brief_date: "2026-09-14", edition: "kr_open", generated_at: "2026-09-14T00:25:00Z", sections: sec, audio_path: null, script: null },
-      { brief_date: "2026-09-14", edition: "kr_close", generated_at: "2026-09-14T06:45:00Z", sections: { ...sec, lede: "Seoul closed lower; the US open is next." }, audio_path: null, script: null },
+      { brief_date: "2026-09-14", edition: "kr_close", generated_at: "2026-09-14T06:45:00Z", sections: { ...sec, lede: "Korea closed lower; the US open is next." }, audio_path: null, script: null },
     ]) });
     render(<App api={api} />);
     const card = await screen.findByTestId("brief-card");
-    expect(card.textContent).toContain("Seoul Close");
-    await userEvent.click(within(card).getByRole("button", { name: "Seoul open" }));
+    expect(card.textContent).toContain("Korea Close");
+    await userEvent.click(within(card).getByRole("button", { name: "Korea open" }));
     const card2 = await screen.findByTestId("brief-card");
-    expect(card2.textContent).toContain("Seoul Open");
+    expect(card2.textContent).toContain("Korea Open");
     await userEvent.click(within(card2).getByRole("button", { name: /read · 2 min/i }));
     const body = await screen.findByTestId("brief-body");
-    expect(body.textContent).toContain("Seoul now");
+    expect(body.textContent).toContain("Korea now");
     expect(body.textContent).toContain("Your Korean names");
   });
 });
