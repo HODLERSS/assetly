@@ -1,3 +1,4 @@
+import { openConnectPortal, platformTag } from "../lib/native";
 import { useState } from "react";
 import type { Account, Api, SymbolRow } from "../lib/api";
 import { InsightsCard } from "../components/InsightsCard";
@@ -47,7 +48,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded }: {
             {!q.trim() && (<>
               <button className="row" disabled={busy} data-testid="snaptrade-import" onClick={async () => {
                 setErr(null); setBusy(true);
-                try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); }
+                try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); }
                 catch (e) { setErr(e instanceof Error ? e.message : "Could not start the brokerage link."); setBusy(false); }
               }}>
                 <span><span className="sym"><Icon name="bolt" size={13} /> Import</span> <span className="sub">Connect a brokerage, positions land in seconds</span></span>

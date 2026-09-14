@@ -1,0 +1,40 @@
+// App Review path on the live PWA: 5 taps on the wordmark -> reviewer form -> sign in -> Home shows the seeded
+// book -> Settings shows Delete account + legal links. Creds from ~/.private_keys/assetly-reviewer.txt.
+//   node e2e/reviewer.mjs           # REVIEWER_URL=... to point elsewhere; PW_ENGINE=webkit for Safari's engine
+import { chromium, webkit } from "playwright";
+import fs from "node:fs";
+const URL_ = process.env.REVIEWER_URL ?? "https://hodlerss.github.io/assetly/";
+const cred = Object.fromEntries(fs.readFileSync(`${process.env.HOME}/.private_keys/assetly-reviewer.txt`, "utf8").split("\n").filter(Boolean).map((l) => l.split("=")));
+const browser = process.env.PW_ENGINE === "webkit" ? await webkit.launch() : await chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
+const ctx = await browser.newContext({ viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "en-US" });
+const page = await ctx.newPage();
+const fails = [];
+const check = (ok, what) => { console.log((ok ? "PASS " : "FAIL ") + what); if (!ok) fails.push(what); };
+await page.goto(URL_);
+await page.getByRole("button", { name: /continue with github/i }).waitFor({ timeout: 30000 });
+check((await page.locator('input[type="password"]').count()) === 0, "no password field before the taps");
+const mark = page.getByTestId("auth-wordmark");
+for (let i = 0; i < 5; i++) await mark.tap();
+await page.getByTestId("reviewer-form").waitFor({ timeout: 5000 });
+check(true, "five taps reveal the reviewer form");
+await page.getByLabel(/reviewer email/i).fill(cred.email);
+await page.getByLabel(/reviewer password/i).fill(cred.password);
+await page.getByRole("button", { name: /sign in as reviewer/i }).tap();
+await page.getByTestId("net-worth").waitFor({ timeout: 45000 });
+await page.waitForTimeout(2500);
+const nw = (await page.getByTestId("net-worth").textContent()) ?? "";
+check(/\$[\d,]+/.test(nw), `Home shows a net worth (${nw.trim()})`);
+check((await page.locator("main .row").count()) >= 5, "Home lists the seeded holdings");
+check((await page.getByTestId("brief-card").count()) === 1, "a brief card is on Home");
+await page.getByRole("button", { name: /^Settings$/ }).tap();
+await page.waitForTimeout(1500);
+check((await page.getByTestId("delete-account").count()) === 1, "Settings has Delete account");
+check(/privacy policy/i.test((await page.getByTestId("legal-card").textContent()) ?? ""), "Settings has the legal card");
+await page.getByTestId("delete-account").tap();
+const dlg = page.getByRole("dialog", { name: /delete account/i });
+await dlg.waitFor({ timeout: 5000 });
+check(/cannot be undone/i.test((await dlg.textContent()) ?? ""), "delete sheet warns and asks to confirm");
+await dlg.getByRole("button", { name: /keep my account/i }).tap();
+await browser.close();
+console.log(fails.length ? `REVIEWER E2E: ${fails.length} FAIL` : "REVIEWER E2E: PASS");
+process.exit(fails.length ? 1 : 0);

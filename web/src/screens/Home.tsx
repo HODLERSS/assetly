@@ -1,3 +1,4 @@
+import { openConnectPortal, platformTag } from "../lib/native";
 import { useEffect, useState } from "react";
 import type { Api, PortfolioRow } from "../lib/api";
 import { BriefCard } from "../components/BriefCard";
@@ -49,7 +50,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
       <div className="empty">
         <p style={{ marginBottom: 14 }}>No runners on the track.</p>
         <button className="btn" style={{ marginBottom: 10 }} onClick={async () => {
-          try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } catch { /* button stays */ }
+          try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } catch { /* button stays */ }
         }}><Icon name="bolt" /> Connect your brokerage</button>
         <button className="btn secondary" onClick={onAdd}>Add positions manually</button>
       </div>
@@ -163,7 +164,7 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
         <h2 className="h1" style={{ fontSize: 16 }}>Positions</h2>
         <span style={{ display: "flex", gap: 8 }}>
           <button className="chip" aria-label="Import from brokerage" onClick={async () => {
-            try { const r = await api.snaptrade("connect"); if (r.url) window.location.assign(r.url); } catch { /* connect button stays */ }
+            try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } catch { /* connect button stays */ }
           }}><Icon name="bolt" size={12} /> Import</button>
           <button className="chip" onClick={onAdd} aria-label="Add position">+ Add</button>
         </span>

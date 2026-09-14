@@ -273,6 +273,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
         { onConflict: "user_id,token" },
       );
     },
+    /** The reader turned notifications off: forget every token for this account. */
+    async removePushToken(): Promise<void> {
+      const { data: u } = await sb.auth.getUser();
+      if (!u.user) return;
+      await sb.from("push_tokens").delete().eq("user_id", u.user.id);
+    },
     /** Portfolio intelligence: refresh now (force regen for this user), then return the fresh row. */
     async refreshPortfolioInsights(): Promise<Insight | null> {
       const { data: u } = await sb.auth.getUser();
@@ -323,6 +329,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { data, error } = await sb.functions.invoke("ask", { body: { question } });
       if (error || !data?.ok) throw new Error(data?.error ?? "Ask is unavailable right now.");
       return { answer: String(data.answer), followups: Array.isArray(data.followups) ? data.followups.map(String).slice(0, 3) : [] };
+    },
+    /** Apple 5.1.1(v): the account and every row it owns go away from inside the app. */
+    async deleteAccount(): Promise<void> {
+      const { data, error } = await sb.functions.invoke("delete-account", { body: {} });
+      if (error || !data?.ok) throw new Error(data?.error ?? "Could not delete the account. Try again.");
+      await sb.auth.signOut().catch(() => {});
     },
     async signOut() { await sb.auth.signOut(); },
   };

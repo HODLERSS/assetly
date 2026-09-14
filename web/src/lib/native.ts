@@ -40,3 +40,24 @@ export function onOAuthReturn(cb: (status: string) => void): () => void {
   }).then((h) => { remove = () => h.remove(); }).catch(() => {});
   return () => { try { remove?.(); } catch { /* already gone */ } };
 }
+
+/** Open a link outside the app: a system browser sheet on iOS, a new tab on the web. */
+export async function openExternal(url: string): Promise<void> {
+  if (!isNative()) { window.open(url, "_blank", "noopener"); return; }
+  await Browser.open({ url, presentationStyle: "popover" });
+}
+
+/**
+ * Fires when Supabase auth hands back through assetly://auth-callback (OAuth in the system browser).
+ * The URL carries ?code= (PKCE). Returns an unsubscribe function; no-op on the web.
+ */
+export function onAuthReturn(cb: (url: string) => void): () => void {
+  if (!isNative()) return () => {};
+  let remove: (() => void) | undefined;
+  CapApp.addListener("appUrlOpen", (event: { url: string }) => {
+    if (!/^assetly:\/\/auth-callback/i.test(event.url)) return;
+    void Browser.close().catch(() => {});
+    cb(event.url);
+  }).then((h) => { remove = () => h.remove(); }).catch(() => {});
+  return () => { try { remove?.(); } catch { /* already gone */ } };
+}

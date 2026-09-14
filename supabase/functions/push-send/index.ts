@@ -51,7 +51,7 @@ async function config(admin: ReturnType<typeof createClient>): Promise<Cfg | nul
     get("APNS_KEY_ID", "apns_key_id"), get("APNS_TEAM_ID", "apns_team_id"), get("APNS_PRIVATE_KEY", "apns_private_key"),
   ]);
   if (!keyId || !teamId || !p8) return null;
-  const bundleId = Deno.env.get("APNS_BUNDLE_ID") ?? "com.assetly.app";
+  const bundleId = Deno.env.get("APNS_BUNDLE_ID") ?? "com.hodlerss.assetly";
   // TestFlight and App Store builds use production; a build run from Xcode uses sandbox
   const host = (Deno.env.get("APNS_ENV") ?? "production") === "sandbox"
     ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com";

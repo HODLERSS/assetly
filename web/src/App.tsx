@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertCcy, dayChangeAmount, type FxRates } from "./lib/format";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "./lib/supabase";
+import { completeNativeAuth, supabase } from "./lib/supabase";
 import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
 import { AuthScreen } from "./screens/Auth";
 import { Onboarding } from "./screens/Onboarding";
@@ -9,8 +9,8 @@ import { Home } from "./screens/Home";
 import { TabIcon } from "./components/TabIcon";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { applyTheme, getTheme, watchSystemTheme } from "./lib/theme";
-import { onOAuthReturn } from "./lib/native";
-import { clearBadge, registerPush } from "./lib/push";
+import { onAuthReturn, onOAuthReturn } from "./lib/native";
+import { clearBadge, pushEnabled, registerPush } from "./lib/push";
 import { PositionScreen } from "./screens/Position";
 import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
@@ -136,13 +136,16 @@ export function App({ api = defaultApi }: { api?: Api }) {
   useEffect(() => { applyTheme(getTheme()); return watchSystemTheme(); }, []);
   // Push needs a signed-in user to attach the device token to. Registering is best-effort:
   // a declined prompt is a normal outcome and the in-app poll still lights the tab.
+  // Notifications are opt-in (Settings > Brief notifications): the permission sheet never fires unasked.
   useEffect(() => {
-    if (!session) return;
+    if (!session || !pushEnabled()) return;
     let off: (() => void) | undefined;
     void registerPush((token) => api.savePushToken(token)).then((f) => { off = f; });
     void clearBadge();
     return () => off?.();
   }, [session, api]);
+  // iOS: Supabase OAuth comes back through assetly://auth-callback
+  useEffect(() => onAuthReturn((u) => { void completeNativeAuth(u).then((r) => { if (r.error) setError(r.error); }); }), []);
   useEffect(() => {
     // stale-bundle guard: the PWA can cache an old build; check the served index once per open
     (async () => {

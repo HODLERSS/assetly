@@ -36,3 +36,8 @@ export async function clearBadge(): Promise<void> {
   if (!isNative()) return;
   try { await PushNotifications.removeAllDeliveredNotifications(); } catch { /* nothing delivered */ }
 }
+
+const PUSH_KEY = "assetly-push";
+/** The reader's choice, remembered on the device; unset means "never asked", which is treated as off. */
+export const pushEnabled = (): boolean => { try { return localStorage.getItem(PUSH_KEY) === "on"; } catch { return false; } };
+export const setPushEnabled = (on: boolean): void => { try { localStorage.setItem(PUSH_KEY, on ? "on" : "off"); } catch { /* storage blocked */ } };

@@ -7,6 +7,7 @@ import { __resetPlayer } from "../lib/player";
 import userEvent from "@testing-library/user-event";
 
 const oauthSpy = vi.fn().mockResolvedValue({ data: {}, error: null });
+const passwordSpy = vi.fn().mockResolvedValue({ error: null });
 const emailSpy = vi.fn().mockResolvedValue({ data: {}, error: null });
 vi.mock("../lib/supabase", () => {
   const session = { user: { id: "u-test" } };
@@ -21,6 +22,9 @@ vi.mock("../lib/supabase", () => {
     },
     signInWithOAuth: (p: string) => oauthSpy(p),
     signInWithEmail: (e: string) => emailSpy(e),
+    signInWithApple: vi.fn().mockResolvedValue({ error: null }),
+    signInWithPassword: (e: string, p: string) => passwordSpy(e, p),
+    completeNativeAuth: vi.fn().mockResolvedValue({ error: null }),
   };
 });
 
@@ -40,6 +44,7 @@ vi.mock("../lib/markets", async (importOriginal) => {
 
 import { App } from "../App";
 import { AuthScreen } from "../screens/Auth";
+import { SettingsScreen } from "../screens/Settings";
 import type { Api, PortfolioRow, Profile } from "../lib/api";
 
 const profile: Profile = { id: "u-test", display_name: "Minjae", base_currency: "USD", display_us: "USD", display_kr: "KRW", markets: ["US", "KR"], onboarded_at: "2026-08-23T00:00:00Z" };
@@ -1616,5 +1621,55 @@ describe("U49 Korea editions", () => {
     const body = await screen.findByTestId("brief-body");
     expect(body.textContent).toContain("Korea now");
     expect(body.textContent).toContain("Your Korean names");
+  });
+});
+
+describe("U50 App Review demo sign-in (hidden reviewer form)", () => {
+  it("is invisible by default: no password field, no reviewer form", () => {
+    render(<AuthScreen />);
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+    expect(screen.queryByTestId("reviewer-form")).toBeNull();
+  });
+  it("five taps on the wordmark reveal it and it signs in with a password", async () => {
+    render(<AuthScreen />);
+    const mark = screen.getByTestId("auth-wordmark");
+    for (let i = 0; i < 5; i++) await userEvent.click(mark);
+    expect(await screen.findByTestId("reviewer-form")).toBeTruthy();
+    await userEvent.type(screen.getByLabelText(/reviewer email/i), "minjae.m.lee+reviewer@gmail.com");
+    await userEvent.type(screen.getByLabelText(/reviewer password/i), "pw-123");
+    await userEvent.click(screen.getByRole("button", { name: /sign in as reviewer/i }));
+    await waitFor(() => expect(passwordSpy).toHaveBeenCalledWith("minjae.m.lee+reviewer@gmail.com", "pw-123"));
+  });
+  it("?reviewer=1 opens it on the web", () => {
+    window.history.pushState({}, "", "/?reviewer=1");
+    render(<AuthScreen />);
+    expect(screen.getByTestId("reviewer-form")).toBeTruthy();
+    window.history.pushState({}, "", "/");
+  });
+});
+
+describe("U51 delete account (Apple 5.1.1(v))", () => {
+  it("Settings offers Delete account behind a confirm sheet, then signs out", async () => {
+    const deleteAccount = vi.fn().mockResolvedValue(undefined);
+    const onSignedOut = vi.fn();
+    const api = stubApi({ deleteAccount } as Partial<Api>);
+    render(<SettingsScreen api={api} profile={null} rows={[]} onChanged={() => {}} onSignedOut={onSignedOut} />);
+    await userEvent.click(screen.getByTestId("delete-account"));
+    const dlg = await screen.findByRole("dialog", { name: /delete account/i });
+    expect(dlg.textContent).toMatch(/cannot be undone/i);
+    await userEvent.click(within(dlg).getByRole("button", { name: /keep my account/i }));
+    expect(deleteAccount).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByTestId("delete-account"));
+    await userEvent.click(await screen.findByTestId("delete-confirm"));
+    await waitFor(() => expect(deleteAccount).toHaveBeenCalled());
+    await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
+  });
+  it("a failed deletion stays on the sheet with the reason", async () => {
+    const api = stubApi({ deleteAccount: vi.fn().mockRejectedValue(new Error("Could not delete the account. Try again.")) } as Partial<Api>);
+    render(<SettingsScreen api={api} profile={null} rows={[]} onChanged={() => {}} onSignedOut={() => {}} />);
+    await userEvent.click(screen.getByTestId("delete-account"));
+    await userEvent.click(await screen.findByTestId("delete-confirm"));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/could not delete/i);
+    expect(screen.getByTestId("legal-card").textContent).toMatch(/privacy policy/i);
   });
 });

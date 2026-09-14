@@ -4,7 +4,11 @@ import { INVESTOR_DEFAULT } from "../lib/api";
 import { InvestorQuiz, investorLabel } from "../components/InvestorQuiz";
 import { timeAgo } from "../lib/format";
 import { getTheme, setTheme, THEME_CHOICES, type ThemeChoice } from "../lib/theme";
-import { openConnectPortal, platformTag } from "../lib/native";
+import { isNative, openConnectPortal, openExternal, platformTag } from "../lib/native";
+import { pushEnabled, registerPush, setPushEnabled } from "../lib/push";
+
+const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? "1.0";
+const LEGAL_BASE = "https://hodlerss.github.io/assetly";
 
 // Gap screen g2: account, currency matrix, markets, sign out. The matrix (totals / US assets /
 // KR assets, each USD or KRW) appears once the book actually holds KRW — no clutter before that.
@@ -34,6 +38,22 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
   }, [api]);
   const [busy, setBusy] = useState(false);
   const [editInv, setEditInv] = useState(false);
+  const [push, setPush] = useState<boolean>(() => pushEnabled());
+  const [pushBusy, setPushBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);          // confirm sheet
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const togglePush = async () => {
+    setPushBusy(true);
+    try {
+      if (push) { setPushEnabled(false); setPush(false); await api.removePushToken().catch(() => {}); }
+      else {
+        setPushEnabled(true); setPush(true);
+        // registerPush asks for permission on iOS and stores the token; on the web it is a no-op
+        await registerPush((token) => api.savePushToken(token));
+      }
+    } finally { setPushBusy(false); }
+  };
   const base = profile?.base_currency ?? "USD";
   const dispUs = profile?.display_us ?? "USD";
   const dispKr = profile?.display_kr ?? "KRW";
@@ -179,10 +199,46 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
           </div>
         </div>
       )}
+      {isNative() && (
+        <div className="card" style={{ marginBottom: 14 }} data-testid="notify-card">
+          <div className="row" style={{ alignItems: "center" }}>
+            <span>Brief notifications<br /><span className="sub">A push when your morning, midday and closing briefs are ready</span></span>
+            <button className="chip" role="switch" aria-checked={push} disabled={pushBusy} onClick={togglePush} data-testid="push-toggle">{push ? "On" : "Off"}</button>
+          </div>
+        </div>
+      )}
+      <div className="card" style={{ marginBottom: 14 }} data-testid="legal-card">
+        <div className="row" style={{ alignItems: "center" }}><span>Privacy policy</span>
+          <button className="chip" onClick={() => void openExternal(`${LEGAL_BASE}/privacy.html`)}>Open</button></div>
+        <div className="row" style={{ alignItems: "center" }}><span>Terms of use</span>
+          <button className="chip" onClick={() => void openExternal(`${LEGAL_BASE}/terms.html`)}>Open</button></div>
+        <div className="row" style={{ alignItems: "center" }}><span>Support</span>
+          <button className="chip" onClick={() => void openExternal(`${LEGAL_BASE}/support.html`)}>Open</button></div>
+        <div className="row"><span>Version</span><span className="sub num">{APP_VERSION}</span></div>
+      </div>
       <button className="btn secondary" onClick={async () => { await api.signOut(); onSignedOut(); }}>Sign out</button>
+      <button className="btn danger" style={{ marginTop: 10 }} onClick={() => { setDeleteErr(null); setDeleting(true); }} data-testid="delete-account">Delete account</button>
       <p className="mutedc" style={{ fontSize: 12.5, marginTop: 14 }}>
-        Deleting your account removes every holding and lot permanently. Contact support until in-app deletion ships in the next lap.
+        Deleting your account removes your holdings, lots, briefs, insights, narration audio and any brokerage connection permanently.
       </p>
+      {deleting && (
+        <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Delete account">
+          <div className="sheet">
+            <h2>Delete your account?</h2>
+            <p className="mutedc" style={{ marginBottom: 14 }}>
+              Everything goes: holdings, lots, briefs, insights, narration audio and the brokerage connection. This cannot be undone.
+            </p>
+            {deleteErr && <div className="error-note" role="alert">{deleteErr}</div>}
+            <button className="btn danger" disabled={deleteBusy} data-testid="delete-confirm" onClick={async () => {
+              setDeleteBusy(true); setDeleteErr(null);
+              try { await api.deleteAccount(); setDeleting(false); onSignedOut(); }
+              catch (e) { setDeleteErr(e instanceof Error ? e.message : "Could not delete the account. Try again."); }
+              finally { setDeleteBusy(false); }
+            }}>{deleteBusy ? "Deleting…" : "Delete everything"}</button>
+            <button className="btn secondary" style={{ marginTop: 8 }} disabled={deleteBusy} onClick={() => setDeleting(false)}>Keep my account</button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

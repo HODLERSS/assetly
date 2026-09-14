@@ -328,3 +328,9 @@ body.has-miniplayer .screen { padding-bottom: calc(88px + var(--as-miniplayer-h)
 body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
 button, a, input, select, [role="button"] { touch-action: manipulation; }
 .row:active, .chip:active, .insights-toggle:active, .nw-more:active, .mp-btn:active { -webkit-tap-highlight-color: transparent; }
+
+/* Sign in with Apple: Apple's button style (black on light, white on dark), never the brand blue. */
+.btn.apple { background: #000; color: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn.apple svg { flex: 0 0 auto; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.apple { background: #fff; color: #000; } }
+:root[data-theme="dark"] .btn.apple { background: #fff; color: #000; }
