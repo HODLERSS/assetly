@@ -124,7 +124,7 @@ const METRICS = () => {
   return out;
 };
 
-const browser = process.env.PW_ENGINE === "webkit" ? await webkit.launch() : await chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
+const browser = process.env.PW_ENGINE === "webkit" ? await webkit.launch(process.env.PW_WEBKIT_PATH ? { executablePath: process.env.PW_WEBKIT_PATH } : {}) : await chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
 const summary = {};
 for (const [name, w, h] of DEVICES) {
   if (ONLY && !ONLY.includes(name)) continue;
