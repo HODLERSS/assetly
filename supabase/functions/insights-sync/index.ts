@@ -136,13 +136,20 @@ function minsSinceOpen(mkt: "US" | "KR", now = new Date()): number | null {
   return z.minutes >= OPEN_MIN[mkt] ? z.minutes - OPEN_MIN[mkt] : null;
 }
 const OPEN_GATE = 10;   // minutes after the bell before the new day's tape is trusted
-/** Stale = older than 50min, OR written before today's open once that market has
- *  been trading >=10 min (a pre-open take must not survive into the session). */
+const CLOSE_GATE = 5;   // minutes after the close before the final numbers are trusted
+const FRESH_OPEN_MIN = 30, FRESH_CLOSED_MIN = 50;
+/** Stale = older than the tempo for that market (30 min while it trades, 50 min otherwise), OR written
+ *  before today's open once the market has traded >= 10 min, OR written before the close once the close
+ *  is >= 5 min old (the closing numbers deserve a fresh take within the hour). Two-market books get both
+ *  tempos: a Korean name refreshes on the Seoul clock, a US name on the New York clock. */
 function staleInsight(genMs: number, mkt: "US" | "KR" | null, now = new Date()): boolean {
-  if (now.getTime() - genMs > 50 * 60000) return true;
-  if (!mkt) return false;
+  const st = mkt ? marketState(mkt, now) : null;
+  const fresh = st?.phase === "open" ? FRESH_OPEN_MIN : FRESH_CLOSED_MIN;
+  if (now.getTime() - genMs > fresh * 60000) return true;
+  if (!mkt || !st) return false;
   const m = minsSinceOpen(mkt, now);
-  return m !== null && m >= OPEN_GATE && genMs < now.getTime() - m * 60000;
+  if (m !== null && m >= OPEN_GATE && genMs < now.getTime() - m * 60000) return true;
+  return st.phase === "post" && st.hoursSinceClose * 60 >= CLOSE_GATE && st.hoursSinceClose < 1 && genMs < st.lastCloseEpoch;
 }
 /** Days since an earnings call was published (null when there is no call on file). */
 function callAgeDays(publishedAt: unknown, now = new Date()): number | null {
@@ -320,8 +327,10 @@ Deno.serve(async (req) => {
   const worthRegen = (sy: string): boolean => { const mk = mktOf(sy); if (!mk || marketState(mk).tradingToday) return true; return (newestNews.get(sy) ?? 0) > (age.get(sy) ?? 0); };
   if (!only && !force) targets = targets.filter((sy) => staleInsight(age.get(sy) ?? 0, mktOf(sy)) && worthRegen(sy));
   if (force) targets = [];                                    // force = refresh the portfolio layer only
+  // Priority: names whose market is OPEN right now first (their tape is moving), then the stalest, then the biggest.
+  const openNow = (sy: string) => { const mk = mktOf(sy); return mk ? (marketState(mk).phase === "open" ? 0 : 1) : 1; };
   targets = targets.sort((a, b) =>
-    (age.get(a) ?? 0) - (age.get(b) ?? 0) || (invested.get(b) ?? 0) - (invested.get(a) ?? 0)).slice(0, 16);
+    openNow(a) - openNow(b) || (age.get(a) ?? 0) - (age.get(b) ?? 0) || (invested.get(b) ?? 0) - (invested.get(a) ?? 0)).slice(0, 16);
 
   let wrote = 0;
   const errors: string[] = [];
@@ -405,8 +414,10 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
         .filter((r) => r.kind !== "cash" && r.kind !== "debt" && r.kind !== "crypto")
         .map((r) => (r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ") ? "KR" as const : "US" as const)))];
       // Same session-aware staleness as symbols: skip only while genuinely current.
+      // Same session-aware staleness as symbols, on every market the book holds: a two-market book refreshes on
+      // both clocks (30 min while either market trades, 50 min otherwise, plus the open and close gates).
       if (!fixture && !force && !userMkts.some((mk) => staleInsight(lastPi.get(uid) ?? 0, mk))
-          && Date.now() - (lastPi.get(uid) ?? 0) <= 50 * 60000) continue;
+          && Date.now() - (lastPi.get(uid) ?? 0) <= FRESH_CLOSED_MIN * 60000) continue;
       // No held market trades today: only new headlines justify another portfolio take
       if (!fixture && !force && userMkts.length && userMkts.every((mk) => !marketState(mk).tradingToday)) {
         const { count } = await admin.from("news").select("id", { count: "exact", head: true }).in("symbol", rows.map((r) => r.symbol)).gte("published_at", new Date(lastPi.get(uid) ?? 0).toISOString());

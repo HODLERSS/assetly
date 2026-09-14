@@ -388,8 +388,8 @@ Deno.serve(async (req) => {
     }
   }
   const noAudio = body.noAudio === true;   // battery/test runs must not spend TTS quota
-  type Edition = "morning" | "midday" | "close" | "assessment" | "weekend";
-  const validEd = (x: unknown): x is Edition => x === "morning" || x === "midday" || x === "close" || x === "assessment" || x === "weekend";
+  type Edition = "morning" | "midday" | "close" | "assessment" | "weekend" | "kr_open" | "kr_close";
+  const validEd = (x: unknown): x is Edition => x === "morning" || x === "midday" || x === "close" || x === "assessment" || x === "weekend" || x === "kr_open" || x === "kr_close";
   const edRaw = url.searchParams.get("edition") ?? (body as { edition?: unknown }).edition;
   const utcMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();   // close = 4:05 PM ET (20:05 UTC), never before the bell
   // "assessment" is never chosen by the clock: it is requested explicitly (orchestrator / brief-retry) and always forced
@@ -401,6 +401,10 @@ Deno.serve(async (req) => {
     edition = "weekend";
     if (zonedParts(new Date(), TZ.US).minutes < 9 * 60) return json({ ok: true, users: 0, wrote: 0, reason: "weekend read waits for 9 AM ET" });
   }
+  // Seoul editions ride the KRX clock, not the US one: written on KRX trading days (KST) for users holding Korean
+  // names. A Sunday 8 PM Central for the reader is Monday 10 AM in Seoul, and their Korean sleeve is already moving.
+  const krEdition = edition === "kr_open" || edition === "kr_close";
+  if (krEdition && !force && !marketState("KR").tradingToday) return json({ ok: true, users: 0, wrote: 0, reason: "KRX is not trading today (KST)" });
   if (edition === "assessment" && !force && !fixture) return json({ ok: false, error: "assessment requires force" }, 400);
 
   let key = "";
@@ -413,7 +417,7 @@ Deno.serve(async (req) => {
 
   // Brief date = US Eastern trading day.
   const etParts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  const briefDate = etParts;   // YYYY-MM-DD
+  const briefDate = krEdition ? zonedParts(new Date(), TZ.KR).ymd : etParts;   // YYYY-MM-DD; Seoul editions carry the KST date
 
   // ---- shared market context (deterministic) ----
   const ctxSyms = ["ES=F", "NQ=F", "^VIX", "^KS11", "^GSPC", "USDKRW"];
@@ -491,6 +495,7 @@ Deno.serve(async (req) => {
       const beginner = ["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])));
       const noteSplit = beginner ? " Write the note as TWO sentences of at most 14 words each (about 20 to 26 words in total), never one long sentence and never a single short one." : "";
       const [HZ1, HZ2] = HZ_LABELS[longestHz(toArr((invBy.get(uid) as Investor | null | undefined)?.horizon, ["3-10y"]))] ?? HZ_LABELS["3-10y"];
+      if (krEdition && !assets.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"))) continue;   // no Korean sleeve, no Seoul edition
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
         .sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
       const statsLines = rows.map((r) => {
@@ -994,7 +999,35 @@ DESK CONTEXT (from the morning work):
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.changed ?? ""}${m.bull ? `. bull: ${m.bull}` : ""}${m.bear ? `. bear: ${m.bear}` : ""}. watch: ${m.watch ?? ""}`).join("\n") || "- none"}
 ${morningCtx}`;
         const shape = `Return STRICT JSON:\n{"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}`;
-        const writerPrompt = edition === "midday"
+        const usOpensIn = spanText(usS.hoursToNextOpen);   // usS / krS come from the DAY P&L split above
+        const writerPrompt = edition === "kr_open"
+          ? `Write the ${briefDate} SEOUL OPEN PULSE (published about 20 minutes into the KRX session, 9:20 AM Korea time on ${dayName(briefDate)}) for ONE investor who holds Korean names alongside a US book. Tell them how their Korean names opened, what news is moving them, and how the last US session frames the day. The US market opens in ${usOpensIn}.
+
+${dataBlock}
+
+${shape}
+lede: the ONE thing the Seoul open changes for THIS portfolio, stated as a consequence for the reader. <= 28 words.
+overnight: the Seoul tape RIGHT NOW: KOSPI and USDKRW copied from MARKET NOW with their EXACT labels and numbers, then the biggest Korean day move BY NAME with its number. US names appear only through their last session, past tense. <= 50 words.
+positions: the Korean names FIRST (each with its day number and current weight, largest first), then at most ONE US name and only if it has fresh news; note <= 30 words that OPENS WITH WHAT IT MEANS for this owner. watch <= 10 words naming a level or event inside the Seoul session or at the next US open.
+desk_view: what the Seoul open changes about the book's direction; the Korean sleeve's weight and its shared driver with the US names. AT MOST THREE figures. <= 36 words.
+calendar: 0-3 items: the KRX close (3:30 PM KST) if a Korean catalyst lands today, the next US session with its date, dated earnings from NEXT EARNINGS ESTIMATES.
+KR-SESSION LAW: "today" means the Seoul session. Every US figure belongs to the US session named in SESSIONS and is past tense ("in Friday's session"), never "today".
+QUIET-BOOK LAW: if no Korean name moved more than 1.5% and there is no fresh news, SAY the open is quiet in one clause and make the next catalyst the centerpiece. Never invent levels.
+${STYLE_RULES}\n${READER}`
+          : edition === "kr_close"
+          ? `Write the ${briefDate} SEOUL CLOSING NOTE (published after the 3:30 PM KST close on ${dayName(briefDate)}; the US market opens in ${usOpensIn}) for ONE investor who holds Korean names alongside a US book. Settle what the Seoul session meant for the Korean sleeve and arm them for the US open.
+
+${dataBlock}
+
+${shape}
+lede: the Seoul session's story for THIS portfolio in one breath: the Korean names' day result, then a consequence clause. <= 30 words.
+overnight: OPEN WITH THE CONCLUSION (what the session did to the Korean sleeve, plain words), THEN KOSPI and USDKRW copied from MARKET NOW with their EXACT labels and numbers, plus the Korean day P&L from PORTFOLIO. <= 55 words.
+positions: the Korean names that defined the session, largest first, each with its day number and weight; then at most ONE US name with a catalyst at the coming US open. note <= 30 words: what happened AND what it means beyond today. watch <= 10 words naming the next concrete catalyst, level or event (the US open, a print, a KRX event tomorrow).
+desk_view: the setup for the US session that opens in ${usOpensIn}: the one structural risk or opportunity that carries over from Seoul. No single-day numbers. <= 40 words.
+calendar: 0-3 items: the US open with its date and time, tomorrow's KRX session (or the next one if a holiday intervenes, name it), dated earnings.
+KR-SESSION LAW: "today" means the Seoul session that just closed. Every US figure is from the US session named in SESSIONS, past tense, never "today".
+${STYLE_RULES}\n${READER}`
+          : edition === "midday"
           ? `Write the ${briefDate} MIDDAY PULSE (11:00 AM Central, about 2.5 hours into the US session) for ONE investor. You wrote this morning's brief; now tell them what the session is ACTUALLY doing versus what was expected.
 
 ${dataBlock}
@@ -1028,7 +1061,7 @@ ${STYLE_RULES}\n${READER}`;
         }
         if ((!draft || !validSections(draft)) && elapsed() < 125) {
           // API slow-wave degradation: a compact intraday note beats no note
-          const compact = `Write the ${briefDate} ${edition === "midday" ? "MIDDAY session pulse (11 AM Central)" : "post-close note"} for ONE investor. Dense; every word counts.
+          const compact = `Write the ${briefDate} ${edition === "midday" ? "MIDDAY session pulse (11 AM Central)" : edition === "kr_open" ? "SEOUL OPEN pulse (9:20 AM KST; Korean names first, US names past tense)" : edition === "kr_close" ? "SEOUL CLOSING note (after the 3:30 PM KST close; Korean names first, US names past tense)" : "post-close note"} for ONE investor. Dense; every word counts.
 MARKET NOW: ${mktLive || "(none)"}
 PORTFOLIO (only source of numbers): Total $${Math.round(total)}. ${pnlLine}
 ${statsLines}
@@ -1040,7 +1073,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           if (draft && validSections(draft)) usedCompact = true;
         }
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": writer failed [" + lastMeta + "]"); continue; }
-        const caps = edition === "midday" ? "lede 28, overnight 50, note 28, watch 10, desk_view 36" : "lede 30, overnight 55, note 30, watch 10, desk_view 40";
+        const caps = edition === "midday" || edition === "kr_open" ? "lede 28, overnight 50, note 28, watch 10, desk_view 36" : "lede 30, overnight 55, note 30, watch 10, desk_view 40";
         const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
           `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET NOW: ${mktLive}\nLEADERS: ${leaderLines}\nPORTFOLIO: Total $${Math.round(total)}. ${pnlLine}\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (${caps}) by tightening, not by losing substance. Also: replace any numeric KRX code with the company name; write won as \u20a9 never "KRW"; delete any calendar or watch item whose date is before today (${briefDate}) and any undated calendar item; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; overnight must keep at least three market numbers; delete any instruction to buy, sell, trim, add, reduce, or rotate a position and state the risk or setup instead.`, 10000, 30000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
@@ -1070,8 +1103,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // starve a brief back below it. Snapshot first and keep the trim only if the brief stays long enough.
       // A daily edition written on a day the US market did not trade (operator-forced, or a holiday tick): the
       // day figures are the last session's, and the words that would claim otherwise are fixed in code.
-      if (sections && edition !== "weekend" && edition !== "assessment" && !marketState("US").tradingToday) {
-        const last = weekdayOf(marketState("US").lastSessionDate);
+      const scrubMkt: "US" | "KR" = krEdition ? "KR" : "US";
+      if (sections && edition !== "weekend" && edition !== "assessment" && !marketState(scrubMkt).tradingToday) {
+        const last = weekdayOf(marketState(scrubMkt).lastSessionDate);
         const fix = (t: string) => String(t ?? "").replace(/\btoday's\b/gi, `${last}'s`).replace(/\btoday\b/gi, `on ${last}`)
           .replace(/\b(on the day|this session|the session|today's session)\b/gi, `${last}'s session`).replace(/\btonight\b/gi, "before the next open");
         sections.lede = fix(sections.lede); sections.overnight = fix(sections.overnight); sections.desk_view = fix(sections.desk_view);

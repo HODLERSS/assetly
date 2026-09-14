@@ -29,7 +29,7 @@ export type BriefSections = {
   desk_view: string; calendar: string[];
   horizon?: string; ideas?: string[];   // assessment only: "Next 3 months: ... Next 3 years: ..." + gaps worth researching
 };
-export type BriefEdition = "morning" | "midday" | "close" | "assessment" | "weekend";
+export type BriefEdition = "morning" | "midday" | "close" | "assessment" | "weekend" | "kr_open" | "kr_close";
 export type DailyBrief = { brief_date: string; edition: BriefEdition; sections: BriefSections; generated_at: string; audio_path?: string | null; script?: string | null };
 /** Five tap-only answers from sign-up (or Settings). null/missing = the defaults below. */
 export type Investor = { styles: string[]; purpose: string[]; horizon: string[]; target: string[]; risk: string[]; level: string[] };
