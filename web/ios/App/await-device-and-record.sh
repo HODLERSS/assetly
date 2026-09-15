@@ -1,7 +1,7 @@
 #!/bin/bash
 # Armed watcher: waits for Minjae's iPhone to appear, then records the App Review demo walkthrough on it.
 # Nothing to do but plug the phone in and unlock it.
-#   ./await-device-and-record.sh            # waits up to 12h, retries a failed take up to 3 times
+#   ./await-device-and-record.sh            # waits up to 24h, retries a failed take up to 3 times
 set -u
 cd "$(dirname "$0")"
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -10,8 +10,8 @@ LOG=/tmp/assetly-demo-watch.log
 : > "$LOG"
 say() { echo "[$(date -u +%H:%M:%SZ)] $*" | tee -a "$LOG"; }
 
-say "waiting for the iPhone ($UDID) to come online"
-DEADLINE=$(( $(date +%s) + 12*3600 ))
+say "waiting for the iPhone ($UDID) to come online — connect it by USB and unlock it"
+DEADLINE=$(( $(date +%s) + 24*3600 ))
 until xcrun devicectl list devices 2>/dev/null | grep -q "$UDID.*available"; do
   [ "$(date +%s)" -lt "$DEADLINE" ] || { say "gave up: the phone never appeared"; exit 3; }
   sleep 60
