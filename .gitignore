@@ -7,3 +7,6 @@ supabase/.temp/
 e2e-shots/
 web/e2e/store/
 deno.lock
+
+# generated for the App Review demo recording; carries demo credentials
+web/ios/App/AssetlyDemo.xctestplan

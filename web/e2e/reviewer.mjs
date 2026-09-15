@@ -1,5 +1,6 @@
-// App Review path on the live PWA: 5 taps on the wordmark -> reviewer form -> sign in -> Home shows the seeded
-// book -> Settings shows Delete account + legal links. Creds from ~/.private_keys/assetly-reviewer.txt.
+// App Review path on the live PWA: visible email form -> "Use a password instead" -> sign in -> Home shows the
+// seeded book -> Settings shows Delete account + legal links + the not-advice line.
+// Creds from ~/.private_keys/assetly-reviewer.txt.
 //   node e2e/reviewer.mjs           # REVIEWER_URL=... to point elsewhere; PW_ENGINE=webkit for Safari's engine
 import { chromium, webkit } from "playwright";
 import fs from "node:fs";
@@ -12,14 +13,17 @@ const fails = [];
 const check = (ok, what) => { console.log((ok ? "PASS " : "FAIL ") + what); if (!ok) fails.push(what); };
 await page.goto(URL_);
 await page.getByRole("button", { name: /continue with github/i }).waitFor({ timeout: 30000 });
-check((await page.locator('input[type="password"]').count()) === 0, "no password field before the taps");
+check((await page.getByTestId("email-form").count()) === 1, "the email form is visible with no gesture");
+check((await page.locator('input[type="password"]').count()) === 0, "link sign-in is the default, no password shown");
 const mark = page.getByTestId("auth-wordmark");
 for (let i = 0; i < 5; i++) await mark.tap();
-await page.getByTestId("reviewer-form").waitFor({ timeout: 5000 });
-check(true, "five taps reveal the reviewer form");
-await page.getByLabel(/reviewer email/i).fill(cred.email);
-await page.getByLabel(/reviewer password/i).fill(cred.password);
-await page.getByRole("button", { name: /sign in as reviewer/i }).tap();
+check((await page.locator('input[type="password"]').count()) === 0, "the wordmark is inert (no hidden gesture left)");
+await page.getByTestId("toggle-password").tap();
+await page.getByTestId("password-field").waitFor({ timeout: 5000 });
+check(true, "Use a password instead reveals the password field");
+await page.getByLabel(/^email$/i).fill(cred.email);
+await page.getByLabel(/^password$/i).fill(cred.password);
+await page.getByRole("button", { name: /^sign in$/i }).tap();
 await page.getByTestId("net-worth").waitFor({ timeout: 45000 });
 await page.waitForTimeout(2500);
 const nw = (await page.getByTestId("net-worth").textContent()) ?? "";
@@ -29,7 +33,9 @@ check((await page.getByTestId("brief-card").count()) === 1, "a brief card is on 
 await page.getByRole("button", { name: /^Settings$/ }).tap();
 await page.waitForTimeout(1500);
 check((await page.getByTestId("delete-account").count()) === 1, "Settings has Delete account");
-check(/privacy policy/i.test((await page.getByTestId("legal-card").textContent()) ?? ""), "Settings has the legal card");
+const legal = (await page.getByTestId("legal-card").textContent()) ?? "";
+check(/privacy policy/i.test(legal), "Settings has the legal card");
+check(/not investment advice/i.test(legal), "Settings states it is not investment advice");
 await page.getByTestId("delete-account").tap();
 const dlg = page.getByRole("dialog", { name: /delete account/i });
 await dlg.waitFor({ timeout: 5000 });

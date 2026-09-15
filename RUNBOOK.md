@@ -66,8 +66,10 @@ Identifiers: bundle `com.hodlerss.assetly` (ASC bundle-ID record MN5856Z4D7, cap
 App Store Connect app **6811739789** "Assetly: Portfolio Brief" (SKU `assetly-ios`, en-US, Team `5RCPL9J3UX`),
 API key `26G34JQ5XQ` (Admin) at `~/.private_keys/AuthKey_26G34JQ5XQ.p8`, issuer `03b49a0e-29cc-4d9d-94bc-a12aa1f92ec4`.
 Demo account for App Review: credentials in `~/.private_keys/assetly-reviewer.txt` (never in git); the account has a
-seeded US + Korea + crypto book, briefs, insights and narration scripts. Reach the hidden password form by tapping the
-"Assetly" wordmark five times on the sign-in screen (or `?reviewer=1` on the web).
+seeded US + Korea + crypto book, briefs, insights and narration scripts. Since build 202609150112 the email form is
+**visible** on the sign-in screen — "Use a password instead" — and the old five-tap wordmark gesture is gone.
+A throwaway account for the demo recording lives in `~/.private_keys/assetly-demo-throwaway.txt`; `node e2e/throwaway.mjs`
+recreates and seeds it (if GoTrue leaves it unconfirmed the script prints the one SQL line to run in the dashboard).
 
 Xcode: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` (xcode-select stays on the CLT; no sudo needed).
 
@@ -100,3 +102,22 @@ Functionality, linked, no tracking; published). Supabase side: Apple provider en
 `com.hodlerss.assetly` (native identity-token flow; no OAuth secret needed), `assetly://auth-callback` in the redirect
 allow list, edge function `delete-account` (verify-JWT gate OFF; it checks the session itself).
 Push: `push-send` defaults to the new bundle; an APNs key still has to be created and stored before pushes deliver.
+
+**Rejected 2026-09-14, Guideline 2.1 "Information Needed — New App Submission"** — the boilerplate letter for accounts
+with no review history, not a defect. Apple wants six answers plus a screen recording made on a physical device, in both
+the Resolution Center reply and the App Review Notes. Answers and the whole response: `answers/20260914_220000_assetly_app_review_response.md`.
+
+```bash
+# the demo recording: XCUITest drives the app on the phone and Xcode records the screen itself
+cd web/ios/App
+REHEARSAL=1 OUT=/tmp/rehearsal.mp4 ./record-demo.sh 32A94BEE-7A1B-4436-A279-0D081A955F38   # SE simulator dry run
+./await-device-and-record.sh        # armed watcher: waits for the iPhone, reseeds, records, retries
+./record-demo.sh 00008030-00126D913C51402E                                                  # the real take
+```
+Traps: a test plan silently overrides `TEST_RUNNER_*` env, so credentials go in the plan (`make-demo-plan.sh`, gitignored);
+`XCUIApplication(bundleIdentifier:)` cannot receive typed text — use `XCUIApplication()`; Return submits the web form, so
+press it only on a form's last field; Supabase's built-in SMTP is capped at 2 emails/hour, which is why the test asserts
+"Link sent" and fails the run instead of recording an error box.
+
+1.1 follow-up: `transcripts.content` still holds verbatim earnings-call text as model input (the client grant is revoked
+as of `20260914000033`). Replace it with a model-written summary, then re-test briefs, insights and Ask.

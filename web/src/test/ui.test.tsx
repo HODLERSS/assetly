@@ -1624,27 +1624,36 @@ describe("U49 Korea editions", () => {
   });
 });
 
-describe("U50 App Review demo sign-in (hidden reviewer form)", () => {
-  it("is invisible by default: no password field, no reviewer form", () => {
+describe("U50 email sign-in is visible, no hidden gesture (App Review can reach the demo account)", () => {
+  it("offers the email form without any gesture, link-first, password one tap away", () => {
     render(<AuthScreen />);
+    expect(screen.getByTestId("email-form")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /email me a sign-in link/i })).toBeTruthy();
+    // password is not the default, but it is reachable and labelled in plain words
     expect(document.querySelector('input[type="password"]')).toBeNull();
-    expect(screen.queryByTestId("reviewer-form")).toBeNull();
+    expect(screen.getByTestId("toggle-password").textContent).toMatch(/use a password instead/i);
   });
-  it("five taps on the wordmark reveal it and it signs in with a password", async () => {
+  it("the wordmark is inert: tapping it five times reveals nothing", async () => {
     render(<AuthScreen />);
     const mark = screen.getByTestId("auth-wordmark");
     for (let i = 0; i < 5; i++) await userEvent.click(mark);
-    expect(await screen.findByTestId("reviewer-form")).toBeTruthy();
-    await userEvent.type(screen.getByLabelText(/reviewer email/i), "minjae.m.lee+reviewer@gmail.com");
-    await userEvent.type(screen.getByLabelText(/reviewer password/i), "pw-123");
-    await userEvent.click(screen.getByRole("button", { name: /sign in as reviewer/i }));
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+  });
+  it("Use a password instead signs in with a password", async () => {
+    render(<AuthScreen />);
+    await userEvent.click(screen.getByTestId("toggle-password"));
+    expect(await screen.findByTestId("password-field")).toBeTruthy();
+    await userEvent.type(screen.getByLabelText(/^email$/i), "minjae.m.lee+reviewer@gmail.com");
+    await userEvent.type(screen.getByLabelText(/^password$/i), "pw-123");
+    await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
     await waitFor(() => expect(passwordSpy).toHaveBeenCalledWith("minjae.m.lee+reviewer@gmail.com", "pw-123"));
   });
-  it("?reviewer=1 opens it on the web", () => {
-    window.history.pushState({}, "", "/?reviewer=1");
+  it("the toggle goes back to the link path", async () => {
     render(<AuthScreen />);
-    expect(screen.getByTestId("reviewer-form")).toBeTruthy();
-    window.history.pushState({}, "", "/");
+    await userEvent.click(screen.getByTestId("toggle-password"));
+    await userEvent.click(screen.getByTestId("toggle-password"));
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+    expect(screen.getByRole("button", { name: /email me a sign-in link/i })).toBeTruthy();
   });
 });
 

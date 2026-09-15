@@ -406,8 +406,11 @@ describe("AI insights + transcripts pipeline (fixture)", () => {
     const r = await fetch(`${URL_}/functions/v1/transcripts-sync?fixture=1`, {
       method: "POST", headers: H, body: JSON.stringify({ symbols: ["RDDT"] }) });
     expect((await r.json()).ok).toBe(true);
-    const { data: t } = await alice.from("transcripts").select("title").eq("symbol", "RDDT");
+    // transcripts hold third-party article text: service-role only since 20260914000033, so read as admin
+    const { data: t } = await admin.from("transcripts").select("title").eq("symbol", "RDDT");
     expect(t!.length).toBeGreaterThan(0);
+    const { data: denied } = await alice.from("transcripts").select("title").eq("symbol", "RDDT");
+    expect(denied ?? []).toHaveLength(0);
     const { data: n } = await alice.from("news").select("source").eq("symbol", "RDDT").eq("source", "Earnings Call");
     expect(n!.length).toBeGreaterThan(0);
   });

@@ -215,6 +215,9 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
         <div className="row" style={{ alignItems: "center" }}><span>Support</span>
           <button className="chip" onClick={() => void openExternal(`${LEGAL_BASE}/support.html`)}>Open</button></div>
         <div className="row"><span>Version</span><span className="sub num">{APP_VERSION}</span></div>
+        <p className="mutedc" style={{ fontSize: 12.5, marginTop: 8 }} data-testid="not-advice">
+          Assetly describes what you own. It is information, not investment advice, and never a recommendation to buy or sell.
+        </p>
       </div>
       <button className="btn secondary" onClick={async () => { await api.signOut(); onSignedOut(); }}>Sign out</button>
       <button className="btn danger" style={{ marginTop: 10 }} onClick={() => { setDeleteErr(null); setDeleting(true); }} data-testid="delete-account">Delete account</button>

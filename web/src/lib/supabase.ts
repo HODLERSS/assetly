@@ -64,14 +64,16 @@ export async function signInWithApple(): Promise<{ error: string | null }> {
   return { error: null };
 }
 
-/** Password sign-in exists only for App Review's demo account; it is never offered to the public. */
+/** Password sign-in, for accounts that have one (the App Review demo account does). */
 export function signInWithPassword(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
+// On iOS the link has to come back through the app's own scheme: window.location.origin is
+// capacitor://localhost there, which Safari cannot hand back to.
 export function signInWithEmail(email: string) {
   return supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: window.location.origin + window.location.pathname },
+    options: { emailRedirectTo: isNative() ? NATIVE_REDIRECT : window.location.origin + window.location.pathname },
   });
 }

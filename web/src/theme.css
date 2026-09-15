@@ -103,6 +103,9 @@ input, select { font: inherit; }
 .btn.secondary { background: var(--as-surface); color: var(--as-ink); border: 1px solid var(--as-rule); }
 .btn.danger { background: var(--as-loss); }
 .btn:disabled { opacity: .55; cursor: default; }
+/* text-button: same 44pt target as a real button, but reads as a link (auth's password toggle) */
+.linky { display: block; width: 100%; min-height: 44px; padding: 10px 8px; background: none; border: 0;
+  color: var(--as-primary); font: inherit; font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .field label { font: 600 11.5px/1 var(--as-font-ui); letter-spacing: .1em; text-transform: uppercase; color: var(--as-muted); }

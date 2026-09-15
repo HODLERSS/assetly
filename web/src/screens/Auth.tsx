@@ -1,30 +1,29 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { signInWithApple, signInWithEmail, signInWithOAuth, signInWithPassword } from "../lib/supabase";
 import { isNative } from "../lib/native";
 
-// Canvas 3a: GitHub / Google OAuth via Supabase — no password path. Email is a passwordless
-// sign-in link, so the rule holds: nothing to remember, nothing to leak.
+// Canvas 3a: GitHub / Google / Apple OAuth via Supabase, plus a passwordless email link. A password
+// field is offered for the accounts that have one — it is visible, not hidden behind a gesture, so
+// App Review can reach the demo account the way any other user would.
 export function AuthScreen() {
   const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [usePassword, setUsePassword] = useState(false);
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [msg, setMsg] = useState<string | null>(null);
   const native = isNative();
-  // App Review's demo sign-in: hidden until the wordmark is tapped five times within three seconds
-  // (or ?reviewer=1 on the web). Nobody else is offered a password.
-  const [reviewer, setReviewer] = useState<boolean>(() => { try { return new URLSearchParams(window.location.search).get("reviewer") === "1"; } catch { return false; } });
-  const taps = useRef<number[]>([]);
-  const tapWordmark = () => { const now = Date.now(); taps.current = [...taps.current.filter((t) => now - t < 3000), now]; if (taps.current.length >= 5) { setReviewer(true); taps.current = []; } };
-  const [pw, setPw] = useState("");
-  const signInReviewer = async () => {
-    setState("sending"); setMsg(null);
-    const { error } = await signInWithPassword(email.trim(), pw);
-    if (error) { setState("error"); setMsg(error.message); return; }
-    setState("idle");
-  };
+
   const apple = async () => {
     setState("sending"); setMsg(null);
     const { error } = await signInWithApple();
     setState(error ? "error" : "idle"); if (error) setMsg(error);
+  };
+
+  const signInPassword = async () => {
+    setState("sending"); setMsg(null);
+    const { error } = await signInWithPassword(email.trim(), pw);
+    if (error) { setState("error"); setMsg(error.message); return; }
+    setState("idle");
   };
 
   const sendLink = async () => {
@@ -43,7 +42,7 @@ export function AuthScreen() {
           <rect x="0" y="3" width="14" height="6" rx="3" fill="currentColor" />
           <rect x="17" y="3" width="14" height="6" rx="3" fill="currentColor" opacity="0.45" />
         </svg>
-        <h1 className="h1" style={{ fontSize: 30 }} onClick={tapWordmark} data-testid="auth-wordmark">Assetly</h1>
+        <h1 className="h1" style={{ fontSize: 30 }} data-testid="auth-wordmark">Assetly</h1>
         <p className="mutedc">Your positions, priced every minute.</p>
       </div>
       {native && (
@@ -57,40 +56,36 @@ export function AuthScreen() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0" }} aria-hidden="true">
         <span style={{ flex: 1, height: 1, background: "var(--as-rule)" }} /><span className="mutedc" style={{ fontSize: 12 }}>or</span><span style={{ flex: 1, height: 1, background: "var(--as-rule)" }} />
       </div>
-      {reviewer ? (
-        <form noValidate onSubmit={(ev) => { ev.preventDefault(); void signInReviewer(); }} data-testid="reviewer-form">
-          <div className="field" style={{ marginBottom: 8 }}>
-            <label htmlFor="rv-email">Reviewer email</label>
-            <input id="rv-email" type="email" inputMode="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div className="field" style={{ marginBottom: 8 }}>
-            <label htmlFor="rv-pw">Reviewer password</label>
-            <input id="rv-pw" type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
-          </div>
-          {msg && <div className="error-note" role="alert">{msg}</div>}
-          <button className="btn secondary" type="submit" disabled={state === "sending"}>{state === "sending" ? "Signing in…" : "Sign in as reviewer"}</button>
-        </form>
-      ) : native ? (
-        <p className="mutedc" style={{ fontSize: 12.5, textAlign: "center" }}>Email links open in Safari; on iPhone, sign in with Apple, GitHub or Google.</p>
-      ) : state === "sent" ? (
-        <p role="status" className="card" style={{ padding: 14, textAlign: "center" }}>
+      {state === "sent" ? (
+        <p role="status" className="card" style={{ padding: 14, textAlign: "center" }} data-testid="link-sent">
           Link sent to <b>{email.trim()}</b>. Open it on this device to sign in.
         </p>
       ) : (
-        <form noValidate onSubmit={(ev) => { ev.preventDefault(); sendLink(); }}>
+        <form noValidate data-testid="email-form"
+          onSubmit={(ev) => { ev.preventDefault(); if (usePassword) void signInPassword(); else void sendLink(); }}>
           <div className="field" style={{ marginBottom: 8 }}>
-            <label htmlFor="auth-email">Email — we send a sign-in link</label>
-            <input id="auth-email" type="email" inputMode="email" autoComplete="email" value={email}
+            <label htmlFor="auth-email">Email</label>
+            <input id="auth-email" type="email" inputMode="email" autoComplete={usePassword ? "username" : "email"} value={email}
               onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
           </div>
+          {usePassword && (
+            <div className="field" style={{ marginBottom: 8 }} data-testid="password-field">
+              <label htmlFor="auth-pw">Password</label>
+              <input id="auth-pw" type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+            </div>
+          )}
           {msg && <div className="error-note" role="alert">{msg}</div>}
           <button className="btn secondary" type="submit" disabled={state === "sending"}>
-            {state === "sending" ? "Sending…" : "Email me a sign-in link"}
+            {state === "sending" ? (usePassword ? "Signing in…" : "Sending…") : usePassword ? "Sign in" : "Email me a sign-in link"}
+          </button>
+          <button type="button" className="linky" data-testid="toggle-password" style={{ marginTop: 10 }}
+            onClick={() => { setUsePassword((v) => !v); setMsg(null); setState("idle"); }}>
+            {usePassword ? "Email me a sign-in link instead" : "Use a password instead"}
           </button>
         </form>
       )}
       <p className="mutedc" style={{ fontSize: 12.5, textAlign: "center", marginTop: 8 }}>
-        {reviewer ? "App Review access only." : "No passwords here. Your holdings stay yours — row-level security keeps every account isolated."}
+        Your holdings stay yours — row-level security keeps every account isolated.
       </p>
     </main>
   );
