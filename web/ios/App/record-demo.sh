@@ -40,7 +40,11 @@ xcodebuild build-for-testing -project App.xcodeproj -scheme AssetlyUITests \
 STATUS=$?
 if [ $STATUS -ne 0 ]; then tail -20 /tmp/assetly-demo-build.log; exit $STATUS; fi
 
-APP=$(find /tmp/dd-uitest/Build/Products -maxdepth 2 -name "App.app" | head -1)
+# DerivedData holds both platforms once a simulator rehearsal has run; picking the wrong one installs a
+# simulator binary on the phone and installd rejects it as "invalid signature".
+PRODUCTS=$([ $SIM -eq 1 ] && echo "Debug-iphonesimulator" || echo "Debug-iphoneos")
+APP="/tmp/dd-uitest/Build/Products/$PRODUCTS/App.app"
+[ -d "$APP" ] || { echo "no App.app under $PRODUCTS"; exit 1; }
 if [ $SIM -eq 1 ]; then
   xcrun simctl uninstall "$UDID" com.hodlerss.assetly 2>/dev/null || true
   xcrun simctl install "$UDID" "$APP" >/dev/null
