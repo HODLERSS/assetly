@@ -114,10 +114,19 @@ REHEARSAL=1 OUT=/tmp/rehearsal.mp4 ./record-demo.sh 32A94BEE-7A1B-4436-A279-0D08
 ./await-device-and-record.sh        # armed watcher: waits for the iPhone, reseeds, records, retries
 ./record-demo.sh 00008030-00126D913C51402E                                                  # the real take
 ```
+The app icon and launch image come from `web/scripts/make_icons.py`, which draws the two-bar mark from
+`web/public/icon.svg`'s geometry (navy #2A3F92 ground, paper #F4F5F7 bars, the second at half opacity).
+It asserts the mark is centred: the bars start at an x offset inside the 32-unit viewBox, so centring the
+wrong box pushes the mark left — that shipped once in build 202609161356 and was fixed in 202609161437.
+Re-run it, then `npm run build:ios` and archive; the icon must stay full bleed (iOS masks the corners)
+and RGB with no alpha.
+
 Traps: a test plan silently overrides `TEST_RUNNER_*` env, so credentials go in the plan (`make-demo-plan.sh`, gitignored);
 `XCUIApplication(bundleIdentifier:)` cannot receive typed text — use `XCUIApplication()`; Return submits the web form, so
-press it only on a form's last field; Supabase's built-in SMTP is capped at 2 emails/hour, which is why the test asserts
-"Link sent" and fails the run instead of recording an error box.
+press it only on a form's last field; Supabase's built-in SMTP is capped at 2 emails/hour (not raisable on the free tier),
+which is why the test asserts "Link sent" and fails the run instead of recording an error box, and why rehearsals skip that
+beat; the app is reinstalled BEFORE the test starts, because an install inside the run puts a placeholder icon and
+"Installing..." into the Home screen shot.
 
 1.1 follow-up: `transcripts.content` still holds verbatim earnings-call text as model input (the client grant is revoked
 as of `20260914000033`). Replace it with a model-written summary, then re-test briefs, insights and Ask.

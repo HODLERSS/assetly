@@ -2,6 +2,12 @@
 # Records the App Review demo walkthrough on a target device (or simulator) and writes an .mp4.
 #   REHEARSAL=1 ./record-demo.sh <udid>     # backs out of the deletion, keeps the throwaway account
 #   ./record-demo.sh <udid>                 # the real take: deletes the throwaway on camera
+#
+# On a physical device the phone needs three things, none of them settable from here:
+#   Settings > Privacy & Security > Developer Mode  ON  (requires a restart)
+#   Settings > Developer > Enable UI Automation     ON  (without it the runner dies with
+#                                                        LocalAuthentication -4 "UI canceled by system")
+#   unlocked, and Auto-Lock set to Never for the duration
 # Output: /tmp/assetly-demo-raw.mp4 (as captured) and the encoded file this prints at the end.
 set -e
 cd "$(dirname "$0")"
@@ -12,12 +18,11 @@ RESULT=/tmp/assetly-demo.xcresult
 
 REHEARSAL="${REHEARSAL:-0}" ./make-demo-plan.sh
 
-# a fresh install so the recording starts at the sign-in screen, not a restored session
+SIM=0
 if xcrun simctl list devices | grep -q "$UDID"; then
-  xcrun simctl uninstall "$UDID" com.hodlerss.assetly 2>/dev/null || true
+  SIM=1
   SIGNING=(CODE_SIGNING_ALLOWED=NO)
 else
-  xcrun devicectl device uninstall app --device "$UDID" com.hodlerss.assetly 2>/dev/null || true
   SIGNING=(-allowProvisioningUpdates
            -authenticationKeyPath "$HOME/.private_keys/AuthKey_26G34JQ5XQ.p8"
            -authenticationKeyID 26G34JQ5XQ
@@ -27,7 +32,25 @@ fi
 
 rm -rf "$RESULT"
 set +e
-xcodebuild test -project App.xcodeproj -scheme AssetlyUITests \
+# Build first, then reinstall the app BEFORE recording starts. Recording begins when the test does, so
+# an uninstall/install inside the run would put a placeholder icon and "Installing..." on camera; doing
+# it here means the Home screen shot has a settled icon and the app opens signed out.
+xcodebuild build-for-testing -project App.xcodeproj -scheme AssetlyUITests \
+  -destination "id=$UDID" -derivedDataPath /tmp/dd-uitest "${SIGNING[@]}" > /tmp/assetly-demo-build.log 2>&1
+STATUS=$?
+if [ $STATUS -ne 0 ]; then tail -20 /tmp/assetly-demo-build.log; exit $STATUS; fi
+
+APP=$(find /tmp/dd-uitest/Build/Products -maxdepth 2 -name "App.app" | head -1)
+if [ $SIM -eq 1 ]; then
+  xcrun simctl uninstall "$UDID" com.hodlerss.assetly 2>/dev/null || true
+  xcrun simctl install "$UDID" "$APP" >/dev/null
+else
+  xcrun devicectl device uninstall app --device "$UDID" com.hodlerss.assetly >/dev/null 2>&1 || true
+  xcrun devicectl device install app --device "$UDID" "$APP" >/dev/null
+fi
+sleep 4                                   # let the Home screen settle before the camera rolls
+
+xcodebuild test-without-building -project App.xcodeproj -scheme AssetlyUITests \
   -destination "id=$UDID" -only-testing:AssetlyUITests/AssetlyDemoUITests \
   -resultBundlePath "$RESULT" -derivedDataPath /tmp/dd-uitest "${SIGNING[@]}" > /tmp/assetly-demo.log 2>&1
 STATUS=$?

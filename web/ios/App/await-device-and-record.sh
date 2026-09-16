@@ -10,14 +10,17 @@ LOG=/tmp/assetly-demo-watch.log
 : > "$LOG"
 say() { echo "[$(date -u +%H:%M:%SZ)] $*" | tee -a "$LOG"; }
 
-say "waiting for the iPhone ($UDID) to come online — connect it by USB and unlock it"
+# "connected" is not enough: XCUITest needs Developer Mode on (Settings > Privacy & Security >
+# Developer Mode, then a restart). device-ready.py checks the real UDID and that flag.
+say "waiting for the iPhone: connected, unlocked, Developer Mode on"
 DEADLINE=$(( $(date +%s) + 24*3600 ))
-until xcrun devicectl list devices 2>/dev/null | grep -q "$UDID.*available"; do
-  [ "$(date +%s)" -lt "$DEADLINE" ] || { say "gave up: the phone never appeared"; exit 3; }
-  sleep 60
+LAST=""
+while ! STATE=$(./device-ready.py "$UDID"); do
+  [ "$(date +%s)" -lt "$DEADLINE" ] || { say "gave up: the phone never became ready"; exit 3; }
+  [ "$STATE" = "$LAST" ] || { say "still waiting - $STATE"; LAST="$STATE"; }
+  sleep 30
 done
-say "device is up"
-xcrun devicectl list devices 2>/dev/null | grep "$UDID" | tee -a "$LOG"
+say "device ready - $STATE"
 
 for attempt in 1 2 3; do
   say "attempt $attempt: reseeding the throwaway account"

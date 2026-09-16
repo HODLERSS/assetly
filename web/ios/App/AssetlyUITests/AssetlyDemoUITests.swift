@@ -70,14 +70,44 @@ final class AssetlyDemoUITests: XCTestCase {
         submitFromKeyboard()
     }
 
+    /// Apple asks for the recording to begin with launching the app, so it begins where a person
+    /// would: on the Home screen, tapping the icon. Falls back to a direct launch if the icon is not
+    /// reachable (it may sit on another page), which still starts the recording at a cold launch.
+    private func launchFromHomeScreen() {
+        app.terminate()
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        springboard.activate()
+        beat(2.5)
+        // Tap the icon if it is on the page we land on. Hunting across pages ends up in the App
+        // Library, which looks like flailing on camera; a direct launch from the Home screen is a
+        // clean cold start either way. "AssetlyUITests-Runner" shares the prefix, so exclude it.
+        let isAssetly = NSPredicate(format: "label BEGINSWITH[c] 'Assetly' AND NOT (label CONTAINS[c] 'UITest')")
+        let icon = springboard.icons.matching(isAssetly).firstMatch
+        if icon.waitForExistence(timeout: 3), icon.isHittable {
+            beat(1.2)
+            icon.tap()
+        } else {
+            note("Assetly icon is not on this Home screen page; launching directly")
+            beat(1.2)
+            app.launch()
+        }
+        _ = app.wait(for: .runningForeground, timeout: 30)
+    }
+
     func testDemoWalkthrough() throws {
-        // --- 1. cold launch. Apple asks for the recording to start here.
-        app.launch()
+        // --- 1. cold launch, from the Home screen icon. record-demo.sh reinstalls the app before the
+        // test starts, so this opens signed out with the icon already settled on the Home screen.
+        launchFromHomeScreen()
         beat(3)
         XCTAssertTrue(app.buttons["Continue with Apple"].waitForExistence(timeout: 30), "sign-in screen")
         beat(2.5)
 
         // --- 2. registration / passwordless sign-in: the app emails a one-time link.
+        // Rehearsals skip it: Supabase's built-in SMTP allows 2 emails an hour, and burning one on a
+        // dry run is what leaves the real take rate limited.
+        if env("REHEARSAL") == "1" {
+            note("rehearsal: skipping the magic-link beat so it does not spend an email")
+        } else {
         note("passwordless sign-in")
         _ = fill(app.textFields.firstMatch, env("DEMO_EMAIL"), "the email field")
         submitFromKeyboard()                             // the form's only field, so Return sends the link
@@ -86,6 +116,7 @@ final class AssetlyDemoUITests: XCTestCase {
         let sent = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'Link sent'")).firstMatch
         XCTAssertTrue(sent.waitForExistence(timeout: 15), "the sign-in link was not sent (rate limit?) — re-run")
         beat(5)
+        }
 
         // --- 3. login with the App Review demo account.
         note("password sign-in")
@@ -161,6 +192,14 @@ final class AssetlyDemoUITests: XCTestCase {
         _ = tap("Delete everything", "the confirm button", timeout: 15)
         beat(6)
         XCTAssertTrue(app.buttons["Continue with Apple"].waitForExistence(timeout: 40), "signed out after deletion")
+        // XCTest stops recording shortly after the last automation ACTION, not after the last sleep,
+        // so the deleted-and-signed-out end state needs real interactions to stay in the video.
         beat(3)
+        _ = tap("Use a password instead", "the password disclosure", timeout: 10)
+        beat(3)
+        _ = tap("Email me a sign-in link instead", "back to the link form", timeout: 10)
+        beat(3)
+        app.swipeUp(); beat(2)
+        app.swipeDown(); beat(3)
     }
 }

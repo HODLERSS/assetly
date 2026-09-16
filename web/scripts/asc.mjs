@@ -4,6 +4,7 @@
 //   node scripts/asc.mjs post  /v1/bundleIds '{"data":{...}}'
 //   node scripts/asc.mjs patch /v1/appInfos/<id> '{"data":{...}}'
 //   node scripts/asc.mjs upload-screenshot <appScreenshotSetId> <file.png>
+//   node scripts/asc.mjs upload-review-attachment <appStoreReviewDetailId> <file.mp4>
 //   node scripts/asc.mjs wait-build <appId> <buildVersion>
 // As a module: import { asc } from "./asc.mjs"; await asc("get", "/v1/apps")
 import { readFileSync, statSync } from "fs";
@@ -50,6 +51,22 @@ export async function uploadScreenshot(setId, file) {
   return asc("patch", `/v1/appScreenshots/${shot.id}`, { data: { type: "appScreenshots", id: shot.id, attributes: { uploaded: true, sourceFileChecksum: md5 } } });
 }
 
+/** App Review attachment (the demo video Apple asks for): reserve, PUT the ranges, commit with the md5. */
+export async function uploadReviewAttachment(reviewDetailId, file) {
+  const bytes = readFileSync(file); const size = statSync(file).size;
+  const res = await asc("post", "/v1/appStoreReviewAttachments", { data: { type: "appStoreReviewAttachments", attributes: { fileName: file.split("/").pop(), fileSize: size }, relationships: { appStoreReviewDetail: { data: { type: "appStoreReviewDetails", id: reviewDetailId } } } } });
+  if (res.status >= 300) return res;
+  const att = res.json.data;
+  for (const op of att.attributes.uploadOperations) {
+    const chunk = bytes.subarray(op.offset, op.offset + op.length);
+    const h = Object.fromEntries((op.requestHeaders ?? []).map((x) => [x.name, x.value]));
+    const put = await fetch(op.url, { method: op.method, headers: h, body: chunk });
+    if (!put.ok) return { status: put.status, json: { error: "chunk upload failed", op } };
+  }
+  const md5 = createHash("md5").update(bytes).digest("hex");
+  return asc("patch", `/v1/appStoreReviewAttachments/${att.id}`, { data: { type: "appStoreReviewAttachments", id: att.id, attributes: { uploaded: true, sourceFileChecksum: md5 } } });
+}
+
 /** Poll until the build with this version is VALID (or a terminal failure). */
 export async function waitBuild(appId, version, maxMinutes = 180) {
   for (let i = 0; i < maxMinutes; i++) {
@@ -66,6 +83,7 @@ export async function waitBuild(appId, version, maxMinutes = 180) {
 if (process.argv[1] && process.argv[1].endsWith("asc.mjs")) {
   const [cmd, a, b] = process.argv.slice(2);
   const out = cmd === "upload-screenshot" ? await uploadScreenshot(a, b)
+    : cmd === "upload-review-attachment" ? await uploadReviewAttachment(a, b)
     : cmd === "wait-build" ? await waitBuild(a, b)
     : await asc(cmd, a, b);
   console.log(JSON.stringify(out, null, 1));
