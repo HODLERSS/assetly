@@ -10,3 +10,6 @@ deno.lock
 
 # generated for the App Review demo recording; carries demo credentials
 web/ios/App/AssetlyDemo.xctestplan
+
+# generated for the first-run simulator walkthrough; carries fixture credentials
+web/ios/App/FirstRun.xctestplan

@@ -39,28 +39,48 @@ export type Profile = { id: string; display_name: string | null; base_currency: 
 const nm = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 const warmupFired = new Set<string>();
 
+/** Settle with `fallback` rather than hang forever. */
+function withTimeout<T>(p: PromiseLike<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([Promise.resolve(p), new Promise<T>((res) => setTimeout(() => res(fallback), ms))]);
+}
+
+/** The signed-in user's id, without a network round trip when we can avoid one.
+ *  `auth.getUser()` calls /auth/v1/user, and after the app has been backgrounded — a brokerage OAuth
+ *  in the system browser can take minutes — the access token is often expired, so that call waits on a
+ *  token refresh that can deadlock in the GoTrue client. Every write path opened with it, so one stuck
+ *  refresh froze the UI with no way out: App Review hit exactly that on the setup screen (Guideline
+ *  2.1(a), 2026-09-21). The cached session answers instantly, and the timeouts mean the worst case is
+ *  an error the user can retry rather than a frozen screen. */
+async function currentUserId(sb: SupabaseClient): Promise<string | null> {
+  const local = await withTimeout(sb.auth.getSession(), 4000, null);
+  const fromSession = local?.data?.session?.user?.id ?? null;
+  if (fromSession) return fromSession;
+  const remote = await withTimeout(sb.auth.getUser(), 8000, null);
+  return remote?.data?.user?.id ?? null;
+}
+
 export function makeApi(sb: SupabaseClient = supabase) {
   return {
     async getProfile(): Promise<Profile | null> {
-      const { data: u } = await sb.auth.getUser();
-      if (!u.user) return null;
-      const { data, error } = await sb.from("profiles").select("*").eq("id", u.user.id).single();
+      const uid = await currentUserId(sb);
+      if (!uid) return null;
+      const { data, error } = await sb.from("profiles").select("*").eq("id", uid).single();
       if (error) throw error;
       return data as Profile;
     },
     async completeOnboarding(markets: string[], base_currency: "USD" | "KRW", investor?: Investor | null) {
-      const { data: u } = await sb.auth.getUser();
-      if (!u.user) throw new Error("not signed in");
+      const uid = await currentUserId(sb);
+      if (!uid) throw new Error("Could not confirm your session. Check your connection and try again.");
       const { error } = await sb.from("profiles")
         .update({ markets, base_currency, onboarded_at: new Date().toISOString(), ...(investor !== undefined ? { investor } : {}) })
-        .eq("id", u.user.id);
+        .eq("id", uid);
       if (error) throw error;
     },
     /** Investor profile (the 5 quiz answers): editable any time from Settings. */
     async updateInvestor(investor: Investor) {
-      const { data: u } = await sb.auth.getUser();
-      if (!u.user) throw new Error("not signed in");
-      const { error } = await sb.from("profiles").update({ investor }).eq("id", u.user.id);
+      const uid = await currentUserId(sb);
+      if (!uid) throw new Error("Could not confirm your session. Check your connection and try again.");
+      const { error } = await sb.from("profiles").update({ investor }).eq("id", uid);
       if (error) throw error;
     },
     async searchSymbols(q: string): Promise<SymbolRow[]> {
@@ -103,10 +123,10 @@ export function makeApi(sb: SupabaseClient = supabase) {
       })) as PortfolioRow[];
     },
     async addPosition(symbol: string, qty: number, cost_per_share: number, acquired_on?: string, account: Account = "brokerage", nickname = "", note = "") {
-      const { data: u } = await sb.auth.getUser();
-      if (!u.user) throw new Error("not signed in");
+      const uid = await currentUserId(sb);
+      if (!uid) throw new Error("Could not confirm your session. Check your connection and try again.");
       const { data: h, error: hErr } = await sb.from("holdings")
-        .upsert({ user_id: u.user.id, symbol, account, nickname }, { onConflict: "user_id,symbol,account,nickname" })
+        .upsert({ user_id: uid, symbol, account, nickname }, { onConflict: "user_id,symbol,account,nickname" })
         .select("id").single();
       if (hErr) throw hErr;
       const { error: lErr } = await sb.from("lots")
@@ -150,16 +170,16 @@ export function makeApi(sb: SupabaseClient = supabase) {
       return (data ?? []).map((r: Record<string, unknown>) => ({ ts: String(r.ts), price: Number(r.price) }));
     },
     async updateBaseCurrency(base_currency: "USD" | "KRW") {
-      const { data: u } = await sb.auth.getUser();
-      if (!u.user) throw new Error("not signed in");
-      const { error } = await sb.from("profiles").update({ base_currency }).eq("id", u.user.id);
+      const uid = await currentUserId(sb);
+      if (!uid) throw new Error("Could not confirm your session. Check your connection and try again.");
+      const { error } = await sb.from("profiles").update({ base_currency }).eq("id", uid);
       if (error) throw error;
     },
     /** Per-market display currency (US assets / KR assets), each USD or KRW. */
     async updateDisplayCcy(patch: Partial<{ display_us: "USD" | "KRW"; display_kr: "USD" | "KRW" }>) {
-      const { data: u } = await sb.auth.getUser();
-      if (!u.user) throw new Error("not signed in");
-      const { error } = await sb.from("profiles").update(patch).eq("id", u.user.id);
+      const uid = await currentUserId(sb);
+      if (!uid) throw new Error("Could not confirm your session. Check your connection and try again.");
+      const { error } = await sb.from("profiles").update(patch).eq("id", uid);
       if (error) throw error;
     },
     /** Pre-open pulse: US index futures tracked by the 1-min price pipeline. */
@@ -266,28 +286,28 @@ export function makeApi(sb: SupabaseClient = supabase) {
     },
     /** Remember this device so a finished brief can be pushed to it. Upsert: iOS reissues tokens. */
     async savePushToken(token: string, platform = "ios"): Promise<void> {
-      const { data: u } = await sb.auth.getUser();
-      if (!u.user || !token) return;
+      const uid = await currentUserId(sb);
+      if (!uid || !token) return;
       await sb.from("push_tokens").upsert(
-        { user_id: u.user.id, token, platform, last_seen_at: new Date().toISOString() },
+        { user_id: uid, token, platform, last_seen_at: new Date().toISOString() },
         { onConflict: "user_id,token" },
       );
     },
     /** The reader turned notifications off: forget every token for this account. */
     async removePushToken(): Promise<void> {
-      const { data: u } = await sb.auth.getUser();
-      if (!u.user) return;
-      await sb.from("push_tokens").delete().eq("user_id", u.user.id);
+      const uid = await currentUserId(sb);
+      if (!uid) return;
+      await sb.from("push_tokens").delete().eq("user_id", uid);
     },
     /** Portfolio intelligence: refresh now (force regen for this user), then return the fresh row. */
     async refreshPortfolioInsights(): Promise<Insight | null> {
-      const { data: u } = await sb.auth.getUser();
-      if (!u.user) return null;
+      const uid = await currentUserId(sb);
+      if (!uid) return null;
       // Same pipeline as the hourly lap: pull fresh headlines for every held symbol FIRST, then assess.
-      const { data: held } = await sb.from("portfolio").select("symbol, kind").eq("user_id", u.user.id);
+      const { data: held } = await sb.from("portfolio").select("symbol, kind").eq("user_id", uid);
       const syms = (held ?? []).map((r) => String(r.symbol)).filter((sy) => !sy.startsWith("$"));
       if (syms.length) await sb.functions.invoke("news-sync", { body: { symbols: syms } }).catch(() => null);
-      await sb.functions.invoke("insights-sync", { body: { force: true, user_id: u.user.id } }).catch(() => null);
+      await sb.functions.invoke("insights-sync", { body: { force: true, user_id: uid } }).catch(() => null);
       return this.getPortfolioInsights();
     },
     /** Per-stock intelligence refresh: fresh news for that symbol FIRST, then its assessment (hourly pipeline, targeted). */
@@ -313,8 +333,8 @@ export function makeApi(sb: SupabaseClient = supabase) {
     },
     /** Keep a symbol out of future brokerage imports (used when removing an imported position). */
     async excludeImport(symbol: string): Promise<void> {
-      const { data: u } = await sb.auth.getUser();
-      if (u.user) await sb.from("snaptrade_exclusions").upsert({ user_id: u.user.id, symbol });
+      const uid = await currentUserId(sb);
+      if (uid) await sb.from("snaptrade_exclusions").upsert({ user_id: uid, symbol });
     },
     /** SnapTrade: import holdings now for the signed-in user. */
     async snaptradeSync(): Promise<void> {

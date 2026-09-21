@@ -1682,3 +1682,51 @@ describe("U51 delete account (Apple 5.1.1(v))", () => {
     expect(screen.getByTestId("legal-card").textContent).toMatch(/privacy policy/i);
   });
 });
+
+// Guideline 2.1(a), rejected 2026-09-21: the reviewer connected a real brokerage, 8 positions
+// imported, tapped Continue, and the button stuck on "Finishing…" forever. completeOnboarding opens
+// with sb.auth.getUser(), a network round trip that can hang after a long spell in the brokerage
+// portal (expired token -> refresh deadlock). Nothing in the UI could recover.
+describe("U52 onboarding can never trap the user", () => {
+  const freshProfile = { id: "u1", display_name: "T", base_currency: "USD" as const, display_us: "USD" as const, display_kr: "KRW" as const, markets: ["US"], onboarded_at: null };
+
+  it("a completeOnboarding that never settles still lets the user out", async () => {
+    const api = stubApi({
+      getProfile: vi.fn().mockResolvedValue(freshProfile),
+      completeOnboarding: vi.fn().mockImplementation(() => new Promise(() => {})),   // hangs, like the reviewer's
+    });
+    window.history.replaceState({}, "", "/?snaptrade=connected");
+    render(<App api={api} />);
+    await screen.findByTestId("ob-import");
+    await screen.findByText(/imported 1 position/i, {}, { timeout: 4000 });
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    // it may say "Finishing…" briefly, but it must not stay stuck: an error appears and the way out works
+    const alert = await screen.findByRole("alert", {}, { timeout: 15000 });
+    expect(alert.textContent).toMatch(/again|try|could not/i);
+    const cont = screen.getByRole("button", { name: /continue|finish/i });
+    expect((cont as HTMLButtonElement).disabled).toBe(false);
+    window.history.replaceState({}, "", "/");
+  }, 20000);
+
+  it("Skip for now finishes onboarding with no position", async () => {
+    const api = stubApi({ getProfile: vi.fn().mockResolvedValue(freshProfile) });
+    render(<App api={api} />);
+    await skipQuiz();
+    await userEvent.click(await screen.findByTestId("ob-skip"));
+    await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalled());
+    expect(api.addPosition).not.toHaveBeenCalled();
+  });
+
+  it("a failing symbol search says so instead of claiming nothing matched", async () => {
+    const api = stubApi({
+      getProfile: vi.fn().mockResolvedValue(freshProfile),
+      searchSymbols: vi.fn().mockRejectedValue(new Error("network down")),
+    });
+    render(<App api={api} />);
+    await skipQuiz();
+    await userEvent.type(await screen.findByLabelText(/find your first position/i), "MARA");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/search|connection|again/i);
+    expect(screen.queryByText(/nothing matched/i)).toBeNull();
+  });
+});

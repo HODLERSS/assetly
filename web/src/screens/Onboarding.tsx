@@ -6,6 +6,9 @@ import { marketOf } from "../lib/markets";
 import { openConnectPortal, platformTag } from "../lib/native";
 import { Icon } from "../components/Icon";
 
+// Long enough for a slow phone network, short enough that nobody thinks the app has died.
+const SETUP_TIMEOUT_MS = 12000;
+
 // Setup: connect a brokerage (positions import in seconds) OR add the first
 // position manually. After the OAuth return, this screen shows the live import
 // and finishes onboarding in one tap — markets are inferred, never asked.
@@ -23,6 +26,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   const [cost, setCost] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [searchErr, setSearchErr] = useState<string | null>(null);
   const [imported, setImported] = useState<PortfolioRow[] | null>(null);   // null = not polling
   const [importDone, setImportDone] = useState(false);
   const pollRef = useRef(0);
@@ -65,17 +69,39 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   const finishImported = async () => {
     setBusy(true); setErr(null);
     try {
-      await api.completeOnboarding(marketsOf(imported ?? []), "USD", inv ?? INVESTOR_DEFAULT);
+      await guard(api.completeOnboarding(marketsOf(imported ?? []), "USD", inv ?? INVESTOR_DEFAULT));
       // the connect callback already queued the book-changed chain (sync -> news -> intelligence -> assessment)
-      await onDone();
+      await guard(Promise.resolve(onDone()));
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not save. Try again."); }
+    finally { setBusy(false); }
+  };
+
+  // Setup must never trap anyone. App Review got stuck here on "Finishing…" when the call behind the
+  // Continue button never settled (Guideline 2.1(a), 2026-09-21), so every await on this screen is
+  // bounded: worst case the user sees an error and can press the button again, or skip past it.
+  const guard = <T,>(p: Promise<T>): Promise<T> => Promise.race([
+    p,
+    new Promise<T>((_, rej) => setTimeout(() => rej(new Error("That took too long. Check your connection and try again — or skip and add holdings later.")), SETUP_TIMEOUT_MS)),
+  ]);
+
+  /** Leave setup with nothing in the book: Home's empty state offers connect and manual add. */
+  const skipForNow = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await guard(api.completeOnboarding(["US"], "USD", inv ?? INVESTOR_DEFAULT));
+      await guard(Promise.resolve(onDone()));
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not save. Try again."); }
     finally { setBusy(false); }
   };
 
   const search = async (text: string) => {
     setQ(text);
+    setSearchErr(null);
     if (text.trim().length < 1) { setResults([]); return; }
-    try { setResults(await api.searchSymbols(text.trim())); } catch { setResults([]); }
+    // an empty list means "no match"; a thrown error means the search never ran, and saying so is the
+    // difference between a user who retries and one who thinks the app is broken
+    try { setResults(await api.searchSymbols(text.trim())); }
+    catch { setResults([]); setSearchErr("Could not reach search. Check your connection and try again."); }
   };
 
   const finish = async () => {
@@ -122,9 +148,14 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
           </>)}
         </div>
         {err && <div className="error-note" role="alert">{err}</div>}
-        <button className="btn" disabled={busy || (!importDone && true)} onClick={finishImported} style={{ marginTop: 14 }}>
+        <button className="btn" disabled={busy || !importDone} onClick={finishImported} style={{ marginTop: 14 }}>
           {busy ? "Finishing…" : "Continue"}
         </button>
+        {err && (
+          <button className="linky" data-testid="ob-skip-import" disabled={busy} onClick={skipForNow} style={{ marginTop: 6 }}>
+            Skip for now — your positions are already imported
+          </button>
+        )}
       </main>
     );
   }
@@ -150,8 +181,12 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
         <section aria-label="Add your holdings">
           <button className="btn" data-testid="ob-connect" disabled={busy} onClick={async () => {
             setErr(null); setBusy(true);
-            try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); }
-            catch (e) { setErr(e instanceof Error ? e.message : "Could not start the brokerage link."); setBusy(false); }
+            try {
+              const r = await guard(api.snaptrade("connect", { platform: platformTag() }));
+              if (!r.url) throw new Error("The brokerage link didn't come back. Try again.");
+              await openConnectPortal(r.url);
+            } catch (e) { setErr(e instanceof Error ? e.message : "Could not start the brokerage link."); }
+            finally { setBusy(false); }   // without this the screen stays disabled forever
           }}><Icon name="bolt" /> Connect your brokerage</button>
           <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 2px 0" }}>
             Robinhood, Fidelity, Schwab, and more. Positions and cost basis import in seconds.
@@ -183,8 +218,12 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
             ))}
             {busy && <p className="empty">Adding to Assetly…</p>}
             {err && <div className="error-note" role="alert">{err}</div>}
-            {q && results.length === 0 && <p className="empty">Nothing matched “{q}”.</p>}
+            {searchErr && <div className="error-note" role="alert">{searchErr}</div>}
+            {q && !searchErr && results.length === 0 && <p className="empty">Nothing matched “{q}”.</p>}
           </div>
+          <button className="linky" data-testid="ob-skip" disabled={busy} onClick={skipForNow} style={{ marginTop: 6 }}>
+            Skip for now — add holdings later
+          </button>
         </section>
       )}
 
