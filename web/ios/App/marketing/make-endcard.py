@@ -4,15 +4,18 @@
     make-endcard.py <width> <height> <icon.png> <out.png>
 
 A launch clip that ends on a screenshot leaves the viewer with nothing to act on, so the last beat
-names the app and says it is free on the App Store.
+names the app and says where to get it.
 """
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
 W, H, icon_path, out = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3], sys.argv[4]
-CREAM = (244, 245, 247, 255)   # Assetly ground (--as-bg #F4F5F7)
-INK = (22, 24, 29, 255)
-MUTED = (93, 99, 110, 255)
+import os
+_DARK = os.environ.get("THEME", "light") == "dark"
+# the card has to match the footage: the app's own ground and ink in whichever theme was recorded
+CREAM = (15, 18, 22, 255) if _DARK else (244, 245, 247, 255)
+INK = (233, 236, 241, 255) if _DARK else (22, 24, 29, 255)
+MUTED = (155, 163, 176, 255) if _DARK else (93, 99, 110, 255)
 FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
 
 def font(size, index=2):
@@ -30,9 +33,9 @@ ImageDraw.Draw(mask).rounded_rectangle([0, 0, ICON - 1, ICON - 1], radius=52, fi
 # bottom-heavy with dead space above the icon.
 lines = [
     ("Assetly", font(88), INK, 30),
-    ("Your positions, priced every minute", font(38), MUTED, 10),
+    ("Your whole portfolio, priced live", font(38), MUTED, 10),
     ("Briefs \u00b7 Intelligence \u00b7 Ask", font(38), MUTED, 64),
-    ("Coming soon to the App Store", font(44), INK, 0),
+    ("Available on the App Store", font(44), INK, 0),
 ]
 heights = []
 for text, f, _, gap in lines:

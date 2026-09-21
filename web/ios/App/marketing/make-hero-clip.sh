@@ -12,7 +12,8 @@ OUT="${2:?}"
 CAPS="${3:-/tmp/sprout-captions.tsv}"
 ASPECT="${4:-1x1}"
 
-CREAM=0xF4F5F7   # Assetly ground (--as-bg), so the canvas matches the app
+# Assetly ground (--as-bg) in whichever theme was recorded, so the canvas matches the app
+if [ "${THEME:-light}" = "dark" ]; then CREAM=0x0F1216; else CREAM=0xF4F5F7; fi
 case "$ASPECT" in
   1x1) W=1080; H=1080; TOP=18;  CAP_H=140; CAP_SIZE=50 ;;
   4x5) W=1080; H=1350; TOP=28;  CAP_H=168; CAP_SIZE=58 ;;

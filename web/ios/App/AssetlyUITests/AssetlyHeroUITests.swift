@@ -44,19 +44,35 @@ final class AssetlyHeroUITests: XCTestCase {
     func testAseed() {
         app.launch()
         beat(3)
-        if app.buttons["Settings"].waitForExistence(timeout: 12) { return }   // already signed in
-        guard app.buttons["Use a password instead"].waitForExistence(timeout: 30) else {
-            XCTFail("no sign-in screen"); return
+        if !app.buttons["Settings"].waitForExistence(timeout: 12) {          // not already signed in
+            guard app.buttons["Use a password instead"].waitForExistence(timeout: 30) else {
+                XCTFail("no sign-in screen"); return
+            }
+            app.buttons["Use a password instead"].tap()
+            beat()
+            fill(app.textFields.firstMatch, env("SHOWCASE_EMAIL"))
+            fill(app.secureTextFields.firstMatch, env("SHOWCASE_PASSWORD"))
+            for n in ["Return", "return", "go", "Go", "Done"] where app.keyboards.buttons[n].exists {
+                app.keyboards.buttons[n].tap(); break
+            }
+            XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 90), "seed sign-in failed")
         }
-        app.buttons["Use a password instead"].tap()
-        beat()
-        fill(app.textFields.firstMatch, env("SHOWCASE_EMAIL"))
-        fill(app.secureTextFields.firstMatch, env("SHOWCASE_PASSWORD"))
-        for n in ["Return", "return", "go", "Go", "Done"] where app.keyboards.buttons[n].exists {
-            app.keyboards.buttons[n].tap(); break
-        }
-        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 90), "seed sign-in failed")
+        pickAppearance()
         beat(4)                                   // let the book and the brief land
+    }
+
+    /// Pins the appearance the take is recorded in. `simctl ui appearance` does reach the WKWebView,
+    /// but only when it is set before the simulator finishes booting, so the app's own Appearance
+    /// control is belt and braces: it writes the choice to localStorage and survives the relaunch
+    /// between the seed and the take. Not finding the chip is not a failure — the system appearance
+    /// has already done the job by then, and failing here would abort the seed and cost the take.
+    private func pickAppearance() {
+        let want = env("HERO_THEME").isEmpty ? "Light" : env("HERO_THEME")
+        guard app.buttons["Settings"].exists else { return }
+        app.buttons["Settings"].tap(); beat(2.0)
+        let chip = app.buttons[want]
+        if chip.waitForExistence(timeout: 10) && chip.isHittable { chip.tap(); beat(1.2) }
+        if app.buttons["Home"].exists { app.buttons["Home"].tap(); beat(1.4) }
     }
 
     // MARK: the take

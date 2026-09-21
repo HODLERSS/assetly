@@ -1,23 +1,34 @@
 # Assetly launch clip
 
-`assetly-linkedin-4x5.mp4` — **1080x1350, the one to post.**
-`assetly-linkedin-square.mp4` — 1080x1080 alternate.
+Four files, same take, same cut, same bed — pick a theme and an aspect:
 
-19.8 seconds, silent, captioned, real app footage in an iPhone 17 Pro body, ending on a card.
+| | 4:5 (1080x1350) | 1:1 (1080x1080) |
+|---|---|---|
+| **Light** | `assetly-light-4x5.mp4` | `assetly-light-1x1.mp4` |
+| **Dark** | `assetly-dark-4x5.mp4` | `assetly-dark-1x1.mp4` |
+
+**18.6 seconds, with music, captioned, real app footage in an iPhone 17 Pro body, ending on a card.**
+4:5 is the default; use square only if a surface demands it. Light and dark are the same clip shot
+twice — post whichever reads better in the feed you are posting to.
+
+Audio measures −14.2 LUFS integrated with a −1.5 dBFS peak on all four, which is the streaming
+loudness target, so no platform will re-level them.
 
 ## The cut
 
-Seven beats, 18.4s of product crossfaded 0.45s into a 1.8s end card.
+Seven beats on a bar grid at 100 BPM (one bar = 2.4s), 16.8s of product crossfaded one beat (0.6s)
+into a 2.4s end card. Every cut and the fade to the card land on a bar line, which is what makes the
+edit feel cut *to* the music rather than laid over it.
 
-| # | Beat | Sec | Caption |
+| # | Beat | Bars | Caption |
 |---|---|---|---|
-| 1 | Home, net worth | 2.4 | Everything you own, in one place |
-| 2 | The book scrolling | 2.4 | Live prices, every position |
-| 3 | Brief opened | 2.6 | A brief on what moved, and why |
-| 4 | Narration playing | 1.8 | Listen to it on the way in |
-| 5 | NVDA, chart and intelligence | 2.6 | A read on every holding |
-| 6 | News | 1.8 | Only the news that touched your book |
-| 7 | Ask, question and answer | 4.8 | Like having an analyst on call |
+| 1 | Home, net worth | 1 | Everything you own, in one place |
+| 2 | The book scrolling | 1 | Live prices, every position |
+| 3 | Brief opened | 1 | A brief on what moved, and why |
+| 4 | Narration playing | ½ | Listen to it on the way in |
+| 5 | NVDA, chart and intelligence | 1 | A read on every holding |
+| 6 | News | ½ | Only the news that touched your book |
+| 7 | Ask, question and answer | 2 | Like having an analyst on call |
 
 No unit claims anywhere in the copy: not "every minute", not "two-minute brief", not "ninety seconds".
 Numbers in a caption invite the viewer to audit the number instead of wanting the product, and they
@@ -27,9 +38,26 @@ Ask gets the longest beat because it is the differentiator, and because the tap 
 one continuous shot — the model answers in about 5s once warm, which is what makes that possible. The
 first take ended on the typing indicator and was discarded.
 
+## The music
+
+`marketing/make-music.sh` builds the bed from **Apple Loops** already installed with GarageBand /
+Logic. They are licensed royalty-free for use in your own productions, which is why they are the
+source rather than a stock library: no attribution, no per-post licence, nothing to renew.
+
+One loop family ("Forward Progress" bass, synth and guitar — same key, same tempo) plus a clap beat,
+arranged bass → beat at bar 2 → synth at bar 3 → guitar at bar 5, so the track builds under the clip
+instead of sitting flat. 100 BPM is chosen backwards from the loop length, and every beat boundary in
+the table above is a multiple of that bar.
+
+Mastered with `alimiter` then `loudnorm=I=-15`, and `finish-clip.sh` fades the last half second to
+silence so the trim at the end of the video is inaudible.
+
+**I cannot hear audio.** Levels, build and the ending are measured, not listened to — play one before
+you post.
+
 ## Why 4:5 is the default here, unlike Sprout
 
-The same footage renders 418px wide in 1:1 and 524px in 4:5. Assetly's screens are text-dense — the
+The same footage renders 414px wide in 1:1 and 518px in 4:5. Assetly's screens are text-dense — the
 brief and the Ask answer are the product — so the extra height is worth more than square's wider
 surface coverage. Post 4:5 in the feed; use square if a surface demands it.
 
@@ -40,6 +68,12 @@ and 16:9 footage can only honestly be framed as a home-button body, which dates 
 required a physical device for App Review; marketing does not.
 
 Status bar overridden to Apple's 9:41 marketing convention before recording.
+
+**Appearance is pinned twice.** `record-hero.sh` sets `simctl ui <udid> appearance` on a *fully booted*
+device and asserts the read-back, and the seed test then taps the app's own Appearance chip, which
+writes the choice to localStorage so it survives the relaunch between the seed and the take. Setting
+the appearance while the simulator was still booting is how a `THEME=dark` run came back rendered in
+light, silently — hence the assert.
 
 ## The account on screen
 
@@ -53,20 +87,32 @@ Say so in the post copy if it is not obvious from context.
 
 ## Rebuild
 
+`THEME` (light|dark) threads through every step: the recording, the canvas, the captions and the card.
+The two takes have different clocks, so each has its own beat times — pass them in as `SEGMENTS`.
+
 ```bash
 cd web/ios/App
-./marketing/record-hero.sh                                   # -> /tmp/assetly-hero-raw.mp4
-./marketing/cut-hero.sh /tmp/assetly-hero-raw.mp4 /tmp/assetly-hero-cut.mp4
-./marketing/make-hero-clip.sh /tmp/assetly-hero-cut.mp4 /tmp/assetly-body-4x5.mp4 /tmp/assetly-captions.tsv 4x5
-./marketing/make-endcard.py 1080 1350 ../../public/icon-512.png /tmp/assetly-card-4x5.png
-./marketing/finish-clip.sh /tmp/assetly-body-4x5.mp4 /tmp/assetly-card-4x5.png ../../../docs/marketing/assetly-linkedin-4x5.mp4 1.8
+./marketing/make-music.sh /tmp/assetly-music.wav          # once; the bed is theme-independent
+
+export THEME=light
+OUT=/tmp/assetly-hero-raw.mp4 ./marketing/record-hero.sh
+./marketing/cut-hero.sh /tmp/assetly-hero-raw.mp4 /tmp/assetly-cut-light.mp4
+./marketing/make-hero-clip.sh /tmp/assetly-cut-light.mp4 /tmp/body.mp4 /tmp/assetly-captions.tsv 4x5
+./marketing/make-endcard.py 1080 1350 App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png /tmp/card.png
+./marketing/finish-clip.sh /tmp/body.mp4 /tmp/card.png ../../docs/marketing/assetly-light-4x5.mp4 2.4 /tmp/assetly-music.wav
 ```
 
-Beat times and caption text live at the top of `marketing/cut-hero.sh`. Re-cutting after a timing
-change costs seconds; re-recording costs about three minutes.
+Dark is the same four lines with `THEME=dark`, `OUT=/tmp/assetly-hero-dark-raw.mp4`, and
+`SEGMENTS="4.5,2.4 12.0,2.4 24.0,2.4 38.0,1.2 45.0,2.4 56.5,1.2 84.5,4.8"` on `cut-hero.sh`.
 
-**The end card says "Coming soon to the App Store"** because the app is in review, not released.
-Change it to "Free on the App Store" once 1.0 is approved and you have pressed Release.
+**Check the proof sheet before composing.** `cut-hero.sh` writes `/tmp/assetly-proof/sheet.png`, one
+frame from the middle of every segment in order. Boundaries read off a coarse sample have been wrong
+twice — once putting a caption on the screen before the one it describes, and once landing the Ask
+beat on the typing indicator instead of the answer.
+
+Re-cutting after a timing change costs seconds; re-recording costs about three minutes.
+
+**The end card says "Available on the App Store."** If you post before release is live, change it.
 
 ## The overlap, and why it was an app bug
 

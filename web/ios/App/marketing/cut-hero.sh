@@ -16,7 +16,8 @@ RAW="${1:?}"; OUT="${2:?}"
 # seconds, which is how the first cut ended a beat before the milestone was confirmed.
 # The opening run stays continuous through the tap so confirming a milestone and the progress bar
 # moving read as one action rather than two shots.
-SEGMENTS="2.6,2.4 9.5,2.4 18.5,2.6 36.5,1.8 45.0,2.6 55.0,1.8 95.6,4.8"
+# The dark take is a separate recording with its own clock, so its boundaries come in as SEGMENTS.
+SEGMENTS="${SEGMENTS:-4.0,2.4 9.5,2.4 18.5,2.4 37.0,1.2 45.0,2.4 55.0,1.2 96.0,4.8}"
 
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 

@@ -11,7 +11,9 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 w, h, size, out, text = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), sys.argv[4], sys.argv[5]
-INK = (22, 24, 29, 255)          # Assetly ink (--as-ink #16181D)
+import os
+# Assetly ink, light or dark (--as-ink): a caption in the wrong ink is invisible on its own canvas
+INK = (233, 236, 241, 255) if os.environ.get("THEME", "light") == "dark" else (22, 24, 29, 255)
 
 font = None
 # index 4 is the Bold face in this collection; the lighter ones were legible on a screen but thin

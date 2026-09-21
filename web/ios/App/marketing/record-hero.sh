@@ -12,7 +12,10 @@ CRED=~/.private_keys/assetly-showcase.txt
 EMAIL=$(grep '^email=' "$CRED" | cut -d= -f2-)
 PASSWORD=$(grep '^password=' "$CRED" | cut -d= -f2-)
 
-python3 - "$EMAIL" "$PASSWORD" <<'PY'
+# "Light" or "Dark" — the label on the app's own Appearance chip, tapped during the seed pass.
+case "${THEME:-light}" in dark) HERO_THEME=Dark ;; *) HERO_THEME=Light ;; esac
+
+python3 - "$EMAIL" "$PASSWORD" "$HERO_THEME" <<'PY'
 import json, sys
 plan = {
   "configurations": [{"id": "9C8B7A65-4D3E-4F21-A0B9-8C7D6E5F4A3B", "name": "Hero", "options": {}}],
@@ -20,6 +23,7 @@ plan = {
     "environmentVariableEntries": [
       {"key": "SHOWCASE_EMAIL", "value": sys.argv[1]},
       {"key": "SHOWCASE_PASSWORD", "value": sys.argv[2]},
+      {"key": "HERO_THEME", "value": sys.argv[3]},
     ],
     "preferredScreenCaptureFormat": "screenRecording",
     "testTimeoutsEnabled": False,
@@ -34,10 +38,18 @@ open("Hero.xctestplan", "w").write(json.dumps(plan, indent=2, sort_keys=True) + 
 PY
 
 xcrun simctl boot "$UDID" 2>/dev/null || true
-sleep 3
+xcrun simctl bootstatus "$UDID" -b >/dev/null 2>&1 || true
 # Apple's own marketing convention, so the status bar in the recording is part of the frame
 xcrun simctl status_bar "$UDID" override --time "9:41" \
   --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 2>/dev/null || true
+# THEME=dark records the app in dark mode (Appearance follows the system by default)
+# Appearance must be set on a fully booted device and before the app launches: setting it while the
+# simulator was still booting is how a THEME=dark take came back rendered in light.
+xcrun simctl ui "$UDID" appearance "${THEME:-light}"
+xcrun simctl terminate "$UDID" com.hodlerss.assetly 2>/dev/null || true
+sleep 2
+GOT=$(xcrun simctl ui "$UDID" appearance)
+[ "$GOT" = "${THEME:-light}" ] || { echo "appearance is $GOT, wanted ${THEME:-light}"; exit 1; }
 
 # Seed and take in ONE invocation: each xcodebuild run reinstalls the app and would wipe the session.
 rm -rf /tmp/assetly-hero.xcresult
