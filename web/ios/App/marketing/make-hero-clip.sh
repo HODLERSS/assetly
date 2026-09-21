@@ -80,8 +80,11 @@ for i in $(seq 0 $((n-1))); do
 done
 f="${f} [b${n}] ${RANGE_FILTER}format=yuv420p [v]"
 
+# This file is an INTERMEDIATE: finish-clip.sh re-encodes it to crossfade the end card on, so it is
+# written near-lossless. Encoding it at delivery quality would put two generations of x264 between the
+# footage and the post, and the caption edges and the chart hairlines are exactly what that costs.
 ffmpeg -v error -y "${inputs[@]}" -filter_complex "$f" -map "[v]" -an \
-  -c:v libx264 -crf 19 -preset slow -profile:v high -pix_fmt yuv420p \
+  -c:v libx264 -crf 12 -preset slow -profile:v high -pix_fmt yuv420p \
   -color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709 \
   -movflags +faststart -r 30 "$OUT"
 echo "out: $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT")s  $(du -h "$OUT" | cut -f1)"

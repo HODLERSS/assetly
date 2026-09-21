@@ -12,7 +12,8 @@ Four files, same take, same cut, same bed — pick a theme and an aspect:
 twice — post whichever reads better in the feed you are posting to.
 
 Audio measures −14.2 LUFS integrated with a −1.5 dBFS peak on all four, which is the streaming
-loudness target, so no platform will re-level them.
+loudness target, so no platform will re-level them. Video is CRF 17 / veryslow H.264 High from a
+near-lossless intermediate, so only one generation of x264 sits between the footage and the post.
 
 ## The cut
 
@@ -46,14 +47,30 @@ source rather than a stock library: no attribution, no per-post licence, nothing
 
 One loop family ("Forward Progress" bass, synth and guitar — same key, same tempo) plus a clap beat,
 arranged bass → beat at bar 2 → synth at bar 3 → guitar at bar 5, so the track builds under the clip
-instead of sitting flat. 100 BPM is chosen backwards from the loop length, and every beat boundary in
-the table above is a multiple of that bar.
+instead of sitting flat. The loops are natively 100 BPM and a whole number of bars, which is where the
+video's 2.4s grid comes from.
 
-Mastered with `alimiter` then `loudnorm=I=-15`, and `finish-clip.sh` fades the last half second to
-silence so the trim at the end of the video is inaudible.
+Mastered with `alimiter` then `loudnorm=I=-15`; the bed resolves under the end card rather than
+stopping with the footage, and `finish-clip.sh` adds a short safety fade at the cut. Delivered as
+256k AAC through `aac_at`, Apple's AudioToolbox encoder.
 
-**I cannot hear audio.** Levels, build and the ending are measured, not listened to — play one before
-you post.
+### Decode the loops with `afconvert`, never ffmpeg
+
+The first cut had the drums stumbling, and the cause was not the arrangement. These loops are **AAC
+inside CAF**. ffmpeg decodes the encoder's priming frames as audio and returns **4.852979s for a loop
+that is exactly 4.800000s** — 2,543 samples of lead-in that are not part of the music. `-stream_loop`
+then repeats the error, so every bar lands ~53ms later than the last, and the stems drift apart from
+each other as well as from the video's grid.
+
+`afconvert -f WAVE -d LEI24@48000` honours the CAF packet table and returns the loop sample-exact
+(230,400 samples = 4.800000s). `make-music.sh` asserts every decoded loop is a whole number of bars
+and fails rather than shipping one that is not.
+
+Measured on the finished file, isolating the clap band: each 2-bar cycle now cross-correlates against
+the first at **+0.0ms**. Before the fix the same measurement drifted 141ms across the clip.
+
+**I cannot hear audio.** Timing, levels, build, loop seams and the ending are measured, not listened
+to — play one before you post.
 
 ## Why 4:5 is the default here, unlike Sprout
 
