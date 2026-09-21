@@ -128,5 +128,23 @@ which is why the test asserts "Link sent" and fails the run instead of recording
 beat; the app is reinstalled BEFORE the test starts, because an install inside the run puts a placeholder icon and
 "Installing..." into the Home screen shot.
 
+**Rejected again 2026-09-21, Guideline 2.1(a)** — "stuck at the set up assetly page", reviewed on an
+iPad Air 11-inch (M3). Real bug, not boilerplate: `api.ts` opened every write with `sb.auth.getUser()`
+(a network call that hangs on an expired token after a long brokerage OAuth), and `Onboarding.tsx`'s
+connect handler never cleared `busy`. Fixed in build 202609210143 — `currentUserId()` with bounded
+lookups, `finally` on the handler, a 12s guard on every setup await, and a "Skip for now" so setup can
+never block access. Full write-up: `answers/20260921_020000_assetly_2_1a_onboarding_fix.md`.
+
+```bash
+# first run on a brand-new account — the path the demo account never exercises
+node e2e/reset-firstrun.mjs                 # fixture back to never-onboarded; no signup emails
+PW_CHANNEL=chrome node e2e/first-run.mjs    # against the deployed PWA
+cd ios/App && ./run-firstrun-sim.sh 32A94BEE-7A1B-4436-A279-0D081A955F38 iphone-se
+              ./run-firstrun-sim.sh 67FD9F22-A498-433B-9DD8-67AB1BF6545B ipad-air-11   # the review device
+```
+Lesson worth keeping: every earlier device run and e2e signed in as the seeded demo account, which has
+`onboarded_at` set and never renders setup, so first run had zero coverage. An iPhone-only app still
+runs on iPad in compatibility mode and App Review does test there.
+
 1.1 follow-up: `transcripts.content` still holds verbatim earnings-call text as model input (the client grant is revoked
 as of `20260914000033`). Replace it with a model-written summary, then re-test briefs, insights and Ask.
