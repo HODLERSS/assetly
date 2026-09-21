@@ -19,6 +19,7 @@
 		AA10PRIV0002FED79650016851F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA10PRIV0001FED79650016851F /* PrivacyInfo.xcprivacy */; };
 		AA30000000000000000000B1 /* AssetlyDemoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA30000000000000000000S1 /* AssetlyDemoUITests.swift */; };
 		AA30000000000000000000B3 /* FirstRunUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA30000000000000000000S3 /* FirstRunUITests.swift */; };
+		AA30000000000000000000B4 /* AssetlyHeroUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA30000000000000000000S4 /* AssetlyHeroUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,6 +48,7 @@
 		AA30000000000000000000P1 /* AssetlyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AssetlyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA30000000000000000000S1 /* AssetlyDemoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetlyDemoUITests.swift; sourceTree = "<group>"; };
 		AA30000000000000000000S3 /* FirstRunUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstRunUITests.swift; sourceTree = "<group>"; };
+		AA30000000000000000000S4 /* AssetlyHeroUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetlyHeroUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,6 +103,7 @@
 			isa = PBXGroup;
 			children = (
 				AA30000000000000000000S1 /* AssetlyDemoUITests.swift */,
+				AA30000000000000000000S4 /* AssetlyHeroUITests.swift */,
 				AA30000000000000000000S3 /* FirstRunUITests.swift */,
 			);
 			path = AssetlyUITests;
@@ -220,6 +223,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA30000000000000000000B1 /* AssetlyDemoUITests.swift in Sources */,
+				AA30000000000000000000B4 /* AssetlyHeroUITests.swift in Sources */,
 				AA30000000000000000000B3 /* FirstRunUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

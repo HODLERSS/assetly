@@ -1,0 +1,62 @@
+#!/bin/bash
+# Records the LinkedIn hero take on a simulator. A simulator, not a phone, on purpose: a current
+# iPhone is 19.5:9 and an iPhone SE is 16:9, and 16:9 footage can only be framed as a home-button
+# body, which dates the clip. Apple demanded a physical device for App Review; marketing does not.
+#   ./record-hero.sh [simulator-udid]        # default iPhone 17 Pro
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+UDID="${1:-1813B4E4-8F14-4280-8C9F-16EE3AE888A4}"
+OUT="${OUT:-/tmp/assetly-hero-raw.mp4}"
+CRED=~/.private_keys/assetly-showcase.txt
+EMAIL=$(grep '^email=' "$CRED" | cut -d= -f2-)
+PASSWORD=$(grep '^password=' "$CRED" | cut -d= -f2-)
+
+python3 - "$EMAIL" "$PASSWORD" <<'PY'
+import json, sys
+plan = {
+  "configurations": [{"id": "9C8B7A65-4D3E-4F21-A0B9-8C7D6E5F4A3B", "name": "Hero", "options": {}}],
+  "defaultOptions": {
+    "environmentVariableEntries": [
+      {"key": "SHOWCASE_EMAIL", "value": sys.argv[1]},
+      {"key": "SHOWCASE_PASSWORD", "value": sys.argv[2]},
+    ],
+    "preferredScreenCaptureFormat": "screenRecording",
+    "testTimeoutsEnabled": False,
+    "uiTestingScreenshotsLifetime": "keepAlways",
+    "userAttachmentLifetime": "keepAlways",
+  },
+  "testTargets": [{"target": {"containerPath": "container:App.xcodeproj",
+                              "identifier": "AA30000000000000000000T1", "name": "AssetlyUITests"}}],
+  "version": 1,
+}
+open("Hero.xctestplan", "w").write(json.dumps(plan, indent=2, sort_keys=True) + "\n")
+PY
+
+xcrun simctl boot "$UDID" 2>/dev/null || true
+sleep 3
+# Apple's own marketing convention, so the status bar in the recording is part of the frame
+xcrun simctl status_bar "$UDID" override --time "9:41" \
+  --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 2>/dev/null || true
+
+# Seed and take in ONE invocation: each xcodebuild run reinstalls the app and would wipe the session.
+rm -rf /tmp/assetly-hero.xcresult
+set +e
+xcodebuild test -project App.xcodeproj -scheme AssetlyUITests -testPlan Hero \
+  -destination "id=$UDID" \
+  -only-testing:AssetlyUITests/AssetlyHeroUITests/testAseed \
+  -only-testing:AssetlyUITests/AssetlyHeroUITests/testBhero \
+  -resultBundlePath /tmp/assetly-hero.xcresult -derivedDataPath /tmp/dd-hero \
+  CODE_SIGNING_ALLOWED=NO > /tmp/assetly-hero.log 2>&1
+STATUS=$?
+set -e
+grep -E "Test Case .*(passed|failed)|error:|XCTAssert" /tmp/assetly-hero.log | tail -8 || true
+
+rm -rf /tmp/assetly-hero-att
+xcrun xcresulttool export attachments --path /tmp/assetly-hero.xcresult \
+  --output-path /tmp/assetly-hero-att --test-id "AssetlyHeroUITests/testBhero()" > /dev/null
+RAW=$(ls -S /tmp/assetly-hero-att/*.mp4 2>/dev/null | head -1)
+[ -n "$RAW" ] || { echo "no screen recording for testBhero"; exit 1; }
+cp "$RAW" "$OUT"
+echo "raw take: $OUT  $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT")s  $(du -h "$OUT" | cut -f1)"
+echo "xcodebuild exit $STATUS"

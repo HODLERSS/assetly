@@ -26,6 +26,9 @@
          <TestPlanReference
             reference = "container:FirstRun.xctestplan">
          </TestPlanReference>
+         <TestPlanReference
+            reference = "container:Hero.xctestplan">
+         </TestPlanReference>
       </TestPlans>
    </TestAction>
    <LaunchAction
