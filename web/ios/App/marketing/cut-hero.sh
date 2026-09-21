@@ -16,7 +16,7 @@ RAW="${1:?}"; OUT="${2:?}"
 # seconds, which is how the first cut ended a beat before the milestone was confirmed.
 # The opening run stays continuous through the tap so confirming a milestone and the progress bar
 # moving read as one action rather than two shots.
-SEGMENTS="2.0,2.2 9.5,2.2 16.5,2.8 30.5,1.8 43.0,2.8 53.0,1.8 78.6,4.6"
+SEGMENTS="2.6,2.4 9.5,2.4 18.5,2.6 36.5,1.8 45.0,2.6 55.0,1.8 95.6,4.8"
 
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 
@@ -45,25 +45,25 @@ done
 # One caption per segment, same order. Short, benefit-led, and readable at a glance: in a muted feed
 # the caption is the only thing telling a viewer what they are looking at.
 CAPTIONS=(
-  "Your whole book, priced every minute"
-  "Every position, live"
-  "A two-minute brief on what moved"
-  "Or listen to it in ninety seconds"
-  "A take on every position"
-  "The headlines that moved your book"
-  "Ask your portfolio anything"
+  "Everything you own, in one place"
+  "Live prices, every position"
+  "A brief on what moved, and why"
+  "Listen to it on the way in"
+  "A read on every holding"
+  "Only the news that touched your book"
+  "Like having an analyst on call"
 )
 python3 - "$SEGMENTS" > /tmp/assetly-captions.tsv <<'CAPPY'
 import sys
 segs = sys.argv[1].split()
 caps = [
-  "Your whole book, priced every minute",
-  "Every position, live",
-  "A two-minute brief on what moved",
-  "Or listen to it in ninety seconds",
-  "A take on every position",
-  "The headlines that moved your book",
-  "Ask your portfolio anything",
+  "Everything you own, in one place",
+  "Live prices, every position",
+  "A brief on what moved, and why",
+  "Listen to it on the way in",
+  "A read on every holding",
+  "Only the news that touched your book",
+  "Like having an analyst on call",
 ]
 t = 0.0
 for seg, cap in zip(segs, caps):

@@ -66,7 +66,13 @@ input, select { font: inherit; }
 /* app shell */
 #root { max-width: 480px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
 .screen { flex: 1; padding: 16px 16px calc(88px + var(--as-tabbar-pad)); }
-.topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
+/* viewport-fit=cover puts the web view under the status bar, so the app owes that inset back. Padding
+   alone is not enough: the header is in normal flow, so once the page scrolls it leaves and the rows
+   slide under the clock. Sticky and opaque means the status bar always has the app's own ground
+   behind it. Without this the time renders on top of the wordmark on every Dynamic Island iPhone. */
+.topbar { position: sticky; top: 0; z-index: 15; background: var(--as-bg);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 10px; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; letter-spacing: -0.02em; color: var(--as-primary); }
 
 .tabbar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--as-surface);

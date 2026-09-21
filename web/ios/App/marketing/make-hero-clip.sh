@@ -14,8 +14,8 @@ ASPECT="${4:-1x1}"
 
 CREAM=0xF4F5F7   # Assetly ground (--as-bg), so the canvas matches the app
 case "$ASPECT" in
-  1x1) W=1080; H=1080; TOP=22;  CAP_H=126; CAP_SIZE=40 ;;
-  4x5) W=1080; H=1350; TOP=34;  CAP_H=150; CAP_SIZE=45 ;;
+  1x1) W=1080; H=1080; TOP=18;  CAP_H=140; CAP_SIZE=50 ;;
+  4x5) W=1080; H=1350; TOP=28;  CAP_H=168; CAP_SIZE=58 ;;
   *) echo "aspect must be 1x1 or 4x5" >&2; exit 2 ;;
 esac
 # Bezel and screen radius are derived from the screen width so the body stays concentric with
