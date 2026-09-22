@@ -24,7 +24,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 W, H, FPS = plan.get("w", 1080), plan.get("h", 1350), plan.get("fps", 30)
 LEN = float(plan["len"]); XF = plan.get("xfade", 0.6)
 DARK = plan.get("theme", "light") == "dark"
-BG = "0x0F1216" if DARK else "0xF4F5F7"
+# On dark the canvas sits one step above the screen's own ground (#0F1216): the black phone body
+# otherwise merges into it and the clip reads as a screenshot on a slab.
+BG = "0x14181F" if DARK else "0xF4F5F7"
 os.environ["THEME"] = plan.get("theme", "light")
 T = tempfile.mkdtemp()
 def frames(sec): return int(round(sec * FPS))
@@ -112,17 +114,35 @@ with open(f"{T}/list.txt", "w") as f:
     for p in parts: f.write(f"file '{p}'\n")
 ff("-f", "concat", "-safe", "0", "-i", f"{T}/list.txt", "-c", "copy", f"{T}/product_raw.mp4")
 
-# ---- captions: rise 12px and fade in over 0.28s, fade out over 0.2s ------------------------------
+# ---- speaking indicator: a PNG sequence from make-speaking.py, over the product before any text ----
 inputs = ["-i", f"{T}/product_raw.mp4"]; fc = "[0:v]format=yuv420p[b0];"
-for k, (s, e, text) in enumerate(caps):
-    subprocess.run([os.path.join(HERE, "make-cards.py"), "cap", str(W), str(CAP_H), str(CAP_SIZE), f"{T}/cap{k}.png", text], check=True, capture_output=True)
-    inputs += ["-loop", "1", "-t", f"{PRODUCT:.3f}", "-i", f"{T}/cap{k}.png"]
-    si, so = s + 0.10, e - 0.22
-    fc += (f"[{k+1}:v]format=rgba,fade=t=in:st={si:.3f}:d=0.28:alpha=1,fade=t=out:st={so:.3f}:d=0.2:alpha=1[c{k}];"
-           f"[b{k}][c{k}]overlay=0:'{CAP_Y}+12*(1-min(max(t-{si:.3f},0)/0.32,1))':format=auto:enable='between(t,{si:.3f},{e:.3f})'[b{k+1}];")
-fc += f"[b{len(caps)}]format=yuv420p[v]"
+spk = plan.get("speaking")
+if spk:
+    inputs += ["-framerate", str(FPS), "-i", os.path.join(spk, "%05d.png")]
+    fc += f"[1:v]format=rgba[spk];[b0][spk]overlay={plan.get('speaking_x', 460)}:{plan.get('speaking_y', CAP_Y + 4)}:format=auto:shortest=1[b0s];"
+    base, off = "b0s", 2
+else:
+    base, off = "b0", 1
+
+# ---- captions and subtitles: rise 12px and fade in over 0.28s, fade out over 0.2s ----------------
+# A subtitle is a spoken sentence (make-cards.py sub: lighter, muted) shown for exactly the time it
+# is spoken; a beat whose window is covered by one carries no caption of its own.
+texts = [(s, e, t, "cap") for (s, e, t) in caps] + [(su["start"], su["end"], su["text"], "sub") for su in plan.get("subtitles", [])]
+prev = base
+for k, (s, e, text, kind) in enumerate(texts):
+    if kind == "cap":
+        subprocess.run([os.path.join(HERE, "make-cards.py"), "cap", str(W), str(CAP_H), str(CAP_SIZE), f"{T}/txt{k}.png", text], check=True, capture_output=True)
+    else:
+        subprocess.run([os.path.join(HERE, "make-cards.py"), "sub", str(W), str(CAP_H), str(plan.get("sub_size", 42)), f"{T}/txt{k}.png", text], check=True, capture_output=True)
+    inputs += ["-loop", "1", "-t", f"{PRODUCT:.3f}", "-i", f"{T}/txt{k}.png"]
+    si, so = s + (0.10 if kind == "cap" else 0.0), e - 0.22
+    idx = k + off
+    fc += (f"[{idx}:v]format=rgba,fade=t=in:st={si:.3f}:d=0.28:alpha=1,fade=t=out:st={so:.3f}:d=0.2:alpha=1[c{k}];"
+           f"[{prev}][c{k}]overlay=0:'{CAP_Y}+12*(1-min(max(t-{si:.3f},0)/0.32,1))':format=auto:enable='between(t,{si:.3f},{e:.3f})'[b{k+1}];")
+    prev = f"b{k+1}"
+fc += f"[{prev}]format=yuv420p[v]"
 ff(*inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", str(frames(PRODUCT)), *ENC, f"{T}/product.mp4")
-print(f"product {PRODUCT:.2f}s with {len(caps)} captions")
+print(f"product {PRODUCT:.2f}s with {len(caps)} captions, {len(plan.get('subtitles', []))} subtitles")
 
 # ---- end card: icon with the dissolve, then name, sub, cta each a beat later -----------------------
 card_len = LEN - PRODUCT + XF

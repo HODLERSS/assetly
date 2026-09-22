@@ -135,6 +135,15 @@ slow release, presence-gated so they vanish between lines). A raw waveform was t
 disappeared on every quiet syllable. Nothing is drawn on the phone screen itself. Light and the two
 squares keep the single line and no indicator.
 
+**Dark 4:5 is now built through `make-spot.py`** (`spots/dark-4x5-linkedin.json`), which gives it
+the spots' motion: a 3.5% push-in on every beat, captions that rise, a staggered end card, and a
+canvas one step above the screen's ground so the black body separates. Its cut differs from the
+other three: News comes before NVDA and takes a full bar, so the META 11.3% / Muse headline is on
+screen while cedar speaks about Meta; NVDA takes the half bar under the line's tail. During the
+spoken window the beat captions give way to **subtitles of the two sentences** (Schibsted 500,
+muted ink, `make-cards.py sub`) timed to the lines, 6.15–9.5s and 9.5–12.9s, so a muted feed still
+gets the content. Audio unchanged.
+
 **I cannot hear audio.** Timing, levels, build, loop seams, duck depth, the transcript and the ending
 are measured, not listened to — play one before you post. The one thing measurement cannot tell you is
 whether the voice *sounds* right against the bed.

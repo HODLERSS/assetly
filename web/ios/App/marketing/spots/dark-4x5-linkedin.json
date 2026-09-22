@@ -1,0 +1,16 @@
+{"w":1080,"h":1350,"len":19.8,"theme":"dark","fps":30,"xfade":0.6,
+ "speaking":"$SPOT/spk",
+ "beats":[
+  {"src":"$SPOT/dark-norm.mp4","start":4.6,"dur":2.4,"caption":"Everything you own, in one place"},
+  {"src":"$SPOT/dark-norm.mp4","start":11.5,"dur":2.4,"caption":"Live prices, every position"},
+  {"src":"$SPOT/dark-norm.mp4","start":20.0,"dur":1.2,"caption":"A brief on what moved, and why"},
+  {"src":"$SPOT/dark-norm.mp4","start":33.0,"dur":3.6},
+  {"src":"$SPOT/dark-norm.mp4","start":56.6,"dur":2.4},
+  {"src":"$SPOT/dark-norm.mp4","start":45.0,"dur":1.2},
+  {"src":"$SPOT/dark-norm.mp4","start":79.0,"dur":4.8,"caption":"Like having an analyst on call"}
+ ],
+ "subtitles":[
+  {"start":6.15,"end":9.5,"text":"Good morning. Your upside hinges on NVIDIA's earnings."},
+  {"start":9.5,"end":12.9,"text":"Meta's surging by ten percent. Muse, number one on the App Store."}
+ ],
+ "card":{"icon":"$ICON"}}

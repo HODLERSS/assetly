@@ -42,6 +42,31 @@ if mode == "cap":
     d.text(((w - (r - l)) / 2 - l, (h - (b - t)) / 2 - t), text, font=f, fill=INK + (255,))
     img.save(out); print(f"caption {w}x{h}: {text}")
 
+elif mode == "sub":
+    # A spoken sentence, as a subtitle: lighter weight and a muted ink so it reads as speech rather
+    # than as a headline caption, wrapped to at most two centred lines.
+    w, h, size, out, text = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), sys.argv[5], sys.argv[6]
+    SUB = (201, 207, 218) if DARK else (61, 66, 76)
+    f = grotesk(size, 500)
+    d0 = ImageDraw.Draw(layer(w, h))
+    words, lines, cur = text.split(), [], ""
+    for wd in words:
+        trial = (cur + " " + wd).strip()
+        if d0.textbbox((0, 0), trial, font=f)[2] > w - 120 and cur:
+            lines.append(cur); cur = wd
+        else:
+            cur = trial
+    lines.append(cur)
+    if len(lines) > 2:
+        sys.exit(f"subtitle needs {len(lines)} lines at {size}px: {text!r}")
+    img = layer(w, h); d = ImageDraw.Draw(img)
+    hs = [d0.textbbox((0, 0), s, font=f)[3] - d0.textbbox((0, 0), s, font=f)[1] for s in lines]
+    gap = int(size * 0.3); total = sum(hs) + gap * (len(lines) - 1)
+    y = (h - total) // 2
+    for s, hh in zip(lines, hs):
+        centred(d, y, s, f, SUB, w); y += hh + gap
+    img.save(out); print(f"subtitle {w}x{h}: {len(lines)} line(s): {text}")
+
 elif mode == "hook":
     w, h, out = int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
     lines = sys.argv[5].split("|")
