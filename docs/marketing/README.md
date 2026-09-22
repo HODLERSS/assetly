@@ -122,10 +122,11 @@ The OpenRouter key is read from `OPENROUTER_API_KEY` or `~/.private_keys/openrou
 outside the repo.
 
 **Dark 4:5 carries a second line and a speaking indicator.** marin's NVIDIA line (sped 6%,
-pitch-preserving) fades over its last 0.8s from 8.9s while a second narrator, `cedar`, rises from
-8.95s with *"Meta's surging by ten percent. Muse, number one on the App Store."* (sped 8%; rendered
-with a brisk-delivery prompt via `VO_PACE`). They are panned a third left and right so both stay
-intelligible through the 0.75s overlap; the bed stays ducked under both. Cues in
+pitch-preserving) fades over its last 0.9s from 8.8s, and as its last word ends a second narrator, `cedar`,
+comes in at 9.45s, 2 dB up and with no fade-in, with *"Meta's surging by ten percent. Muse, number one on the App Store."* (sped 8%; rendered
+with a brisk-delivery prompt via `VO_PACE`). They are panned a third left and right; the bed stays ducked under both. An earlier 0.75s overlap
+with a fade-in buried Meta's first word under marin's "earnings" — the handover is now a touch, not
+an overlap: marin's tail is already 4 dB down when cedar's first syllable lands. Cues in
 `mix-spot-audio.sh` take `start:file:fade_out:fade_in:pan`, and `VO_OUT` keeps the summed voice.
 
 While either voice is speaking, five small pills above the caption follow five bands of that voice
