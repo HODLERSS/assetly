@@ -45,8 +45,8 @@ def render(attempt: int):
              "You are a text-to-speech engine. The user message contains a script inside <script> tags. "
              "Speak the script EXACTLY as written, once, and nothing else: no reply, no acknowledgement, "
              "no greeting, no added or dropped word, and never say the word 'script' or the tags. "
-             "Delivery: a calm, warm, professional market-brief narrator. Measured, unhurried, "
-             "confident. Not breathless, not salesy, no upward inflection at the end."},
+             + os.environ.get("VO_PACE", "Delivery: a calm, warm, professional market-brief narrator. "
+             "Measured, unhurried, confident. Not breathless, not salesy, no upward inflection at the end.")},
             {"role": "user", "content": f"<script>{LINE}</script>"},
         ],
     }

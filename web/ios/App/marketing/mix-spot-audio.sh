@@ -39,10 +39,12 @@ for cue in "$@"; do
   python3 -c "import sys; sys.exit('cue $i runs past the end') if $AT+$VD > $LEN-0.15 else None"
   cues+=("$W/v$i.wav"); i=$((i+1))
 done
-# one voice track
+# one voice track (VO_OUT keeps a copy: the speaking indicator is drawn from it)
 if [ $i -eq 1 ]; then cp "${cues[0]}" "$W/vo.wav"; else
   ffmpeg -v error -y $(printf -- '-i %s ' "${cues[@]}") -filter_complex "$(printf '[%d:a]' $(seq 0 $((i-1))))amix=inputs=$i:normalize=0:duration=longest[a]" -map "[a]" -ar ${SR} -ac 2 -c:a pcm_s24le "$W/vo.wav"
 fi
+
+[ -n "${VO_OUT:-}" ] && cp "$W/vo.wav" "$VO_OUT"
 
 mix_pass() {   # <gain-dB> <out>
   ffmpeg -v error -y -i "$MUSIC" -i "$W/vo.wav" -filter_complex "

@@ -121,12 +121,18 @@ untouched, and no generation of x264 was spent on an audio change.
 The OpenRouter key is read from `OPENROUTER_API_KEY` or `~/.private_keys/openrouter.txt`, both
 outside the repo.
 
-**Dark 4:5 carries a second line.** As marin's NVIDIA line fades over its last second (from 8.9s), a
-second narrator (`cedar`) rises from 9.1s with *"And Meta's surging. Muse just beat ChatGPT on
-downloads."* — the product's own news text for the day. The two are panned a third left and right
-so both stay intelligible through the 0.8s overlap; the bed stays ducked under both. Cues in
-`mix-spot-audio.sh` take `start:file:fade_out:fade_in:pan` for this. Light and the two squares keep
-the single line.
+**Dark 4:5 carries a second line and a speaking indicator.** marin's NVIDIA line (sped 6%,
+pitch-preserving) fades over its last 0.8s from 8.9s while a second narrator, `cedar`, rises from
+8.95s with *"Meta's surging by ten percent. Muse, number one on the App Store."* (sped 8%; rendered
+with a brisk-delivery prompt via `VO_PACE`). They are panned a third left and right so both stay
+intelligible through the 0.75s overlap; the bed stays ducked under both. Cues in
+`mix-spot-audio.sh` take `start:file:fade_out:fade_in:pan`, and `VO_OUT` keeps the summed voice.
+
+While either voice is speaking, five small pills above the caption follow five bands of that voice
+track (`make-speaking.py`: FFT per frame, each band scaled to its own loud moments, fast attack and
+slow release, presence-gated so they vanish between lines). A raw waveform was tried first and
+disappeared on every quiet syllable. Nothing is drawn on the phone screen itself. Light and the two
+squares keep the single line and no indicator.
 
 **I cannot hear audio.** Timing, levels, build, loop seams, duck depth, the transcript and the ending
 are measured, not listened to — play one before you post. The one thing measurement cannot tell you is
