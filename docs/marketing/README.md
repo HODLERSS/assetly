@@ -121,6 +121,13 @@ untouched, and no generation of x264 was spent on an audio change.
 The OpenRouter key is read from `OPENROUTER_API_KEY` or `~/.private_keys/openrouter.txt`, both
 outside the repo.
 
+**Dark 4:5 carries a second line.** As marin's NVIDIA line fades over its last second (from 8.9s), a
+second narrator (`cedar`) rises from 9.1s with *"And Meta's surging. Muse just beat ChatGPT on
+downloads."* — the product's own news text for the day. The two are panned a third left and right
+so both stay intelligible through the 0.8s overlap; the bed stays ducked under both. Cues in
+`mix-spot-audio.sh` take `start:file:fade_out:fade_in:pan` for this. Light and the two squares keep
+the single line.
+
 **I cannot hear audio.** Timing, levels, build, loop seams, duck depth, the transcript and the ending
 are measured, not listened to — play one before you post. The one thing measurement cannot tell you is
 whether the voice *sounds* right against the bed.

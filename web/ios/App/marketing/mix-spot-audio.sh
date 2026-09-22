@@ -15,8 +15,11 @@ W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 LEN_S=$(python3 -c "print(int(round($LEN*$SR)))")
 
 i=0; cues=()
+# cue = start:file[:fade_out[:fade_in[:pan]]] — fades in seconds on the trimmed line, pan -1..1.
+# Two lines can hand over mid-air: the first fades over its last second while the next rises, each
+# nudged to its own side so both stay intelligible through the overlap.
 for cue in "$@"; do
-  AT="${cue%%:*}"; VOICE="${cue#*:}"
+  IFS=: read -r AT VOICE FO FI PAN <<<"$cue"; FO="${FO:-0}"; FI="${FI:-0}"; PAN="${PAN:-0}"
   ffmpeg -v error -y -i "$VOICE" -af "
     silenceremove=start_periods=1:start_silence=0.02:start_threshold=-50dB:detection=peak,
     areverse,silenceremove=start_periods=1:start_silence=0.02:start_threshold=-50dB:detection=peak,areverse
@@ -27,8 +30,9 @@ for cue in "$@"; do
     highpass=f=90, deesser=i=0.4,
     compand=attacks=0.005:decays=0.15:points=-70/-70|-30/-14|-12/-8|0/-5,
     loudnorm=I=-16:TP=-2:LRA=7, aresample=${SR},
-    afade=t=in:st=0:d=0.05,areverse,afade=t=in:st=0:d=0.08,areverse,
-    pan=stereo|c0=c0|c1=c0, adelay=${D}S|${D}S:all=1, apad, atrim=end_sample=${LEN_S}
+    afade=t=in:st=0:d=$(python3 -c "print(max(0.05,$FI))"),areverse,afade=t=in:st=0:d=$(python3 -c "print(max(0.08,$FO))"),areverse,
+    pan=stereo|c0=$(python3 -c "print(round(min(1,1-$PAN),3))")*c0|c1=$(python3 -c "print(round(min(1,1+$PAN),3))")*c0,
+    adelay=${D}S|${D}S:all=1, apad, atrim=end_sample=${LEN_S}
   " -ar ${SR} -ac 2 -c:a pcm_s24le "$W/v$i.wav"
   VD=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$W/u$i.wav")
   echo "  cue $i: ${VD}s at ${AT}s -> ends $(python3 -c "print(round($AT+$VD,2))")s"
