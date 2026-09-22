@@ -7,7 +7,7 @@ Four files, same take, same cut, same bed — pick a theme and an aspect:
 | **Light** | `assetly-light-4x5.mp4` | `assetly-light-1x1.mp4` |
 | **Dark** | `assetly-dark-4x5.mp4` | `assetly-dark-1x1.mp4` |
 
-**18.6 seconds, with music and one spoken line, captioned, real app footage in an iPhone 17 Pro body,
+**19.8 seconds, with music and one spoken line, captioned, real app footage in an iPhone 17 Pro body,
 ending on a card.**
 4:5 is the default; use square only if a surface demands it. Light and dark are the same clip shot
 twice — post whichever reads better in the feed you are posting to.
@@ -26,11 +26,15 @@ edit feel cut *to* the music rather than laid over it.
 |---|---|---|---|
 | 1 | Home, net worth | 1 | Everything you own, in one place |
 | 2 | The book scrolling | 1 | Live prices, every position |
-| 3 | Brief opened | 1 | A brief on what moved, and why |
-| 4 | Narration playing | ½ | Listen to it on the way in |
+| 3 | Brief opened | ½ | A brief on what moved, and why |
+| 4 | Narration player up; the voice starts with it | 1½ | Listen to it on the way in |
 | 5 | NVDA, chart and intelligence | 1 | A read on every holding |
 | 6 | News | ½ | Only the news that touched your book |
 | 7 | Ask, question and answer | 2 | Like having an analyst on call |
+
+Seven and a half bars of product (18.0s), one beat of crossfade, 2.4s card: 19.8s. The player beat
+is a bar and a half so the spoken line fits inside it: the player, the caption and the voice all
+begin at 6.0–6.15s, and the music fades out over the last three seconds, through the card.
 
 No unit claims anywhere in the copy: not "every minute", not "two-minute brief", not "ninety seconds".
 Numbers in a caption invite the viewer to audit the number instead of wanting the product, and they
@@ -72,7 +76,7 @@ the first at **+0.0ms**. Before the fix the same measurement drifted 141ms acros
 
 ## The spoken line
 
-At 5.3s, while the brief is on screen and through the beat where the player appears, a voice reads:
+At 6.15s, on the beat where the narration player appears and for the length of that beat, a voice reads:
 
 > "Good morning. Your upside hinges on NVIDIA's earnings."
 
@@ -135,6 +139,10 @@ required a physical device for App Review; marketing does not.
 
 Status bar overridden to Apple's 9:41 marketing convention before recording.
 
+**The app is uninstalled before every take.** It persists the Appearance choice in localStorage and
+an install-over keeps the container; after a take that ended on the "Light" chip, every THEME=dark
+run rendered light no matter what the simulator was set to. A fresh install starts on "System".
+
 **Appearance is pinned twice.** `record-hero.sh` sets `simctl ui <udid> appearance` on a *fully booted*
 device and asserts the read-back, and the seed test then taps the app's own Appearance chip, which
 writes the choice to localStorage so it survives the relaunch between the seed and the take. Setting
@@ -169,7 +177,10 @@ OUT=/tmp/assetly-hero-raw.mp4 ./marketing/record-hero.sh
 ```
 
 Dark is the same four lines with `THEME=dark`, `OUT=/tmp/assetly-hero-dark-raw.mp4`, and
-`SEGMENTS="4.5,2.4 12.0,2.4 24.0,2.4 38.0,1.2 45.0,2.4 56.5,1.2 84.5,4.8"` on `cut-hero.sh`.
+`SEGMENTS` for the takes in scratch: light `4.6,2.4 11.5,2.4 20.0,1.2 33.0,3.6 45.4,2.4 59.5,1.2 77.6,4.8`,
+dark `4.6,2.4 11.5,2.4 20.0,1.2 33.0,3.6 45.0,2.4 56.6,1.2 79.0,4.8`. Then
+`VOICE_AT=6.15 VO_FILE=<one render> ./add-voiceover.sh <all four>` so every variant carries the
+same take of the line; the 3s fade-out is part of that step.
 
 **Check the proof sheet before composing.** `cut-hero.sh` writes `/tmp/assetly-proof/sheet.png`, one
 frame from the middle of every segment in order. Boundaries read off a coarse sample have been wrong

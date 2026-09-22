@@ -46,8 +46,14 @@ xcrun simctl status_bar "$UDID" override --time "9:41" \
 # THEME=dark records the app in dark mode (Appearance follows the system by default)
 # Appearance must be set on a fully booted device and before the app launches: setting it while the
 # simulator was still booting is how a THEME=dark take came back rendered in light.
-xcrun simctl ui "$UDID" appearance "${THEME:-light}"
+#
+# And the app must be UNINSTALLED first, not just terminated. The app persists its Appearance choice
+# in localStorage, and an install over the top keeps the container: after a take that ended on the
+# "Light" chip, every later THEME=dark run rendered light no matter what the simulator was set to.
+# A fresh install starts on "System", which is the only state in which simctl's appearance decides.
 xcrun simctl terminate "$UDID" com.hodlerss.assetly 2>/dev/null || true
+xcrun simctl uninstall "$UDID" com.hodlerss.assetly 2>/dev/null || true
+xcrun simctl ui "$UDID" appearance "${THEME:-light}"
 sleep 2
 GOT=$(xcrun simctl ui "$UDID" appearance)
 [ "$GOT" = "${THEME:-light}" ] || { echo "appearance is $GOT, wanted ${THEME:-light}"; exit 1; }
