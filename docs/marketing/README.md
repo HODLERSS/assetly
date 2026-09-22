@@ -136,8 +136,10 @@ disappeared on every quiet syllable. Nothing is drawn on the phone screen itself
 squares keep the single line and no indicator.
 
 **Dark 4:5 is now built through `make-spot.py`** (`spots/dark-4x5-linkedin.json`), which gives it
-the spots' motion: a 3.5% push-in on every beat, captions that rise, a staggered end card, and a
-canvas one step above the screen's ground so the black body separates. Its cut differs from the
+captions that rise, a staggered end card, and a canvas one step above the screen's ground so the
+black body separates. (The per-beat push-in was tried and removed: a phone that grows a little on
+every cut reads as the phone changing size, not as camera motion. `make-spot.py` now defaults
+`push` to 0.) Its cut differs from the
 other three: News comes before NVDA and takes a full bar, so the META 11.3% / Muse headline is on
 screen while cedar speaks about Meta; NVDA takes the half bar under the line's tail. During the
 spoken window the beat captions give way to **subtitles of the two sentences** (Schibsted 500,
@@ -243,8 +245,9 @@ dissolves the Home screen from light to dark ("Light or dark") before the card. 
 line at 100 BPM; the only dissolves are the theme flip, where the dissolve *is* the content, and the
 fade into the card.
 
-**Motion.** A 3.5% push-in on the phone over every beat, reset on each cut. Captions rise 12px and
-fade in over 0.28s; the end card's icon, name, subline and CTA land a beat apart.
+**Motion.** Captions rise 12px and fade in over 0.28s; the end card's icon, name, subline and CTA
+land a beat apart. The phone itself is static: a per-beat push-in was tried and read as the phone
+changing size.
 
 **Voice.** Two lines from the product's own narration script for the demo account on the day of the
 take, rendered by `openai/gpt-audio` (marin) through OpenRouter: the greeting over the brief and

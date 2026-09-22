@@ -55,9 +55,10 @@ subprocess.run([os.path.join(HERE, "roundrect-mask.py"), str(screen_w), str(scre
 subprocess.run([os.path.join(HERE, "device-frame.py"), str(screen_w), str(screen_h), f"{T}/frame.png"], check=True, capture_output=True)
 print(f"screen {screen_w}x{screen_h} on {W}x{H}")
 
-# Slow push-in on the whole phone, reset on every cut. 3.5% over a beat is felt, not seen; the
-# alternative (a static frame) reads as a slideshow the moment the music has motion in it.
-PUSH = plan.get("push", 0.035)
+# Push-in on the phone per beat is OFF by default: a phone that grows a little on every cut reads as
+# the phone changing size, not as camera motion, and it confused a viewer. Set "push" in the plan
+# to turn it on deliberately.
+PUSH = plan.get("push", 0.0)
 def phone_chain(dur):
     return (f"scale={screen_w}:{screen_h}:flags=lanczos,format=rgba[scr];"
             f"[1:v]format=gray,scale={screen_w}:{screen_h}[m];[scr][m]alphamerge[rounded];"
