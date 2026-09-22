@@ -1,0 +1,14 @@
+{"bpm":100,"len":20.0,"loudness":-15,"fade_out":1.2,
+ "stems":[
+  {"loop":"Forward Progress Bass","gain":-4,"from":0,"to":8.34},
+  {"loop":"Forward Progress Synth","gain":-9,"from":1,"to":8.34},
+  {"loop":"Analog Clap Beat 01","gain":-6,"from":1,"to":2},
+  {"loop":"Pastel Colors Beat 02","gain":-8,"from":2,"to":4},
+  {"loop":"Analog Clap Beat 01","gain":-6,"from":4,"to":7},
+  {"loop":"Forward Progress Guitar","gain":-11,"from":4,"to":7},
+  {"loop":"Forward Progress Guitar","gain":-12,"from":7,"to":8.34}
+ ],
+ "oneshots":[
+  {"loop":"80s Synth FX Riser 01","gain":-13,"end_at":1},
+  {"loop":"80s Synth FX Riser 01","gain":-13,"end_at":7}
+ ]}

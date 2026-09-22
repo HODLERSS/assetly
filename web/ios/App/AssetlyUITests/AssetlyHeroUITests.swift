@@ -131,4 +131,100 @@ final class AssetlyHeroUITests: XCTestCase {
         beat(6.0)                                  // let it be read
         scroll(.up, 0.18); beat(3.0)
     }
+
+    // MARK: the longer spots
+
+    /// Footage for the 20s and 30s spots. Same beats as the hero take, then two more: Settings, and
+    /// the appearance flipping to dark, which is the one moment in the app that reads as a visual
+    /// event rather than a screen. The player is closed before Settings so the flip has the screen to
+    /// itself, and the appearance is put back to Light at the end so the next take starts clean.
+    func testCspot() {
+        app.launch()
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 60), "not signed in for the take")
+        beat(3.5)                                 // net worth
+
+        scroll(.up, 0.26); beat(1.6)              // the book
+        scroll(.up, 0.22); beat(1.4)
+        scroll(.down, 0.40); beat(1.6)
+
+        let read = button(startingWith: "Read")   // the brief
+        if read.waitForExistence(timeout: 10) { read.tap() }
+        beat(2.4)
+        scroll(.up, 0.26); beat(1.8)
+        scroll(.up, 0.24); beat(1.8)
+
+        let listen = button(startingWith: "Listen")
+        if listen.waitForExistence(timeout: 6) { listen.tap(); beat(4.0) }
+        let pause = button(startingWith: "Pause")
+        if pause.exists { pause.tap(); beat(0.8) }
+
+        if app.buttons["Home"].exists { app.buttons["Home"].tap(); beat(1.4) }
+        let close = button(startingWith: "Close the brief")
+        if close.exists { close.tap(); beat(1.0) }
+        scroll(.up, 0.30); beat(1.0)
+        let position = app.buttons.matching(NSPredicate(format: "label CONTAINS 'NVDA'")).firstMatch
+        if position.waitForExistence(timeout: 8) { position.tap(); beat(3.0) }
+        scroll(.up, 0.26); beat(2.4)
+        scroll(.up, 0.22); beat(2.0)
+
+        if app.buttons["News"].exists { app.buttons["News"].tap(); beat(2.6) }
+        scroll(.up, 0.24); beat(2.0)
+
+        let closePlayer = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Close the player' OR label CONTAINS[c] 'Close player'")).firstMatch
+        if closePlayer.exists { closePlayer.tap(); beat(0.6) }
+        if app.buttons["Ask"].exists { app.buttons["Ask"].tap(); beat(2.0) }
+        let suggestion = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'biggest position'")).firstMatch
+        if suggestion.waitForExistence(timeout: 6) {
+            suggestion.tap()
+        } else {
+            fill(app.textFields.firstMatch, "What is my biggest position?")
+            if app.buttons["Send"].exists { app.buttons["Send"].tap() }
+        }
+        let answered = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'NVDA' OR label CONTAINS[c] 'biggest'")).element(boundBy: 1)
+        _ = answered.waitForExistence(timeout: 40)
+        beat(6.0)
+        scroll(.up, 0.18); beat(2.5)
+
+        // NEW: Settings, then the flip. The Dark chip is tapped with a pause on either side so the
+        // cut can land on the frame the ground changes.
+        if app.buttons["Settings"].exists { app.buttons["Settings"].tap(); beat(2.2) }
+        let dark = app.buttons["Dark"]
+        if dark.waitForExistence(timeout: 8) && dark.isHittable { dark.tap(); beat(2.6) }
+        if app.buttons["Home"].exists { app.buttons["Home"].tap(); beat(3.0) }     // dark home, held
+        scroll(.up, 0.20); beat(2.0)
+        if app.buttons["Settings"].exists { app.buttons["Settings"].tap(); beat(1.6) }
+        let light = app.buttons["Light"]
+        if light.waitForExistence(timeout: 8) && light.isHittable { light.tap(); beat(1.5) }
+        if app.buttons["Home"].exists { app.buttons["Home"].tap(); beat(2.0) }     // real taps keep the recorder rolling
+    }
+
+    /// Just the appearance flip, for the spot's "light or dark" beat. XCUITest reports the Appearance
+    /// chips as not hittable (a <button> inside a role=group in the web view), so `tap()` on the
+    /// element is silently skipped — which is why testCspot recorded a flip that never happened.
+    /// Tapping the element's centre COORDINATE bypasses the hittability check and lands.
+    func testDflip() {
+        app.launch()
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 60), "not signed in")
+        beat(2.0)
+        app.buttons["Settings"].tap(); beat(2.5)
+        // app.buttons["Dark"] found nothing at all here, so match on label across every element
+        // type and print the hierarchy so the next failure is diagnosable from the log.
+        let chip = { (name: String) -> XCUIElement in
+            self.app.descendants(matching: .any).matching(NSPredicate(format: "label ==[c] %@ OR label BEGINSWITH[c] %@", name, name + ",")).firstMatch
+        }
+        let dark = chip("Dark")
+        if !dark.waitForExistence(timeout: 10) {
+            NSLog("HIERARCHY %@", app.debugDescription)
+            XCTFail("no Dark chip"); return
+        }
+        dark.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        beat(3.0)                                              // the flip, held
+        app.buttons["Home"].tap(); beat(3.5)                   // dark home
+        scroll(.up, 0.22); beat(2.5)
+        scroll(.down, 0.30); beat(2.0)
+        app.buttons["Settings"].tap(); beat(2.0)
+        chip("Light").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        beat(2.0)
+        app.buttons["Home"].tap(); beat(2.0)
+    }
 }

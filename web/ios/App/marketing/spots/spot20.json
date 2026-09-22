@@ -1,0 +1,10 @@
+{"w":1080,"h":1350,"len":20.0,"theme":"light","fps":30,"xfade":0.6,
+ "hook":{"lines":"What moved|your money today?","dur":2.4},
+ "beats":[
+  {"src":"$SPOT/norm.mp4","start":4.6,"dur":2.4,"caption":"Everything you own, in one place"},
+  {"src":"$SPOT/norm.mp4","start":20.0,"dur":2.4,"caption":"A brief on what moved, and why"},
+  {"src":"$SPOT/norm.mp4","start":33.0,"dur":2.4,"caption":"Listen to it on the way in"},
+  {"src":"$SPOT/norm.mp4","start":45.4,"dur":2.4,"caption":"A read on every holding"},
+  {"src":"$SPOT/norm.mp4","start":77.6,"dur":4.8,"caption":"Like having an analyst on call"}
+ ],
+ "card":{"icon":"$ICON"}}

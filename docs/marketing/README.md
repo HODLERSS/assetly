@@ -195,3 +195,42 @@ behind it (`web/src/theme.css`).
 This affected every Dynamic Island iPhone in the shipping build, not just the video. It was invisible
 in testing because the iPhone SE simulator has a short status bar and no island. The iPhone audit
 passes on all ten metrics with the fix in.
+
+
+## The 20s and 30s spots (`spots/`)
+
+Two longer pieces, cut on my own brief rather than the seven-beat clip's: `assetly-spot-20s.mp4`
+and `assetly-spot-30s.mp4`, both 1080x1350, both light theme.
+
+**Structure.** Each opens on a question in the app's own typeface — *What moved your money today?* —
+one bar of bass and a riser, and the beat drops on the cut to the product. The 20s runs net worth →
+brief → listen → a holding → Ask, then the card. The 30s adds the book, news, and a closing beat that
+dissolves the Home screen from light to dark ("Light or dark") before the card. Every cut is on a bar
+line at 100 BPM; the only dissolves are the theme flip, where the dissolve *is* the content, and the
+fade into the card.
+
+**Motion.** A 3.5% push-in on the phone over every beat, reset on each cut. Captions rise 12px and
+fade in over 0.28s; the end card's icon, name, subline and CTA land a beat apart.
+
+**Voice.** Two lines from the product's own narration script for the demo account on the day of the
+take, rendered by `openai/gpt-audio` (marin) through OpenRouter: the greeting over the brief and
+player beats, and the product's real sign-off — *"That's your brief. Talk soon."* — over the card.
+The bed thins to a sparse beat under the greeting and ducks 6–9 dB by sidechain; the full beat and
+the guitar return on the next bar.
+
+**Music.** One D-minor family ("Forward Progress") for every pitched part — the harmonic check
+between families was inconclusive and I cannot audition, so contrast comes from drum changes (Analog
+Clap ↔ Pastel Colors 02), a breakdown under the theme flip, and risers into the drop and the card.
+Loops decoded sample-exact with `afconvert`, tiled on integer sample offsets, and every stem asserted
+to be a whole number of bars.
+
+**Two traps kept for the next person.** `loudnorm` outputs 192 kHz regardless of input, so any
+sample-counted filter after it (`adelay …S`, `atrim=end_sample`) is 4x off — the voice track came out
+7.5s long until an `aresample` went after it. And XCUITest reports the app's Appearance chips as not
+hittable, and a coordinate tap on "Dark" did not flip Settings in place; the theme changed on the
+next Home tap. The flip beat is therefore a dissolve between the light and dark Home from the same
+take, same scroll position, which is cleaner than the in-app flip would have been anyway.
+
+**Measured, not heard:** exact frame counts (600 / 900), −14.0 LUFS, peaks ≤ −1.2 dBFS, faststart,
+speech-band lift at all four cues. Whether the arrangement and the voice sit well together is the
+one thing measurement cannot say — play them before posting.

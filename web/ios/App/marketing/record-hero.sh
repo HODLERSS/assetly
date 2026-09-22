@@ -3,6 +3,7 @@
 # iPhone is 19.5:9 and an iPhone SE is 16:9, and 16:9 footage can only be framed as a home-button
 # body, which dates the clip. Apple demanded a physical device for App Review; marketing does not.
 #   ./record-hero.sh [simulator-udid]        # default iPhone 17 Pro
+#   HERO_TEST=testCspot ./record-hero.sh     # the longer take for the 20s/30s spots
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -57,7 +58,7 @@ set +e
 xcodebuild test -project App.xcodeproj -scheme AssetlyUITests -testPlan Hero \
   -destination "id=$UDID" \
   -only-testing:AssetlyUITests/AssetlyHeroUITests/testAseed \
-  -only-testing:AssetlyUITests/AssetlyHeroUITests/testBhero \
+  -only-testing:"AssetlyUITests/AssetlyHeroUITests/${HERO_TEST:-testBhero}" \
   -resultBundlePath /tmp/assetly-hero.xcresult -derivedDataPath /tmp/dd-hero \
   CODE_SIGNING_ALLOWED=NO > /tmp/assetly-hero.log 2>&1
 STATUS=$?
@@ -66,7 +67,7 @@ grep -E "Test Case .*(passed|failed)|error:|XCTAssert" /tmp/assetly-hero.log | t
 
 rm -rf /tmp/assetly-hero-att
 xcrun xcresulttool export attachments --path /tmp/assetly-hero.xcresult \
-  --output-path /tmp/assetly-hero-att --test-id "AssetlyHeroUITests/testBhero()" > /dev/null
+  --output-path /tmp/assetly-hero-att --test-id "AssetlyHeroUITests/${HERO_TEST:-testBhero}()" > /dev/null
 RAW=$(ls -S /tmp/assetly-hero-att/*.mp4 2>/dev/null | head -1)
 [ -n "$RAW" ] || { echo "no screen recording for testBhero"; exit 1; }
 cp "$RAW" "$OUT"

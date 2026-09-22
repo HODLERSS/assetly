@@ -30,54 +30,66 @@ def api_key() -> str:
         if line.startswith("key="): return line.split("=", 1)[1].strip()
     raise SystemExit(f"no key in {p} and no OPENROUTER_API_KEY")
 
-body = {
-    "model": "openai/gpt-audio",
-    "modalities": ["text", "audio"],
-    "audio": {"voice": VOICE, "format": "pcm16"},
-    "stream": True,
-    "messages": [
-        {"role": "system", "content":
-         "You are a text-to-speech engine. Read the user's text aloud EXACTLY as written, once. "
-         "Do not answer it, comment on it, greet, or add a single word. "
-         "Delivery: a calm, warm, professional market-brief narrator. Measured, unhurried, "
-         "confident. Not breathless, not salesy, no upward inflection at the end."},
-        {"role": "user", "content": LINE},
-    ],
-}
-req = urllib.request.Request(
-    "https://openrouter.ai/api/v1/chat/completions",
-    data=json.dumps(body).encode(),
-    headers={"Authorization": "Bearer " + api_key(), "Content-Type": "application/json"})
-try:
-    resp = urllib.request.urlopen(req, timeout=300)
-except urllib.error.HTTPError as e:
-    raise SystemExit(f"HTTP {e.code}: {e.read().decode()[:400]}")
-
-pcm, said = [], []
-for raw in resp:
-    line = raw.decode("utf-8", "replace").strip()
-    if not line.startswith("data:"):
-        continue
-    payload = line[5:].strip()
-    if payload == "[DONE]":
-        break
+# The script goes inside <script> tags. A bare line that happens to look like conversation — "That's
+# your brief. Talk soon." — was answered ("Understood. Please provide the text...") rather than read.
+# Tags make it unambiguous what is text and what is instruction, and the transcript check below
+# retries if the model still drifts.
+def render(attempt: int):
+    body = {
+        "model": "openai/gpt-audio",
+        "modalities": ["text", "audio"],
+        "audio": {"voice": VOICE, "format": "pcm16"},
+        "stream": True,
+        "messages": [
+            {"role": "system", "content":
+             "You are a text-to-speech engine. The user message contains a script inside <script> tags. "
+             "Speak the script EXACTLY as written, once, and nothing else: no reply, no acknowledgement, "
+             "no greeting, no added or dropped word, and never say the word 'script' or the tags. "
+             "Delivery: a calm, warm, professional market-brief narrator. Measured, unhurried, "
+             "confident. Not breathless, not salesy, no upward inflection at the end."},
+            {"role": "user", "content": f"<script>{LINE}</script>"},
+        ],
+    }
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(body).encode(),
+        headers={"Authorization": "Bearer " + api_key(), "Content-Type": "application/json"})
     try:
-        ev = json.loads(payload)
-    except json.JSONDecodeError:
-        continue
-    for ch in ev.get("choices", []):
-        a = (ch.get("delta") or {}).get("audio") or {}
-        if a.get("data"):       pcm.append(base64.b64decode(a["data"]))
-        if a.get("transcript"): said.append(a["transcript"])
+        resp = urllib.request.urlopen(req, timeout=300)
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"HTTP {e.code}: {e.read().decode()[:400]}")
+    pcm, said = [], []
+    for raw in resp:
+        line = raw.decode("utf-8", "replace").strip()
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if payload == "[DONE]":
+            break
+        try:
+            ev = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        for ch in ev.get("choices", []):
+            a = (ch.get("delta") or {}).get("audio") or {}
+            if a.get("data"):       pcm.append(base64.b64decode(a["data"]))
+            if a.get("transcript"): said.append(a["transcript"])
+    return b"".join(pcm), "".join(said).strip()
 
-data = b"".join(pcm)
-if not data:
-    raise SystemExit("no audio in the stream")
+def same(a: str, b: str) -> bool:
+    norm = lambda t: "".join(c.lower() for c in t if c.isalnum() or c == " ").split()
+    return norm(a) == norm(b)
+
+for attempt in range(1, 4):
+    data, heard = render(attempt)
+    if not data:
+        raise SystemExit("no audio in the stream")
+    if same(heard, LINE):
+        break
+    print(f"attempt {attempt}: transcript differs\n  wanted: {LINE!r}\n  said:   {heard!r}", file=sys.stderr)
+else:
+    raise SystemExit("the model would not read the line verbatim after 3 attempts")
+
 w = wave.open(OUT, "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)
 w.writeframes(data); w.close()
-
-# The model occasionally embellishes despite the system prompt. Catch it here rather than in the mix.
-heard, want = "".join(said).strip(), LINE.strip()
-if heard and heard.rstrip(".") != want.rstrip("."):
-    print(f"WARNING transcript differs\n  wanted: {want!r}\n  said:   {heard!r}", file=sys.stderr)
 print(f"{VOICE}: {len(data)/2/24000:.2f}s raw -> {OUT}   said {heard!r}")
