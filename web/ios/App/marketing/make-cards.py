@@ -49,14 +49,20 @@ elif mode == "sub":
     SUB = (201, 207, 218) if DARK else (61, 66, 76)
     f = grotesk(size, 500)
     d0 = ImageDraw.Draw(layer(w, h))
-    words, lines, cur = text.split(), [], ""
-    for wd in words:
-        trial = (cur + " " + wd).strip()
-        if d0.textbbox((0, 0), trial, font=f)[2] > w - 120 and cur:
-            lines.append(cur); cur = wd
-        else:
-            cur = trial
-    lines.append(cur)
+    fits = lambda t: d0.textbbox((0, 0), t, font=f)[2] <= w - 120
+    def greedy(t):
+        out, cur = [], ""
+        for wd in t.split():
+            trial = (cur + " " + wd).strip()
+            if not fits(trial) and cur: out.append(cur); cur = wd
+            else: cur = trial
+        return out + [cur]
+    lines = greedy(text)
+    # Two sentences on two lines beats a greedy wrap that strands the last word ("...on the App /
+    # Store."): break at the sentence end when both halves fit.
+    if len(lines) > 1 and ". " in text:
+        a, b = text.split(". ", 1); a += "."
+        if fits(a) and fits(b): lines = [a, b]
     if len(lines) > 2:
         sys.exit(f"subtitle needs {len(lines)} lines at {size}px: {text!r}")
     img = layer(w, h); d = ImageDraw.Draw(img)
