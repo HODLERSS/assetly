@@ -7,7 +7,8 @@ Four files, same take, same cut, same bed — pick a theme and an aspect:
 | **Light** | `assetly-light-4x5.mp4` | `assetly-light-1x1.mp4` |
 | **Dark** | `assetly-dark-4x5.mp4` | `assetly-dark-1x1.mp4` |
 
-**18.6 seconds, with music, captioned, real app footage in an iPhone 17 Pro body, ending on a card.**
+**18.6 seconds, with music and one spoken line, captioned, real app footage in an iPhone 17 Pro body,
+ending on a card.**
 4:5 is the default; use square only if a surface demands it. Light and dark are the same clip shot
 twice — post whichever reads better in the feed you are posting to.
 
@@ -69,8 +70,56 @@ and fails rather than shipping one that is not.
 Measured on the finished file, isolating the clap band: each 2-bar cycle now cross-correlates against
 the first at **+0.0ms**. Before the fix the same measurement drifted 141ms across the clip.
 
-**I cannot hear audio.** Timing, levels, build, loop seams and the ending are measured, not listened
-to — play one before you post.
+## The spoken line
+
+At 5.3s, while the brief is on screen and through the beat where the player appears, a voice reads:
+
+> "Good morning. Your upside hinges on NVIDIA's earnings."
+
+That is not copy written for the video. It is a sentence from the **narration script Assetly actually
+generated** for the demo account on the day of the take (`daily_briefs.script`, 2026-09-21 morning).
+The clip claims the app reads you a brief, so the line is what the app wrote.
+
+Rendered by **`openai/gpt-audio` through OpenRouter**, voice `marin`, via `marketing/make-voiceover.py`.
+Two things about that endpoint cost time: OpenRouter returns `400 "Audio output requires stream: true"`
+for any audio request without streaming, and the streamed audio arrives as headerless base64 PCM at
+**24 kHz mono** — the model's native rate, resampled once to 48 kHz with `afconvert --src-complexity
+bats` rather than left to a player. The system prompt is load-bearing: without it the model *answers*
+the line instead of reading it.
+
+The bed ducks **−8.8 dB** under the line and recovers to **+0.0 dB** after it, via a sidechain
+compressor keyed off the voice, not a hand-drawn volume envelope — the sidechain re-times itself when
+the line or the edit changes. Measured in the speech band the voice lifts the midrange +7.2 dB while
+overall level stays flat, which is what a duck is supposed to look like.
+
+`mix-voiceover.sh` asserts the duck lands between −6 and −12 dB and that the bed recovers, so a
+re-render cannot silently drift. Sweep against **its own printed figure**, never a raw render: the key
+is the companded, loudness-matched voice, and it drives the detector several dB harder than the file
+the model returns (−9.5 dB with a raw key vs −12.9 dB with the real one).
+
+### Two things that fought back
+
+**`loudnorm` does not belong on a ducked mix.** It is dynamic, so it rides the duck back up and closes
+the gap it exists to open; and it consumes a ~0.75s lookahead, returning a stream that much shorter
+than asked, which left the bed ending before the video. The mix now hits −14 LUFS with a *measured
+static gain* instead: sample-exact, and the duck survives.
+
+**Dropping `loudnorm` also drops its `TP=-1.5` ceiling.** The first mix came back at −0.9 dBFS, legal
+as a sample peak but close enough that AAC's reconstructed intersample peaks would clip on some
+decoders. The limiter now carries that number (`limit=0.84`).
+
+### Adding it to finished clips
+
+`add-voiceover.sh` re-muxes with **`-c:v copy`**. The video stream of every delivered file is
+MD5-identical to the pre-voiceover master — the grade, the captions and the card are bit-for-bit
+untouched, and no generation of x264 was spent on an audio change.
+
+The OpenRouter key is read from `OPENROUTER_API_KEY` or `~/.private_keys/openrouter.txt`, both
+outside the repo.
+
+**I cannot hear audio.** Timing, levels, build, loop seams, duck depth, the transcript and the ending
+are measured, not listened to — play one before you post. The one thing measurement cannot tell you is
+whether the voice *sounds* right against the bed.
 
 ## Why 4:5 is the default here, unlike Sprout
 
