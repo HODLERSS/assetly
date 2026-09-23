@@ -104,7 +104,7 @@ for c in spec["cues"]:
     print(f"cue at {c['at']}s ({dur:.2f}s):")
     for (w, _), (s, e) in zip(c["words"], wt): print(f"   {c['at']+s:6.2f}-{c['at']+e:6.2f}  {w}")
 
-LEAD, HOLD, FADE = 0.12, 0.35, 0.15
+LEAD, HOLD, FADE = 0.12, 0.12, 0.15      # hold 0.12: the second line must be gone by the cut at 13.2s
 LEAD_WORD, SWEEP = 0.06, 0.09          # highlight leads the onset by 60 ms; the sweep across a word takes 90 ms
 blank = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 n = int(round(TOTAL * FPS))

@@ -153,19 +153,23 @@ the first word of each cue takes its start from the audible onset in the cue's o
 (marin at 6.17s, cedar at 9.46s, both within 20 ms of the cue start). Tokens
 shown as "10%" and "#1" carry the syllables of "ten percent" and "number one". Audio unchanged.
 
-**Two camera moves (dark 4:5), each into the thing being said.** During the Meta line the camera
-pushes 1.5x into the News screen, which is FROZEN on one frame (57.2s of the take, because the live
-take scrolls there), and a rounded accent highlight fades up around the bullet **"Meta surge 11% on
-Muse AI excitement"**; the highlight is laid on the screen before the scale so it rides the zoom, and
-its opacity follows the move's own curve. As the Ask answer lands, 1.45x into the answer box, brought
-to the stage centre. The NVIDIA line has no move: the player pop is the event there. Each move eases
-in over ~1.1s, holds, and eases back to rest before the cut (smootherstep both ways, Lanczos); the
-focus point travels to the stage centre while the scale rises. A lower-third scrim on the same curve
-sits under the text zone so the magnified screen passes beneath the captions and nothing shows at
-rest. Learned on the way: a uniform push on every beat reads as the phone changing size; ffmpeg's
-`crop` evaluates its offsets once, so per-frame offsets go through `overlay`; an image input for the
-scrim needs `-framerate 30` or the beat ends a frame early. `make-spot.py` takes `"zoom": {"to",
-"focus": [x,y], "in", "out"}`, `"freeze": true` and `"highlight": {"box": [x0,y0,x1,y1]}` per beat.
+**Two camera moves (dark 4:5), each into the thing being said.** During the Meta line the News
+screen first scrolls LIVE for 1.2s (57.3-58.5s of the take), then freezes on the scrolled frame and
+the camera pushes 1.5x toward the bullet **"Meta surge 11% on Muse AI excitement"** while a rounded
+accent highlight fades up around it; the highlight is laid on the screen before the scale so it
+rides the zoom, and its opacity follows the move's own curve. The freeze is mid-scroll on purpose:
+the take's momentum carries that bullet off the top by 59.6s. The move eases in over 1s, holds
+through the line, and settles before the cut. As the Ask answer lands, 1.45x into the answer box,
+brought to the stage centre, and HELD: the ending dissolves (0.8s) from the magnified answer
+straight into the card, no settle-back. The NVIDIA line has no move: the player pop is the event
+there. Smootherstep both ways, Lanczos; the focus point travels to its target while the scale rises.
+A lower-third scrim on the same curve sits under the text zone so the magnified screen passes
+beneath the captions and nothing shows at rest. The second subtitle now ends 0.12s after its last
+word so it is gone before the cut. Learned on the way: a uniform push on every beat reads as the
+phone changing size; ffmpeg's `crop` evaluates its offsets once, so per-frame offsets go through
+`overlay`; an image input for the scrim needs `-framerate 30` or the beat ends a frame early.
+`make-spot.py` takes `"zoom": {"to", "focus": [x,y], "target": [x,y], "in", "out"|omitted=held}`,
+`"freeze": true` and `"highlight": {"box": [x0,y0,x1,y1]}` per beat.
 
 **Finishing touches (dark 4:5):** a 0.3s fade from the canvas at frame one, with the first caption
 held until it is done; captions and two-line subtitles share one optical centre (+8px) so the text

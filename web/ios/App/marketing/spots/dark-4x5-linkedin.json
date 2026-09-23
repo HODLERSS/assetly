@@ -4,7 +4,7 @@
  "len": 19.8,
  "theme": "dark",
  "fps": 30,
- "xfade": 0.6,
+ "xfade": 0.8,
  "speaking": "$SPOT/spk",
  "beats": [
   {
@@ -32,38 +32,47 @@
   },
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
-   "start": 57.2,
+   "start": 57.3,
+   "dur": 1.2
+  },
+  {
+   "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
+   "start": 58.5,
    "dur": 3.6,
+   "freeze": true,
    "zoom": {
     "to": 1.5,
     "focus": [
-     500,
-     663
+     502,
+     293
+    ],
+    "target": [
+     540,
+     400
     ],
     "in": [
-     0.15,
-     1.2
+     0.1,
+     1.1
     ],
     "out": [
-     2.45,
-     3.5
+     2.5,
+     3.45
     ]
    },
-   "freeze": true,
    "highlight": {
     "box": [
      334,
-     645,
-     668,
-     682
+     274,
+     670,
+     312
     ],
     "radius": 9
    }
   },
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
-   "start": 79.0,
-   "dur": 4.8,
+   "start": 80.2,
+   "dur": 3.6,
    "caption": "Like having an analyst on call",
    "zoom": {
     "to": 1.45,
@@ -72,12 +81,8 @@
      540
     ],
     "in": [
-     1.4,
-     2.5
-    ],
-    "out": [
-     3.3,
-     4.3
+     0.5,
+     1.7
     ]
    }
   }

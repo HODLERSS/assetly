@@ -63,9 +63,13 @@ PUSH = plan.get("push", 0.0)
 def ease_expr(z, tvar="t"):
     """0 -> 1 over z['in'], hold, 1 -> 0 over z['out']; smootherstep on both ramps (zero velocity and
     zero acceleration at the ends). `tvar` is 't' in most filters and 'T' inside geq."""
-    a, b = z["in"]; c, d = z["out"]
+    a, b = z["in"]
     def ss(u): return f"(({u})*({u})*({u})*(({u})*(({u})*6-15)+10))"
-    u1 = f"clip(({tvar}-{a:.3f})/{max(b-a,1e-3):.3f},0,1)"; u2 = f"clip(({tvar}-{c:.3f})/{max(d-c,1e-3):.3f},0,1)"
+    u1 = f"clip(({tvar}-{a:.3f})/{max(b-a,1e-3):.3f},0,1)"
+    if not z.get("out"):                     # hold to the end of the beat: the dissolve takes it from here
+        return f"({ss(u1)})"
+    c, d = z["out"]
+    u2 = f"clip(({tvar}-{c:.3f})/{max(d-c,1e-3):.3f},0,1)"
     return f"({ss(u1)}-{ss(u2)})"
 
 def phone_chain(dur, zoom=None, freeze=False, highlight=False):
@@ -146,7 +150,8 @@ for i, b in enumerate(plan["beats"]):
         print(f"beat {i}: flip  {hold}s light -> {xf}s dissolve -> dark, {d}s")
     else:
         z = b.get("zoom")
-        if z: assert z["out"][1] <= d + 1e-6, f"beat {i}: zoom must settle before the beat ends"
+        if z and z.get("out"): assert z["out"][1] <= d + 1e-6, f"beat {i}: zoom must settle before the beat ends"
+        if z and not z.get("out"): assert i == len(plan["beats"]) - 1, f"beat {i}: a held zoom is only for the last beat, which dissolves into the card"
         hl_in = []
         if z and b.get("highlight"):
             # a rounded accent frame with a faint fill around the line being spoken, in canvas px
@@ -156,7 +161,7 @@ for i, b in enumerate(plan["beats"]):
             img.save(f"{T}/hl{i}.png"); hl_in = ["-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/hl{i}.png"]
         ff("-ss", f"{b['start']:.3f}", "-i", b["src"], "-i", f"{T}/mask.png", "-i", f"{T}/frame.png", "-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/scrim.png", *hl_in,
            "-filter_complex", "[0:v]" + phone_chain(d, z, b.get("freeze", False), bool(hl_in)) + "[v]", "-map", "[v]", "-frames:v", str(frames(d)), *ENC, out)
-        print(f"beat {i}: {b['src'].split('/')[-1]} @{b['start']}s +{d}s" + ("  frozen" if b.get("freeze") else "") + (f"  zoom x{z['to']} -> {z['focus']} in {z['in']} out {z['out']}" if z else ""))
+        print(f"beat {i}: {b['src'].split('/')[-1]} @{b['start']}s +{d}s" + ("  frozen" if b.get("freeze") else "") + ((f"  zoom x{z['to']} -> {z['focus']} in {z['in']} " + (f"out {z['out']}" if z.get('out') else "held into the card")) if z else ""))
     n = int(probe(out)["nb_frames"]); assert n == frames(d), f"beat {i}: {n} frames, wanted {frames(d)}"
     parts.append(out)
     if b.get("caption"): caps.append((t_cursor, t_cursor + d, b["caption"]))
