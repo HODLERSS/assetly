@@ -395,6 +395,16 @@ Deno.serve(async (req) => {
   // "assessment" is never chosen by the clock: it is requested explicitly (orchestrator / brief-retry) and always forced
   const clockResolved = !validEd(edRaw);
   let edition: Edition = validEd(edRaw) ? edRaw : utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
+  // The morning edition has a WINDOW. brief_date is the ET date and the fallthrough above calls everything
+  // before 15:00 UTC "morning", so the */30 backfill sweep was writing the day's morning brief at 12:30-2:30
+  // AM ET, hours before any overnight or pre-market news, and the 8:35 AM ET run then found the row and left
+  // it. Clock-resolved morning now waits for 8 AM ET; the ET evening still resolves to close (a missing
+  // close can be backfilled overnight); the small hours write nothing. Explicit editions and force are untouched.
+  if (clockResolved && edition === "morning") {
+    const etMin = zonedParts(new Date(), TZ.US).minutes;
+    if (etMin >= 20 * 60 + 5) edition = "close";
+    else if (etMin < 8 * 60) return json({ ok: true, users: 0, wrote: 0, reason: "morning edition waits for 8 AM ET" });
+  }
   // No US session today (weekend or market holiday): the clock-resolved daily editions collapse into ONE weekend /
   // holiday read, written after 9 AM ET. An explicit edition (batteries, operators, brief-retry) is honored as asked.
   if (clockResolved && !marketState("US").tradingToday) {
