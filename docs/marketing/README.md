@@ -159,7 +159,7 @@ the camera pushes 1.5x toward the bullet **"Meta surge 11% on Muse AI excitement
 accent highlight fades up around it; the highlight is laid on the screen before the scale so it
 rides the zoom, and its opacity follows the move's own curve. The freeze is mid-scroll on purpose:
 the take's momentum carries that bullet off the top by 59.6s. The move eases in over 1s, holds
-through the line, and settles before the cut. As the Ask answer lands, 1.45x into the answer box,
+through the line, and settles before the cut. The Ask beat opens 1.3s before the answer so the thinking dots are seen; as the answer lands, 1.45x into the answer box,
 brought to the stage centre, and HELD: the ending dissolves (0.8s) from the magnified answer
 straight into the card, no settle-back. The NVIDIA line has no move: the player pop is the event
 there. Smootherstep both ways, Lanczos; the focus point travels to its target while the scale rises.

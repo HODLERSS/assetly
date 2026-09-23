@@ -38,7 +38,7 @@
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
    "start": 58.5,
-   "dur": 3.6,
+   "dur": 2.4,
    "freeze": true,
    "zoom": {
     "to": 1.5,
@@ -52,11 +52,11 @@
     ],
     "in": [
      0.1,
-     1.1
+     1.0
     ],
     "out": [
-     2.5,
-     3.45
+     1.55,
+     2.35
     ]
    },
    "highlight": {
@@ -71,8 +71,8 @@
   },
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
-   "start": 80.2,
-   "dur": 3.6,
+   "start": 79.0,
+   "dur": 4.8,
    "caption": "Like having an analyst on call",
    "zoom": {
     "to": 1.45,
@@ -81,8 +81,8 @@
      540
     ],
     "in": [
-     0.5,
-     1.7
+     1.7,
+     2.8
     ]
    }
   }
