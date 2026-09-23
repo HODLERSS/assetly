@@ -1,16 +1,78 @@
-{"w":1080,"h":1350,"len":19.8,"theme":"dark","fps":30,"xfade":0.6,
- "speaking":"$SPOT/spk",
- "beats":[
-  {"src":"$SPOT/dark-norm.mp4","start":4.6,"dur":2.4,"caption":"Everything you own, in one place"},
-  {"src":"$SPOT/dark-norm.mp4","start":11.5,"dur":2.4,"caption":"Live prices, every position"},
-  {"src":"$SPOT/dark-norm.mp4","start":20.0,"dur":1.2,"caption":"A brief on what moved, and why"},
-  {"src":"$SPOT/dark-norm.mp4","start":33.0,"dur":3.6},
-  {"src":"$SPOT/dark-norm.mp4","start":56.6,"dur":2.4},
-  {"src":"$SPOT/dark-norm.mp4","start":45.0,"dur":1.2},
-  {"src":"$SPOT/dark-norm.mp4","start":79.0,"dur":4.8,"caption":"Like having an analyst on call"}
+{
+ "w": 1080,
+ "h": 1350,
+ "len": 19.8,
+ "theme": "dark",
+ "fps": 30,
+ "xfade": 0.6,
+ "speaking": "$SPOT/spk",
+ "beats": [
+  {
+   "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
+   "start": 4.6,
+   "dur": 2.4,
+   "caption": "Everything you own, in one place"
+  },
+  {
+   "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
+   "start": 11.5,
+   "dur": 2.4,
+   "caption": "Live prices, every position"
+  },
+  {
+   "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
+   "start": 20.0,
+   "dur": 1.2,
+   "caption": "A brief on what moved, and why"
+  },
+  {
+   "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
+   "start": 33.0,
+   "dur": 3.6
+  },
+  {
+   "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
+   "start": 56.6,
+   "dur": 3.6,
+   "zoom": {
+    "to": 1.08,
+    "in": [
+     0.15,
+     1.25
+    ],
+    "out": [
+     2.35,
+     3.5
+    ]
+   }
+  },
+  {
+   "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
+   "start": 79.0,
+   "dur": 4.8,
+   "caption": "Like having an analyst on call",
+   "zoom": {
+    "to": 1.08,
+    "in": [
+     1.35,
+     2.45
+    ],
+    "out": [
+     3.25,
+     4.3
+    ]
+   }
+  }
  ],
- "subtitles":[
-  {"start":6.15,"end":9.5,"text":"Good morning. Your upside hinges on NVIDIA's earnings."},
-  {"start":9.5,"end":12.9,"text":"Meta's surging by 10%. Muse, #1 on the App Store."}
+ "card": {
+  "icon": "$ICON"
+ },
+ "overlays": [
+  {
+   "frames": "$SPOT/fill",
+   "x": 0,
+   "y": 1182
+  }
  ],
- "card":{"icon":"$ICON"}}
+ "speaking_y": 1172
+}

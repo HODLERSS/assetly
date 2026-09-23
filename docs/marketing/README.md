@@ -153,6 +153,16 @@ the first word of each cue takes its start from the audible onset in the cue's o
 (marin at 6.17s, cedar at 9.46s, both within 20 ms of the cue start). Tokens
 shown as "10%" and "#1" carry the syllables of "ten percent" and "number one". Audio unchanged.
 
+**Two camera moves (dark 4:5).** A push-in to 1.08 during the Meta line (the News beat now runs the
+full 3.6 s of that line, NVDA's half bar dropped) and another as the Ask answer lands, each easing in
+over ~1.1 s, holding, and easing back to rest before the cut. Smootherstep on both ramps (zero
+velocity and acceleration at the ends), Lanczos scaling, and the move is **anchored at the phone's
+bottom edge** so the caption zone stays clear and the top of the phone leaves the frame the way a
+real push does. Two things learned: a uniform push on every beat reads as the phone changing size
+(removed earlier); and ffmpeg's `crop` evaluates its x/y once, not per frame, so a per-frame offset
+has to go through `overlay`, whose position is evaluated every frame. `make-spot.py` takes
+`"zoom": {"to", "in": [a,b], "out": [c,d], "focus_x"}` per beat.
+
 **Finishing touches (dark 4:5):** a 0.3s fade from the canvas at frame one, with the first caption
 held until it is done; captions and two-line subtitles share one optical centre (+8px) so the text
 block does not hop between them; unspoken subtitle text at 140/255 rather than 120 so the read-ahead
