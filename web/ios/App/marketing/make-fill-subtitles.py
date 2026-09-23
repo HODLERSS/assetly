@@ -91,7 +91,13 @@ def layout(tokens):
 cues = []
 for c in spec["cues"]:
     env, dt, dur = envelope(c["file"])
-    wt = word_times(env, dt, dur, c["words"])
+    if c.get("times"):
+        # measured word times (absolute, from forced alignment of the final voice track) win over
+        # the envelope estimate: the estimate cannot see the pauses the voice actually takes
+        wt = [(a - c["at"], b - c["at"]) for a, b in c["times"]]
+        dur = max(dur, wt[-1][1])
+    else:
+        wt = word_times(env, dt, dur, c["words"])
     toks = [w for w, _ in c["words"]]
     lines, boxes = layout(toks)
     cues.append({"at": c["at"], "dur": dur, "toks": toks, "wt": wt, "lines": lines, "boxes": boxes})

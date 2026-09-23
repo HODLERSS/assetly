@@ -145,9 +145,12 @@ screen while cedar speaks about Meta; NVDA takes the half bar under the line's t
 spoken window the beat captions give way to **fill subtitles of the two sentences**
 (`make-fill-subtitles.py`, spec in `spots/dark-4x5-fill.json`): the whole sentence sits in muted
 ink so it can be read ahead, and each word lights with a 90 ms left-to-right sweep that starts 60 ms before its onset (fast
-enough to read as the word arriving, and leading the audio as subtitles do). Word timing comes from the voice audio itself, not from listening:
-the cue's RMS envelope at 5 ms, with each word boundary placed at the dip nearest to where the
-word's syllable count says it should end, and no word shorter than 110 ms per syllable. Tokens
+enough to read as the word arriving, and leading the audio as subtitles do). Word timing is **forced alignment** of the final voice track (`faster-whisper small.en`, word
+timestamps, `spots/dark-4x5-fill.json` carries the measured times): the envelope-dip estimate used
+first was 0.2–0.4s off on several words because it could not see the pauses the voices actually
+take ("morning. … Your", "percent. … Muse,"). The aligner smears the first word of a run early, so
+the first word of each cue takes its start from the audible onset in the cue's own file instead
+(marin at 6.17s, cedar at 9.46s, both within 20 ms of the cue start). Tokens
 shown as "10%" and "#1" carry the syllables of "ten percent" and "number one". Audio unchanged.
 
 **I cannot hear audio.** Timing, levels, build, loop seams, duck depth, the transcript and the ending
