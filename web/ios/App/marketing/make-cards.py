@@ -39,7 +39,8 @@ if mode == "cap":
     img = layer(w, h); d = ImageDraw.Draw(img)
     f = grotesk(size, 700)
     l, t, r, b = d.textbbox((0, 0), text, font=f)
-    d.text(((w - (r - l)) / 2 - l, (h - (b - t)) / 2 - t), text, font=f, fill=INK + (255,))
+    # +8: the same optical centre the two-line subtitles use, so the block does not hop between them
+    d.text(((w - (r - l)) / 2 - l, (h - (b - t)) / 2 - t + 8), text, font=f, fill=INK + (255,))
     img.save(out); print(f"caption {w}x{h}: {text}")
 
 elif mode == "sub":
@@ -114,7 +115,14 @@ elif mode == "end":
     img = layer(w, h); centred(ImageDraw.Draw(img), y, name, f_name, INK, w); img.save(os.path.join(out, "end_name.png")); y += hgt(name, f_name) + 26
     img = layer(w, h); d = ImageDraw.Draw(img); centred(d, y, sub1, f_sub, MUTED, w); y2 = y + hgt(sub1, f_sub) + 10
     centred(d, y2, sub2, f_sub, MUTED, w); img.save(os.path.join(out, "end_sub.png")); y = y2 + hgt(sub2, f_sub) + 58
-    img = layer(w, h); centred(ImageDraw.Draw(img), y, cta, f_cta, INK, w); img.save(os.path.join(out, "end_cta.png"))
+    # the call to action as a button, not a line of type: accent pill, dark text, generous padding
+    img = layer(w, h); d = ImageDraw.Draw(img)
+    f_btn = grotesk(38, 700); l, t, r, b = d.textbbox((0, 0), cta, font=f_btn)
+    pw, ph = (r - l) + 2 * 40, (b - t) + 2 * 22
+    px, py = (w - pw) // 2, y - 6
+    d.rounded_rectangle([px, py, px + pw, py + ph], radius=ph // 2, fill=ACCENT + (255,))
+    d.text((px + 40 - l, py + 22 - t), cta, font=f_btn, fill=((15, 18, 22) if DARK else (244, 245, 247)) + (255,))
+    img.save(os.path.join(out, "end_cta.png"))
     print(f"end card layers -> {out}")
 else:
     sys.exit(__doc__)

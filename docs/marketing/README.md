@@ -153,6 +153,12 @@ the first word of each cue takes its start from the audible onset in the cue's o
 (marin at 6.17s, cedar at 9.46s, both within 20 ms of the cue start). Tokens
 shown as "10%" and "#1" carry the syllables of "ten percent" and "number one". Audio unchanged.
 
+**Finishing touches (dark 4:5):** a 0.3s fade from the canvas at frame one, with the first caption
+held until it is done; captions and two-line subtitles share one optical centre (+8px) so the text
+block does not hop between them; unspoken subtitle text at 140/255 rather than 120 so the read-ahead
+line is comfortable at feed size; and the end card's call to action is an accent pill with dark
+text rather than a bare line of type.
+
 **I cannot hear audio.** Timing, levels, build, loop seams, duck depth, the transcript and the ending
 are measured, not listened to — play one before you post. The one thing measurement cannot tell you is
 whether the voice *sounds* right against the bed.

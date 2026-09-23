@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFont
 spec, out, W, H, FPS, TOTAL = json.load(open(sys.argv[1])), sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), float(sys.argv[6])
 os.makedirs(out, exist_ok=True)
 DARK = os.environ.get("THEME", "light") == "dark"
-BASE = (201, 207, 218, 120) if DARK else (61, 66, 76, 130)      # unspoken: readable, quiet
+BASE = (201, 207, 218, 140) if DARK else (61, 66, 76, 150)      # unspoken: readable, quiet
 LIT  = (233, 236, 241, 255) if DARK else (22, 24, 29, 255)      # spoken: the caption ink
 FONT = os.path.expanduser("~/Library/Fonts/assetly-brand/SchibstedGrotesk[wght].ttf")
 font = ImageFont.truetype(FONT, spec.get("size", 42)); font.set_variation_by_axes([500])
@@ -77,7 +77,7 @@ def layout(tokens):
         lines = [tokens[:cut], tokens[cut:]]
     hs = [d.textbbox((0, 0), " ".join(l), font=font)[3] - d.textbbox((0, 0), " ".join(l), font=font)[1] for l in lines]
     gap = int(spec.get("size", 42) * 0.3); total = sum(hs) + gap * (len(lines) - 1)
-    y = (H - total) // 2 + (16 if len(lines) > 1 else 0)   # two lines sit lower, clear of the speaking pills
+    y = (H - total) // 2 + 8                                 # the shared optical centre (captions use the same +8)
     boxes = []                                            # (x0, x1, y, line-height) per token
     for line, hh in zip(lines, hs):
         s = " ".join(line); l, t, r, b = d.textbbox((0, 0), s, font=font); x = (W - (r - l)) / 2 - l

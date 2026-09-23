@@ -142,11 +142,13 @@ for k, (s, e, text, kind) in enumerate(texts):
         subprocess.run([os.path.join(HERE, "make-cards.py"), "sub", str(W), str(CAP_H), str(plan.get("sub_size", 42)), f"{T}/txt{k}.png", text], check=True, capture_output=True)
     inputs += ["-loop", "1", "-t", f"{PRODUCT:.3f}", "-i", f"{T}/txt{k}.png"]
     si, so = s + (0.10 if kind == "cap" else 0.0), e - 0.22
+    if kind == "cap" and s == 0: si = 0.38                    # the first caption waits for the fade-in
     idx = k + off
     fc += (f"[{idx}:v]format=rgba,fade=t=in:st={si:.3f}:d=0.28:alpha=1,fade=t=out:st={so:.3f}:d=0.2:alpha=1[c{k}];"
            f"[{prev}][c{k}]overlay=0:'{CAP_Y}+12*(1-min(max(t-{si:.3f},0)/0.32,1))':format=auto:enable='between(t,{si:.3f},{e:.3f})'[b{k+1}];")
     prev = f"b{k+1}"
-fc += f"[{prev}]format=yuv420p[v]"
+# a short fade from the canvas at the top: a hard cut into a full screen on frame one reads as a glitch
+fc += f"[{prev}]fade=t=in:st=0:d=0.3:color={BG},format=yuv420p[v]"
 ff(*inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", str(frames(PRODUCT)), *ENC, f"{T}/product.mp4")
 print(f"product {PRODUCT:.2f}s with {len(caps)} captions, {len(plan.get('subtitles', []))} subtitles")
 
