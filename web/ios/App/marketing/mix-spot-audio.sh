@@ -47,9 +47,13 @@ fi
 
 [ -n "${VO_OUT:-}" ] && cp "$W/vo.wav" "$VO_OUT"
 
+# The duck KEY leads the voice by 120 ms: the compressor's attack is 20 ms, but a first syllable that
+# starts at full bed level still reads as buried. With the key ahead, the bed is already down when the
+# word lands. (Advance = drop the first 120 ms of the key copy; the mixed copy is untouched.)
+ffmpeg -v error -y -i "$W/vo.wav" -af "atrim=start=0.12,asetpts=PTS-STARTPTS,apad,atrim=end_sample=${LEN_S}" -ar ${SR} -ac 2 -c:a pcm_s24le "$W/key.wav"
 mix_pass() {   # <gain-dB> <out>
-  ffmpeg -v error -y -i "$MUSIC" -i "$W/vo.wav" -filter_complex "
-    [0:a]aresample=${SR}[bed]; [1:a]asplit=2[vo][key];
+  ffmpeg -v error -y -i "$MUSIC" -i "$W/vo.wav" -i "$W/key.wav" -filter_complex "
+    [0:a]aresample=${SR}[bed]; [1:a]anull[vo]; [2:a]anull[key];
     [bed][key]sidechaincompress=threshold=0.05:ratio=4:attack=20:release=500:makeup=1:level_sc=${DUCK_SC}[ducked];
     [ducked][vo]amix=inputs=2:normalize=0:duration=first[mix];
     [mix]volume=${1}dB,alimiter=limit=0.84:level=disabled,apad,atrim=end_sample=${LEN_S}[a]
@@ -60,7 +64,7 @@ GAIN=$(ffmpeg -hide_banner -nostats -i "$W/flat.wav" -af ebur128=peak=true -f nu
 mix_pass "$GAIN" "$OUT"
 
 # duck check on the first cue
-ffmpeg -v error -y -i "$MUSIC" -i "$W/vo.wav" -filter_complex "[0:a]aresample=${SR}[b];[b][1:a]sidechaincompress=threshold=0.05:ratio=4:attack=20:release=500:makeup=1:level_sc=${DUCK_SC},apad,atrim=end_sample=${LEN_S}[d]" -map "[d]" -ar ${SR} -ac 2 -c:a pcm_s24le "$W/ducked.wav"
+ffmpeg -v error -y -i "$MUSIC" -i "$W/key.wav" -filter_complex "[0:a]aresample=${SR}[b];[b][1:a]sidechaincompress=threshold=0.05:ratio=4:attack=20:release=500:makeup=1:level_sc=${DUCK_SC},apad,atrim=end_sample=${LEN_S}[d]" -map "[d]" -ar ${SR} -ac 2 -c:a pcm_s24le "$W/ducked.wav"
 FIRST="${1%%:*}"; FD=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$W/u0.wav")
 python3 - "$MUSIC" "$W/ducked.wav" "$FIRST" "$FD" <<'PYV'
 import re, subprocess, sys

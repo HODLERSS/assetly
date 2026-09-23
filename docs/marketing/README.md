@@ -171,10 +171,15 @@ phone changing size; ffmpeg's `crop` evaluates its offsets once, so per-frame of
 `make-spot.py` takes `"zoom": {"to", "focus": [x,y], "target": [x,y], "in", "out"|omitted=held}`,
 `"freeze": true` and `"highlight": {"box": [x0,y0,x1,y1]}` per beat.
 
-**A third voice on the Ask beat.** While the answer's first sentence is highlighted, `sage` reads
-*"Biggest position: NVIDIA, nineteen percent."* (brisk prompt, sped 18%, 2.5s at 15.0-17.5s, +1 dB,
-centred). The bed is faded (16.8s, 3s) BEFORE the mix now, so the closing fade never touches a voice;
-the mux no longer applies a fade. Three cues total: marin (NVIDIA), cedar (Meta), sage (the answer).
+**A third voice on the Ask beat.** While the answer's first sentence is highlighted, `ash` — a
+deeper anchor voice, prompted as a seasoned financial news anchor at a natural, measured pace —
+reads *"Biggest position: NVIDIA. Nineteen percent."* (14.7-18.2s, +2 dB, centred, no fade-in, sped
+12% only to fit). The earlier `sage` take at a brisk pace was too light and its first word was lost
+under the full beat. Two mixer changes came with it: the sidechain KEY now leads the voice by 120 ms
+so the bed is already down when a first syllable lands (helps all three lines), and the bed is
+faded BEFORE the mix with a half-sine curve (16.8s, 3s) so the closing tail eases into silence over
+the last 1.5s instead of dropping linearly, and never touches a voice. Measured tail: -14 dB at 17s,
+-19 at 17.8, -26 at 18.4, -38 at 18.9, -52 at 19.3.
 
 **Finishing touches (dark 4:5):** a 0.3s fade from the canvas at frame one, with the first caption
 held until it is done; captions and two-line subtitles share one optical centre (+8px) so the text
