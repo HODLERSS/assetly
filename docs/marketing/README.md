@@ -171,6 +171,11 @@ phone changing size; ffmpeg's `crop` evaluates its offsets once, so per-frame of
 `make-spot.py` takes `"zoom": {"to", "focus": [x,y], "target": [x,y], "in", "out"|omitted=held}`,
 `"freeze": true` and `"highlight": {"box": [x0,y0,x1,y1]}` per beat.
 
+**A third voice on the Ask beat.** While the answer's first sentence is highlighted, `sage` reads
+*"Biggest position: NVIDIA, nineteen percent."* (brisk prompt, sped 18%, 2.5s at 15.0-17.5s, +1 dB,
+centred). The bed is faded (16.8s, 3s) BEFORE the mix now, so the closing fade never touches a voice;
+the mux no longer applies a fade. Three cues total: marin (NVIDIA), cedar (Meta), sage (the answer).
+
 **Finishing touches (dark 4:5):** a 0.3s fade from the canvas at frame one, with the first caption
 held until it is done; captions and two-line subtitles share one optical centre (+8px) so the text
 block does not hop between them; unspoken subtitle text at 140/255 rather than 120 so the read-ahead
