@@ -28,23 +28,43 @@
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
    "start": 33.0,
-   "dur": 3.6
-  },
-  {
-   "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
-   "start": 56.6,
    "dur": 3.6,
    "zoom": {
-    "to": 1.08,
+    "to": 1.45,
+    "focus": [
+     539,
+     892
+    ],
     "in": [
-     0.15,
-     1.25
+     0.35,
+     1.35
     ],
     "out": [
-     2.35,
+     2.45,
      3.5
     ]
    }
+  },
+  {
+   "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
+   "start": 57.2,
+   "dur": 3.6,
+   "zoom": {
+    "to": 1.5,
+    "focus": [
+     539,
+     510
+    ],
+    "in": [
+     0.15,
+     1.2
+    ],
+    "out": [
+     2.45,
+     3.5
+    ]
+   },
+   "freeze": true
   },
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
@@ -52,13 +72,17 @@
    "dur": 4.8,
    "caption": "Like having an analyst on call",
    "zoom": {
-    "to": 1.08,
+    "to": 1.45,
+    "focus": [
+     506,
+     540
+    ],
     "in": [
-     1.35,
-     2.45
+     1.4,
+     2.5
     ],
     "out": [
-     3.25,
+     3.3,
      4.3
     ]
    }

@@ -60,36 +60,51 @@ print(f"screen {screen_w}x{screen_h} on {W}x{H}")
 # to turn it on deliberately.
 PUSH = plan.get("push", 0.0)
 
-def zoom_expr(z):
-    """Scale as a function of t for a motivated zoom: rest -> ease in to `to` over `in` -> hold ->
-    ease out over `out` -> rest. Smootherstep (6u^5-15u^4+10u^3) on both ramps: zero velocity AND
-    zero acceleration at the ends, so the move starts and settles like a camera on a fluid head rather
-    than a slider. The beat must return to 1.0 before its last frame so the cut carries no jump."""
+def ease_expr(z, tvar="t"):
+    """0 -> 1 over z['in'], hold, 1 -> 0 over z['out']; smootherstep on both ramps (zero velocity and
+    zero acceleration at the ends). `tvar` is 't' in most filters and 'T' inside geq."""
     a, b = z["in"]; c, d = z["out"]
     def ss(u): return f"(({u})*({u})*({u})*(({u})*(({u})*6-15)+10))"
-    u1 = f"clip((t-{a:.3f})/{max(b-a,1e-3):.3f},0,1)"; u2 = f"clip((t-{c:.3f})/{max(d-c,1e-3):.3f},0,1)"
-    return f"(1+{z['to']-1:.4f}*({ss(u1)}-{ss(u2)}))"
+    u1 = f"clip(({tvar}-{a:.3f})/{max(b-a,1e-3):.3f},0,1)"; u2 = f"clip(({tvar}-{c:.3f})/{max(d-c,1e-3):.3f},0,1)"
+    return f"({ss(u1)}-{ss(u2)})"
 
-def phone_chain(dur, zoom=None):
+def phone_chain(dur, zoom=None, freeze=False):
+    src = "trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/(" + str(FPS) + "*TB)," if freeze else ""
     if zoom:
-        sx = zoom_expr(zoom); fx = zoom.get("focus_x", W / 2)
-        # Anchored at the phone's bottom edge, not at the subject: zooming around the headline pushed
-        # the phone down into the caption strip and put the subtitle on the tab bar. With the bottom
-        # pinned (crop y = CAP_Y*(s-1): zero at rest, so cuts carry no jump), the push reads as the
-        # camera moving in and the top of the phone leaving the frame, and the text zone stays clear.
-        # crop's x/y are evaluated ONCE (measured: the offset stayed 0 for the whole beat); overlay's
-        # position is evaluated per frame, so the scaled canvas is placed on a fresh ground instead.
+        # A push INTO a subject: the focus point f (canvas px) travels to the target t (stage centre by
+        # default) while the scale goes 1 -> S, both on the same eased parameter E, so the camera path
+        # is one straight, settling move. Overlay position o(E) = f + E(t-f) - f*s(E) = E*((t-f) - f(S-1)):
+        # zero at rest, so cuts carry no jump. crop's offsets are evaluated once; overlay's every frame.
+        E = ease_expr(zoom); S = zoom["to"]
+        fx, fy = zoom["focus"]; tx, ty = zoom.get("target", (W / 2, (H - CAP_H) / 2))
+        kx, ky = (tx - fx) - fx * (S - 1), (ty - fy) - fy * (S - 1)
+        sx = f"(1+{S-1:.4f}*{E})"
+        # lower-third scrim under the text zone, opacity on the same curve, so a magnified screen can
+        # pass beneath the captions without fighting them and nothing shows at rest
+        Eg = ease_expr(zoom, "T")
         motion = (f"[ph]scale=w='trunc({W}*{sx}/2)*2':h='trunc({H}*{sx}/2)*2':eval=frame:flags=lanczos[phz];"
                   f"color=c={BG}:s={W}x{H}:r={FPS}:d={dur:.3f}[g2];"
-                  f"[g2][phz]overlay=x='-{fx:.1f}*({sx}-1)':y='-{CAP_Y + 8}*({sx}-1)':eval=frame:shortest=1,format=yuv420p")
+                  f"[g2][phz]overlay=x='{kx:.2f}*{E}':y='{ky:.2f}*{E}':eval=frame:shortest=1[zm];"
+                  f"[3:v]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*{Eg}'[sc];"
+                  f"[zm][sc]overlay=0:0:format=auto:shortest=1,format=yuv420p")
     else:
         motion = (f"[ph]scale=w='trunc({W}*(1+{PUSH}*t/{dur:.3f})/2)*2':h='trunc({H}*(1+{PUSH}*t/{dur:.3f})/2)*2':eval=frame,"
                   f"crop={W}:{H},format=yuv420p")
-    return (f"scale={screen_w}:{screen_h}:flags=lanczos,format=rgba[scr];"
+    return (src + f"scale={screen_w}:{screen_h}:flags=lanczos,format=rgba[scr];"
             f"[1:v]format=gray,scale={screen_w}:{screen_h}[m];[scr][m]alphamerge[rounded];"
             f"color=c={BG}:s={W}x{H}:r={FPS}:d={dur:.3f}[bg];"
             f"[bg][2:v]overlay={BODY_X}:{BODY_Y}:format=auto[withbody];"
             f"[withbody][rounded]overlay={SCREEN_X}:{SCREEN_Y}:format=auto:shortest=1[ph];" + motion)
+
+# the scrim: transparent above the text zone, the ground colour from just above the phone's bottom edge
+from PIL import Image as _I
+_bg = (0x14, 0x18, 0x1F) if DARK else (0xF4, 0xF5, 0xF7)
+_sc = _I.new("RGBA", (W, H), _bg + (0,)); _px = _sc.load()
+y0, y1 = CAP_Y - 96, CAP_Y + 6
+for yy in range(y0, H):
+    a = 255 if yy >= y1 else int(255 * ((yy - y0) / (y1 - y0)) ** 1.6)
+    for xx in range(W): _px[xx, yy] = _bg + (a,)
+_sc.save(f"{T}/scrim.png")
 
 parts = []
 # ---- hook ----------------------------------------------------------------------------------------
@@ -127,9 +142,9 @@ for i, b in enumerate(plan["beats"]):
     else:
         z = b.get("zoom")
         if z: assert z["out"][1] <= d + 1e-6, f"beat {i}: zoom must settle before the beat ends"
-        ff("-ss", f"{b['start']:.3f}", "-i", b["src"], "-i", f"{T}/mask.png", "-i", f"{T}/frame.png",
-           "-filter_complex", "[0:v]" + phone_chain(d, z) + "[v]", "-map", "[v]", "-frames:v", str(frames(d)), *ENC, out)
-        print(f"beat {i}: {b['src'].split('/')[-1]} @{b['start']}s +{d}s" + (f"  zoom x{z['to']} in {z['in']} out {z['out']}" if z else ""))
+        ff("-ss", f"{b['start']:.3f}", "-i", b["src"], "-i", f"{T}/mask.png", "-i", f"{T}/frame.png", "-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/scrim.png",
+           "-filter_complex", "[0:v]" + phone_chain(d, z, b.get("freeze", False)) + "[v]", "-map", "[v]", "-frames:v", str(frames(d)), *ENC, out)
+        print(f"beat {i}: {b['src'].split('/')[-1]} @{b['start']}s +{d}s" + ("  frozen" if b.get("freeze") else "") + (f"  zoom x{z['to']} -> {z['focus']} in {z['in']} out {z['out']}" if z else ""))
     n = int(probe(out)["nb_frames"]); assert n == frames(d), f"beat {i}: {n} frames, wanted {frames(d)}"
     parts.append(out)
     if b.get("caption"): caps.append((t_cursor, t_cursor + d, b["caption"]))

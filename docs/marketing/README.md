@@ -153,15 +153,18 @@ the first word of each cue takes its start from the audible onset in the cue's o
 (marin at 6.17s, cedar at 9.46s, both within 20 ms of the cue start). Tokens
 shown as "10%" and "#1" carry the syllables of "ten percent" and "number one". Audio unchanged.
 
-**Two camera moves (dark 4:5).** A push-in to 1.08 during the Meta line (the News beat now runs the
-full 3.6 s of that line, NVDA's half bar dropped) and another as the Ask answer lands, each easing in
-over ~1.1 s, holding, and easing back to rest before the cut. Smootherstep on both ramps (zero
-velocity and acceleration at the ends), Lanczos scaling, and the move is **anchored at the phone's
-bottom edge** so the caption zone stays clear and the top of the phone leaves the frame the way a
-real push does. Two things learned: a uniform push on every beat reads as the phone changing size
-(removed earlier); and ffmpeg's `crop` evaluates its x/y once, not per frame, so a per-frame offset
-has to go through `overlay`, whose position is evaluated every frame. `make-spot.py` takes
-`"zoom": {"to", "in": [a,b], "out": [c,d], "focus_x"}` per beat.
+**Three camera moves (dark 4:5), each into the thing being said.** During the NVIDIA line the
+camera pushes 1.45x into the "NVDA at 19.3% of assets" paragraph of the brief; during the Meta line,
+1.5x into "Meta's Muse AI agent sparked 11% jump" on the News screen, which is FROZEN on one frame
+(57.2s of the take) because the live take scrolls there; as the Ask answer lands, 1.45x into the
+answer box, brought to the stage centre. Each move eases in over ~1.1s, holds, and eases back to
+rest before the cut (smootherstep both ways, Lanczos). The focus point travels to the stage centre
+while the scale rises, one straight settling path. A lower-third scrim whose opacity follows the same
+curve sits under the text zone, so the magnified screen passes beneath the captions and nothing
+shows at rest. Learned on the way: a uniform push on every beat reads as the phone changing size;
+ffmpeg's `crop` evaluates its offsets once, so per-frame offsets go through `overlay`; an image
+input for the scrim needs `-framerate 30` or the beat ends a frame early. `make-spot.py` takes
+`"zoom": {"to", "focus": [x,y], "in", "out"}` and `"freeze": true` per beat.
 
 **Finishing touches (dark 4:5):** a 0.3s fade from the canvas at frame one, with the first caption
 held until it is done; captions and two-line subtitles share one optical centre (+8px) so the text
