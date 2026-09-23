@@ -68,8 +68,13 @@ def ease_expr(z, tvar="t"):
     u1 = f"clip(({tvar}-{a:.3f})/{max(b-a,1e-3):.3f},0,1)"; u2 = f"clip(({tvar}-{c:.3f})/{max(d-c,1e-3):.3f},0,1)"
     return f"({ss(u1)}-{ss(u2)})"
 
-def phone_chain(dur, zoom=None, freeze=False):
+def phone_chain(dur, zoom=None, freeze=False, highlight=False):
     src = "trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/(" + str(FPS) + "*TB)," if freeze else ""
+    hl = ""
+    if zoom and highlight:
+        # the highlight rides the screen: laid on before the scale, opacity on the move's own curve
+        hl = (f"[4:v]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*{ease_expr(zoom, 'T')}'[hl];"
+              f"[ph][hl]overlay=0:0:format=auto:shortest=1[ph2];")
     if zoom:
         # A push INTO a subject: the focus point f (canvas px) travels to the target t (stage centre by
         # default) while the scale goes 1 -> S, both on the same eased parameter E, so the camera path
@@ -82,7 +87,7 @@ def phone_chain(dur, zoom=None, freeze=False):
         # lower-third scrim under the text zone, opacity on the same curve, so a magnified screen can
         # pass beneath the captions without fighting them and nothing shows at rest
         Eg = ease_expr(zoom, "T")
-        motion = (f"[ph]scale=w='trunc({W}*{sx}/2)*2':h='trunc({H}*{sx}/2)*2':eval=frame:flags=lanczos[phz];"
+        motion = (hl + f"[{'ph2' if highlight else 'ph'}]scale=w='trunc({W}*{sx}/2)*2':h='trunc({H}*{sx}/2)*2':eval=frame:flags=lanczos[phz];"
                   f"color=c={BG}:s={W}x{H}:r={FPS}:d={dur:.3f}[g2];"
                   f"[g2][phz]overlay=x='{kx:.2f}*{E}':y='{ky:.2f}*{E}':eval=frame:shortest=1[zm];"
                   f"[3:v]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*{Eg}'[sc];"
@@ -142,8 +147,15 @@ for i, b in enumerate(plan["beats"]):
     else:
         z = b.get("zoom")
         if z: assert z["out"][1] <= d + 1e-6, f"beat {i}: zoom must settle before the beat ends"
-        ff("-ss", f"{b['start']:.3f}", "-i", b["src"], "-i", f"{T}/mask.png", "-i", f"{T}/frame.png", "-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/scrim.png",
-           "-filter_complex", "[0:v]" + phone_chain(d, z, b.get("freeze", False)) + "[v]", "-map", "[v]", "-frames:v", str(frames(d)), *ENC, out)
+        hl_in = []
+        if z and b.get("highlight"):
+            # a rounded accent frame with a faint fill around the line being spoken, in canvas px
+            x0, y0, x1, y1 = b["highlight"]["box"]; acc = (139, 152, 224) if DARK else (42, 63, 146)
+            img = _I.new("RGBA", (W, H), (0, 0, 0, 0)); dr = __import__("PIL.ImageDraw", fromlist=["Draw"]).Draw(img)
+            dr.rounded_rectangle([x0, y0, x1, y1], radius=b["highlight"].get("radius", 9), fill=acc + (34,), outline=acc + (230,), width=2)
+            img.save(f"{T}/hl{i}.png"); hl_in = ["-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/hl{i}.png"]
+        ff("-ss", f"{b['start']:.3f}", "-i", b["src"], "-i", f"{T}/mask.png", "-i", f"{T}/frame.png", "-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/scrim.png", *hl_in,
+           "-filter_complex", "[0:v]" + phone_chain(d, z, b.get("freeze", False), bool(hl_in)) + "[v]", "-map", "[v]", "-frames:v", str(frames(d)), *ENC, out)
         print(f"beat {i}: {b['src'].split('/')[-1]} @{b['start']}s +{d}s" + ("  frozen" if b.get("freeze") else "") + (f"  zoom x{z['to']} -> {z['focus']} in {z['in']} out {z['out']}" if z else ""))
     n = int(probe(out)["nb_frames"]); assert n == frames(d), f"beat {i}: {n} frames, wanted {frames(d)}"
     parts.append(out)
