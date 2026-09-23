@@ -13,8 +13,7 @@ it and its neighbours carry. Syllables set the prior, the audio sets the cut. A 
 as "10%" but spoken as "ten percent" simply carries three syllables.
 
 Rendering follows subtitle practice rather than karaoke novelty: the whole sentence is on screen
-in muted ink so it can be read ahead, and each word brightens as it is spoken, the current word
-filling left to right over its own duration. The strip appears 120 ms before the first word and
+in muted ink so it can be read ahead, and each word brightens, whole, the moment it is spoken. The strip appears 120 ms before the first word and
 holds 350 ms after the last.
 """
 import json, os, subprocess, sys, tempfile, wave
@@ -114,18 +113,15 @@ for fi in range(n):
             pass
         for (x0, x1, y, lh), tok in zip(c["boxes"], c["toks"]):
             d.text((x0, y), tok, font=font, fill=BASE[:3] + (int(BASE[3] * a),))
-        # lit layer: every fully spoken word; the word being spoken goes on its OWN layer, clipped
-        # to its filled fraction, so the clip cannot touch words on the other line
+        # lit layer: each word brightens as a WHOLE the moment it starts (a 70 ms ramp so it does not
+        # pop), never letter by letter — a left-to-right sweep inside a word reads as a progress bar,
+        # not as speech
         lit = blank.copy(); dl = ImageDraw.Draw(lit)
         for (x0, x1, y, lh), tok, (s, e) in zip(c["boxes"], c["toks"], c["wt"]):
-            ws, we = c["at"] + s, c["at"] + e
+            ws = c["at"] + s
             if t < ws: continue
-            if t >= we:
-                dl.text((x0, y), tok, font=font, fill=LIT[:3] + (int(255 * a),)); continue
-            cur = blank.copy(); ImageDraw.Draw(cur).text((x0, y), tok, font=font, fill=LIT[:3] + (int(255 * a),))
-            fx = x0 + (x1 - x0) * (t - ws) / max(we - ws, 1e-3)
-            mask = Image.new("L", (W, H), 0); ImageDraw.Draw(mask).rectangle([0, 0, fx, H], fill=255)
-            lit.alpha_composite(Image.composite(cur, blank, mask))
+            k = min(1.0, (t - ws) / 0.07)
+            dl.text((x0, y), tok, font=font, fill=LIT[:3] + (int(255 * a * k),))
         img.alpha_composite(lit)
     (img or blank).save(os.path.join(out, f"{fi:05d}.png"))
 print(f"{n} frames -> {out}")

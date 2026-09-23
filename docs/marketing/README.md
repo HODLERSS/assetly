@@ -144,8 +144,8 @@ other three: News comes before NVDA and takes a full bar, so the META 11.3% / Mu
 screen while cedar speaks about Meta; NVDA takes the half bar under the line's tail. During the
 spoken window the beat captions give way to **fill subtitles of the two sentences**
 (`make-fill-subtitles.py`, spec in `spots/dark-4x5-fill.json`): the whole sentence sits in muted
-ink so it can be read ahead, and each word brightens as it is spoken, the current word filling left
-to right over its own duration. Word timing comes from the voice audio itself, not from listening:
+ink so it can be read ahead, and each word brightens, whole, the moment it is spoken (a 70 ms ramp, never a
+letter-by-letter sweep). Word timing comes from the voice audio itself, not from listening:
 the cue's RMS envelope at 5 ms, with each word boundary placed at the dip nearest to where the
 word's syllable count says it should end, and no word shorter than 110 ms per syllable. Tokens
 shown as "10%" and "#1" carry the syllables of "ten percent" and "number one". Audio unchanged.
