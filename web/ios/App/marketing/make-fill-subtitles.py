@@ -13,7 +13,7 @@ it and its neighbours carry. Syllables set the prior, the audio sets the cut. A 
 as "10%" but spoken as "ten percent" simply carries three syllables.
 
 Rendering follows subtitle practice rather than karaoke novelty: the whole sentence is on screen
-in muted ink so it can be read ahead, and each word brightens, whole, the moment it is spoken. The strip appears 120 ms before the first word and
+in muted ink so it can be read ahead, and each word lights with a 90 ms left-to-right sweep that starts 60 ms before its onset. The strip appears 120 ms before the first word and
 holds 350 ms after the last.
 """
 import json, os, subprocess, sys, tempfile, wave
@@ -99,6 +99,7 @@ for c in spec["cues"]:
     for (w, _), (s, e) in zip(c["words"], wt): print(f"   {c['at']+s:6.2f}-{c['at']+e:6.2f}  {w}")
 
 LEAD, HOLD, FADE = 0.12, 0.35, 0.15
+LEAD_WORD, SWEEP = 0.06, 0.09          # highlight leads the onset by 60 ms; the sweep across a word takes 90 ms
 blank = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 n = int(round(TOTAL * FPS))
 for fi in range(n):
@@ -113,15 +114,21 @@ for fi in range(n):
             pass
         for (x0, x1, y, lh), tok in zip(c["boxes"], c["toks"]):
             d.text((x0, y), tok, font=font, fill=BASE[:3] + (int(BASE[3] * a),))
-        # lit layer: each word brightens as a WHOLE the moment it starts (a 70 ms ramp so it does not
-        # pop), never letter by letter — a left-to-right sweep inside a word reads as a progress bar,
-        # not as speech
+        # lit layer: each word lights with a FAST left-to-right sweep (90 ms, whatever the word's
+        # length) starting 60 ms before the audio onset. Fast enough to read as the word arriving,
+        # not as a progress bar across it; the lead is the usual subtitle practice, since a highlight
+        # that lands exactly on the onset is perceived as late.
         lit = blank.copy(); dl = ImageDraw.Draw(lit)
         for (x0, x1, y, lh), tok, (s, e) in zip(c["boxes"], c["toks"], c["wt"]):
-            ws = c["at"] + s
+            ws = c["at"] + s - LEAD_WORD
             if t < ws: continue
-            k = min(1.0, (t - ws) / 0.07)
-            dl.text((x0, y), tok, font=font, fill=LIT[:3] + (int(255 * a * k),))
+            k = min(1.0, (t - ws) / SWEEP)
+            if k >= 1.0:
+                dl.text((x0, y), tok, font=font, fill=LIT[:3] + (int(255 * a),)); continue
+            cur = blank.copy(); ImageDraw.Draw(cur).text((x0, y), tok, font=font, fill=LIT[:3] + (int(255 * a),))
+            fx = x0 + (x1 - x0) * k
+            mask = Image.new("L", (W, H), 0); ImageDraw.Draw(mask).rectangle([0, 0, fx, H], fill=255)
+            lit.alpha_composite(Image.composite(cur, blank, mask))
         img.alpha_composite(lit)
     (img or blank).save(os.path.join(out, f"{fi:05d}.png"))
 print(f"{n} frames -> {out}")
