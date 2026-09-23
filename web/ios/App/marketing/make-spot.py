@@ -117,13 +117,18 @@ ff("-f", "concat", "-safe", "0", "-i", f"{T}/list.txt", "-c", "copy", f"{T}/prod
 
 # ---- speaking indicator: a PNG sequence from make-speaking.py, over the product before any text ----
 inputs = ["-i", f"{T}/product_raw.mp4"]; fc = "[0:v]format=yuv420p[b0];"
-spk = plan.get("speaking")
-if spk:
-    inputs += ["-framerate", str(FPS), "-i", os.path.join(spk, "%05d.png")]
-    fc += f"[1:v]format=rgba[spk];[b0][spk]overlay={plan.get('speaking_x', 460)}:{plan.get('speaking_y', CAP_Y + 4)}:format=auto:shortest=1[b0s];"
-    base, off = "b0s", 2
-else:
-    base, off = "b0", 1
+# PNG sequences laid over the product before any text: the speaking indicator, and the fill
+# subtitles from make-fill-subtitles.py ("overlays": [{"frames": dir, "x": 0, "y": CAP_Y}]).
+seqs = []
+if plan.get("speaking"):
+    seqs.append({"frames": plan["speaking"], "x": plan.get("speaking_x", 460), "y": plan.get("speaking_y", CAP_Y + 4)})
+seqs += plan.get("overlays", [])
+base = "b0"
+for j, sq in enumerate(seqs):
+    inputs += ["-framerate", str(FPS), "-i", os.path.join(sq["frames"], "%05d.png")]
+    fc += f"[{j+1}:v]format=rgba[sq{j}];[{base}][sq{j}]overlay={sq['x']}:{sq['y']}:format=auto:shortest=1[b0s{j}];"
+    base = f"b0s{j}"
+off = 1 + len(seqs)
 
 # ---- captions and subtitles: rise 12px and fade in over 0.28s, fade out over 0.2s ----------------
 # A subtitle is a spoken sentence (make-cards.py sub: lighter, muted) shown for exactly the time it

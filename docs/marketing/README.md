@@ -142,9 +142,13 @@ every cut reads as the phone changing size, not as camera motion. `make-spot.py`
 `push` to 0.) Its cut differs from the
 other three: News comes before NVDA and takes a full bar, so the META 11.3% / Muse headline is on
 screen while cedar speaks about Meta; NVDA takes the half bar under the line's tail. During the
-spoken window the beat captions give way to **subtitles of the two sentences** (Schibsted 500,
-muted ink, `make-cards.py sub`) timed to the lines, 6.15–9.5s and 9.5–12.9s, so a muted feed still
-gets the content. Audio unchanged.
+spoken window the beat captions give way to **fill subtitles of the two sentences**
+(`make-fill-subtitles.py`, spec in `spots/dark-4x5-fill.json`): the whole sentence sits in muted
+ink so it can be read ahead, and each word brightens as it is spoken, the current word filling left
+to right over its own duration. Word timing comes from the voice audio itself, not from listening:
+the cue's RMS envelope at 5 ms, with each word boundary placed at the dip nearest to where the
+word's syllable count says it should end, and no word shorter than 110 ms per syllable. Tokens
+shown as "10%" and "#1" carry the syllables of "ten percent" and "number one". Audio unchanged.
 
 **I cannot hear audio.** Timing, levels, build, loop seams, duck depth, the transcript and the ending
 are measured, not listened to — play one before you post. The one thing measurement cannot tell you is
