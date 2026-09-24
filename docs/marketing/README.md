@@ -173,7 +173,7 @@ phone changing size; ffmpeg's `crop` evaluates its offsets once, so per-frame of
 
 **A third voice on the Ask beat.** While the answer's first sentence is highlighted, `shimmer` —
 prompted as a young news anchor in her twenties on a modern financial channel, confident and
-natural — reads *"Biggest position: NVIDIA. Nineteen percent."* (14.7-17.8s, +1.5 dB like the Meta line, centred, no
+natural — reads *"Biggest position: NVIDIA. Nineteen percent."* (14.7-17.8s, 0 dB, levelled with the other lines, centred, no
 fade-in, sped 12% only to fit). Every cue also takes an ONSET boost (extra dB on the first word,
 decaying over 0.5s: 1.5/2/4 dB on the three lines): a natural read starts soft, and under a full
 beat the first syllable is the one that has to arrive. Measured: the line's first 0.3s sits 2 dB
