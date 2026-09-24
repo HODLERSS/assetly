@@ -53,7 +53,7 @@
    },
    "highlight": {
     "src_span": {
-     "x_start": 218,
+     "x_start": 227,
      "x_end": 1104,
      "x_line": 96,
      "top": 1112,
@@ -71,7 +71,7 @@
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
    "start": 58.5,
-   "dur": 3.2,
+   "dur": 2.7,
    "freeze": true,
    "transition": "cut",
    "zoom": {
@@ -79,11 +79,11 @@
     "focus_src": 585,
     "in": [
      0.1,
-     1.1
+     1.0
     ],
     "out": [
-     2.6,
-     3.15
+     2.1,
+     2.65
     ]
    },
    "highlight": {
@@ -99,16 +99,16 @@
   },
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
-   "start": 79.3,
-   "dur": 4.2,
+   "start": 78.5,
+   "dur": 4.7,
    "caption": "ASK|Like having an analyst on call",
-   "caption_dur": 1.05,
+   "caption_dur": 1.7,
    "zoom": {
     "to": 1.7,
     "focus_src": 850,
     "in": [
-     1.0,
-     2.0
+     1.8,
+     2.8
     ]
    },
    "highlight": {

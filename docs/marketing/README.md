@@ -168,7 +168,7 @@ fps). Resolution stays 1080x1350: the simulator recording is 1206px wide and the
 holds the repo copies). **Current cut (2026-09-24):** HOME 3.6s (rise-in, push 1.5x framed from the figure downward, phone edges in view, hold ~1.4s) · POSITIONS 2.4s (the list's own scroll, no push) · MORNING BRIEF 3.6s under the NVIDIA
 line (push 1.5x with the "NVDA at 19.3% of assets…" sentence highlighted from its first word (ONE L-shaped outline: from "NVDA" to the line end, then the
 full following line, so "today." sits outside — `highlight.src_span`), hold 1.5s) · NEWS live
-scroll 1.0s → frozen 3.2s (push 1.8x, Muse bullet highlighted, hold 1.5s) · ASK 4.2s (1.3s thinking,
+scroll 1.0s → frozen 2.7s (push 1.8x, Muse bullet highlighted, hold 1.1s) · ASK 4.7s (1.8s thinking,
 push 1.7x on the answer's first sentence, highlighted, held into the card). The "what moved, and
 why" beat was cut as redundant with the brief under the NVIDIA line. Every push: ~1s in, ~1.5s hold,
 ~0.6s out; all three spoken lines have a highlight so the eye knows what the voice is about.
