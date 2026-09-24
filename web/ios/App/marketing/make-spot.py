@@ -193,7 +193,16 @@ for i, b in enumerate(plan["beats"]):
             boxes = hlc.get("src_boxes") or ([hlc["src_box"]] if "src_box" in hlc else None)
             acc = (139, 152, 224) if DARK else (42, 63, 146)
             img = _I.new("RGBA", (W, H), (0, 0, 0, 0)); dr = __import__("PIL.ImageDraw", fromlist=["Draw"]).Draw(img)
-            if boxes:        # one rounded box per line segment, so a sentence starting mid-line is framed from its first word
+            if "src_span" in hlc:
+                # ONE outline around a sentence that starts mid-line and wraps: an L-shape from the first
+                # word to the line end, then the full width of the following lines. The words before it
+                # on the first line stay outside.
+                sp = hlc["src_span"]; (xs, y0), (xe, _) = cv(sp["x_start"], sp["top"]), cv(sp["x_end"], 0)
+                (xl, ym), (_, y1) = cv(sp["x_line"], sp["wrap"]), cv(0, sp["bottom"])
+                pts = [(xs - pad, y0 - pad), (xe + pad, y0 - pad), (xe + pad, y1 + pad), (xl - pad, y1 + pad), (xl - pad, ym - 2), (xs - pad, ym - 2)]
+                dr.polygon(pts, fill=acc + (34,))
+                dr.line(pts + [pts[0]], fill=acc + (230,), width=2, joint="curve")
+            elif boxes:        # one rounded box per line segment
                 for sx0, sy0, sx1, sy1 in boxes:
                     (x0, y0), (x1, y1) = cv(sx0, sy0), cv(sx1, sy1)
                     dr.rounded_rectangle([x0 - pad, y0 - pad, x1 + pad, y1 + pad], radius=hlc.get("radius", 9), fill=acc + (34,), outline=acc + (230,), width=2)
