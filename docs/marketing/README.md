@@ -172,17 +172,16 @@ phone changing size; ffmpeg's `crop` evaluates its offsets once, so per-frame of
 `"freeze": true` and `"highlight": {"box": [x0,y0,x1,y1]}` per beat.
 
 **A third voice on the Ask beat.** While the answer's first sentence is highlighted, `shimmer` —
-prompted as a young news anchor in her twenties on a modern financial channel, confident and
-natural — reads *"Biggest position: NVIDIA. Nineteen percent."* (14.7-17.8s, 0 dB, levelled with the other lines, centred, no
-fade-in, sped 12% only to fit). Every cue also takes an ONSET boost (extra dB on the first word,
-decaying over 0.5s: 1.5/2/4 dB on the three lines): a natural read starts soft, and under a full
-beat the first syllable is the one that has to arrive. Measured: the line's first 0.3s sits 2 dB
-above its own average. The earlier `sage` take at a brisk pace was too light and its first word was lost
-under the full beat. Two mixer changes came with it: the sidechain KEY now leads the voice by 120 ms
-so the bed is already down when a first syllable lands (helps all three lines), and the bed is
-faded BEFORE the mix with a half-sine curve (16.8s, 3s) so the closing tail eases into silence over
-the last 1.5s instead of dropping linearly, and never touches a voice. Measured tail: -14 dB at 17s,
--19 at 17.8, -26 at 18.4, -38 at 18.9, -52 at 19.3.
+prompted as a news anchor in her twenties landing a headline, punchy on the first two words then
+brisk — reads *"Biggest position: NVIDIA. Nineteen percent, up three point four this month."*
+(the app's own answer; 14.85-19.3s, starting with the highlight and finishing over the card).
+Sped 20% to fit; levelled with the Meta line (0 dB). What makes it carry is presence, not level: a
+2.5 dB lift at 3 kHz and 1.5 dB at 200 Hz with light compression on that cue only, a per-cue ONSET
+boost (+3.5 dB on the first word, decaying over 0.5s; the other lines get 1.5/2), the duck KEY leading
+every voice by 120 ms, and a per-cue KEY gain (+6 dB) so the bed ducks deeper under this line, which
+sits over the full beat. The bed is faded BEFORE the mix with a half-sine (16.8s, 3s) so the tail
+eases into silence and never touches a voice. Cue fields in `mix-spot-audio.sh`:
+`start:file:fade_out:fade_in:pan:gain:onset:keygain`.
 
 **Finishing touches (dark 4:5):** a 0.3s fade from the canvas at frame one, with the first caption
 held until it is done; captions and two-line subtitles share one optical centre (+8px) so the text

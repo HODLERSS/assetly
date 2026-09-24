@@ -14,13 +14,15 @@ SR=48000; DUCK_SC="${DUCK_SC:-0.6}"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 LEN_S=$(python3 -c "print(int(round($LEN*$SR)))")
 
-i=0; cues=()
+i=0; cues=(); keys=()
 # cue = start:file[:fade_out[:fade_in[:pan[:gain_dB[:onset_dB]]]]] — fades in seconds on the trimmed line, pan -1..1.
 # gain is applied AFTER the per-cue loudnorm, which is the only place it survives.
 # Two lines can hand over mid-air: the first fades over its last second while the next rises, each
 # nudged to its own side so both stay intelligible through the overlap.
 for cue in "$@"; do
-  IFS=: read -r AT VOICE FO FI PAN GAIN ONSET <<<"$cue"; FO="${FO:-0}"; FI="${FI:-0}"; PAN="${PAN:-0}"; GAIN="${GAIN:-0}"; ONSET="${ONSET:-0}"
+  IFS=: read -r AT VOICE FO FI PAN GAIN ONSET KEYG <<<"$cue"; FO="${FO:-0}"; FI="${FI:-0}"; PAN="${PAN:-0}"; GAIN="${GAIN:-0}"; ONSET="${ONSET:-0}"; KEYG="${KEYG:-0}"
+  # keyg: extra dB on this cue's contribution to the DUCK KEY only — a deeper duck under one line
+  # (a line over the full beat needs more room than one over the sparse section) without touching its level
   # onset: extra dB on the first word, decaying to 0 over 0.5s — a natural read starts soft, and under a
   # full beat the first syllable is the one that has to arrive
   OK=$(python3 -c "print(round(10**($ONSET/20)-1,4))")
@@ -42,11 +44,13 @@ for cue in "$@"; do
   VD=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$W/u$i.wav")
   echo "  cue $i: ${VD}s at ${AT}s -> ends $(python3 -c "print(round($AT+$VD,2))")s"
   python3 -c "import sys; sys.exit('cue $i runs past the end') if $AT+$VD > $LEN-0.15 else None"
-  cues+=("$W/v$i.wav"); i=$((i+1))
+  ffmpeg -v error -y -i "$W/v$i.wav" -af "volume=${KEYG}dB" -ar ${SR} -ac 2 -c:a pcm_s24le "$W/k$i.wav"
+  cues+=("$W/v$i.wav"); keys+=("$W/k$i.wav"); i=$((i+1))
 done
-# one voice track (VO_OUT keeps a copy: the speaking indicator is drawn from it)
-if [ $i -eq 1 ]; then cp "${cues[0]}" "$W/vo.wav"; else
+# one voice track (VO_OUT keeps a copy: the speaking indicator is drawn from it), and its key twin
+if [ $i -eq 1 ]; then cp "${cues[0]}" "$W/vo.wav"; cp "${keys[0]}" "$W/keysrc.wav"; else
   ffmpeg -v error -y $(printf -- '-i %s ' "${cues[@]}") -filter_complex "$(printf '[%d:a]' $(seq 0 $((i-1))))amix=inputs=$i:normalize=0:duration=longest[a]" -map "[a]" -ar ${SR} -ac 2 -c:a pcm_s24le "$W/vo.wav"
+  ffmpeg -v error -y $(printf -- '-i %s ' "${keys[@]}") -filter_complex "$(printf '[%d:a]' $(seq 0 $((i-1))))amix=inputs=$i:normalize=0:duration=longest[a]" -map "[a]" -ar ${SR} -ac 2 -c:a pcm_s24le "$W/keysrc.wav"
 fi
 
 [ -n "${VO_OUT:-}" ] && cp "$W/vo.wav" "$VO_OUT"
@@ -54,7 +58,7 @@ fi
 # The duck KEY leads the voice by 120 ms: the compressor's attack is 20 ms, but a first syllable that
 # starts at full bed level still reads as buried. With the key ahead, the bed is already down when the
 # word lands. (Advance = drop the first 120 ms of the key copy; the mixed copy is untouched.)
-ffmpeg -v error -y -i "$W/vo.wav" -af "atrim=start=0.12,asetpts=PTS-STARTPTS,apad,atrim=end_sample=${LEN_S}" -ar ${SR} -ac 2 -c:a pcm_s24le "$W/key.wav"
+ffmpeg -v error -y -i "$W/keysrc.wav" -af "atrim=start=0.12,asetpts=PTS-STARTPTS,apad,atrim=end_sample=${LEN_S}" -ar ${SR} -ac 2 -c:a pcm_s24le "$W/key.wav"
 mix_pass() {   # <gain-dB> <out>
   ffmpeg -v error -y -i "$MUSIC" -i "$W/vo.wav" -i "$W/key.wav" -filter_complex "
     [0:a]aresample=${SR}[bed]; [1:a]anull[vo]; [2:a]anull[key];
