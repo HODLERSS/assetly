@@ -302,7 +302,8 @@ ff(*inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", str(frames(card_l
 offset = PRODUCT - XF
 ff("-i", f"{T}/product.mp4", "-i", f"{T}/card.mp4", "-filter_complex",
    f"[0:v]settb=AVTB[a];[1:v]settb=AVTB[b];[a][b]xfade=transition=fade:duration={XF}:offset={offset:.3f},format=yuv420p[v]",
-   "-map", "[v]", "-frames:v", str(frames(LEN)), "-c:v", "libx264", "-crf", "17", "-preset", "veryslow", "-profile:v", "high",
+   "-map", "[v]", "-frames:v", str(frames(LEN)), "-c:v", "libx264", "-crf", str(plan.get("crf", 17)), "-preset", "veryslow", "-profile:v", "high",
+   "-x264-params", "aq-mode=3:aq-strength=1.0:deblock=-1,-1:psy-rd=1.0,0.15",   # dark gradients keep their steps
    "-pix_fmt", "yuv420p", "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
    "-movflags", "+faststart", "-r", str(FPS), OUT)
 n = int(probe(OUT)["nb_frames"]); assert n == frames(LEN), f"final {n} frames, wanted {frames(LEN)}"

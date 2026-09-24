@@ -3,7 +3,7 @@
  "h": 1350,
  "len": 19.8,
  "theme": "dark",
- "fps": 30,
+ "fps": 60,
  "xfade": 0.8,
  "speaking": "$SPOT/spk",
  "beats": [
@@ -135,5 +135,6 @@
  ],
  "captions": "top",
  "speaking_y": 0,
- "slide": 0.4
+ "slide": 0.4,
+ "crf": 15
 }

@@ -156,6 +156,13 @@ without heads drifted 0.2s per slide. Cut list from a reference is read with `yt
 per-second RMS. What was NOT taken from the reference: its flat pastel ground, its loud
 voice-less track, and its 4s outro.
 
+**Delivery quality (dark 4:5): 60 fps, CRF 15.** The camera moves are computed per output frame,
+so 60 fps makes the pushes, slides and rise-in smoother even though the recorded UI is 30 fps;
+CRF 15 with `aq-mode=3` keeps the dark ground and the scrim gradients from banding after the
+platform's re-encode (`plan.fps` / `plan.crf`; pills and fill subtitles are regenerated at the same
+fps). Resolution stays 1080x1350: the simulator recording is 1206px wide and the phone screen uses
+500px of it at rest, so a larger canvas would only upscale. ~8 MB.
+
 **Versions.** Every delivered dark 4:5 is also saved as
 `~/Desktop/assetly-linkedin/versions/assetly-dark-4x5_YYYYMMDD_HHMM.mp4` (local only; git history
 holds the repo copies). **Current cut (2026-09-24):** HOME 3.6s (rise-in, push 1.5x framed from the figure downward, phone edges in view, hold ~1.4s) · POSITIONS 2.4s (the list's own scroll, no push) · MORNING BRIEF 3.6s under the NVIDIA
