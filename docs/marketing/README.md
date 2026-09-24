@@ -171,8 +171,9 @@ phone changing size; ffmpeg's `crop` evaluates its offsets once, so per-frame of
 `make-spot.py` takes `"zoom": {"to", "focus": [x,y], "target": [x,y], "in", "out"|omitted=held}`,
 `"freeze": true` and `"highlight": {"box": [x0,y0,x1,y1]}` per beat.
 
-**A third voice on the Ask beat.** While the answer's first sentence is highlighted, `ash` — a
-deeper anchor voice, prompted as a seasoned financial news anchor at a natural, measured pace —
+**A third voice on the Ask beat.** While the answer's first sentence is highlighted, `coral` — a
+lower-register female anchor voice, prompted as a seasoned financial news anchor, confident and
+natural, at a measured pace —
 reads *"Biggest position: NVIDIA. Nineteen percent."* (14.7-18.2s, +2 dB, centred, no fade-in, sped
 12% only to fit). The earlier `sage` take at a brisk pace was too light and its first word was lost
 under the full beat. Two mixer changes came with it: the sidechain KEY now leads the voice by 120 ms
