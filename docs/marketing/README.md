@@ -171,11 +171,13 @@ phone changing size; ffmpeg's `crop` evaluates its offsets once, so per-frame of
 `make-spot.py` takes `"zoom": {"to", "focus": [x,y], "target": [x,y], "in", "out"|omitted=held}`,
 `"freeze": true` and `"highlight": {"box": [x0,y0,x1,y1]}` per beat.
 
-**A third voice on the Ask beat.** While the answer's first sentence is highlighted, `coral` — a
-lower-register female anchor voice, prompted as a seasoned financial news anchor, confident and
-natural, at a measured pace —
-reads *"Biggest position: NVIDIA. Nineteen percent."* (14.7-18.2s, +2 dB, centred, no fade-in, sped
-12% only to fit). The earlier `sage` take at a brisk pace was too light and its first word was lost
+**A third voice on the Ask beat.** While the answer's first sentence is highlighted, `shimmer` —
+prompted as a young news anchor in her twenties on a modern financial channel, confident and
+natural — reads *"Biggest position: NVIDIA. Nineteen percent."* (14.7-18.6s, +3 dB, centred, no
+fade-in, sped 12% only to fit). Every cue also takes an ONSET boost (extra dB on the first word,
+decaying over 0.5s: 1.5/2/4 dB on the three lines): a natural read starts soft, and under a full
+beat the first syllable is the one that has to arrive. Measured: the line's first 0.3s sits 2 dB
+above its own average. The earlier `sage` take at a brisk pace was too light and its first word was lost
 under the full beat. Two mixer changes came with it: the sidechain KEY now leads the voice by 120 ms
 so the bed is already down when a first syllable lands (helps all three lines), and the bed is
 faded BEFORE the mix with a half-sine curve (16.8s, 3s) so the closing tail eases into silence over
