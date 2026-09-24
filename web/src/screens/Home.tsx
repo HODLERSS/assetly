@@ -17,8 +17,8 @@ const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
   return m;
 };
 
-export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone}: {
-  api: Api; rows: PortfolioRow[];
+export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone, loading = false }: {
+  api: Api; rows: PortfolioRow[]; loading?: boolean;
   totals: { value: number; assets: number; debt: number; gl: number; cost: number; day: number; mixed: boolean; fx: FxRates | number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
   dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
@@ -45,6 +45,27 @@ export function Home({ api, rows, totals, baseCurrency, onOpen, onAdd, dispUs = 
     const c = convertCcy(v, r.currency, target, totals.fx);
     return c === null ? [v, r.currency] : [c, target];
   };
+  // An empty book is only "no positions" once the first load has answered. Before that it is
+  // unknown, and the screen holds the shape of Home rather than offering to connect a brokerage.
+  if (rows.length === 0 && loading) {
+    return (
+      <div className="home-skeleton" aria-busy="true" aria-label="Loading your portfolio" data-testid="home-loading">
+        <section style={{ margin: "8px 0 18px" }}>
+          <div className="skel-line" style={{ height: 34, width: "58%", margin: "6px 0 10px" }} />
+          <div className="skel-line" style={{ width: "44%" }} />
+          <div className="skel-line" style={{ width: "40%" }} />
+          <div className="nw-rule" aria-hidden="true" />
+        </section>
+        <div className="card" style={{ minHeight: 132 }}>
+          <div className="skel-line" style={{ width: "36%" }} />
+          <div className="skel-line" style={{ width: "88%" }} />
+          <div className="skel-line" style={{ width: "72%" }} />
+        </div>
+        <div className="skel-line" style={{ width: "28%", height: 14, margin: "18px 0 12px" }} />
+        {[0, 1, 2].map((i) => <div key={i} className="skel-line" style={{ height: 40, width: "100%" }} />)}
+      </div>
+    );
+  }
   if (rows.length === 0) {
     return (
       <div className="empty">

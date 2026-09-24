@@ -254,6 +254,34 @@ describe("U38 serial adds", () => {
   });
 });
 
+describe("U60 cold open never flashes the connect prompt", () => {
+  it("holds a skeleton until the first load answers, then shows the empty state", async () => {
+    let resolve!: (r: PortfolioRow[]) => void;
+    const pending = new Promise<PortfolioRow[]>((res) => { resolve = res; });
+    const api = stubApi({ getPortfolio: vi.fn().mockReturnValue(pending) });
+    render(<App api={api} />);
+    await screen.findByTestId("home-loading");
+    expect(screen.queryByText(/connect your brokerage/i)).toBeNull();
+    resolve([]);
+    await screen.findByRole("button", { name: /connect your brokerage/i });
+    expect(screen.queryByTestId("home-loading")).toBeNull();
+  });
+  it("paints the cached book before the server answers, then caches the fresh one", async () => {
+    localStorage.setItem("assetly-book:u-test", JSON.stringify({ v: 1, profile, rows: [row({ symbol: "MARA", name: "MARA Holdings", value: 1234 })] }));
+    let resolve!: (r: PortfolioRow[]) => void;
+    const pending = new Promise<PortfolioRow[]>((res) => { resolve = res; });
+    const api = stubApi({ getPortfolio: vi.fn().mockReturnValue(pending) });
+    render(<App api={api} />);
+    await within(await screen.findByTestId("positions-card")).findAllByText(/MARA/);
+    expect(screen.queryByTestId("home-loading")).toBeNull();
+    expect(screen.queryByText(/connect your brokerage/i)).toBeNull();
+    resolve([row({})]);
+    await within(screen.getByTestId("positions-card")).findByText(/RDDT/);
+    expect(within(screen.getByTestId("positions-card")).queryAllByText(/MARA/)).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem("assetly-book:u-test")!).rows[0].symbol).toBe("RDDT");
+  });
+});
+
 describe("U43 connect-first onboarding", () => {
   it("step 1 offers brokerage connect above manual search", async () => {
     const api = stubApi({ getProfile: vi.fn().mockResolvedValue({ id: "u1", display_name: "T", base_currency: "USD", display_us: "USD", display_kr: "KRW", markets: ["US"], onboarded_at: null }) });

@@ -26,11 +26,36 @@ export type View =
 
 const REFRESH_MS = 60_000;
 
+// Last-known book per user, so a cold open paints holdings instead of a blank or an empty-state
+// flash. Only an onboarded profile is cached: a null onboarded_at would route a returning user
+// through setup for a frame.
+const BOOK_KEY = (uid: string) => `assetly-book:${uid}`;
+function readBookCache(uid: string): { profile: Profile; rows: PortfolioRow[] } | null {
+  try {
+    const raw = localStorage.getItem(BOOK_KEY(uid));
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { v: number; profile: Profile; rows: PortfolioRow[] };
+    if (v.v !== 1 || !v.profile?.onboarded_at || !Array.isArray(v.rows)) return null;
+    return { profile: v.profile, rows: v.rows };
+  } catch { return null; }
+}
+function writeBookCache(uid: string, profile: Profile, rows: PortfolioRow[]) {
+  try {
+    if (!profile.onboarded_at) { localStorage.removeItem(BOOK_KEY(uid)); return; }
+    localStorage.setItem(BOOK_KEY(uid), JSON.stringify({ v: 1, profile, rows }));
+  } catch { /* private mode or quota: the server copy still loads */ }
+}
+function clearBookCache(uid: string) { try { localStorage.removeItem(BOOK_KEY(uid)); } catch { /* ignore */ } }
+
 export function App({ api = defaultApi }: { api?: Api }) {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [rows, setRows] = useState<PortfolioRow[]>([]);
+  // The book starts empty and Home reads an empty book as "connect your brokerage". Until the first
+  // load (server or the cached copy below) has answered, Home shows a skeleton instead of that prompt.
+  const [booted, setBooted] = useState(false);
+  const uidRef = useRef<string | null>(null);   // whose cached book to clear at sign-out
   const [fx, setFx] = useState<FxRates | null>(null);   // units per USD, every currency the price pipeline tracks
   const [view, setView] = useState<View>({ kind: "tab", tab: "home" });
   const [error, setError] = useState<string | null>(null);
@@ -171,9 +196,12 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setProfile(p);
       setRows(r);
       setError(null);
+      if (uidRef.current && p) writeBookCache(uidRef.current, p, r);
       api.getFxRates().then((v) => setFx(v)).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "The feed missed a handoff. Pull to retry.");
+    } finally {
+      setBooted(true);
     }
   }, [api]);
 
@@ -223,7 +251,15 @@ export function App({ api = defaultApi }: { api?: Api }) {
   }, [session, snapReturn]);
 
   useEffect(() => {
-    if (!session) { setProfile(null); setRows([]); return; }
+    if (!session) {
+      if (uidRef.current) { clearBookCache(uidRef.current); uidRef.current = null; }
+      setProfile(null); setRows([]); setBooted(false); return;
+    }
+    uidRef.current = session.user.id;
+    // Last known book first (stale-while-revalidate): a returning user sees their holdings on the
+    // first frame, and the server copy replaces it a moment later.
+    const cached = readBookCache(session.user.id);
+    if (cached) { setProfile(cached.profile); setRows(cached.rows); setBooted(true); }
     load();
     // brokerage auto-sync deltas: greet returning users with what arrived while they were away
     api.snaptradeEvents().then(async (evs) => {
@@ -338,7 +374,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
             onBack={() => go({ kind: "tab", tab: "home" })} />
         )}
         {view.kind === "tab" && view.tab === "home" && (
-          <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"}
+          <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"} loading={!booted}
             dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"}
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
             briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)} />
