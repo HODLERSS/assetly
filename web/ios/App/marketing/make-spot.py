@@ -40,17 +40,26 @@ ENC = ["-c:v", "libx264", "-crf", "12", "-preset", "medium", "-pix_fmt", "yuv420
 
 # ---- phone geometry, per make-hero-clip.sh -----------------------------------------------------
 TOP, CAP_H, CAP_SIZE, PAD = (28, 168, 58, 100) if H > W else (18, 140, 50, 100)
+CAPTIONS_TOP = plan.get("captions", "bottom") == "top"
+BOTTOM = 40 if CAPTIONS_TOP else 0
+if CAPTIONS_TOP:
+    TOP = CAP_H + 28                 # the strip, then the same breathing room the bottom layout had
 srcs = [b["src"] for b in plan["beats"]]
 s0 = probe(srcs[0]); SRC_W, SRC_H = s0["width"], s0["height"]
 aspect = SRC_H / SRC_W
-body_h = H - TOP - CAP_H
+body_h = H - TOP - CAP_H - BOTTOM if not CAPTIONS_TOP else H - TOP - BOTTOM
 screen_w = int(round(body_h / (aspect + 0.054) / 2)) * 2
 screen_h = int(round(screen_w * aspect / 2)) * 2
 bez = max(6, int(round(screen_w * 0.027)))
 body_w = screen_w + 2 * bez
 body_r = int(round(body_w * 0.155))
 body_x = (W - body_w) // 2
-SCREEN_X, SCREEN_Y, BODY_X, BODY_Y, CAP_Y = body_x + bez, TOP + bez, body_x - PAD, TOP - PAD, H - CAP_H
+SCREEN_X, SCREEN_Y, BODY_X, BODY_Y = body_x + bez, TOP + bez, body_x - PAD, TOP - PAD
+CAP_Y = 0 if CAPTIONS_TOP else H - CAP_H
+STAGE_CY = (TOP + (H - BOTTOM)) / 2 if CAPTIONS_TOP else (H - CAP_H) / 2
+os.environ["CAP_SHIFT"] = "22" if CAPTIONS_TOP else "8"   # text sits under the pills in a top strip
+SCALE = screen_w / SRC_W
+def cv(x, y): return SCREEN_X + x * SCALE, SCREEN_Y + y * SCALE     # source (recording) px -> canvas px
 subprocess.run([os.path.join(HERE, "roundrect-mask.py"), str(screen_w), str(screen_h), str(body_r - bez), f"{T}/mask.png"], check=True, capture_output=True)
 subprocess.run([os.path.join(HERE, "device-frame.py"), str(screen_w), str(screen_h), f"{T}/frame.png"], check=True, capture_output=True)
 print(f"screen {screen_w}x{screen_h} on {W}x{H}")
@@ -85,7 +94,10 @@ def phone_chain(dur, zoom=None, freeze=False, highlight=False):
         # is one straight, settling move. Overlay position o(E) = f + E(t-f) - f*s(E) = E*((t-f) - f(S-1)):
         # zero at rest, so cuts carry no jump. crop's offsets are evaluated once; overlay's every frame.
         E = ease_expr(zoom); S = zoom["to"]
-        fx, fy = zoom["focus"]; tx, ty = zoom.get("target", (W / 2, (H - CAP_H) / 2))
+        if "focus_src" in zoom: _, fy = cv(0, zoom["focus_src"])
+        else: fy = zoom["focus"][1]
+        fx = W / 2                                       # the phone never drifts sideways in a push
+        tx, ty = W / 2, zoom.get("target_y", STAGE_CY)
         kx, ky = (tx - fx) - fx * (S - 1), (ty - fy) - fy * (S - 1)
         sx = f"(1+{S-1:.4f}*{E})"
         # lower-third scrim under the text zone, opacity on the same curve, so a magnified screen can
@@ -109,10 +121,16 @@ def phone_chain(dur, zoom=None, freeze=False, highlight=False):
 from PIL import Image as _I
 _bg = (0x14, 0x18, 0x1F) if DARK else (0xF4, 0xF5, 0xF7)
 _sc = _I.new("RGBA", (W, H), _bg + (0,)); _px = _sc.load()
-y0, y1 = CAP_Y - 96, CAP_Y + 6
-for yy in range(y0, H):
-    a = 255 if yy >= y1 else int(255 * ((yy - y0) / (y1 - y0)) ** 1.6)
-    for xx in range(W): _px[xx, yy] = _bg + (a,)
+if CAPTIONS_TOP:
+    y0, y1 = CAP_H + 96, CAP_H - 6         # opaque through the strip, fading out below it
+    for yy in range(0, y0):
+        a = 255 if yy <= y1 else int(255 * ((y0 - yy) / (y0 - y1)) ** 1.6)
+        for xx in range(W): _px[xx, yy] = _bg + (a,)
+else:
+    y0, y1 = CAP_Y - 96, CAP_Y + 6
+    for yy in range(y0, H):
+        a = 255 if yy >= y1 else int(255 * ((yy - y0) / (y1 - y0)) ** 1.6)
+        for xx in range(W): _px[xx, yy] = _bg + (a,)
 _sc.save(f"{T}/scrim.png")
 
 parts = []
@@ -155,16 +173,21 @@ for i, b in enumerate(plan["beats"]):
         hl_in = []
         if z and b.get("highlight"):
             # a rounded accent frame with a faint fill around the line being spoken, in canvas px
-            x0, y0, x1, y1 = b["highlight"]["box"]; acc = (139, 152, 224) if DARK else (42, 63, 146)
+            if "src_box" in b["highlight"]:
+                sx0, sy0, sx1, sy1 = b["highlight"]["src_box"]; pad = b["highlight"].get("pad", 10)
+                (x0, y0), (x1, y1) = cv(sx0, sy0), cv(sx1, sy1); x0, y0, x1, y1 = x0 - pad, y0 - pad, x1 + pad, y1 + pad
+            else:
+                x0, y0, x1, y1 = b["highlight"]["box"]
+            acc = (139, 152, 224) if DARK else (42, 63, 146)
             img = _I.new("RGBA", (W, H), (0, 0, 0, 0)); dr = __import__("PIL.ImageDraw", fromlist=["Draw"]).Draw(img)
             dr.rounded_rectangle([x0, y0, x1, y1], radius=b["highlight"].get("radius", 9), fill=acc + (34,), outline=acc + (230,), width=2)
             img.save(f"{T}/hl{i}.png"); hl_in = ["-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/hl{i}.png"]
         ff("-ss", f"{b['start']:.3f}", "-i", b["src"], "-i", f"{T}/mask.png", "-i", f"{T}/frame.png", "-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/scrim.png", *hl_in,
            "-filter_complex", "[0:v]" + phone_chain(d, z, b.get("freeze", False), bool(hl_in)) + "[v]", "-map", "[v]", "-frames:v", str(frames(d)), *ENC, out)
-        print(f"beat {i}: {b['src'].split('/')[-1]} @{b['start']}s +{d}s" + ("  frozen" if b.get("freeze") else "") + ((f"  zoom x{z['to']} -> {z['focus']} in {z['in']} " + (f"out {z['out']}" if z.get('out') else "held into the card")) if z else ""))
+        print(f"beat {i}: {b['src'].split('/')[-1]} @{b['start']}s +{d}s" + ("  frozen" if b.get("freeze") else "") + ((f"  zoom x{z['to']} in {z['in']} " + (f"out {z['out']}" if z.get('out') else "held into the card")) if z else ""))
     n = int(probe(out)["nb_frames"]); assert n == frames(d), f"beat {i}: {n} frames, wanted {frames(d)}"
     parts.append(out)
-    if b.get("caption"): caps.append((t_cursor, t_cursor + d, b["caption"]))
+    if b.get("caption"): caps.append((t_cursor, t_cursor + b.get("caption_dur", d), b["caption"]))   # caption_dur: hand over to a subtitle mid-beat
     t_cursor += d
 PRODUCT = t_cursor
 
@@ -178,7 +201,7 @@ inputs = ["-i", f"{T}/product_raw.mp4"]; fc = "[0:v]format=yuv420p[b0];"
 # subtitles from make-fill-subtitles.py ("overlays": [{"frames": dir, "x": 0, "y": CAP_Y}]).
 seqs = []
 if plan.get("speaking"):
-    seqs.append({"frames": plan["speaking"], "x": plan.get("speaking_x", 460), "y": plan.get("speaking_y", CAP_Y + 4)})
+    seqs.append({"frames": plan["speaking"], "x": plan.get("speaking_x", 460), "y": plan.get("speaking_y", 6 if CAPTIONS_TOP else CAP_Y + 4)})
 seqs += plan.get("overlays", [])
 base = "b0"
 for j, sq in enumerate(seqs):

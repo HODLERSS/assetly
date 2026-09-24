@@ -40,7 +40,7 @@ if mode == "cap":
     f = grotesk(size, 700)
     l, t, r, b = d.textbbox((0, 0), text, font=f)
     # +8: the same optical centre the two-line subtitles use, so the block does not hop between them
-    d.text(((w - (r - l)) / 2 - l, (h - (b - t)) / 2 - t + 8), text, font=f, fill=INK + (255,))
+    d.text(((w - (r - l)) / 2 - l, (h - (b - t)) / 2 - t + int(os.environ.get("CAP_SHIFT", "8"))), text, font=f, fill=INK + (255,))
     img.save(out); print(f"caption {w}x{h}: {text}")
 
 elif mode == "sub":

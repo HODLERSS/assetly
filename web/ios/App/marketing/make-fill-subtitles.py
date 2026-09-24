@@ -77,7 +77,7 @@ def layout(tokens):
         lines = [tokens[:cut], tokens[cut:]]
     hs = [d.textbbox((0, 0), " ".join(l), font=font)[3] - d.textbbox((0, 0), " ".join(l), font=font)[1] for l in lines]
     gap = int(spec.get("size", 42) * 0.3); total = sum(hs) + gap * (len(lines) - 1)
-    y = (H - total) // 2 + 8                                 # the shared optical centre (captions use the same +8)
+    y = (H - total) // 2 + int(os.environ.get("CAP_SHIFT", "8"))   # the shared optical centre (captions use the same shift)
     boxes = []                                            # (x0, x1, y, line-height) per token
     for line, hh in zip(lines, hs):
         s = " ".join(line); l, t, r, b = d.textbbox((0, 0), s, font=font); x = (W - (r - l)) / 2 - l
