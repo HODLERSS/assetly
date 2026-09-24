@@ -156,6 +156,16 @@ without heads drifted 0.2s per slide. Cut list from a reference is read with `yt
 per-second RMS. What was NOT taken from the reference: its flat pastel ground, its loud
 voice-less track, and its 4s outro.
 
+**Versions.** Every delivered dark 4:5 is also saved as
+`~/Desktop/assetly-linkedin/versions/assetly-dark-4x5_YYYYMMDD_HHMM.mp4` (local only; git history
+holds the repo copies). **Current cut (2026-09-24):** HOME 3.6s (rise-in, push 1.6x on the figure,
+hold ~1.4s) · POSITIONS 2.4s (the list's own scroll, no push) · MORNING BRIEF 3.6s under the NVIDIA
+line (push 1.5x with the "NVDA at 19.3% of assets…" sentence highlighted, hold 1.5s) · NEWS live
+scroll 1.0s → frozen 3.2s (push 1.8x, Muse bullet highlighted, hold 1.5s) · ASK 4.2s (1.3s thinking,
+push 1.7x on the answer's first sentence, highlighted, held into the card). The "what moved, and
+why" beat was cut as redundant with the brief under the NVIDIA line. Every push: ~1s in, ~1.5s hold,
+~0.6s out; all three spoken lines have a highlight so the eye knows what the voice is about.
+
 **Two camera moves (dark 4:5), each into the thing being said.** During the Meta line the News
 screen first scrolls LIVE for 1.2s (57.3-58.5s of the take), then freezes on the scrolled frame and
 the camera pushes 1.5x toward the bullet **"Meta surge 11% on Muse AI excitement"** while a rounded
