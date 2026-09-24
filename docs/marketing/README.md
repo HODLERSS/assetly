@@ -158,9 +158,11 @@ voice-less track, and its 4s outro.
 
 **Versions.** Every delivered dark 4:5 is also saved as
 `~/Desktop/assetly-linkedin/versions/assetly-dark-4x5_YYYYMMDD_HHMM.mp4` (local only; git history
-holds the repo copies). **Current cut (2026-09-24):** HOME 3.6s (rise-in, push 1.6x on the figure,
+holds the repo copies). **Current cut (2026-09-24):** HOME 3.6s (rise-in, push 2.15x framed from the figure down through the Movers rows — the
+screen's width fills the frame, the most the left-aligned UI allows without cutting row values —
 hold ~1.4s) · POSITIONS 2.4s (the list's own scroll, no push) · MORNING BRIEF 3.6s under the NVIDIA
-line (push 1.5x with the "NVDA at 19.3% of assets…" sentence highlighted, hold 1.5s) · NEWS live
+line (push 1.5x with the "NVDA at 19.3% of assets…" sentence highlighted from its first word (two boxes,
+one per line, so "today." is excluded), hold 1.5s) · NEWS live
 scroll 1.0s → frozen 3.2s (push 1.8x, Muse bullet highlighted, hold 1.5s) · ASK 4.2s (1.3s thinking,
 push 1.7x on the answer's first sentence, highlighted, held into the card). The "what moved, and
 why" beat was cut as redundant with the brief under the NVIDIA line. Every push: ~1s in, ~1.5s hold,

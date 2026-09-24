@@ -95,10 +95,11 @@ def phone_chain(dur, zoom=None, freeze=False, highlight=False, enter=None):
         # is one straight, settling move. Overlay position o(E) = f + E(t-f) - f*s(E) = E*((t-f) - f(S-1)):
         # zero at rest, so cuts carry no jump. crop's offsets are evaluated once; overlay's every frame.
         E = ease_expr(zoom); S = zoom["to"]
-        if "focus_src" in zoom: _, fy = cv(0, zoom["focus_src"])
-        else: fy = zoom["focus"][1]
-        fx = W / 2                                       # the phone never drifts sideways in a push
-        tx, ty = W / 2, zoom.get("target_y", STAGE_CY)
+        if "view_top_src" in zoom:                       # frame the view from this source row downward
+            _, fy = cv(0, zoom["view_top_src"]); ty = TOP + 12
+        elif "focus_src" in zoom: _, fy = cv(0, zoom["focus_src"]); ty = zoom.get("target_y", STAGE_CY)
+        else: fy = zoom["focus"][1]; ty = zoom.get("target_y", STAGE_CY)
+        fx = W / 2; tx = W / 2                           # the phone never drifts sideways in a push
         kx, ky = (tx - fx) - fx * (S - 1), (ty - fy) - fy * (S - 1)
         sx = f"(1+{S-1:.4f}*{E})"
         # lower-third scrim under the text zone, opacity on the same curve, so a magnified screen can
@@ -128,7 +129,8 @@ from PIL import Image as _I
 _bg = (0x14, 0x18, 0x1F) if DARK else (0xF4, 0xF5, 0xF7)
 _sc = _I.new("RGBA", (W, H), _bg + (0,)); _px = _sc.load()
 if CAPTIONS_TOP:
-    y0, y1 = CAP_H + 96, CAP_H - 6         # opaque through the strip, fading out below it
+    y0, y1 = CAP_H + 44, CAP_H - 6         # opaque through the strip, gone 44px below it: the zoomed UI reads
+                                            # right under the caption, the same gap the phone has at rest
     for yy in range(0, y0):
         a = 255 if yy <= y1 else int(255 * ((y0 - yy) / (y0 - y1)) ** 1.6)
         for xx in range(W): _px[xx, yy] = _bg + (a,)
@@ -187,14 +189,17 @@ for i, b in enumerate(plan["beats"]):
         hl_in = []
         if z and b.get("highlight"):
             # a rounded accent frame with a faint fill around the line being spoken, in canvas px
-            if "src_box" in b["highlight"]:
-                sx0, sy0, sx1, sy1 = b["highlight"]["src_box"]; pad = b["highlight"].get("pad", 10)
-                (x0, y0), (x1, y1) = cv(sx0, sy0), cv(sx1, sy1); x0, y0, x1, y1 = x0 - pad, y0 - pad, x1 + pad, y1 + pad
-            else:
-                x0, y0, x1, y1 = b["highlight"]["box"]
+            hlc = b["highlight"]; pad = hlc.get("pad", 10)
+            boxes = hlc.get("src_boxes") or ([hlc["src_box"]] if "src_box" in hlc else None)
             acc = (139, 152, 224) if DARK else (42, 63, 146)
             img = _I.new("RGBA", (W, H), (0, 0, 0, 0)); dr = __import__("PIL.ImageDraw", fromlist=["Draw"]).Draw(img)
-            dr.rounded_rectangle([x0, y0, x1, y1], radius=b["highlight"].get("radius", 9), fill=acc + (34,), outline=acc + (230,), width=2)
+            if boxes:        # one rounded box per line segment, so a sentence starting mid-line is framed from its first word
+                for sx0, sy0, sx1, sy1 in boxes:
+                    (x0, y0), (x1, y1) = cv(sx0, sy0), cv(sx1, sy1)
+                    dr.rounded_rectangle([x0 - pad, y0 - pad, x1 + pad, y1 + pad], radius=hlc.get("radius", 9), fill=acc + (34,), outline=acc + (230,), width=2)
+            else:
+                x0, y0, x1, y1 = hlc["box"]
+                dr.rounded_rectangle([x0, y0, x1, y1], radius=hlc.get("radius", 9), fill=acc + (34,), outline=acc + (230,), width=2)
             img.save(f"{T}/hl{i}.png"); hl_in = ["-framerate", str(FPS), "-loop", "1", "-t", f"{d_render:.3f}", "-i", f"{T}/hl{i}.png"]
         # zoom / entrance times are in beat time; the render starts `head` earlier
         zr = None
