@@ -11,25 +11,29 @@
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
    "start": 4.6,
    "dur": 2.4,
-   "caption": "Everything you own, in one place",
+   "caption": "HOME|Everything you own, in one place",
    "zoom": {
     "to": 1.6,
     "focus_src": 520,
     "in": [
-     0.2,
-     1.1
+     0.5,
+     1.4
     ],
     "out": [
-     1.5,
-     2.35
+     1.55,
+     2.15
     ]
+   },
+   "enter": {
+    "rise": 140,
+    "dur": 0.6
    }
   },
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
    "start": 11.5,
    "dur": 2.4,
-   "caption": "Live prices, every position",
+   "caption": "POSITIONS|Live prices, every position",
    "zoom": {
     "to": 1.5,
     "focus_src": 1150,
@@ -39,7 +43,7 @@
     ],
     "out": [
      1.5,
-     2.35
+     2.15
     ]
    }
   },
@@ -47,7 +51,7 @@
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
    "start": 20.0,
    "dur": 1.2,
-   "caption": "A brief on what moved, and why"
+   "caption": "MORNING BRIEF|What moved, and why"
   },
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
@@ -84,8 +88,8 @@
      1.1
     ],
     "out": [
-     2.1,
-     2.9
+     2.0,
+     2.75
     ]
    },
    "highlight": {
@@ -97,13 +101,14 @@
     ],
     "pad": 10,
     "radius": 9
-   }
+   },
+   "transition": "cut"
   },
   {
    "src": "/private/tmp/claude-501/-Users-minjaelee-Documents--Claude-AI-stockAnalysis/d145d388-5aed-4b97-880c-8c1567099827/scratchpad/spot/dark-norm.mp4",
    "start": 79.3,
    "dur": 4.2,
-   "caption": "Like having an analyst on call",
+   "caption": "ASK|Like having an analyst on call",
    "caption_dur": 1.05,
    "zoom": {
     "to": 1.7,
@@ -135,5 +140,7 @@
    "y": 0
   }
  ],
- "captions": "top"
+ "captions": "top",
+ "speaking_y": 0,
+ "slide": 0.4
 }

@@ -27,6 +27,9 @@ BASE = (201, 207, 218, 140) if DARK else (61, 66, 76, 150)      # unspoken: read
 LIT  = (233, 236, 241, 255) if DARK else (22, 24, 29, 255)      # spoken: the caption ink
 FONT = os.path.expanduser("~/Library/Fonts/assetly-brand/SchibstedGrotesk[wght].ttf")
 font = ImageFont.truetype(FONT, spec.get("size", 42)); font.set_variation_by_axes([500])
+EYEF = ImageFont.truetype(FONT, 24); EYEF.set_variation_by_axes([600])
+ACCENT = (139, 152, 224) if DARK else (42, 63, 146)
+EYE_DROP = 10 if any(c.get("eyebrow") for c in spec["cues"]) else 0
 T = tempfile.mkdtemp()
 
 def envelope(path):
@@ -77,7 +80,8 @@ def layout(tokens):
         lines = [tokens[:cut], tokens[cut:]]
     hs = [d.textbbox((0, 0), " ".join(l), font=font)[3] - d.textbbox((0, 0), " ".join(l), font=font)[1] for l in lines]
     gap = int(spec.get("size", 42) * 0.3); total = sum(hs) + gap * (len(lines) - 1)
-    y = (H - total) // 2 + int(os.environ.get("CAP_SHIFT", "8"))   # the shared optical centre (captions use the same shift)
+    y = (H - total) // 2 + int(os.environ.get("CAP_SHIFT", "8")) + EYE_DROP   # the shared optical centre, dropped under the eyebrow
+    if EYE_DROP: y = int(os.environ.get("SUB_TOP", "82"))                       # with an eyebrow: fixed rows, same as the captions
     boxes = []                                            # (x0, x1, y, line-height) per token
     for line, hh in zip(lines, hs):
         s = " ".join(line); l, t, r, b = d.textbbox((0, 0), s, font=font); x = (W - (r - l)) / 2 - l
@@ -100,7 +104,7 @@ for c in spec["cues"]:
         wt = word_times(env, dt, dur, c["words"])
     toks = [w for w, _ in c["words"]]
     lines, boxes = layout(toks)
-    cues.append({"at": c["at"], "dur": dur, "toks": toks, "wt": wt, "lines": lines, "boxes": boxes})
+    cues.append({"at": c["at"], "dur": dur, "toks": toks, "wt": wt, "lines": lines, "boxes": boxes, "eyebrow": c.get("eyebrow")})
     print(f"cue at {c['at']}s ({dur:.2f}s):")
     for (w, _), (s, e) in zip(c["words"], wt): print(f"   {c['at']+s:6.2f}-{c['at']+e:6.2f}  {w}")
 
@@ -115,6 +119,12 @@ for fi in range(n):
         if not (t0 <= t <= t1): continue
         a = min(1, (t - t0) / FADE, (t1 - t) / FADE)
         img = blank.copy(); d = ImageDraw.Draw(img)
+        if c.get("eyebrow"):                       # tracked accent label above the sentence, same fade
+            eb = c["eyebrow"]; track = 3
+            ew = sum(d.textlength(ch, font=EYEF) for ch in eb) + track * (len(eb) - 1)
+            x = (W - ew) / 2; ytop = int(os.environ.get("CAP_EYE_TOP", "50"))
+            for ch in eb:
+                d.text((x, ytop), ch, font=EYEF, fill=ACCENT + (int(255 * a),)); x += d.textlength(ch, font=EYEF) + track
         # base layer: whole sentence, muted
         for line, in zip(c["lines"]):
             pass

@@ -37,10 +37,24 @@ mode = sys.argv[1]
 if mode == "cap":
     w, h, size, out, text = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), sys.argv[5], sys.argv[6]
     img = layer(w, h); d = ImageDraw.Draw(img)
-    f = grotesk(size, 700)
-    l, t, r, b = d.textbbox((0, 0), text, font=f)
-    # +8: the same optical centre the two-line subtitles use, so the block does not hop between them
-    d.text(((w - (r - l)) / 2 - l, (h - (b - t)) / 2 - t + int(os.environ.get("CAP_SHIFT", "8"))), text, font=f, fill=INK + (255,))
+    shift = int(os.environ.get("CAP_SHIFT", "8"))
+    # "EYEBROW|Headline": a small tracked label in the accent above the headline. Two tiers read as a
+    # section title rather than a caption, and the eyebrow names the screen while the headline sells it.
+    eyebrow, _, head = text.partition("|") if "|" in text else ("", "", text)
+    f = grotesk(size if not eyebrow else int(size * 0.9), 700)
+    l, t, r, b = d.textbbox((0, 0), head, font=f); hh = b - t
+    if eyebrow:
+        fe = grotesk(int(size * 0.44), 600); track = 3
+        ew = sum(d.textlength(ch, font=fe) for ch in eyebrow) + track * (len(eyebrow) - 1)
+        le, te, re_, be = d.textbbox((0, 0), eyebrow, font=fe); eh = be - te
+        # fixed rows in the strip: pills 0-44, eyebrow from 50, headline from 82 (subtitles use the same)
+        y0 = int(os.environ.get("CAP_EYE_TOP", "50"))
+        x = (w - ew) / 2
+        for ch in eyebrow:
+            d.text((x, y0 - te), ch, font=fe, fill=ACCENT + (255,)); x += d.textlength(ch, font=fe) + track
+        d.text(((w - (r - l)) / 2 - l, y0 + eh + 8 - t), head, font=f, fill=INK + (255,))
+    else:
+        d.text(((w - (r - l)) / 2 - l, (h - hh) / 2 - t + shift), head, font=f, fill=INK + (255,))
     img.save(out); print(f"caption {w}x{h}: {text}")
 
 elif mode == "sub":

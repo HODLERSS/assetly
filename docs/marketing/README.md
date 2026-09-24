@@ -135,23 +135,26 @@ slow release, presence-gated so they vanish between lines). A raw waveform was t
 disappeared on every quiet syllable. Nothing is drawn on the phone screen itself. Light and the two
 squares keep the single line and no indicator.
 
-**Dark 4:5 is now built through `make-spot.py`** (`spots/dark-4x5-linkedin.json`), which gives it
-captions that rise, a staggered end card, and a canvas one step above the screen's ground so the
-black body separates. (The per-beat push-in was tried and removed: a phone that grows a little on
-every cut reads as the phone changing size, not as camera motion. `make-spot.py` now defaults
-`push` to 0.) Its cut differs from the
-other three: News comes before NVDA and takes a full bar, so the META 11.3% / Muse headline is on
-screen while cedar speaks about Meta; NVDA takes the half bar under the line's tail. During the
-spoken window the beat captions give way to **fill subtitles of the two sentences**
-(`make-fill-subtitles.py`, spec in `spots/dark-4x5-fill.json`): the whole sentence sits in muted
-ink so it can be read ahead, and each word lights with a 90 ms left-to-right sweep that starts 60 ms before its onset (fast
-enough to read as the word arriving, and leading the audio as subtitles do). Word timing is **forced alignment** of the final voice track (`faster-whisper small.en`, word
-timestamps, `spots/dark-4x5-fill.json` carries the measured times): the envelope-dip estimate used
-first was 0.2–0.4s off on several words because it could not see the pauses the voices actually
-take ("morning. … Your", "percent. … Muse,"). The aligner smears the first word of a run early, so
-the first word of each cue takes its start from the audible onset in the cue's own file instead
-(marin at 6.17s, cedar at 9.46s, both within 20 ms of the cue start). Tokens
-shown as "10%" and "#1" carry the syllables of "ten percent" and "number one". Audio unchanged.
+**Dark 4:5 is built through `make-spot.py`** (`spots/dark-4x5-linkedin.json`, subtitles in
+`spots/dark-4x5-fill.json`). Its grammar, after the revamp and a reference pass on a well-made app
+demo Short (Brush Circle, "App demo video 1"): the **caption strip is on top** (168px: speaking
+pills in rows 0-44, an accent EYEBROW at 50, the headline or spoken subtitle from 82), the phone
+below with a 40px foot. Captions are two-tier, `EYEBROW|Headline` ("HOME | Everything you own, in
+one place"), and each spoken line carries an eyebrow too (MORNING BRIEF / NEWS / ASK). Beats join
+with a 0.4s **screen-to-screen slide** centred on the cut (a plain cut where the next beat is the
+same screen: live scroll -> its frozen frame), and the phone **rises into frame** over the opening
+0.6s. Every push keeps the phone centred (focus x is the phone centre; targets are SOURCE pixels
+converted by the compositor): net worth 1.6x, positions 1.5x, the brief 1.4x under the NVIDIA
+line, the Muse bullet 1.8x on a frozen News frame with a highlight, the answer 1.7x held into the
+card with its first sentence highlighted. The Meta line starts 0.55s after the NVIDIA line ends;
+Ask shows 1.3s of thinking, then the answer, and the ASK caption hands over to the NVDA subtitle
+mid-beat (`caption_dur`). Slides need care: xfade shows the second clip half a slide BEFORE the cut,
+so a beat entered by a slide is rendered from half a slide earlier (a head) and one exiting by a
+slide carries half a slide of extra footage (a tail), and beat-time stays the cut; the first build
+without heads drifted 0.2s per slide. Cut list from a reference is read with `yt-dlp`
+(`player_client=android` when the default 403s), a 2 fps frame sheet, `select=gt(scene,0.3)` and
+per-second RMS. What was NOT taken from the reference: its flat pastel ground, its loud
+voice-less track, and its 4s outro.
 
 **Two camera moves (dark 4:5), each into the thing being said.** During the Meta line the News
 screen first scrolls LIVE for 1.2s (57.3-58.5s of the take), then freezes on the scrolled frame and

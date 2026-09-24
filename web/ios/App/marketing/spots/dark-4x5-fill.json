@@ -1,5 +1,5 @@
 {
- "size": 42,
+ "size": 36,
  "cues": [
   {
    "file": "$SPOT/vo-line-q.wav",
@@ -71,7 +71,8 @@
      9.2,
      9.46
     ]
-   ]
+   ],
+   "eyebrow": "MORNING BRIEF"
   },
   {
    "file": "$SPOT/vo-meta2-q.wav",
@@ -159,7 +160,8 @@
      13.13,
      13.33
     ]
-   ]
+   ],
+   "eyebrow": "NEWS"
   },
   {
    "file": "$SPOT/vo-nvda-q.wav",
@@ -231,7 +233,8 @@
      18.8,
      19.0
     ]
-   ]
+   ],
+   "eyebrow": "ASK"
   }
  ]
 }
