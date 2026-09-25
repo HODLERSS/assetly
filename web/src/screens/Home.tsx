@@ -2,12 +2,12 @@ import { openConnectPortal, platformTag } from "../lib/native";
 import { useEffect, useState } from "react";
 import type { Api, PortfolioRow } from "../lib/api";
 import { BriefCard } from "../components/BriefCard";
-import { isMarketOpen, marketOf, moverEligible, moverMode, sessionLabel } from "../lib/markets";
+import { isMarketOpen, marketOf, moveSession, moverEligible, moverMode, sessionLabel } from "../lib/markets";
 import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyClass, moneyExact, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
 import { Icon } from "../components/Icon";
 import { accountTag, isRetirement } from "../lib/accounts";
 import { formatQty } from "../lib/numbers";
-import { isHeld } from "../lib/portfolio";
+import { dayGroups, isHeld } from "../lib/portfolio";
 
 // Canvas 2a: net worth, movers, market pulse.
 const DETAIL_KEY = "assetly-nw-detail";
@@ -98,13 +98,24 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   // is actually something folded, and the choice sticks.
   const twoMarkets = new Set(rows.map(mktFor).filter(Boolean)).size > 1 && !!totals.fx;
   const hasDetail = totals.debt > 0 || twoMarkets;
+  const groups = dayGroups(rows, baseCurrency, typeof totals.fx === "number" ? { USD: 1, KRW: totals.fx } : totals.fx);
   return (
     <>
       <section aria-label="Net worth" style={{ margin: "8px 0 18px" }}>
         <div className="net num" data-testid="net-worth">{money(totals.value, baseCurrency)}</div>
-        <div className={`day num ${moneyClass(totals.day)}`} data-testid="total-day">
-          {signedMoney(totals.day, baseCurrency)} ({signedPct(totals.value - totals.day !== 0 ? (totals.day / (totals.value - totals.day)) * 100 : 0)}) today
-        </div>
+        {groups.length <= 1 ? (
+          <div className={`day num ${moneyClass(totals.day)}`} data-testid="total-day">
+            {signedMoney(totals.day, baseCurrency)} ({signedPct(totals.value - totals.day !== 0 ? (totals.day / (totals.value - totals.day)) * 100 : 0)}) {groups[0] && !groups[0].today ? `· ${groups[0].label}` : "today"}
+          </div>
+        ) : (
+          // moves from different sessions are never summed into one "today": each market says which session it is
+          groups.map((g, i) => (
+            <div key={g.label} className={`day num ${moneyClass(g.day)}${i ? " day-split" : ""}`} data-testid={i ? "total-day-other" : "total-day"}
+              style={i ? { fontSize: 13.5 } : undefined}>
+              {g.markets.join(" + ")} {signedMoney(g.day, baseCurrency)} ({signedPct(g.basis !== 0 ? (g.day / g.basis) * 100 : 0)}) {g.today ? "today" : `· ${g.label}`}
+            </div>
+          ))
+        )}
         <div className={`day num ${moneyClass(totals.gl)}`} data-testid="total-gl" style={{ fontSize: 13.5 }}>
           {signedMoney(totals.gl, baseCurrency)} ({signedPct(totals.cost !== 0 ? (totals.gl / totals.cost) * 100 : 0)}) all time
         </div>
@@ -133,7 +144,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           }).join(" · ");
           return (
             <div data-testid="market-breakdown">
-              <div className="status-line num">today: {line((r) => dayChangeAmount(r.value, r.change_pct) ?? 0, (r) => (r.value ?? 0) - (dayChangeAmount(r.value, r.change_pct) ?? 0))}</div>
+              <div className="status-line num">{groups.length > 1 ? "latest sessions" : "today"}: {line((r) => dayChangeAmount(r.value, r.change_pct) ?? 0, (r) => (r.value ?? 0) - (dayChangeAmount(r.value, r.change_pct) ?? 0))}</div>
               <div className="status-line num">all time: {line((r) => r.total_gl ?? 0, (r) => r.cost_basis ?? 0)}</div>
             </div>
           );
@@ -233,7 +244,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
                 <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span>
                 {/* a balance has no daily move: "0.00% ($0) today" on cash was noise */}
                 {r.kind !== "cash" && r.kind !== "debt" && (<><br />
-                <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)}{r.change_pct !== null && (() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} today{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
+                <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)}{r.change_pct !== null && (() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} {moveSession(r).label}{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
               </span>
             </button>
           );

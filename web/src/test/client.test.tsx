@@ -24,9 +24,12 @@ vi.mock("../lib/supabase", () => {
 });
 
 // Market sessions are wall-clock dependent; pin "US open" for the UI (session maths has its own tests).
+// moveSession runs for real, against a clock a test may pin (sessionNow.at).
+const sessionNow = vi.hoisted(() => ({ at: undefined as Date | undefined }));
 vi.mock("../lib/markets", async (importOriginal) => {
   const real = await importOriginal<typeof import("../lib/markets")>();
-  return { ...real, isMarketOpen: (m: string) => m === "US" || m === "CRYPTO",
+  return { ...real, moveSession: (r: Parameters<typeof real.moveSession>[0], now?: Date) => real.moveSession(r, now ?? sessionNow.at ?? new Date()),
+           isMarketOpen: (m: string) => m === "US" || m === "CRYPTO",
            sessionLabel: () => "US open", moverMode: () => ({ kind: "open" }),
            moverEligible: (r: { symbol: string; kind: string }) => { const m = real.marketOf(r); return m === "US" || m === "CRYPTO"; } };
 });
@@ -35,7 +38,7 @@ import { App } from "../App";
 import { profile, row, stubApi } from "./fixtures";
 import type { Api, PortfolioRow } from "../lib/api";
 
-beforeEach(() => { try { sessionStorage.clear(); localStorage.clear(); } catch { /* jsdom */ } });
+beforeEach(() => { sessionNow.at = undefined; try { sessionStorage.clear(); localStorage.clear(); } catch { /* jsdom */ } });
 
 async function openAdd(api: Api) {
   render(<App api={api} />);
@@ -301,5 +304,34 @@ describe("C5 zero and cash", () => {
     await openPosition(api, /cash balance/i);
     expect((await screen.findByTestId("position-headline")).textContent).toBe("$15,000");
     expect(document.body.textContent).not.toMatch(/since last close|Avg cost|Total G\/L/);
+  });
+});
+
+describe("C6 today never mixes sessions", () => {
+  const FRI = new Date("2026-09-25T15:00:00Z");             // Fri 11:00 ET, KRX shut for Chuseok
+  const mixed = () => [
+    row({ value: 1011, change_pct: 1.0891, as_of: "2026-09-25T14:59:00Z" }),
+    row({ holding_id: "k1", symbol: "005930.KS", name: "Samsung Electronics", currency: "KRW", price: 250000, qty: 55.2,
+          value: 13_800_000, cost_basis: 10_000_000, total_gl: 3_800_000, change_pct: 3.0, as_of: "2026-09-23T06:30:00Z" }),
+  ];
+  it("Home labels each market's move by its own session instead of one blended 'today'", async () => {
+    sessionNow.at = FRI;
+    render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue(mixed()) })} />);
+    await waitFor(() => expect(screen.getByTestId("total-day").textContent).toBe("US +$11 (+1.09%) today"));
+    expect(screen.getByTestId("total-day-other").textContent).toBe("Korea +$291 (+3.00%) · Wed close");
+    expect(document.body.textContent).not.toMatch(/\+\$302/);   // the blended sum is gone
+    const krRow = within(screen.getByTestId("positions-card")).getAllByRole("button").find((b) => /005930/.test(b.textContent ?? ""))!;
+    expect(krRow.textContent).toMatch(/Wed close/);
+    expect(krRow.textContent).not.toMatch(/today/);
+  });
+  it("the position detail dates a KRX close in Seoul time", async () => {
+    sessionNow.at = FRI;
+    await openPosition(stubApi({ getPortfolio: vi.fn().mockResolvedValue(mixed()) }), /005930/);
+    expect(await screen.findByText(/since last close · Wed close/)).toBeTruthy();
+  });
+  it("a single-session book keeps the plain 'today' headline", async () => {
+    render(<App api={stubApi()} />);
+    expect((await screen.findByTestId("total-day")).textContent).toMatch(/\+\$240 \(\+5\.26%\) today$/);
+    expect(screen.queryByTestId("total-day-other")).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Account, Api, Lot, PortfolioRow } from "../lib/api";
 import { ccySymbol, glClass, labelParts, money, moneyExact, priceAsOf, signedMoney, signedPct } from "../lib/format";
 import { ACCOUNTS, accountLabel } from "../lib/accounts";
+import { moveSession } from "../lib/markets";
 import { formatQty, readAmount } from "../lib/numbers";
 import { PriceChart } from "../components/PriceChart";
 import { InsightsCard } from "../components/InsightsCard";
@@ -51,6 +52,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not change the account."); }
   };
   const qtyUnit = row.kind === "crypto" ? "Quantity" : "Shares";
+  const session = moveSession(row);
 
   return (
     <>
@@ -61,7 +63,8 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
         <div className="net num" style={{ fontSize: 30 }} data-testid="position-headline">{cashish ? money(row.value, row.currency) : moneyExact(row.price, row.currency)}</div>
         {!cashish && (
           <div className={`num ${glClass(row.change_pct)}`}>
-            {signedPct(row.change_pct)} {row.as_of && Date.now() - +new Date(row.as_of) > 20 * 3600 * 1000 ? "since last close" : "today"} · {priceAsOf(row.as_of)}
+            {/* the session is dated in the market's own zone: a KRX close is "Wed close" in Seoul, not Pacific's Tuesday */}
+            {signedPct(row.change_pct)} {session.today ? `today · ${priceAsOf(row.as_of)}` : `since last close · ${session.label}`}
           </div>
         )}
       </div>
