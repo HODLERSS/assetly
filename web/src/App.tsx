@@ -383,7 +383,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       <main className="screen">
         <h1 className="sr-only">Assetly</h1>
         {view.kind === "add" && (
-          <AddPosition api={api} onRefresh={load} onAdded={scheduleBookChange}
+          <AddPosition api={api} onRefresh={load} onAdded={scheduleBookChange} baseCurrency={profile?.base_currency ?? "USD"}
             onDone={() => go({ kind: "tab", tab: "home" })}
             onCancel={() => go({ kind: "tab", tab: "home" })} />
         )}

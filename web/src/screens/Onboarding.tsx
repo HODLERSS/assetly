@@ -8,6 +8,7 @@ import { Icon } from "../components/Icon";
 import { AmountField, EntryPreview } from "../components/AmountField";
 import { entryPreview, readAmount } from "../lib/numbers";
 import { ccySymbol } from "../lib/format";
+import { useSymbolSearch } from "../lib/search";
 
 // Long enough for a slow phone network, short enough that nobody thinks the app has died.
 const SETUP_TIMEOUT_MS = 12000;
@@ -35,8 +36,8 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   const [inv, setInv] = useState<Investor | null>(saved.inv ?? null);
   const [quizDone, setQuizDone] = useState(snaptrade === "connected" || !!saved.quizDone);
   const [draft, setDraft] = useState<{ raw: Investor; i: number } | null>(saved.draft ? { raw: saved.draft, i: saved.qi ?? 0 } : null);
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<SymbolRow[]>([]);
+  // the first position is a holding with shares and a cost: cash/debt rows go through Add position later
+  const { q, setQ, results, error: searchErr, searching } = useSymbolSearch(api, { filter: (r) => r.kind !== "cash" && r.kind !== "debt" });
   const [picked, setPicked] = useState<SymbolRow | null>(saved.picked ?? null);
   const [qty, setQty] = useState(saved.qty ?? "");
   const [cost, setCost] = useState(saved.cost ?? "");
@@ -46,7 +47,6 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
-  const [searchErr, setSearchErr] = useState<string | null>(null);
   const [imported, setImported] = useState<PortfolioRow[] | null>(null);   // null = not polling
   const [importDone, setImportDone] = useState(false);
   const pollRef = useRef(0);
@@ -116,15 +116,6 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
     finally { setBusy(false); }
   };
 
-  const search = async (text: string) => {
-    setQ(text);
-    setSearchErr(null);
-    if (text.trim().length < 1) { setResults([]); return; }
-    // an empty list means "no match"; a thrown error means the search never ran, and saying so is the
-    // difference between a user who retries and one who thinks the app is broken
-    try { setResults(await api.searchSymbols(text.trim())); }
-    catch { setResults([]); setSearchErr("Could not reach search. Check your connection and try again."); }
-  };
 
   const finish = async () => {
     if (!picked) return;
@@ -228,7 +219,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
           </p>
           <div className="field">
             <label htmlFor="ob-q">Find your first position</label>
-            <input id="ob-q" value={q} onChange={(e) => search(e.target.value)} placeholder="Ticker or name — try FIG or Samsung" />
+            <input id="ob-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ticker or name — try NVDA or Tesla" />
           </div>
           <div className="card">
             {results.map((r) => (
@@ -245,7 +236,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
             {busy && <p className="empty">Adding to Assetly…</p>}
             {err && <div className="error-note" role="alert">{err}</div>}
             {searchErr && <div className="error-note" role="alert">{searchErr}</div>}
-            {q && !searchErr && results.length === 0 && <p className="empty">Nothing matched “{q}”.</p>}
+            {q.trim() && !searching && !searchErr && results.length === 0 && <p className="empty">No match for “{q.trim()}”. Try a ticker (AAPL) or a company name.</p>}
           </div>
           <button className="linky" data-testid="ob-skip" disabled={busy} onClick={skipForNow} style={{ marginTop: 6 }}>
             Skip for now — add holdings later

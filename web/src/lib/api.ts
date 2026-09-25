@@ -2,6 +2,7 @@
 // against the real local Supabase stack, UI tests stub this module.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+import { rankSymbols, searchQuery } from "./search";
 
 export type SymbolRow = {
   symbol: string; name: string; exchange: string; currency: string; kind: string;
@@ -83,12 +84,14 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { error } = await sb.from("profiles").update({ investor }).eq("id", uid);
       if (error) throw error;
     },
-    async searchSymbols(q: string): Promise<SymbolRow[]> {
-      // Instant hits from the local catalog...
+    async searchSymbols(raw: string, preferCcy = "USD"): Promise<SymbolRow[]> {
+      const q = searchQuery(raw);   // "nvidea" -> "nvidia"
+      // Instant hits from the local catalog... (PostgREST's or() is comma- and paren-delimited: keep them out)
+      const like = q.replace(/[,()*%\\]/g, " ").trim();
       const { data, error } = await sb.from("symbols")
         .select("symbol,name,exchange,currency,kind,yahoo")
-        .or(`symbol.ilike.%${q}%,name.ilike.%${q}%`)
-        .eq("active", true).limit(12);
+        .or(`symbol.ilike.%${like}%,name.ilike.%${like}%`)
+        .eq("active", true).limit(24);
       if (error) throw error;
       const local = (data ?? []) as SymbolRow[];
       // ...merged with the universal search (every US + Korean listing, via Yahoo Finance).
@@ -100,7 +103,8 @@ export function makeApi(sb: SupabaseClient = supabase) {
         }
       } catch { /* search still works from the catalog when the function is unreachable */ }
       const seen = new Set(local.map((r) => r.symbol));
-      return [...local, ...remote.filter((r) => !seen.has(r.symbol))].slice(0, 12);
+      // rank the merged list BEFORE the cut, so an exact ticker from the remote search is never sliced off
+      return rankSymbols(raw, [...local, ...remote.filter((r) => !seen.has(r.symbol))], preferCcy).slice(0, 12);
     },
     async ensureSymbol(row: SymbolRow): Promise<void> {
       // Always ensure — also for catalog hits: it verifies the ticker, refreshes the price,

@@ -7,18 +7,19 @@ import { AmountField, EntryPreview } from "../components/AmountField";
 import { ACCOUNTS, accountLabel, defaultAccount } from "../lib/accounts";
 import { entryPreview, readAmount } from "../lib/numbers";
 import { ccySymbol } from "../lib/format";
+import { useSymbolSearch } from "../lib/search";
 
 // Canvas 3c/3d applied post-onboarding: search, then the two required fields.
 // Serial adds: after each save the form resets for the next ticker while the
 // just-added stock's intelligence card fades in right below the search. Each add is
 // reported via onAdded; the app coalesces a run of adds into ONE book-changed pipeline
 // (news -> intelligence -> Portfolio Assessment), the same chain a brokerage connect runs.
-export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded }: {
+export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCurrency = "USD" }: {
   api: Api; onDone: () => Promise<void> | void; onRefresh: () => Promise<void> | void; onCancel: () => void; onAdded?: () => void;
+  baseCurrency?: string;
 }) {
   const [added, setAdded] = useState<string[]>([]);          // newest first, this session
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<SymbolRow[]>([]);
+  const { q, setQ, results, error: searchErr, searching, reset: resetSearch } = useSymbolSearch(api, { preferCcy: baseCurrency });
   const [picked, setPicked] = useState<SymbolRow | null>(null);
   const [qty, setQty] = useState("");
   const [cost, setCost] = useState("");
@@ -40,10 +41,8 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded }: {
     setCcy(r.currency || "USD");
   };
 
-  const search = async (text: string) => {
+  const search = (text: string) => {
     setQ(text); setPicked(null);
-    if (!text.trim()) { setResults([]); return; }
-    try { setResults(await api.searchSymbols(text.trim())); } catch { setResults([]); }
   };
 
   return (
@@ -56,7 +55,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded }: {
         <>
           <div className="field">
             <label htmlFor="add-q">Ticker or name</label>
-            <input id="add-q" value={q} onChange={(e) => search(e.target.value)} placeholder="FIG, Reddit, Samsung…" autoFocus />
+            <input id="add-q" value={q} onChange={(e) => search(e.target.value)} placeholder="NVDA, Tesla, VOO, Bitcoin…" autoFocus />
           </div>
           <div className="card">
             {!q.trim() && (<>
@@ -95,7 +94,8 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded }: {
             ))}
             {busy && <p className="empty">Adding to Assetly…</p>}
             {err && <div className="error-note" role="alert">{err}</div>}
-            {q && results.length === 0 && <p className="empty">Nothing matched “{q}” — any US or Korean listing should appear as you type.</p>}
+            {searchErr && <div className="error-note" role="alert">{searchErr}</div>}
+            {q.trim() && !searching && !searchErr && results.length === 0 && <p className="empty">No match for “{q.trim()}”. Try a ticker (AAPL) or a company name.</p>}
           </div>
           {added.length > 0 && (
             <div data-testid="added-strip" style={{ marginTop: 14 }}>
@@ -167,7 +167,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded }: {
               await onRefresh();
               // stay here for the next add; the fresh card renders below the search
               setAdded((a) => [sym, ...a]);
-              pick(null); setQty(""); setCost(""); setDate(""); setLabel(""); setNote(""); setQ(""); setResults([]);
+              pick(null); setQty(""); setCost(""); setDate(""); setLabel(""); setNote(""); resetSearch();
               setAccount("brokerage"); setCcy("USD");
             }
             catch (e) { setErr(e instanceof Error ? e.message : "Could not add position."); }

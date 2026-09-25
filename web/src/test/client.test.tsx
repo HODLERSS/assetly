@@ -482,3 +482,51 @@ describe("C8 onboarding keeps what you gave it", () => {
     window.history.replaceState({}, "", "/");
   });
 });
+
+describe("C9 search and news", () => {
+  it("typing is debounced, and an older, slower answer never replaces the newer one", async () => {
+    const searchSymbols = vi.fn((q: string) => q.toLowerCase() === "tes"
+      ? new Promise((res) => setTimeout(() => res([{ symbol: "AEHR", name: "Aehr Test Systems", exchange: "NASDAQ", currency: "USD", kind: "equity" }]), 400))
+      : Promise.resolve([{ symbol: "TSLA", name: "Tesla, Inc.", exchange: "NASDAQ", currency: "USD", kind: "equity" }]));
+    const api = stubApi({ searchSymbols: searchSymbols as unknown as Api["searchSymbols"] });
+    await openAdd(api);
+    const input = screen.getByLabelText(/ticker or name/i);
+    await userEvent.type(input, "tes");
+    await new Promise((r) => setTimeout(r, 250));      // "tes" fires (slow answer in flight)...
+    await userEvent.type(input, "la");                 // ...then "tesla" answers first
+    await screen.findByRole("button", { name: /Tesla, Inc\./ });
+    await new Promise((r) => setTimeout(r, 500));      // the "tes" answer arrives late
+    expect(screen.queryByRole("button", { name: /Aehr/ })).toBeNull();
+    expect(searchSymbols.mock.calls.map((c) => c[0])).toEqual(["tes", "tesla"]);   // one call per pause, not per key
+  });
+  it("no match says what to try, and only once the search has answered", async () => {
+    const api = stubApi({ searchSymbols: vi.fn().mockResolvedValue([]) });
+    await openAdd(api);
+    await userEvent.type(screen.getByLabelText(/ticker or name/i), "zzzq");
+    expect(await screen.findByText(/No match for “zzzq”\. Try a ticker \(AAPL\) or a company name\./)).toBeTruthy();
+  });
+  it("News shows one copy of a story repeated across tickers, with entities decoded", async () => {
+    const api = stubApi({ getNews: vi.fn().mockResolvedValue([
+      { id: "a", symbol: "RDDT", title: "These are stocks getting lifted up by Meta&#39;s Muse", url: "https://x/1", source: "Yahoo", published_at: null },
+      { id: "b", symbol: "RDDT", title: "These are stocks getting lifted up by Meta's Muse", url: "https://y/2", source: "Yahoo", published_at: null },
+      { id: "c", symbol: "RDDT", title: "AT&amp;T and Reddit", url: "https://z/3", source: "Yahoo", published_at: null },
+    ]) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+    expect(await screen.findAllByText("These are stocks getting lifted up by Meta's Muse")).toHaveLength(1);
+    expect(screen.getByText("AT&T and Reddit")).toBeTruthy();
+  });
+  it("a failed news load offers a Retry that works (no gesture promised)", async () => {
+    const getNews = vi.fn().mockRejectedValueOnce(new Error("down")).mockResolvedValue([
+      { id: "n1", symbol: "RDDT", title: "Reddit posts strong quarter", url: "https://ex.test/1", source: "Yahoo Finance", published_at: null }]);
+    render(<App api={stubApi({ getNews })} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/Couldn't load news/);
+    expect(alert.textContent).not.toMatch(/pull/i);
+    await userEvent.click(within(alert).getByRole("button", { name: /retry/i }));
+    await screen.findByText("Reddit posts strong quarter");
+  });
+});
