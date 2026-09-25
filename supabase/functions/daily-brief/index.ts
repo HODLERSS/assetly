@@ -14,8 +14,9 @@ import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekday
 import {
   aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
-  perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
+  stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
+  readerLevel,
 } from "../_shared/intel.ts";
 import { dividendLine, dividendRows, windowReturns } from "../_shared/history.ts";
 import { userIdFrom } from "../_shared/auth.ts";
@@ -71,7 +72,8 @@ const FAST_MODEL = "gpt-oss-120b";
 // 8 (round 7): today's rows carried a weight read as a move ("META dropped 12.8%"), a live move called "yesterday"
 // and a 0.5% yield; they are patched (past-window) or regenerated (the current edition).
 // 9 (round 7 newcomer): theme weights, gloss grammar, "(est)" on non-dates, promo characterisations, 6-holding reads
-const GEN_VERSION = 9;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+// 10 (round 8): verdict tails, close-time labels, true minus signs, tech share and target-band checks
+const GEN_VERSION = 10;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -127,7 +129,8 @@ type Investor = { styles?: string[] | string; purpose?: string[] | string; horiz
 // answers may be single strings (old profiles) or arrays (multi-select quiz): normalize, and reduce where one value must win
 const toArr = (x: unknown, d: string[]): string[] => Array.isArray(x) ? (x.length ? x.map(String) : d) : (typeof x === "string" && x ? [x] : d);
 const LVL_ORDER = ["novice", "intermediate", "advanced", "pro"];
-const topLevel = (xs: string[]): string => xs.reduce((a, b) => (LVL_ORDER.indexOf(b) > LVL_ORDER.indexOf(a) ? b : a), "novice");
+// round 8: an unknown level ("confident" on the showcase profile) reads as intermediate, never as beginner
+const topLevel = (xs: string[]): string => readerLevel(xs);
 const HZ_ORDER = ["<1y", "1-3y", "3-10y", "10y+"];
 const longestHz = (xs: string[]): string => xs.reduce((a, b) => (HZ_ORDER.indexOf(b) > HZ_ORDER.indexOf(a) ? b : a), xs[0] ?? "3-10y");
 
@@ -336,7 +339,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   const liveFacts = wasLive && ctx ? ctx.facts.filter((f) => typeof basis.day_by_symbol?.[f.symbol] === "number").map((f) => ({ names: f.names, pct: basis.day_by_symbol![f.symbol] })) : [];
   // a collapsed appositive can leave a comma between a subject and its verb ("The market's fear gauge, fell 3.3%")
   const unComma = (t: string) => t.replace(/(^|[.!?]\s+)([A-Z][^,.!?]{2,50}),\s+(fell|rose|jumped|slipped|climbed|dropped|gained|lost|added|edged|dipped|sank|rallied)\b/g, "$1$2 $3");
-  const text = (t: string) => fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(String(t ?? ""))))), PORTFOLIO_PLAIN))));
+  const text = (t: string) => unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN)))));
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
@@ -1661,8 +1664,12 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           { label: /\bcrypto\b/i, value: exposure.crypto }, { label: /\bcash\b/i, value: exposure.cash }, { label: /\bbonds?\b/i, value: exposure.bonds },
           { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity },
         ];
+        const TECH_T = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]);
+        const techGroup = [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: [...themeShare].filter(([th]) => TECH_T.has(th)).reduce((a, [, v]) => a + v, 0) }];
         const clean = (t: string) => {
-          const x = fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]);
+          // round 8: a verdict TAIL leaves a one-sentence lede as a clause ("…, keeping the portfolio on track"), and a
+          // tech share is held to the computed one ("Tech makes up about 57%" at ~97%)
+          const x = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup);
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
@@ -1677,7 +1684,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             ...weightAsMoveHits(x, moveWeightFacts), ...(allowedYields.length ? wrongYieldClaims(x, allowedYields) : []),
             // round 7 newcomer: "while cushioning volatility", "crypto hedge", "delivering most of its dividend yield"
             // (AAPL + MSFT pay 26% of it), "+7.2% this month, on pace with your 8-12% annual target"
-            ...promoCharacterisations(x), ...dividendShareClaims(x, divShares), ...targetPaceClaims(x),
+            ...promoCharacterisations(x), ...dividendShareClaims(x, divShares), ...targetPaceClaims(x), ...targetBandClaims(x),
             // a two-word fragment left by an earlier deletion ("It adds.", round 5) goes without a model call
             ...brokenSentences(x).filter((b) => b.split(/\s+/).length <= 2)];
           if (!bad.length) return x;
@@ -1691,7 +1698,12 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         // above the note moves on: "$211 gain … $116,500" under +$319 / $116,620)
         if (edition !== "assessment" && edition !== "weekend") {
           const at = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
-          const lbl = `as of ${at} ET`, figsLive = [Math.round(dayUsd), Math.round(total)];
+          // round 8: a close edition read "gained $9,400 (as of 7:31 PM ET)" for a figure fixed at the 4:00 PM close,
+          // and a fresh close lede whose $211 was the stats block's figure (not today's recomputed $319) got no label
+          const closed = edition === "close" || marketState("US").phase === "post" || marketState("US").phase === "closed";
+          const lbl = closed ? "as of the 4:00 PM ET close" : `as of ${at} ET`;
+          const stated = [...String(sections.lede ?? "").matchAll(/\b(?:gain(?:ed|s)?|los(?:s|t|es)|lifts?|lifted|up|down|adds?|added|to)\s+(?:about\s+|roughly\s+)?[+\-−]?\$(\d{1,3}(?:,\d{3})+|\d+)/gi)].map((m) => Number(m[1].replace(/,/g, "")));
+          const figsLive = [Math.round(dayUsd), Math.round(total), ...stated];
           sections.lede = labelLiveFigures(sections.lede, figsLive, lbl); sections.overnight = labelLiveFigures(sections.overnight, figsLive, lbl); sections.desk_view = labelLiveFigures(sections.desk_view, figsLive, lbl);
         }
         // "The risk: net cash balance sheet." labels a strength as the risk (round 4): that clause goes, and the
@@ -1757,6 +1769,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections.overnight = yourPortfolio(holdings.map((r) => ({ name: krName(r.symbol, r.nickname, r.name), usd: usd(Number(r.value ?? 0), r.currency) })),
           assets.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0), total, exposure, sections.overnight);
       }
+      // round 8: signed figures use the true minus sign, as the client renders them
+      { const um = (v: unknown): unknown => typeof v === "string" ? unicodeMinus(v) : Array.isArray(v) ? v.map(um) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, k === "day_by_symbol" || k === "held" || k === "as_of" ? x : um(x)])) : v;
+        sections = um(sections) as Sections; }
       snap("YOUR PORTFOLIO (code)", sections);
       if (TRACE) { const tf = Deno.env.get("BRIEF_TRACE_FILE"); if (tf) Deno.writeTextFileSync(tf, JSON.stringify(TRACE)); else console.log("TRACE_JSON " + JSON.stringify(TRACE)); }
       const briefRow = {

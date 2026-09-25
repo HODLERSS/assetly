@@ -7,7 +7,8 @@ import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } 
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
   YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
-  digitsForWritten, dropInstructionEcho, fixFractions, promoCharacterisations, crossedLevelClaims,
+  digitsForWritten, dropInstructionEcho, fixFractions, promoCharacterisations, crossedLevelClaims, unicodeMinus,
+  readerLevel,
 } from "../_shared/intel.ts";
 import { dividendRows, ensureHistory, hiLo, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
@@ -136,7 +137,9 @@ const lineOk = (l: string, facts: LiveFact[], dlv: DlvFact[] = []) => !dayMoveMi
 // the shared cards are read by every tier, so desk slang is translated for everyone ("show-me tape", "ripping")
 // round 6: our own prompt words echoed into a card ("…two weeks old, so it is context, not news") go, and figures
 // stay digits in written copy
-const cardScrub = (t: string) => tidyNumbers(digitsForWritten(noviceGloss(plainScrub(dropInstructionEcho(t), [...PORTFOLIO_PLAIN, ...CARD_PLAIN]))));
+// round 8: position cards are shared by every reader of a symbol, so they carry no beginner glosses ("a wide the biggest
+// companies gap of its price tag against profits" reached advanced readers); signed figures use the true minus sign
+const cardScrub = (t: string) => unicodeMinus(tidyNumbers(digitsForWritten(plainScrub(dropInstructionEcho(t), [...PORTFOLIO_PLAIN, ...CARD_PLAIN]))));
 
 /** A second read of a finished card by the fast model, for what patterns cannot see: a bullet that is garbled
  *  (two headlines compressed into nonsense, round 3: "TSLA leads 2,500 electric trucks backed by Microsoft and
@@ -159,7 +162,8 @@ type Investor = { styles?: string[] | string; purpose?: string[] | string; horiz
 // answers may be single strings (old profiles) or arrays (multi-select quiz): normalize, and reduce where one value must win
 const toArr = (x: unknown, d: string[]): string[] => Array.isArray(x) ? (x.length ? x.map(String) : d) : (typeof x === "string" && x ? [x] : d);
 const LVL_ORDER = ["novice", "intermediate", "advanced", "pro"];
-const topLevel = (xs: string[]): string => xs.reduce((a, b) => (LVL_ORDER.indexOf(b) > LVL_ORDER.indexOf(a) ? b : a), "novice");
+// round 8: an unknown level ("confident" on the showcase profile) reads as intermediate, never as beginner
+const topLevel = (xs: string[]): string => readerLevel(xs);
 const HZ_ORDER = ["<1y", "1-3y", "3-10y", "10y+"];
 const longestHz = (xs: string[]): string => xs.reduce((a, b) => (HZ_ORDER.indexOf(b) > HZ_ORDER.indexOf(a) ? b : a), xs[0] ?? "3-10y");
 
@@ -612,6 +616,7 @@ ${VALUE_LAW}`;
       if (bullets.length < 2) { errors.push("user " + uid.slice(0, 8) + ": take contradicted the live book; kept the previous one"); continue; }
       const heldBook = bookNames.map((b) => b.symbol).filter((sy) => !gone.has(sy));
       const tagged = { bullet_symbols: bullets.map((b) => mentionedSymbols(b, bookNames)), news5_symbols: news5 ? news5.map((b) => mentionedSymbols(b, bookNames)) : null, held_symbols: heldBook };
+      bullets = bullets.map(unicodeMinus); if (news5) news5 = news5.map(unicodeMinus);
       const row = { user_id: uid, bullets, news5, model };
       // the symbol tags arrive with migration 38; before it the row is written without them
       let { error: piErr } = await admin.from("portfolio_insights").insert({ ...row, ...tagged });
