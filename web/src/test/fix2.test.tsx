@@ -194,9 +194,10 @@ describe("F4 a stale assessment never reads as current while a newer one is writ
       getAssessmentStatus: vi.fn().mockResolvedValue({ status: "pending", generatedAt: null, intelligenceAt: null, hadEarlier: true }) });
     render(<App api={api} />);
     const card = await screen.findByTestId("brief-card");
-    expect(card.getAttribute("data-stale")).toBe("true");
+    // the pending state arrives from an async status read after the card first paints
+    await waitFor(() => expect(card.getAttribute("data-stale")).toBe("true"));
     expect(within(card).getByTestId("brief-asof").textContent).toMatch(/your last assessment, before today's changes/i);
-    expect(screen.getByTestId("assessment-card").textContent).toMatch(/Updating your assessment/);
+    await waitFor(() => expect(screen.getByTestId("assessment-card").textContent).toMatch(/Updating your assessment/));
     expect(screen.queryByTestId("brief-banner")).toBeNull();
   });
   it("removing a position is a book change: the server is told at once and the run starts on the way out", async () => {
