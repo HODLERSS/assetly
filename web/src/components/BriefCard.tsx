@@ -162,7 +162,10 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
   // No MP3 (ElevenLabs quota gone, or the sweep has not reached this row) but a script exists: the device
   // voice reads it. The button never vanishes on the reader; only the accessible name says which voice they get.
   const voiceOnly = !brief.audio_path && !!brief.script && hasDeviceVoice();
-  const canListen = !!brief.audio_path || voiceOnly;
+  // the saved copy is what the device kept because it couldn't reach us: the narration needs that connection
+  // too, so play is not offered beside it (r5 designer m-6). One already playing keeps its pause.
+  const offlineAudio = savedCopy && !!brief.audio_path && !isThis;
+  const canListen = (!!brief.audio_path || voiceOnly) && !offlineAudio;
   const toggleAudio = () => {
     if (isThis) { togglePlayer(); return; }
     const track = { id: trackId, title, subtitle: dateLabel, date: brief.brief_date };
@@ -200,7 +203,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
           ))}
         </div>
       )}
-      {savedCopy && <p className="sub brief-asof" data-testid="brief-saved">Saved copy. Couldn't refresh your brief.</p>}
+      {savedCopy && <p className="sub brief-asof" data-testid="brief-saved">Saved copy. Couldn't refresh your brief.{offlineAudio ? " Listening needs a connection." : ""}</p>}
       {fresh.note && (
         <p className="sub brief-asof" data-testid="brief-asof">
           <span>{fresh.note}</span>

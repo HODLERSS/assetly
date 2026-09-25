@@ -110,9 +110,12 @@ let textScale = 1;
 const scaleSubs = new Set<() => void>();
 export const getTextScale = () => textScale;
 export const subscribeTextScale = (cb: () => void) => { scaleSubs.add(cb); return () => { scaleSubs.delete(cb); }; };
+/** From this scale up, rows let their second line wrap (.text-large in client.css). */
+export const LARGE_TEXT = 1.3;
 export function setTextScale(s: number) {
   textScale = clampTextScale(s);
   const pct = `${Math.round(textScale * 100)}%`;
+  document.documentElement.classList.toggle("text-large", textScale >= LARGE_TEXT);
   const style = document.documentElement.style as CSSStyleDeclaration & { webkitTextSizeAdjust?: string };
   style.webkitTextSizeAdjust = pct;
   style.setProperty("text-size-adjust", pct);

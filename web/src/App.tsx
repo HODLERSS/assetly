@@ -5,6 +5,7 @@ import { useAssessmentWatch } from "./lib/assessment";
 import { noteRemoval } from "./lib/heldIntel";
 import { foreignBrief } from "./lib/briefBasis";
 import { clearUserLocalState } from "./lib/localState";
+import { setPricesDown } from "./lib/net";
 import type { Session } from "@supabase/supabase-js";
 import { completeNativeAuth, supabase } from "./lib/supabase";
 import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
@@ -215,7 +216,6 @@ export function App({ api = defaultApi }: { api?: Api }) {
   }, []);
 
   const lastLoadRef = useRef(0);
-  const [lastOkAt, setLastOkAt] = useState<string | null>(null);   // when the prices on screen were fetched
   const load = useCallback(async () => {
     lastLoadRef.current = Date.now();
     try {
@@ -231,10 +231,11 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setRows(r);
       if (fxNow) setFx(fxNow);
       setError(null);
-      setLastOkAt(new Date().toISOString());
+      setPricesDown(false);
       if (uidRef.current && p) writeBookCache(uidRef.current, p, r, fxNow);
     } catch {
       setError(PRICES_FAILED);
+      setPricesDown(true);   // the reads behind it (lots, charts, the brief) stop waiting out retries (lib/net)
     } finally {
       setBooted(true);
     }
@@ -293,6 +294,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     if (!session) {
       // signed out: nothing this user left on the device (hints, a pending run, removals) greets the next one
       if (uidRef.current) { clearBookCache(uidRef.current); clearUserLocalState(uidRef.current); uidRef.current = null; }
+      setPricesDown(false);
       setProfile(null); setRows([]); setBooted(false); return;
     }
     uidRef.current = session.user.id;
@@ -333,7 +335,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   // poll failed (r4 power-user). Coming back refreshes right away instead of waiting for that poll.
   useEffect(() => {
     if (!session) return;
-    const down = () => setError(PRICES_FAILED);
+    const down = () => { setError(PRICES_FAILED); setPricesDown(true); };
     const up = () => { void load(); };
     if (typeof navigator !== "undefined" && navigator.onLine === false) down();
     window.addEventListener("offline", down);
@@ -500,11 +502,13 @@ export function App({ api = defaultApi }: { api?: Api }) {
             briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)}
             assessment={assess.state} onAssessRetry={retryAssessment} onAssessDismiss={assess.dismiss}
             onOpenNews={() => go({ kind: "tab", tab: "news" })}
-            pricesAsOf={error ? (lastOkAt ?? rows.reduce<string | null>((m, r) => (r.as_of && (!m || r.as_of > m) ? r.as_of : m), null)) : null} />
+            // always the prices' own time, the newest print on screen: the fetch time moved the label 37 minutes
+            // between two looks at the same prices (r5 designer m-7)
+            pricesAsOf={error ? rows.reduce<string | null>((m, r) => (r.as_of && (!m || r.as_of > m) ? r.as_of : m), null) : null} />
           </PullToRefresh>
         )}
         {view.kind === "tab" && view.tab === "news" && (
-          <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"} uid={session.user.id}
+          <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"} uid={session.user.id} pricesDown={!!error}
             intelPending={assess.state.phase === "pending" || assess.state.phase === "slow"}
             onRefreshInsights={refreshInsights} insightsRefreshing={pinsRefreshing} freshInsights={pinsFresh}
             onInsightsSeen={(g) => { seenInsightRef.current = g; setNewsAlert(false); }}

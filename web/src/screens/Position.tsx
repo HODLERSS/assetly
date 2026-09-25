@@ -8,7 +8,7 @@ import { useInFlight } from "../lib/inflight";
 import { PriceChart } from "../components/PriceChart";
 import { InsightsCard } from "../components/InsightsCard";
 import { Icon } from "../components/Icon";
-import { AmountField, EntryPreview } from "../components/AmountField";
+import { AmountField, DateField, EntryPreview } from "../components/AmountField";
 import { onForeground } from "../lib/native";
 
 // Each position's lots as last read this session: offline, a position shows the lots it had instead of none.
@@ -332,8 +332,7 @@ function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", n
           onChange={(v) => { setCost(v); setFieldErr((f) => ({ ...f, cost: undefined })); }} error={fieldErr.cost} />
         {/* never beside an error it contradicts */}
         {!fieldErr.qty && !fieldErr.cost && <EntryPreview text={entryPreview({ kind: cashish ? "cash" : "stock", qty, cost, currency, unit: crypto ? unit : undefined })} />}
-        <div className="field"><label htmlFor="lot-date">Acquired (optional)</label>
-          <input id="lot-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <DateField id="lot-date" label="Acquired (optional)" value={date} onChange={setDate} />
         </>)}
         {acct && (
           <div className="field">

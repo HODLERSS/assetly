@@ -499,7 +499,8 @@ describe("F11 assessment card copy", () => {
     render(<App api={stubApi()} />);
     const card = await screen.findByTestId("assessment-card");
     expect(card.textContent).toMatch(/^Assessment didn't finish/);
-    expect(card.textContent).toMatch(/only the write-up is missing\. Try again\./);
+    expect(card.textContent).toMatch(/only the write-up is missing\./);
+    expect(card.textContent).not.toMatch(/missing\. Try again\./);   // the chip is the "try again" (r5 designer m-f)
     expect(card.textContent).not.toMatch(/paused/);
     expect(card.textContent).not.toMatch(/Building/);
   });

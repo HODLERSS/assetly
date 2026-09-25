@@ -32,6 +32,20 @@
 .sheet-kbbar { display: none; }
 .kb-open .sheet-kbbar { display: flex; justify-content: flex-end; position: sticky; top: -18px; z-index: 1;
   margin: -18px -16px 6px; padding: 8px 16px; background: var(--as-surface); border-bottom: 1px solid var(--as-rule); }
+/* the keyboard's Done for a number field outside a sheet (components/AmountField), docked on the keyboard */
+.kb-done-bar { display: none; }
+.kb-open .kb-done-bar { display: flex; justify-content: flex-end; position: fixed; left: 0; right: 0; z-index: 35;
+  bottom: var(--as-kb-inset, 0px); padding: 6px 16px; background: var(--as-surface); border-top: 1px solid var(--as-rule); }
+/* an empty optional date reads "No date", not WebKit's grey today that looked filled in */
+.date-wrap { position: relative; display: block; }
+/* WebKit gives a date input an intrinsic width: without these it ran past the card edge */
+.date-wrap input { display: block; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; text-align: left;
+  color: var(--as-ink); min-height: 3.1em; }   /* iOS tints an unstyled date blue and sets it shorter than a text field */
+.date-wrap input::-webkit-date-and-time-value { text-align: left; }
+.date-wrap[data-empty] input::-webkit-datetime-edit { color: transparent; }
+.date-wrap[data-empty] input:focus::-webkit-datetime-edit { color: inherit; }
+.date-empty { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--as-muted); pointer-events: none; }
+.date-wrap[data-empty] input:focus + .date-empty { display: none; }
 /* "Use today's price" sits under the cost it fills */
 .chip.use-quote { margin: -4px 0 12px; }
 
@@ -42,6 +56,8 @@
 /* Sign-in centres in the safe area: status bar above, home indicator below, no tab bar to clear. */
 .auth-screen { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px; min-height: 100dvh;
   padding: calc(env(safe-area-inset-top, 0px) + 24px) 16px calc(env(safe-area-inset-bottom, 0px) + 24px); }
+.auth-wordmark { display: inline-flex; align-items: center; gap: 10px; margin: 0 0 6px; }
+.auth-wordmark svg { flex: none; }
 .auth-provider { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
 .auth-provider svg { flex: none; }
 .auth-legal { font-size: 12px; text-align: center; color: var(--as-muted); margin: 4px 0 0; }
@@ -62,6 +78,10 @@
 
 /* Ask: what a long wait is doing */
 .ask-wait { margin: -4px 4px 0; font-size: 12.5px; }
+/* Send keeps its size while waiting: the ring sits over the hidden label */
+.ask-composer .btn.ask-send { position: relative; }
+.ask-send-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.ask-send-wait .step-mark.active { border-color: currentColor; border-top-color: transparent; }
 
 /* a brief whose premise has moved on: dated, and quieter than the numbers above it */
 .brief-asof { margin: 0 0 4px; font-size: 12px; }
@@ -87,6 +107,17 @@
 .settings-appearance { flex-wrap: wrap; }
 .settings-appearance .chips { padding: 0; margin-left: auto; }
 .settings-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* and the email drops under "Signed in as" and wraps whole instead of being cut (r5 native m2) */
+.settings-signedin { flex-wrap: wrap; }
+.settings-signedin > span:first-child { flex: none; }
+.text-large .settings-email { margin-left: auto; white-space: normal; overflow-wrap: anywhere; text-align: right; }
+
+/* Large text (Dynamic Type 1.3x and up; lib/shell.ts sets .text-large): a row's second line wraps instead of
+   cutting the price ("1,000 sh · $…"), the session tag takes its own line as it does under 360pt, and a brief's
+   title wraps instead of "CLOSING NOTE · SEP…" (r5 native m2) */
+.text-large .row > span:first-child:has(> .sym) { white-space: normal; overflow-wrap: anywhere; }
+.text-large .row .right .row-session { display: block; }
+.text-large .insights-head .insights-brand { white-space: normal; line-height: 1.25; }
 
 /* Edge swipe back (lib/swipeBack.ts): Home as it was left, under the sliding page, never empty ground.
    Below the sticky top bar (15) and the tab bar; the page being popped rides above it on its own ground. */

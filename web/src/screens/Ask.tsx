@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { getTextScale, subscribeTextScale } from "../lib/shell";
+import { getTextScale, LARGE_TEXT, subscribeTextScale } from "../lib/shell";
 import type { Api } from "../lib/api";
 
 // ASK: grounded Q&A about the user's own portfolio, presented as a chat.
@@ -18,7 +18,8 @@ const SUGGESTIONS = [
 export const ASK_SLOW_MS = 8_000;
 export const ASK_SLOWER_MS = 20_000;
 const WAIT_COPY = ["", "Still thinking…", "Taking longer than usual, pulling fresh data…"];
-export const ASK_FAILED = "That didn't go through. Try again.";
+// the Retry beside it is the "try again" (r5 designer m-f: the line repeated its own button)
+export const ASK_FAILED = "That didn't go through.";
 export const ASK_OFFLINE = "You're offline. Ask needs a connection.";
 const offline = () => typeof navigator !== "undefined" && navigator.onLine === false;
 
@@ -63,7 +64,7 @@ function loadTurns(): Turn[] {
 
 export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAnswered?: () => void; autoAsk?: { question: string; key: string } | null }) {
   const [q, setQ] = useState("");
-  const largeText = useSyncExternalStore(subscribeTextScale, getTextScale) >= 1.3;
+  const largeText = useSyncExternalStore(subscribeTextScale, getTextScale) >= LARGE_TEXT;
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [busy, setBusy] = useState(false);
   const [wait, setWait] = useState<0 | 1 | 2>(0);   // how long the current answer has taken: see WAIT_COPY
@@ -174,7 +175,12 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
       <form className="ask-composer" onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
         <input ref={inputRef} aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
                placeholder={largeText ? "Ask a question…" : "Ask about your portfolio…"} enterKeyHint="send" autoComplete="off" />
-        <button className="btn" disabled={busy || !q.trim()}>{busy ? "…" : "Send"}</button>
+        {/* the button keeps its width while an answer is on the way: "…" shrank it to 49px and the field jumped
+            27px wider and back on every question (r5 designer m-g). The label stays for the width, hidden. */}
+        <button className="btn ask-send" disabled={busy || !q.trim()} aria-busy={busy || undefined} aria-label={busy ? "Waiting for the answer" : undefined}>
+          <span style={busy ? { visibility: "hidden" } : undefined}>Send</span>
+          {busy && <span className="ask-send-wait" aria-hidden="true"><span className="step-mark active" /></span>}
+        </button>
       </form>
     </>
   );

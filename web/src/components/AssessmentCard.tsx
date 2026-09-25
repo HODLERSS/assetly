@@ -33,7 +33,7 @@ export function AssessmentCard({ state, onRetry, onDismiss, onOpenNews }: {
       </div>
       {state.phase === "error" ? (<>
         {/* the raw cause ("brokerage-connected failed") is not for the reader: one plain line, one action */}
-        <p style={{ margin: "6px 0 0" }} role="alert">Your holdings are safe; only the write-up is missing. Try again.</p>
+        <p style={{ margin: "6px 0 0" }} role="alert">Your holdings are safe; only the write-up is missing.</p>
         <div className="assess-actions"><button className="chip" onClick={onRetry}>Try again</button></div>
       </>) : state.phase === "slow" ? (<>
         <p style={{ margin: "6px 0 0" }}>This is taking longer than usual. It'll show up here as soon as it's ready.</p>

@@ -73,6 +73,17 @@ export function formatAmountInput(v: number): string {
   return v.toLocaleString("en-US", { maximumFractionDigits: 8, useGrouping: true });
 }
 
+/** "Use today's price": the quote as the cost field takes it, exactly the figure the button shows. It filled the
+ *  raw quote, 922.765 under a button that said $922.77, and saved a cost basis nobody typed (r5 designer m-2):
+ *  rounded to the currency's minor unit (cents; whole won). */
+export function quoteInput(price: number, currency: string): string {
+  return moneyExact(price, currency).slice(ccySymbol(currency).length);
+}
+
+/** Today on the reader's own calendar, as a date field holds it (YYYY-MM-DD). */
+export const todayYmd = (now: Date = new Date()): string =>
+  `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
 /** Quantities as people write them: 1,000 · 0.0123 · 12.5 (no float noise, no forced decimals). */
 export function formatQty(v: number): string {
   return v.toLocaleString("en-US", { maximumFractionDigits: 8 });

@@ -27,9 +27,12 @@ export function dayGroups(rows: PortfolioRow[], base: string, fx: FxRates | null
     g.latest = Math.max(g.latest, r.as_of ? +new Date(r.as_of) : 0);
     by.set(s.label, g);
   }
+  // markets in one fixed order: listed by which row was biggest, "Crypto + US" became "US + Crypto" the day a
+  // stock outgrew BTC (r5 power-user)
+  const order = Object.values(MKT_NAME) as string[];
   return [...by.values()]
     .sort((a, b) => Number(b.today) - Number(a.today) || b.latest - a.latest)
-    .map(({ latest: _l, ...g }) => g);
+    .map(({ latest: _l, ...g }) => ({ ...g, markets: [...g.markets].sort((x, y) => order.indexOf(x) - order.indexOf(y)) }));
 }
 
 /** A row is a position only while it has something in it. A holding whose lots are all gone (or not

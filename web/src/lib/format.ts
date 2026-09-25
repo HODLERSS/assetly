@@ -171,5 +171,7 @@ export function companyName(name: string | null | undefined): string {
     s = next;
   }
   s = s.replace(/\.com$/i, "").replace(/[\s,]+$/, "");
+  // "The Coca-Cola Company" is "Coca-Cola" once its suffix is gone, not "The Coca-Cola" (r5 power-user)
+  if (s !== (name ?? "").trim()) s = s.replace(/^The\s+(?=\S{2})/, "");
   return s || (name ?? "").trim();
 }

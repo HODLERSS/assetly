@@ -49,7 +49,7 @@ describe("sign-in screen", () => {
   it("says what the product does, and trust in plain words", () => {
     render(<AuthScreen />);
     expect(screen.getByTestId("auth-tagline").textContent).not.toMatch(/priced every minute/i);
-    expect(document.body.textContent).toMatch(/AI brief/);
+    expect(screen.getByTestId("auth-subline").textContent).toBe("A daily brief on what you own, live prices, and answers about your holdings.");   // r3-r5 design m10
     expect(screen.getByTestId("auth-trust").textContent).toBe("Read-only. We can never trade or move money.");
     expect(document.body.textContent).not.toMatch(/row-level/i);
   });

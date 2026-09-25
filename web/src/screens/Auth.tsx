@@ -52,13 +52,16 @@ export function AuthScreen() {
     // .auth-screen centres inside the real safe area instead.
     <main className="auth-screen">
       <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <svg width="64" height="30" viewBox="0 0 32 12" aria-hidden="true" style={{ color: "var(--as-primary)" }}>
-          <rect x="0" y="3" width="14" height="6" rx="3" fill="currentColor" />
-          <rect x="17" y="3" width="14" height="6" rx="3" fill="currentColor" opacity="0.45" />
-        </svg>
-        <h1 className="h1" style={{ fontSize: 30 }} data-testid="auth-wordmark">Assetly</h1>
+        {/* the mark sits on the wordmark's line, as in the app's top bar, instead of floating alone above it (r2-r5 design m10) */}
+        <h1 className="h1 auth-wordmark" style={{ fontSize: 30 }} data-testid="auth-wordmark">
+          <svg width="44" height="17" viewBox="0 0 32 12" aria-hidden="true" style={{ color: "var(--as-primary)" }}>
+            <rect x="0" y="3" width="14" height="6" rx="3" fill="currentColor" />
+            <rect x="17" y="3" width="14" height="6" rx="3" fill="currentColor" opacity="0.45" />
+          </svg>
+          Assetly
+        </h1>
         <p className="mutedc" data-testid="auth-tagline">Your portfolio, explained every day.</p>
-        <p className="mutedc" style={{ fontSize: 13.5, marginTop: 4 }}>An AI brief on what you own, live prices, and answers about your holdings.</p>
+        <p className="mutedc" style={{ fontSize: 13.5, marginTop: 4 }} data-testid="auth-subline">A daily brief on what you own, live prices, and answers about your holdings.</p>
       </div>
       {native && (
         <button className="btn apple auth-provider" onClick={apple} disabled={state === "sending"} data-testid="auth-apple">

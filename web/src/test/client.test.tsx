@@ -298,7 +298,7 @@ describe("C5 zero and cash", () => {
     ]) });
     render(<App api={api} />);
     const card = await screen.findByTestId("positions-card");
-    const cashRow = (await within(card).findAllByRole("button")).find((b) => /cash balance/.test(b.textContent ?? ""))!;
+    const cashRow = (await within(card).findAllByRole("button")).find((b) => /Cash balance/.test(b.textContent ?? ""))!;
     expect(cashRow.textContent).not.toMatch(/today|0\.00%/);
   });
   it("the cash detail leads with the balance, not a $1.00 price and a 0.00% move", async () => {
@@ -385,7 +385,7 @@ describe("C7 first run: the assessment wait is visible and honest", () => {
     const api = stubApi({ brokerageConnected });
     await addRun(api);
     const card = await screen.findByTestId("assessment-card");
-    await within(card).findByText(/only the write-up is missing\. Try again\./i);   // the raw cause is never shown
+    await within(card).findByText(/only the write-up is missing\./i);   // the raw cause is never shown
     await userEvent.click(within(card).getByRole("button", { name: /try again/i }));
     await waitFor(() => expect(brokerageConnected).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByTestId("assessment-card").textContent).toMatch(/Usually takes 2 to 4 minutes/));

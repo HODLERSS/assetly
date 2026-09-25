@@ -6,8 +6,8 @@ import { marketOf } from "../lib/markets";
 import { openConnectPortal, platformTag } from "../lib/native";
 import { Icon } from "../components/Icon";
 import { AmountField, EntryPreview } from "../components/AmountField";
-import { entryPreview, readAmount } from "../lib/numbers";
-import { ccySymbol, companyName } from "../lib/format";
+import { entryPreview, quoteInput, readAmount, todayYmd } from "../lib/numbers";
+import { ccySymbol, companyName, moneyExact } from "../lib/format";
 
 /** The company as people say it, unless that only repeats the ticker. */
 const shortName = (r: SymbolRow) => { const n = companyName(r.name); return n && n.toUpperCase() !== r.symbol.toUpperCase() ? n : r.name; };
@@ -50,6 +50,19 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
+  // "Use today's price" on the first add too: a newcomer meets the cost field here first, and it had only the
+  // hint text (r5 newcomer m7). `quoted` is the figure it filled: saved unchanged, the lot is dated today.
+  const [quote, setQuote] = useState<{ symbol: string; price: number } | null>(null);
+  const [quoted, setQuoted] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (step !== 2 || !picked || picked.kind === "cash" || picked.kind === "debt") return;
+    if (quote?.symbol === picked.symbol) return;
+    void Promise.resolve().then(() => api.getQuote(picked.symbol))
+      .then((p) => { if (live && p) setQuote({ symbol: picked.symbol, price: p }); }).catch(() => {});
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, step, picked?.symbol]);
   const [imported, setImported] = useState<PortfolioRow[] | null>(null);   // null = not polling
   const [importDone, setImportDone] = useState(false);
   const pollRef = useRef(0);
@@ -127,7 +140,8 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
     if (q.value === null || c.value === null) return;
     setBusy(true); setErr(null);
     try {
-      await api.addPosition(picked.symbol, q.value, c.value);
+      const today = quoted !== null && cost === quoted;
+      await (today ? api.addPosition(picked.symbol, q.value, c.value, todayYmd()) : api.addPosition(picked.symbol, q.value, c.value));
       void api.refreshNews([picked.symbol]);                // stories land while the user looks around
       const m = marketOf({ symbol: picked.symbol, kind: picked.kind });   // inferred, never asked
       await api.completeOnboarding([m === "KR" ? "KR" : m === "CRYPTO" ? "Crypto" : "US"], "USD", inv ?? INVESTOR_DEFAULT);
@@ -260,8 +274,14 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
             onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} />
           <AmountField id="ob-cost" label={`Cost per ${picked.kind === "crypto" ? "coin" : "share"} (${ccySymbol(picked.currency).trim()})`} value={cost}
             placeholder="What you paid" onChange={(v) => { setCost(v); setFieldErr((f) => ({ ...f, cost: undefined })); }} error={fieldErr.cost} />
+          {quote && quote.symbol === picked.symbol && (
+            <button type="button" className="chip use-quote" data-testid="use-quote" disabled={busy}
+              onClick={() => { const v = quoteInput(quote.price, picked.currency); setCost(v); setQuoted(v); setFieldErr((f) => ({ ...f, cost: undefined })); }}>
+              Use today's price ({moneyExact(quote.price, picked.currency)})
+            </button>
+          )}
           <EntryPreview text={entryPreview({ kind: picked.kind, qty, cost, currency: picked.currency, unit: picked.kind === "crypto" ? picked.symbol : undefined })} />
-          <p className="mutedc" style={{ fontSize: 12.5, marginBottom: 12 }}>Don't know your cost? Use today's price and fix it later from the position. Purchase date is optional too.</p>
+          <p className="mutedc" style={{ fontSize: 12.5, marginBottom: 12 }}>Don't know your cost? Use today's price and fix it later from the position.</p>
           {err && <div className="error-note" role="alert">{err}</div>}
           <button className="btn" disabled={busy} onClick={finish}>{busy ? "Saving…" : "Add position"}</button>
           <button className="chip" disabled={busy} onClick={() => { setStep(1); setFieldErr({}); setErr(null); }} style={{ marginTop: 10 }}>← Back</button>

@@ -111,7 +111,7 @@ describe("PriceChart asks for and draws the anchored range", () => {
     await userEvent.click(screen.getByRole("tab", { name: "1W" }));
     await waitFor(() => expect(screen.getByTestId("range-change").textContent).toBe("+0.77%"));
     const [, hours, daily] = getHistory.mock.calls.at(-1)!;
-    expect(daily).toEqual({ tz: "America/New_York" });
+    expect(daily).toEqual({ tz: "America/New_York", recentHours: 0 });   // every day folded: no raw window (r5 power-user)
     expect(hours).toBeGreaterThanOrEqual(24 * 7);
     expect(screen.queryByTestId("partial-note")).toBeNull();
     expect(screen.getByTestId("range-low").textContent).toBe("L $222.27");
@@ -124,7 +124,7 @@ describe("PriceChart asks for and draws the anchored range", () => {
     chart(getHistory, { symbol: "005930.KS", currency: "KRW", livePrice: 285500, liveAsOf: "2026-09-23T06:30:00Z" });
     await userEvent.click(screen.getByRole("tab", { name: "YTD" }));
     await waitFor(() => expect(screen.getByTestId("range-change").textContent).toBe("+138.12%"));
-    expect(getHistory.mock.calls.at(-1)![2]).toEqual({ tz: "Asia/Seoul" });
+    expect(getHistory.mock.calls.at(-1)![2]).toEqual({ tz: "Asia/Seoul", recentHours: 0 });
   });
 
   it("a failed load says so with Retry instead of an endless skeleton, and Retry draws it", async () => {
