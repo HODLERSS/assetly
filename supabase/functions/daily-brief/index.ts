@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  aliasesFor, booksKorean, brokenSentences, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  aliasesFor, booksKorean, brokenSentences, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
 } from "../_shared/intel.ts";
@@ -65,7 +65,7 @@ const FAST_MODEL = "gpt-oss-120b";
 // ---- trading calendar: ../_shared/calendar.ts (shared with insights-sync and ask) ----
 
 // Bumped whenever the brief's guards change enough that today's earlier rows should be rewritten (see "outdated").
-const GEN_VERSION = 5;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+const GEN_VERSION = 6;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -232,8 +232,10 @@ const noviceScrub = (t: string): string => {
 const fitCap = (t: string, cap: number, mustKeep?: RegExp): string => {
   const wcT = (x: string) => x.split(/\s+/).filter(Boolean).length;
   let out = t.trim();
-  while (wcT(out) > cap && /[.!?]\s+[^.!?]+[.!?]?$/.test(out)) {
-    const shorter = out.replace(/\s+[^.!?]+[.!?]?$/, "").trim();
+  // whole sentences first, split the abbreviation-aware way: the old "[^.!?]+$" tail took "Treasury and corporate
+  // bonds." off "a bond fund holding U.S. Treasury and corporate bonds." and left "holding U.S." (round 5)
+  for (let sents = splitSentences(out); wcT(out) > cap && sents.length > 1; sents = splitSentences(out)) {
+    const shorter = sents.slice(0, -1).join(" ").trim();
     if (mustKeep && !mustKeep.test(shorter)) break;
     out = shorter;
   }
@@ -242,7 +244,8 @@ const fitCap = (t: string, cap: number, mustKeep?: RegExp): string => {
     let cut = out.split(/\s+/).slice(0, cap).join(" ");
     // a period only ENDS a sentence when whitespace or the end follows it: the decimal point inside
     // "25.6%" was being read as a terminator, which is how "so 25." reached the reader
-    const ends = [...cut.matchAll(/[.!?](?=\s|$)/g)].map((m) => m.index ?? -1);
+    const ends = [...cut.matchAll(/[.!?](?=\s|$)/g)].map((m) => m.index ?? -1)
+      .filter((i) => !/\b(?:U\.S|U\.K|Inc|Co|Corp|Ltd|e\.g|i\.e|etc|vs|No|St)$/.test(cut.slice(0, i)));
     const stop = ends.length ? ends[ends.length - 1] : -1;
     // any sentence end wins over a mid-sentence cut: a shorter complete sentence beats a fragment ending on
     // "relative." (round 3 newcomer assessment)
@@ -278,6 +281,11 @@ NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst no
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
 RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as \u20a9 (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.
 ${EVIDENCE_LAW}`;
+/** The assessment's YOUR PORTFOLIO paragraph, from the book itself (exported for tests via the shared helper). */
+function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: number, total: number, exp: Exposure, modelText: string): string {
+  return buildPortfolioParagraph(holdings, cashUsd, total, exp, modelText);
+}
+
 /** Repair every row of `briefDate` for one user written by an older GEN_VERSION (except `skipEdition`). */
 // deno-lint-ignore no-explicit-any
 async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, skipEdition: string | null): Promise<number> {
@@ -316,7 +324,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x = text(t);
-    const parts = x.split(/(?<=[.!?])\s+/);
+    const parts = splitSentences(x);
     const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests), ...wrongDeliveriesDates(x, dlvFacts, today), ...parts.filter((p) => strengthAsRisk(p))]);
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
     return kept.length ? kept.join(" ") : x;
@@ -536,7 +544,19 @@ Deno.serve(async (req) => {
         const chg = r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%";
         return `${nm}: position value $${Math.round(v)} (${(v / total * 100).toFixed(1)}% of assets), share price ${pxT}, day ${chg} [${dayTag(marketOf(r.symbol, r.kind, r.currency))}], total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
       }).join("\n");
-      const statsLines = `${statsLines0}\n${divBlock}`;
+      // EXPOSURE by type, computed in code (round 5: a lede called VOO's 46.4% "US equity exposure"; US equity was
+      // VOO + AAPL + KO = 69.2%). Every stated exposure figure is checked against these.
+      const shareOf = (pred: (r: (typeof assets)[number]) => boolean) => assets.filter(pred).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / total * 100;
+      const isCash = (r: (typeof assets)[number]) => r.symbol.startsWith("$") || r.kind === "cash";
+      const isCrypto = (r: (typeof assets)[number]) => r.kind === "crypto" || r.symbol.endsWith("-USD");
+      const isKr = (r: (typeof assets)[number]) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ");
+      const isBond = (r: (typeof assets)[number]) => themeOf(r.symbol, r.kind) === "bonds";
+      const exposure: Exposure = {
+        usEquity: Number(shareOf((r) => !isCash(r) && !isCrypto(r) && !isKr(r) && !isBond(r)).toFixed(1)), krEquity: Number(shareOf(isKr).toFixed(1)),
+        crypto: Number(shareOf(isCrypto).toFixed(1)), bonds: Number(shareOf(isBond).toFixed(1)), cash: Number(shareOf(isCash).toFixed(1)),
+      };
+      const exposureLine = `EXPOSURE BY TYPE (share of total assets; the ONLY exposure figures you may state): US stocks and stock funds ${exposure.usEquity}%, Korean stocks ${exposure.krEquity}%, bonds ${exposure.bonds}%, crypto ${exposure.crypto}%, cash ${exposure.cash}%.`;
+      const statsLines = `${statsLines0}\n${divBlock}\n${exposureLine}`;
       const marketLines = marketLinesFor(korean), mktLive = mktLiveFor(korean);
       // A morning edition that starts after the bell (a late cron, a retry through an API wave) is an OPENING
       // READ: its US day figures are today's early moves, and it says so, never "yesterday".
@@ -663,6 +683,7 @@ Candid, specific, no filler. Never em dashes.`;
 ${bookLine}
 ${structLines}
 ${divBlock}
+${exposureLine}
 THEME EXPOSURE (deterministic): ${themeLine}
 GEOGRAPHY (share of total assets; cash and debt excluded, so it sums to the invested share): ${geoLine}
 PERFORMANCE (30d = trailing 30 days, 1y = trailing 12 months; never call either "YTD"): ${perfLine}
@@ -819,7 +840,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         sections.positions = sections.positions.map((p) => {
           const wcN = (t: string) => t.split(/\s+/).filter(Boolean).length;
           if (wcN(p.note) <= noteCapF) return p;
-          const sents = p.note.split(/(?<=[.!?])\s+/);
+          const sents = splitSentences(p.note);
           if (sents.length >= 3) {
             const trimmed = [sents[0], ...sents.slice(2)].join(" ");
             if (RISK.test(trimmed) && wcN(trimmed) >= 22 && wcN(trimmed) <= noteCapF) return { ...p, note: trimmed };
@@ -1346,7 +1367,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const deAdvice = (t: string) => {
         let out = String(t ?? "");
         out = out.replace(/[,;]\s*(?:so\s+|and\s+)?[^.;]*\b(?:should|consider|task is to|we(?:'|\u2019)?ll|you (?:could|might|can))\b[^.]*?(?=\.|$)/gi, "");
-        out = out.split(/(?<=[.!?])\s+/).filter((x) => !(TRADE_VERB.test(x) && ADVICE_FRAME.test(x))).join(" ");
+        out = splitSentences(out).filter((x) => !(TRADE_VERB.test(x) && ADVICE_FRAME.test(x))).join(" ");
         return out;
       };
       // The style rules already ban semicolons and the model keeps using them to weld two clauses into one
@@ -1403,7 +1424,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const srcText = [...SOURCES, JSON.stringify(memosOut)].join("\n");
         const estYmds = earnEsts.map((e) => e.est).filter((x): x is string => !!x);
         for (const d of unsupportedDated([...(sections.calendar ?? []), ...sections.positions.map((p) => p.watch)], srcText, briefDate, estYmds)) wrongDates.add(d);
-        const dropDated = (t: string) => { const bad = unsupportedDated(String(t ?? "").split(/(?<=[.!?])\s+/), srcText, briefDate, estYmds); return bad.length ? String(t).split(/(?<=[.!?])\s+/).filter((x) => !bad.includes(x)).join(" ") || t : t; };
+        const dropDated = (t: string) => { const bad = unsupportedDated(splitSentences(String(t ?? "")), srcText, briefDate, estYmds); return bad.length ? splitSentences(String(t)).filter((x) => !bad.includes(x)).join(" ") || t : t; };
         sections.lede = dropDated(sections.lede); sections.overnight = dropDated(sections.overnight); sections.desk_view = dropDated(sections.desk_view);
         sections.positions = sections.positions.map((p) => ({ ...p, note: dropDated(p.note) }));
         // Calendar lines are rebuilt from the estimates, labelled as estimates, with the same span text as Ask
@@ -1418,11 +1439,12 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           return wrongDates.has(p.watch) ? { ...p, watch: "No confirmed date yet" } : p;
         });
         // a valuation call ("looks cheap", "a bargain") is a verdict: the sentence goes, the rest of the note stays
-        const deValue = (t: string) => { const bad = valuationHits(t); if (!bad.length) return t; const kept = t.split(/(?<=[.!?])\s+/).filter((x) => !bad.some((b) => b.includes(x.trim()) || x.includes(b))); return kept.length ? kept.join(" ") : t; };
+        const deValue = (t: string) => { const bad = valuationHits(t); if (!bad.length) return t; const kept = splitSentences(t).filter((x) => !bad.some((b) => b.includes(x.trim()) || x.includes(b))); return kept.length ? kept.join(" ") : t; };
         sections.positions = sections.positions.map((p) => ({ ...p, note: dropEcho(deValue(p.note), p.watch) }));
         if (edition === "assessment") {
           const styles = toArr((invBy.get(uid) as Investor | null | undefined)?.styles, ["value"]);
-          const fit = (sections.ideas ?? []).map(deValue).filter((x) => !offLensIdea(x, styles));
+          // round 5: a stability / income reader was told to "improve the modest Bitcoin position"
+          const fit = (sections.ideas ?? []).map(deValue).filter((x) => !offLensIdea(x, styles) && !offRiskIdea(x, styles));
           // every idea pushed a product this reader does not invest in: the gap itself stays, as a fact
           sections.ideas = fit.length ? fit : (sections.ideas ?? []).length ? ["No bond or income exposure: one growth driver moves the whole book"] : [];
         }
@@ -1462,16 +1484,25 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       if (!backfillOnly) {
         const hsrc = [...SOURCES, JSON.stringify(memosOut)].join("\n");
         const dlvFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], est: deliveriesEstimate(r.symbol, briefDate)?.est ?? null }));
+        // "30.1% Bitcoin weight" when Bitcoin is 25.2% (30.1% = Bitcoin + Ether, round 5): a holding's weight is its
+        // own; a group share must be labelled as the group
+        const weightFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / total * 100 }));
+        const weightGroups = [{ label: /\bcrypto\b/i, value: exposure.crypto }, { label: /\bbonds?\b/i, value: exposure.bonds }, { label: /\bKorea(?:n)?\b/i, value: exposure.krEquity },
+          { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity }, { label: /\bcash\b/i, value: exposure.cash }, { label: /\b(?:top (?:three|3|five|5)|together|combined)\b/i, value: -1 }];
         const clean = (t: string) => {
-          const x = tidyNumbers(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN));
+          const x = fixWeights(fixAgreement(fixExposure(tidyNumbers(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN)), exposure)), weightFacts, weightGroups);
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
-          const parts = x.split(/(?<=[.!?])\s+/);
+          const parts = splitSentences(x);
           const bad = [...historicalClaims(x, hsrc, briefDate), ...unsupportedCauses(x, hsrc), ...wrongEarningsMonths(x, earnEsts),
-            ...wrongEarningsDates(parts, earnEsts, briefDate), ...wrongDividendAmounts(x, divFacts), ...wrongDeliveriesDates(x, dlvFacts, briefDate)];
+            ...wrongEarningsDates(parts, earnEsts, briefDate), ...wrongDividendAmounts(x, divFacts), ...wrongDeliveriesDates(x, dlvFacts, briefDate),
+            // round 5: "captures the full S&P 500 upside while avoiding individual stock fees", "support a 4-8% annual return"
+            ...promoClaims(x), ...returnForecasts(x),
+            // a two-word fragment left by an earlier deletion ("It adds.", round 5) goes without a model call
+            ...brokenSentences(x).filter((b) => b.split(/\s+/).length <= 2)];
           if (!bad.length) return x;
-          const kept = x.split(/(?<=[.!?])\s+/).filter((s) => !bad.some((b) => b.includes(s.trim()) || s.includes(b)));
+          const kept = splitSentences(x).filter((s) => !bad.some((b) => b.includes(s.trim()) || s.includes(b)));
           return kept.length ? kept.join(" ") : x;
         };
         sections.lede = clean(sections.lede); sections.overnight = clean(sections.overnight); sections.desk_view = clean(sections.desk_view);
@@ -1480,7 +1511,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         // memo's tripwire (or nothing) stands in
         const noStrengthRisk = (note: string, name: string) => {
           if (!strengthAsRisk(note)) return note;
-          const kept = note.split(/(?<=[.!?])\s+/).filter((x) => !strengthAsRisk(x));
+          const kept = splitSentences(note).filter((x) => !strengthAsRisk(x));
           const m = memosOut.find((x) => String(x.name).toLowerCase() === name.toLowerCase());
           const trip = m?.tripwire ? ` The risk: ${String(m.tripwire).replace(/[.\s]+$/, "")}.` : "";
           return (kept.join(" ") + trip).trim() || note;
@@ -1492,22 +1523,6 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const offCal = new Set([...weekendDated(sections.calendar ?? [], briefDate), ...wrongDeliveriesDates((sections.calendar ?? []).join("\n"), dlvFacts, briefDate)]);
         sections.calendar = (sections.calendar ?? []).filter((c) => !offCal.has(c)).map((c) => tidyNumbers(plainScrub(c, PORTFOLIO_PLAIN)));
         sections.positions = sections.positions.map((p) => weekendDated([p.watch], briefDate).length || wrongDeliveriesDates(p.watch, dlvFacts, briefDate).length ? { ...p, watch: "No confirmed date yet" } : p);
-        // YOUR PORTFOLIO names every holding of 2% or more, in code (round 4: the first assessment listed $70K of a
-        // $468.7K book and left out VTI, 85% of it)
-        if (edition === "assessment") {
-          const big = holdings.filter((r) => usd(Number(r.value ?? 0), r.currency) / total >= 0.02);
-          const namesOf = (r: (typeof holdings)[number]) => [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)];
-          const missing = big.filter((r) => !namesOf(r).some((n) => n && new RegExp(`(^|[^A-Za-z0-9])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9])`, "i").test(sections.overnight)));
-          if (missing.length) {
-            const cashUsd = assets.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
-            const parts = [...big.map((r) => `${krName(r.symbol, r.nickname, r.name)} $${Math.round(usd(Number(r.value ?? 0), r.currency)).toLocaleString("en-US")} (${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}%)`),
-              ...(cashUsd > 0 ? [`cash $${Math.round(cashUsd).toLocaleString("en-US")} (${(cashUsd / total * 100).toFixed(1)}%)`] : [])];
-            const rest = holdings.filter((r) => !big.includes(r));
-            const composition = `Your portfolio totals $${Math.round(total).toLocaleString("en-US")}: ${parts.join(", ")}${rest.length ? `, plus ${rest.length} smaller holding${rest.length > 1 ? "s" : ""}` : ""}.`;
-            const sents = sections.overnight.split(/(?<=[.!?])\s+/).filter((x) => !/\btotals?\b/i.test(x) && !/\$[\d,]+.*\$[\d,]+/.test(x));
-            sections.overnight = [composition, ...sents].join(" ");
-          }
-        }
       }
       // GRAMMAR PASS (round 3 newcomer: "Watch QQQ on sustained a shrinking price tag relative.", "Total assets
       // $26,600 cash $2,500"): broken sentences get one rewrite on the fast model; a sentence still broken
@@ -1537,6 +1552,14 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             set(v);
           }
         }
+      }
+      // YOUR PORTFOLIO for the assessment, built in code LAST: every holding of 2% or more with its dollars and share,
+      // cash, the smaller holdings counted, and the exposure by type, then at most two of the model's qualitative
+      // sentences. Round 5: the r4b rebuild ran BEFORE the grammar pass, which deleted it as a verbless list, and
+      // the model's "80.6% United States, 7.2% crypto, and one smaller position" went out again.
+      if (edition === "assessment" && !backfillOnly) {
+        sections.overnight = yourPortfolio(holdings.map((r) => ({ name: krName(r.symbol, r.nickname, r.name), usd: usd(Number(r.value ?? 0), r.currency) })),
+          assets.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0), total, exposure, sections.overnight);
       }
       const briefRow = {
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
