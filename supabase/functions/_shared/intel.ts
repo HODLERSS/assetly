@@ -246,7 +246,7 @@ export function valuationHits(text: string): string[] {
   for (const raw of sentencesOf(text)) {
     const s = bare(raw);
     // "undervalued" needs a NAMED source ("Morningstar says"): "another piece calls it 24% undervalued" is our voice
-    const valuationWord = /\b(?:undervalued|overvalued|under-?valuation|over-?valuation|fair value)\b/i.test(s);
+    const valuationWord = /\b(?:undervalued|overvalued|under-?valuation|over-?valuation|fair value|buying (?:chance|opportunit(?:y|ies))|chance to buy)\b/i.test(s);
     const GENERIC = /^(?:The|This|That|It|Another|A|An|Some|One|Its|Their|Our|We|They|He|She|Analysts?|Critics|Investors|Bulls|Bears|Many|Most|Wall|Street)$/;
     const namedSource = [...s.matchAll(/\b(?:according to ([A-Z][\w&.'-]+)|([A-Z][\w&.'-]+)(?: [A-Z][\w&.'-]+){0,3}(?:'s)? (?:says|said|calls|called|sees|rates|estimates|puts|pegs|argues|argued|analysts?|fair value|price target|target))\b/g)]
       .some((m) => !GENERIC.test(m[1] ?? m[2] ?? ""));
@@ -254,7 +254,8 @@ export function valuationHits(text: string): string[] {
     if (!s || (ATTRIBUTED.test(s) && (!valuationWord || namedSource || debate))) continue;
     // round 4: "a hidden asset the market isn't fully pricing", "17x versus the S&P's 25x leaves cushion", "the
     // long-term story still looks solid" (to "is it on sale?"): verdicts in the app's voice
-    const ownVoice = /\b(?:isn'?t|is not|aren'?t|are not|not) (?:yet )?(?:fully |really )?pric(?:ing|ed)(?: in)?\b|\bnot fully priced\b|\bhidden (?:asset|value|gem)\b|\bleaves? (?:a |some |plenty of |more )?(?:cushion|room(?: to run| for upside)?|upside)\b|\b(?:valuation|margin of safety) cushion\b|\bat a discount\b|\b(?:cheap(?:er)?|discounted) (?:versus|vs\.?|relative to|compared (?:to|with)) the (?:market|index|S&P)|\b(?:story|thesis|case) (?:still |remains |is still )?(?:looks |look )?(?:solid|intact|strong|compelling)\b|\bstill intact\b|\bthe run is real\b|\bsupports? the upside view\b|\bahead of most targets\b/i.test(s)
+    // round 4 newcomer/poweruser: "SCHD dip viewed as buying chance", "leaves little margin", "stretched"
+    const ownVoice = /\b(?:buying|buy) (?:chance|opportunit(?:y|ies)|window)\b|\bchance to (?:buy|add|scoop)\b|\bleaves? (?:little|no|thin|limited) (?:margin|room|cushion)\b|\b(?:valuation|multiple|price tag|price|shares?|stock)\s+(?:looks? |is |seems |remains |now )?(?:stretched|frothy|rich|full|demanding)\b|\b(?:stretched|frothy|demanding) (?:valuation|multiple|price tag)\b|\b(?:isn'?t|is not|aren'?t|are not|not) (?:yet )?(?:fully |really )?pric(?:ing|ed)(?: in)?\b|\bnot fully priced\b|\bhidden (?:asset|value|gem)\b|\bleaves? (?:a |some |plenty of |more )?(?:cushion|room(?: to run| for upside)?|upside)\b|\b(?:valuation|margin of safety) cushion\b|\bat a discount\b|\b(?:cheap(?:er)?|discounted) (?:versus|vs\.?|relative to|compared (?:to|with)) the (?:market|index|S&P)|\b(?:story|thesis|case) (?:still |remains |is still )?(?:looks |look )?(?:solid|intact|strong|compelling)\b|\bstill intact\b|\bthe run is real\b|\bsupports? the upside view\b|\bahead of most targets\b/i.test(s)
       // a buy-the-dip nudge about the user's cash ("Holding cash lets you buy during a pullback", r3/r4)
       || /\b(?:lets? you|allows? you to|so you can|ready to|leaves? you room to|gives? you room to)\s+(?:buy|add|pounce|act|scoop|step in)\b[^.]{0,50}\b(?:dips?|pullbacks?|drops?|sell-?offs?|lower prices?|weakness|falls?|declines?)\b/i.test(s);
     const call = ownVoice || /\b(?:looks?|looking|seems?|appears?|is|are|remains?|stays?|trad(?:es|ing)|priced|now)\s+(?:\w+\s+){0,2}?(?:cheap|inexpensive|expensive|pricey|undervalued|overvalued|under-valued|over-valued|a bargain|a steal|attractive(?:ly priced)?|good value|great value|compelling value|a no-brainer)\b/i.test(s)
@@ -809,7 +810,7 @@ export const CARD_PLAIN: [RegExp, string][] = [
 export function cardCopyHits(text: string): string[] {
   return sentencesOf(text).filter((s) =>
     /\b(?:price )?(?:history|data|figures?|numbers?)\b[^.]{0,30}\b(?:unavailable|missing|not available|isn'?t available|not on file|lacking)\b|\bnot enough (?:price )?history\b|\bno (?:price )?(?:data|history) (?:on file|available|yet)\b|\bon file\b/i.test(s)
-    || /\bfrom (?:its|the) (?:1Y |52-week |one-year |yearly |annual |2Y |two-year |recent )?(?:low|lows|high|highs|bottom|peak|trough)\b[^.]{0,20}\d|\d[^.]{0,30}\bfrom (?:its|the) (?:1Y |52-week |one-year |yearly |annual |2Y |two-year |recent )?(?:low|lows|high|highs|bottom|peak|trough)\b/i.test(s));
+    || /\bfrom (?:its|the) (?:1Y |one-year |yearly |annual |2Y |two-year |recent )?(?:low|lows|high|highs|bottom|peak|trough)\b[^.]{0,20}\d|\d[^.]{0,30}\bfrom (?:its|the) (?:1Y |one-year |yearly |annual |2Y |two-year |recent )?(?:low|lows|high|highs|bottom|peak|trough)\b/i.test(s));
 }
 
 // Function words and modifiers a sentence can never end on ("... on sustained a shrinking price tag relative.")
@@ -954,4 +955,173 @@ export function unsupportedCauses(text: string, sourceText: string): string[] {
     const warned = s.match(/\b([A-Z][\w&.-]+)(?:'s)? (?:warned|warns|warning)\b/);
     return !!warned && !src.includes(warned[1].toLowerCase());
   });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Round 4 newcomer / poweruser (2026-09-25): plain-language glosses in context, dividends, period returns
+// ---------------------------------------------------------------------------------------------
+/** The beginner vocabulary map, one copy for every writer (it was duplicated in daily-brief and insights-sync
+ *  and the copies drifted). `sample` is a phrase the entry must rewrite; the tests put every entry through
+ *  three contexts. */
+export type Gloss = { re: RegExp; plain: string; sample: string };
+export const NOVICE_PLAIN: Gloss[] = [
+  { re: /\bshort interest\b/gi, plain: "bets against the stock", sample: "short interest" },
+  { re: /\bof float\b/gi, plain: "of its tradable shares", sample: "of float" },
+  { re: /\bleverage(d)?\b/gi, plain: "borrowed money", sample: "leverage" },
+  { re: /\bhigh[- ]beta\b/gi, plain: "fast-moving", sample: "high-beta" },
+  { re: /\bbeta\b/gi, plain: "sensitivity to market swings", sample: "beta" },
+  { re: /\bvaluation multiples?\b/gi, plain: "price tag relative to earnings", sample: "valuation multiple" },
+  { re: /\bmultiple compression\b/gi, plain: "a shrinking price tag relative to earnings", sample: "multiple compression" },
+  { re: /\b(?:net interest margin|lending profit margin|net interest income|NII|NIM)\b/g, plain: "profit on lending", sample: "NIM" },
+  { re: /\b(?:common equity tier (?:one|1)(?: ratio)?|core capital ratio|CET\s?1(?: ratio)?|tier (?:1|one)(?: capital)?(?: ratio)?)\b/gi, plain: "its safety cushion of capital", sample: "CET1 ratio" },
+  { re: /\bmegacaps?\b/gi, plain: "the biggest companies", sample: "megacap" },
+  { re: /\bdry powder\b/gi, plain: "cash ready to invest", sample: "dry powder" },
+  { re: /\b(?:net new money|net new assets|net flows?)\b/gi, plain: "money coming in from customers", sample: "net new money" },
+  { re: /\b(?:price[- ]to[- ]book|book value per share|P\/B)\b/gi, plain: "what the company is worth on paper", sample: "price-to-book" },
+  { re: /\b(?:price[- ]to[- ]earnings|P\/E)(?: ratio)?\b/gi, plain: "its price tag against profits", sample: "P/E" },
+  { re: /\b(?:loan cost gap|net interest spread)\b/gi, plain: "the gap between what a bank earns and pays", sample: "net interest spread" },
+  { re: /\b(?:assets? under management|AUM)\b/g, plain: "the money it manages for clients", sample: "AUM" },
+  { re: /\b(?:deposit betas?|funding costs?)\b/gi, plain: "what it pays for deposits", sample: "funding costs" },
+  { re: /\bROE\b/g, plain: "return on the owners' money", sample: "ROE" },
+  { re: /\bROIC\b/g, plain: "return on invested money", sample: "ROIC" },
+  { re: /\bEBITDA\b/g, plain: "operating profit", sample: "EBITDA" },
+  { re: /\bFCF\b/g, plain: "spare cash flow", sample: "FCF" },
+  { re: /\bEPS\b/g, plain: "earnings per share", sample: "EPS" },
+  { re: /\bcapex\b/gi, plain: "spending on equipment and buildout", sample: "capex" },
+  { re: /\b(?:basis points|bps)\b/gi, plain: "hundredths of a percent", sample: "basis points" },
+  { re: /\bshort-duration\b/gi, plain: "shorter-term", sample: "short-duration" },
+  { re: /\blong-duration\b/gi, plain: "longer-term", sample: "long-duration" },
+  { re: /\bnet inflows\b/gi, plain: "net new money", sample: "net inflows" },
+  { re: /\binflows\b/gi, plain: "new money", sample: "inflows" },
+  { re: /\bnet outflows\b/gi, plain: "net withdrawals", sample: "net outflows" },
+  { re: /\boutflows\b/gi, plain: "withdrawals", sample: "outflows" },
+  { re: /\b(?:rotce|return on (?:tangible )?(?:common )?equity)\b/gi, plain: "bank profitability", sample: "ROTCE" },
+  { re: /\broa\b/gi, plain: "profit on assets", sample: "ROA" },
+  { re: /\bmoat\b/gi, plain: "lasting edge over competitors", sample: "moat" },
+  { re: /\bdrawdowns?\b/gi, plain: "drop from the top", sample: "drawdown" },
+  { re: /\bDAU\b/g, plain: "daily users", sample: "DAU" },
+  { re: /\bvalue tilt\b/gi, plain: "value focus", sample: "value tilt" },
+  { re: /\bgrowth tilt\b/gi, plain: "growth focus", sample: "growth tilt" },
+  { re: /\btilt\b/gi, plain: "focus", sample: "tilt" },
+  { re: /\bday P&L\b/gi, plain: "day's gain or loss", sample: "day P&L" },
+  { re: /\bP&L\b/g, plain: "gain or loss", sample: "P&L" },
+  { re: /\bVIX\b/g, plain: "the market's fear gauge", sample: "VIX" },
+  { re: /\b(?:YoY|Y\/Y)\b/g, plain: "year over year", sample: "YoY" },
+  { re: /\bQoQ\b/g, plain: "quarter over quarter", sample: "QoQ" },
+  { re: /\btape\b/gi, plain: "market", sample: "tape" },
+  { re: /\bhash ?power\b/gi, plain: "mining power", sample: "hashpower" },
+  { re: /\bhash ?rate\b/gi, plain: "mining speed", sample: "hash rate" },
+  { re: /\bcash drag\b/gi, plain: "idle cash", sample: "cash drag" },
+  { re: /\brebalanc(?:e|ing)\b/gi, plain: "reshuffle", sample: "rebalancing" },
+  { re: /\bgrowth premium\b/gi, plain: "high price tag", sample: "growth premium" },
+  { re: /\bvaluations?\b/gi, plain: "price tag", sample: "valuation" },
+  { re: /\bprint\b/gi, plain: "report", sample: "print" },
+  { re: /\bcrypto[- ]beta\b/gi, plain: "crypto exposure", sample: "crypto-beta" },
+];
+// words that follow a term as a VERB, an adverb or a function word (so the term is a noun, not a modifier)
+const NOT_NOUN = /^(?:is|are|was|were|be|been|has|have|had|and|or|but|of|in|on|at|to|for|with|by|as|that|which|who|than|from|into|over|under|about|remains?|stays?|looks?|seems?|rose|fell|grew|grows|rises|falls|jumps?|jumped|slows?|slowed|climbs?|climbed|drops?|dropped|matters?|hits?|tops?|beats?|misses|means?|surges?|surged|soars?|sinks?|lags?|leads?|weighs?|keeps?|helps?|hurts?|tracks?|trails?|runs?|comes?|goes|holds?|makes?|takes?|needs?|continues?|continued|shows?|showed|suggests?|could|would|should|will|may|might|can|must|also|still|now|again|alone|itself|too|here|there|this|these|those|the|a|an|its|their|our|your|his|her|if|while|because|so|when|where|then|just|only|even|both|each|every|ever|never|already|below|above|near|around|across|after|before|since|until|through|during|without|within|against|toward|towards|per|vs|versus|up|down|out|off|higher|lower|more|less)$/i;
+/** A beginner reader's plain words, grammatical in context. Round 4: "AI capex scrutiny" became "AI spending on
+ *  equipment and buildout scrutiny", because a multi-word gloss was dropped in front of the noun the term was
+ *  modifying. A term used as a MODIFIER ("capex scrutiny") now becomes "scrutiny of <gloss>"; one used as a
+ *  noun is swapped in place, and a stray article left by a gloss that brings its own is removed. */
+export function noviceGloss(text: string): string {
+  let x = String(text ?? "");
+  for (const g of NOVICE_PLAIN) {
+    const multi = g.plain.split(" ").length >= 3 || /^(?:a|an|the|its|their)\s/.test(g.plain);
+    if (multi) {
+      const bareGloss = g.plain.replace(/^(?:a|an|the)\s+/, "");
+      x = x.replace(new RegExp(`(?:\\b(?:the|a|an)\\s+)?(?:${g.re.source})\\s+(?<noun>[a-z][a-z-]{2,})\\b`, g.re.flags.includes("i") ? "gi" : "g"), (...a: unknown[]) => {
+        // (a named group: the map's own pattern may carry numbered groups)
+        const m = String(a[0]), noun = String((a[a.length - 1] as { noun: string }).noun);
+        return NOT_NOUN.test(noun) ? m : `${noun} of ${/^(?:its|their)\s/.test(bareGloss) ? bareGloss : "the " + bareGloss}`;
+      });
+    }
+  }
+  x = plainScrub(x, NOVICE_PLAIN.map((g) => [g.re, g.plain] as [RegExp, string]));
+  return fixGlossArticles(x).replace(/\b([Aa]n?|[Tt]he)\s+(its|their|his|her)\b/g, (_m, art: string, poss: string) => (/^[A-Z]/.test(art) ? poss.charAt(0).toUpperCase() + poss.slice(1) : poss))
+    .replace(/\bof the (its|their)\b/g, "of $1");
+}
+
+/** "86 %" / "86 percent" spacing and "+ 3.2%" are normalised to "86%" and "+3.2%" (round 4 assessment). */
+export const tidyNumbers = (t: string): string => String(t ?? "")
+  .replace(/(\d)\s+%/g, "$1%").replace(/([+−-])\s+(\d[\d,.]*\s?%)/g, "$1$2").replace(/\$\s+(\d)/g, "$$$1");
+
+/** A risk clause that names a strength ("The risk: net cash balance sheet.", round 4 assessment). */
+export const strengthAsRisk = (t: string): boolean =>
+  /\b(?:the )?risk(?:s)?\s*(?:is|:|—|-)\s*(?:a |an |its |the )?(?:net[- ]cash|no debt|zero debt|debt-free|cash-rich|strong balance sheet|fortress balance sheet|pristine balance sheet|buybacks?|share repurchases?|dividend growth|rising dividends?|investment[- ]grade|wide moat|high margins?|steady cash flow)\b/i.test(String(t ?? ""));
+
+// ---- dividends ----
+export type DividendInfo = { last: number | null; lastEx: string | null; ttm: number | null; perYear: number | null; freqDays: number | null; nextEx: string | null; yieldPct: number | null };
+/** Dividends from a Yahoo v8 chart response with events=div: the last amount and ex-date, the trailing 12-month
+ *  sum, the payment rhythm, the next ex-date estimate (last + rhythm) and the yield on `price`. */
+export function parseDividends(body: { chart?: { result?: { events?: { dividends?: Record<string, { amount?: number; date?: number }> } }[] } }, price: number | null, todayYmd: string): DividendInfo | null {
+  const ev = body?.chart?.result?.[0]?.events?.dividends ?? {};
+  const pts = Object.values(ev).filter((d) => (d.amount ?? 0) > 0 && typeof d.date === "number")
+    .map((d) => ({ ymd: new Date(d.date! * 1000).toISOString().slice(0, 10), amount: Number(d.amount) })).sort((a, b) => (a.ymd < b.ymd ? -1 : 1));
+  if (!pts.length) return null;
+  const last = pts[pts.length - 1];
+  const yearAgo = new Date(Date.parse(todayYmd + "T12:00:00Z") - 365 * 86400000).toISOString().slice(0, 10);
+  const ttmPts = pts.filter((p) => p.ymd > yearAgo);
+  const ttm = ttmPts.reduce((a, p) => a + p.amount, 0);
+  const gaps = pts.slice(1).map((p, i) => Math.round((Date.parse(p.ymd) - Date.parse(pts[i].ymd)) / 86400000)).slice(-4);
+  const freqDays = gaps.length ? gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : null;
+  let nextEx: string | null = null;
+  if (freqDays && freqDays >= 20) {
+    let t = Date.parse(last.ymd + "T12:00:00Z") + freqDays * 86400000;
+    while (t < Date.parse(todayYmd + "T12:00:00Z")) t += freqDays * 86400000;
+    nextEx = new Date(t).toISOString().slice(0, 10);
+  }
+  const perYear = freqDays ? last.amount * Math.max(1, Math.round(365 / freqDays)) : null;
+  return { last: last.amount, lastEx: last.ymd, ttm: ttm > 0 ? Number(ttm.toFixed(4)) : null, perYear, freqDays, nextEx, yieldPct: price && ttm > 0 ? Number((ttm / price * 100).toFixed(2)) : null };
+}
+/** Dividend dollar figures that belong to another holding or to nothing on file (round 4: "SCHD paid $0.96
+ *  quarterly"; SCHD's was $0.2665 and $0.9555 was VTI's). A figure must be within 3% of that holding's last
+ *  payment, its 12-month total, a year at the current rate, or the owner's annual / per-payment income from it. */
+export function wrongDividendAmounts(text: string, facts: { names: string[]; amounts: number[] }[]): string[] {
+  const bad: string[] = [];
+  for (const raw of sentencesOf(text)) {
+    if (!/\b(dividends?|distributions?|payouts?|paid|pays|paying|income|yield)\b|배당|분배/i.test(raw)) continue;
+    const vals = [...raw.matchAll(/\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(\s?[kKmM]\b)?/g)].map((m) => ({ v: moneyVal(m[1], (m[2] ?? "").trim()), at: m.index ?? 0 }));
+    if (!vals.length) continue;
+    for (const { v, at } of vals) {
+      const who = facts.map((f) => ({ f, i: firstIdx(raw, f.names) })).filter((x) => x.i <= at).sort((a, b) => b.i - a.i)[0]?.f
+        ?? (facts.length === 1 ? facts[0] : undefined);
+      if (!who) continue;
+      if (!who.amounts.some((a) => a > 0 && Math.abs(v / a - 1) <= 0.03)) { bad.push(raw); break; }
+    }
+  }
+  return bad;
+}
+
+/** Period returns stated in a take ("up 453% in a year", "242.7% one-year run") must be the trailing-window
+ *  return (round 4 poweruser: SK hynix +422%, Samsung +231.6%; the cards used the 12-month LOW). A figure from
+ *  the low is fine only when it says so ("from its 12-month low"). `windows` maps days to the window return. */
+export function periodReturnMismatches(text: string, facts: { names: string[]; windows: Record<number, number | null> }[], tolPp = 1): string[] {
+  const WINDOW_WORDS: [RegExp, number][] = [
+    [/\b(?:in a year|one-year|1-year|1Y|12-month|twelve-month|over the (?:past|last) year|year-over-year run|on the year|past 12 months|in the past year|a year ago)\b/i, 365],
+    [/\b(?:two-year|2-year|2Y|over (?:the )?(?:past |last )?two years|in two years)\b/i, 730],
+    [/\b(?:two-month|2-month|60-day|over (?:the )?(?:past |last )?two months)\b/i, 60],
+    [/\b(?:one-month|1-month|30-day|this month|over the (?:past|last) month|in a month)\b/i, 30],
+    [/\b(?:one-week|1-week|this week|over the (?:past|last) week|in a week|five-day|5-day)\b/i, 7],
+  ];
+  const bad: string[] = [];
+  for (const raw of sentencesOf(text)) {
+    if (/\bfrom (?:its|the) (?:12-month|52-week|one-year|1Y|yearly|recent)?\s?(?:low|high|lows|highs|bottom|peak)\b/i.test(raw)) continue;
+    const w = WINDOW_WORDS.find(([re]) => re.test(raw))?.[1];
+    if (!w) continue;
+    const pcts = [...raw.matchAll(/([+−-]?\d+(?:\.\d+)?)\s?%/g)].map((m) => ({ v: Math.abs(Number(m[1].replace("−", "-"))), at: m.index ?? 0 }));
+    for (const p of pcts) {
+      const who = facts.map((f) => ({ f, i: firstIdx(raw, f.names) })).filter((x) => x.i <= p.at).sort((a, b) => b.i - a.i)[0]?.f ?? (facts.length === 1 ? facts[0] : undefined);
+      const truth = who?.windows[w];
+      if (truth === null || truth === undefined) continue;
+      if (Math.abs(p.v - Math.abs(truth)) > Math.max(tolPp, Math.abs(truth) * 0.02)) { bad.push(raw); break; }
+    }
+  }
+  return bad;
+}
+
+/** A dated event on a weekend (markets and companies do not hold earnings calls on a Sunday: round 4 midday
+ *  brief "Copilot earnings preview Sep 27"). */
+export function weekendDated(items: string[], todayYmd: string): string[] {
+  return items.filter((it) => datesIn(it, todayYmd).some((d) => !d.approx && [0, 6].includes(new Date(d.ymd + "T12:00:00Z").getUTCDay())));
 }

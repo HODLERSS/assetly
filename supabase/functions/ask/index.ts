@@ -11,14 +11,14 @@
 //     the currency, and "not enough price history yet" instead of a window that silently reused a shorter one.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { dayTag, marketOf } from "../_shared/calendar.ts";
-import { ensureHistory, windowReturns } from "../_shared/history.ts";
+import { dividendLine, dividendRows, ensureHistory, refreshDividends, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
 import {
   adviceHits, aliasesFor, booksKorean, chipInLanguage, cleanFollowups, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, isEarningsCallTitle, questionIsKorean,
   isTradeQuestion, NO_HISTORY, pctText, priceConfusions, stripAdvice, usableNews, withNoCallLine, wrongLanguage, type PosFact,
   curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, plainScrub, PORTFOLIO_PLAIN, wrongDeliveriesDates,
-  dayMoveMismatches, earningsEstimate, type LiveFact, spanOfMonth, unsupportedCauses, wrongEarningsMonths,
+  dayMoveMismatches, earningsEstimate, type LiveFact, spanOfMonth, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -224,6 +224,15 @@ Deno.serve(async (req) => {
     .filter((x) => Number(x.shares_outstanding) > 0).map((x) => [x.symbol, { n: Number(x.shares_outstanding), asOf: x.shares_as_of }]));
   const bigMoney = (v: number) => v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : `$${Math.round(v / 1e6)}M`;
   const bigCount = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : `${(n / 1e6).toFixed(0)}M`;
+  // DIVIDENDS, keyed by symbol (round 4: "SCHD paid $0.96 quarterly" was VTI's figure, and "how much income does
+  // my portfolio make" had nothing to answer from). Stale or missing data is refreshed after the answer ships.
+  const divRows = await dividendRows(admin, held.map((r) => r.symbol));
+  if (held.some((r) => !divRows.get(r.symbol))) {
+    try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(refreshDividends(admin, held.map((r) => r.symbol), 8).catch(() => [])); } catch { /* the insights lap refreshes them */ }
+  }
+  const divLines = held.map((r) => ({ r, d: dividendLine(nameOf(r), divRows.get(r.symbol), Number(r.qty ?? 0)) }));
+  const divIncome = divLines.reduce((a, x) => a + x.d.annual, 0);
+  const divFacts = divLines.map((x) => ({ names: [nameOf(x.r), ...aliasesFor(x.r.symbol, x.r.name)], amounts: x.d.amounts }));
 
   const stats: string[] = [];
   let totNow = 0;
@@ -392,6 +401,9 @@ User's portfolio (deterministic; the ONLY source of numbers). For each holding: 
 ${stats.join("\n")}
 Portfolio total: ${money(totNow)} · TODAY (this session only): ${signedUsd(bookDayUsd)} (${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%) · longer windows (NEVER "today"): ${totalLines}
 Window figures that read "${NO_HISTORY}" have no data: say so plainly for that window; never reuse another window's number in its place.
+DIVIDENDS per holding (the ONLY dividend figures you may state, each for its own holding; an estimate is labelled "(est)"):
+${divLines.map((x) => "- " + x.d.line).join("\n")}
+Portfolio dividend income ≈ ${money(divIncome)} a year (shares × last 12 months' payments per holding)${assetsUsd > 0 ? `, ${(divIncome / assetsUsd * 100).toFixed(2)}% of assets` : ""}.
 Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
 ${context}
 
@@ -450,6 +462,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...dayMoveMismatches(a, moveFacts, 0.15).map((s) => `"${s.slice(0, 120)}" states a move for TODAY that is not today's figure in the stats (check the period and the sign; longer windows are never "today").`),
     ...wrongEarningsMonths(a, askEsts).map((s) => `"${s.slice(0, 120)}" puts a report in a month its estimate does not cover.`),
     ...unsupportedCauses(a, causeSource).map((s) => `"${s.slice(0, 120)}" gives a cause for a move that no headline states; say the cause is not clear from the news.`),
+    ...wrongDividendAmounts(a, divFacts).map((s) => `"${s.slice(0, 120)}" states a dividend figure that is not that holding's (see DIVIDENDS).`),
   ];
   const found = answer ? problems(answer) : [];
   if (found.length && left() > 5000) {
@@ -462,11 +475,11 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // code-side guards, on EVERY answer (whether or not an opener is added): verdicts and valuation calls, a
   // shortlist answering a pick question, a deliveries date that is not in the data
   const dropLines = new Set([...(pickQ ? curatedListHits(answer, bookNames) : []), ...wrongDeliveriesDates(answer, dlvFacts, today),
-    ...dayMoveMismatches(answer, moveFacts, 0.15), ...wrongEarningsMonths(answer, askEsts), ...unsupportedCauses(answer, causeSource)]);
+    ...dayMoveMismatches(answer, moveFacts, 0.15), ...wrongEarningsMonths(answer, askEsts), ...unsupportedCauses(answer, causeSource), ...wrongDividendAmounts(answer, divFacts)]);
   const pruned = answer.split("\n").map((l) => (dropLines.has(l.trim()) ? "" : [...dropLines].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
   const guardAll = (a: string) => {
     const drop = new Set([...(pickQ ? curatedListHits(a, bookNames) : []), ...wrongDeliveriesDates(a, dlvFacts, today),
-      ...dayMoveMismatches(a, moveFacts, 0.15), ...wrongEarningsMonths(a, askEsts), ...unsupportedCauses(a, causeSource)]);
+      ...dayMoveMismatches(a, moveFacts, 0.15), ...wrongEarningsMonths(a, askEsts), ...unsupportedCauses(a, causeSource), ...wrongDividendAmounts(a, divFacts)]);
     const kept = a.split("\n").map((l) => (drop.has(l.trim()) ? "" : [...drop].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
     return fixPriceConfusions(stripAdvice(normalizeBullets(kept), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
   };
@@ -490,7 +503,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       : `• Today your portfolio is ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}% (${signedUsd(bookDayUsd)}).`;
     guarded = tradeQ || pickQ ? defaultInfo() : [day, defaultInfo().split("\n")[0]].join("\n");
   }
-  answer = withNoCallLine(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), question, lastA, turns.length ? turns[turns.length - 1].q : "");
+  answer = tidyNumbers(withNoCallLine(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), question, lastA, turns.length ? turns[turns.length - 1].q : ""));
   answer = trimAnswer(answer, cap + 10);
   const focus = (mentioned.length ? mentioned : held.slice(0, 1).map((r) => r.symbol)).map((s) => nameOf(held.find((h) => h.symbol === s)!));
   const fallbacks = ko ? [

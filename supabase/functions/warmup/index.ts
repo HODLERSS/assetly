@@ -4,7 +4,7 @@
 // Pass 2 (background, EdgeRuntime.waitUntil): full transcript/filing pull, then a
 //   richer regeneration that silently upgrades the card. The hourly cron owns it after.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { ensureHistory, windowReturns } from "../_shared/history.ts";
+import { ensureHistory, refreshDividends, windowReturns } from "../_shared/history.ts";
 import { adviceHits, aliasesFor, cardCopyHits, dayMoveMismatches, EVIDENCE_LAW, fixArticles, isEarningsCallTitle, levelMismatches, type LiveFact, pctText, usableNews } from "../_shared/intel.ts";
 import { dayTag, marketOf } from "../_shared/calendar.ts";
 
@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
     const since6h = new Date(Date.now() - 6 * 3600000).toISOString();
     const { count: nFresh } = await admin.from("news").select("id", { count: "exact", head: true })
       .eq("symbol", symbol).gte("published_at", since6h);
-    await Promise.race([Promise.all([nFresh ? Promise.resolve(null) : call("news-sync"), ensureHistory(admin, [symbol], { cap: 1, budgetMs: 3500 })]), sleep(3500)]);
+    await Promise.race([Promise.all([nFresh ? Promise.resolve(null) : call("news-sync"), ensureHistory(admin, [symbol], { cap: 1, budgetMs: 3500 }), refreshDividends(admin, [symbol], 1).catch(() => [])]), sleep(3500)]);
   }
 
   const gather = async (deep: boolean) => {

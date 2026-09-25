@@ -6,9 +6,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } from "../_shared/calendar.ts";
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
-  historicalClaims, isEarningsCallTitle, overlap, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
+  historicalClaims, isEarningsCallTitle, noviceGloss, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
 } from "../_shared/intel.ts";
-import { ensureHistory, repairNames, windowReturns } from "../_shared/history.ts";
+import { ensureHistory, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
 
@@ -133,7 +133,7 @@ function takeProblems(lines: string[], facts: LiveFact[], dlv: DlvFact[] = []): 
 const lineOk = (l: string, facts: LiveFact[], dlv: DlvFact[] = []) => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length
   && !wrongDeliveriesDates(l, dlv, todayEt()).length && !cardCopyHits(l).length;
 // the shared cards are read by every tier, so desk slang is translated for everyone ("show-me tape", "ripping")
-const cardScrub = (t: string) => plainScrub(t, [...PORTFOLIO_PLAIN, ...CARD_PLAIN, ...NOVICE_MAP]);
+const cardScrub = (t: string) => tidyNumbers(noviceGloss(plainScrub(t, [...PORTFOLIO_PLAIN, ...CARD_PLAIN])));
 
 /** A second read of a finished card by the fast model, for what patterns cannot see: a bullet that is garbled
  *  (two headlines compressed into nonsense, round 3: "TSLA leads 2,500 electric trucks backed by Microsoft and
@@ -208,20 +208,9 @@ function readerBlock(inv: Investor | null | undefined): string {
 
 
 // deterministic plain-language pass for BEGINNER readers: the recurring terms the model keeps leaking, mapped in code
-const NOVICE_MAP: [RegExp, string][] = [
-  [/\bshort interest\b/gi, "bets against the stock"], [/\bof float\b/gi, "of its tradable shares"],
-  [/\bleverage(d)?\b/gi, "borrowed money"], [/\bhigh[- ]beta\b/gi, "sharper-moving-than-the-market"],
-  [/\bbeta\b/gi, "sensitivity to market swings"], [/\bvaluation multiple(s)?\b/gi, "price tag relative to earnings"],
-  [/\bmultiple compression\b/gi, "a shrinking price tag relative to earnings"], [/\bnet interest margin\b/gi, "lending profit margin"],
-  [/\bAUM\b/g, "assets under management"], [/\bROE\b/g, "return on the owners' money"], [/\bROIC\b/g, "return on invested money"],
-  [/\bEBITDA\b/g, "operating profit"], [/\bFCF\b/g, "spare cash flow"], [/\bP\/E\b/g, "price-to-earnings ratio"],
-  [/\bEPS\b/g, "earnings per share"], [/\bcapex\b/gi, "spending on equipment and buildout"], [/\bbasis points\b/gi, "hundredths of a percent"],
-  [/\bshort-duration\b/gi, "shorter-term"], [/\blong-duration\b/gi, "longer-term"], [/\binflows\b/gi, "money coming in"], [/\boutflows\b/gi, "money leaving"],
-  [/\brotce\b/gi, "bank profitability"], [/\broa\b/gi, "profit on assets"], [/\breturn on (tangible )?(common )?equity\b/gi, "bank profitability"],
-  [/\bmoat\b/gi, "lasting edge over competitors"], [/\bdrawdown(s)?\b/gi, "drop from the top"], [/\bDAU\b/g, "daily users"],
-];
 // idempotent: a gloss the model already wrote is never doubled ("VIX, the market's fear gauge, the market's ...")
-const noviceScrub = (t: string): string => plainScrub(t, NOVICE_MAP);
+// one shared beginner map (_shared/intel.ts NOVICE_PLAIN), applied in context so a gloss never reads as nonsense
+const noviceScrub = (t: string): string => noviceGloss(t);
 
 function parseInsight(raw: string): { bullets: string[]; windows: Record<string, string>; news5: string[] | null } | null {
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
@@ -324,6 +313,8 @@ Deno.serve(async (req) => {
   const healed = !fixture && !force && !onlyUser ? await ensureHistory(admin, held, { cap: 6, budgetMs: 20000 }) : null;
   // ...and a catalog name that is only the ticker ("AVGO AVGO" on Home) gets the company's real name
   if (!fixture && !force && !onlyUser) await Promise.race([repairNames(admin, held, 3).catch(() => []), new Promise((res) => setTimeout(res, 6000))]);
+  // ...and dividend data for every held symbol, a few per lap (migration 40; answers income questions in Ask)
+  if (!fixture && !force && !onlyUser) await Promise.race([refreshDividends(admin, held, 8).catch(() => []), new Promise((res) => setTimeout(res, 8000))]);
 
   let wrote = 0;
   const errors: string[] = [];
@@ -410,14 +401,16 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const liveFacts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price) }];
       // no historical comparison the data does not hold ("Tech concentration at 1965 highs", round 3)
       let bullets = parsed.bullets.map((b) => fixArticles(cardScrub(deJust(b, trAge))))
-        .filter((b) => lineOk(b, liveFacts, dlvFacts) && !(sourceText && (historicalClaims(b, sourceText, today).length || unsupportedCauses(b, sourceText).length)));
+        .filter((b) => lineOk(b, liveFacts, dlvFacts) && !(sourceText && (historicalClaims(b, sourceText, today).length || unsupportedCauses(b, sourceText).length))
+          // "Up 453% in a year" when the trailing year is +422% (the run from the 12-month low), round 4
+          && !periodReturnMismatches(b, [{ names: [symbol, ...aka], windows: wr.pct }]).length);
       if (!fixture) { const bad = await incoherent(key, bullets, sourceText); bullets = bullets.filter((_, i) => !bad.has(i)); }
       if (bullets.length < 2) { errors.push(symbol + ": take contradicted the live numbers; kept the previous one"); continue; }
       const trend = parsed.windows?.trend ? fixArticles(cardScrub(String(parsed.windows.trend))) : null;
       // the summary line may not restate a bullet (round 4: "Off 7.6% over two months despite 5% one-year gain"
       // under "Two-month 7.6% slide contrasts with 5% one-year gain" on every card)
       const echoes = trend !== null && bullets.some((b) => overlap(b, trend) >= 0.6);
-      const windows = trend === null ? parsed.windows : lineOk(trend, liveFacts, dlvFacts) && !echoes ? { ...parsed.windows, trend } : {};
+      const windows = trend === null ? parsed.windows : lineOk(trend, liveFacts, dlvFacts) && !echoes && !periodReturnMismatches(trend, [{ names: [symbol, ...aka], windows: wr.pct }]).length ? { ...parsed.windows, trend } : {};
       const { error: upErr } = await admin.from("insights").insert({
         symbol, bullets, windows, model,
       });
