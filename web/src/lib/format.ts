@@ -103,6 +103,14 @@ export function displayName(r: { symbol: string; nickname?: string | null }): st
   return r.symbol;
 }
 
+/** What one unit of a holding is called next to a quantity: "sh" for shares, the coin's own ticker for
+ *  crypto ("0.85 ETH", not "0.85 sh"; r3 newcomer), "coins" when the symbol is not a plain ticker. */
+export function qtyUnit(r: { symbol: string; kind: string }): string {
+  if (r.kind !== "crypto") return "sh";
+  const t = r.symbol.replace(/[-/](USD|USDT|USDC|KRW|EUR)$/i, "").toUpperCase();
+  return /^[A-Z0-9]{2,6}$/.test(t) ? t : "coins";
+}
+
 /** A calendar date as people write it: "Jun 14, 2024". The ISO day is a date, not an instant: read it at noon UTC. */
 export function formatDate(isoDay: string): string {
   const d = new Date(`${isoDay.slice(0, 10)}T12:00:00Z`);
@@ -117,7 +125,10 @@ export function labelParts(r: { symbol: string; name?: string | null; name_kr?: 
   if (cash) return { main: cash, sub: r.nickname || "" };   // "$CASH Cash (USD)" was a raw key and a repeat
   const kr = r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ");
   // a name that only repeats the ticker ("AVGO AVGO") is dropped
-  if (!kr) return { main: r.symbol, sub: r.nickname || (r.name && r.name.trim().toUpperCase() !== r.symbol.toUpperCase() ? r.name : "") };
+  if (!kr) {
+    const nm = companyName(r.name);
+    return { main: r.symbol, sub: r.nickname || (nm && nm.toUpperCase() !== r.symbol.toUpperCase() ? nm : "") };
+  }
   if (r.nickname) return { main: r.nickname, sub: r.symbol };
   if (korean && r.name_kr) return { main: r.name_kr, sub: r.symbol };
   const nm = (r.name || r.symbol)
@@ -125,12 +136,40 @@ export function labelParts(r: { symbol: string; name?: string | null; name_kr?: 
   return { main: nm || r.symbol, sub: r.symbol };
 }
 
-/** Compact signed money for tight row lines: +$28.1K, -\u20a99.3M. */
+/** Compact signed money for tight row lines: +$28.1K, \u2212\u20a99.3M. One rule for every row: under 1,000
+ *  whole units, from 1,000 always one decimal. "(\u2212$16K)" sat next to "(+$17.9K)" because 16.0K dropped
+ *  its zero (r3 design audit). */
 export function signedMoneyCompact(v: number | null, ccy: string): string {
   if (v === null) return "\u2014";
   const sym = ccySymbol(ccy);
   if (Math.round(Math.abs(v)) === 0) return `${sym}0`;
   const sign = v > 0 ? "+" : MINUS;
-  const num = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: Math.abs(v) < 1000 ? 0 : 1 }).format(Math.abs(v));
+  const big = Math.abs(v) >= 999.5;
+  const num = new Intl.NumberFormat("en-US", { notation: "compact", minimumFractionDigits: big ? 1 : 0, maximumFractionDigits: big ? 1 : 0 }).format(Math.abs(v));
   return `${sign}${sym}${num}`;
+}
+
+/** A per-unit price in the fewest characters (narrow rows): \u20a91.86M, \u20a9285.5K, $339.91. */
+export function priceCompact(v: number | null | undefined, ccy: string): string {
+  if (v === null || v === undefined || Number.isNaN(v)) return "\u2014";
+  if (Math.abs(v) < 10_000) return moneyExact(v, ccy);
+  const num = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: Math.abs(v) >= 1e6 ? 2 : 1 }).format(v);
+  return `${ccySymbol(ccy)}${num}`;
+}
+
+/** A company's name as people say it: "Microsoft Corporation" -> "Microsoft", "Tesla, Inc." -> "Tesla",
+ *  "Amazon.com Inc" -> "Amazon", "Alphabet Inc. Class A" -> "Alphabet". Legal suffixes, share classes and
+ *  ".com" go; fund names ("Vanguard S&P 500 ETF") and anything that would end up empty are left alone.
+ *  For display only: the legal name stays in the data. */
+export function companyName(name: string | null | undefined): string {
+  let s = (name ?? "").trim();
+  if (!s) return "";
+  const SUFFIX = /[\s,]+(?:(?:Class|Cl\.?|Series)\s+[A-Z]\b|Common Stock|Ordinary Shares|Inc\.?|Incorporated|Corp\.?|Corporation|Company|Co\.?|Holdings?|Group Holdings|Ltd\.?|Limited|plc|PLC|N\.V\.|S\.A\.|SE|AG|L\.P\.|LP|LLC)\s*[.,]?$/i;
+  for (let i = 0; i < 4; i++) {
+    const next = s.replace(SUFFIX, "").trim();
+    if (!next || next === s) break;
+    s = next;
+  }
+  s = s.replace(/\.com$/i, "").replace(/[\s,]+$/, "");
+  return s || (name ?? "").trim();
 }

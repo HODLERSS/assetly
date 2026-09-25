@@ -9,7 +9,10 @@ describe("rankSymbols", () => {
   it("the exact ticker leads, then name matches; leveraged products sink below plain listings", () => {
     const rows = [s("TSLZ", "T-Rex 2X Inverse Tesla Daily Target ETF"), s("AEHR", "Aehr Test Systems"), s("TSLA", "Tesla, Inc."), s("TSLL", "Direxion Daily TSLA Bull 2X Shares")];
     expect(rankSymbols("tsla", rows.filter((r) => r.symbol !== "AEHR")).map((r) => r.symbol)).toEqual(["TSLA", "TSLL", "TSLZ"]);
-    expect(rankSymbols("tesla", rows).map((r) => r.symbol)).toEqual(["TSLA", "TSLZ", "AEHR", "TSLL"]);   // name hit first; the stale "tes" leftover never leads
+    // name hit first; leveraged and inverse products sink below every plain listing, unless asked for (r3)
+    expect(rankSymbols("tesla", rows).map((r) => r.symbol)).toEqual(["TSLA", "AEHR", "TSLZ", "TSLL"]);
+    expect(rankSymbols("tesla 2x", rows)[0].symbol).not.toBe("AEHR");
+    expect(rankSymbols("vanguard", [s("BSV", "Vanguard Short-Term Bond ETF"), s("VOO", "Vanguard S&P 500 ETF")]).map((r) => r.symbol)).toEqual(["BSV", "VOO"]);
   });
   it("indices, futures and FX pairs are hidden unless the query asks for them", () => {
     const rows = [s("^VIX", "CBOE Volatility Index", { exchange: "CBOE" }), s("USDKRW", "US Dollar / Korean Won", { exchange: "FX", currency: "KRW", kind: "fund" }),

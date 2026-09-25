@@ -118,7 +118,7 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
         </div>
         {/* the markets actually held, not the ones picked at setup ("Markets: US" with two KRX holdings) */}
         <div className="row"><span>Markets</span><span className="sub" data-testid="markets-row">{heldMarkets.length ? heldMarkets.join(" · ") : (profile?.markets ?? []).join(" · ") || "—"}</span></div>
-        <div className="row"><span>Price updates</span><span className="sub">Every minute while markets are open</span></div>
+        <div className="row"><span>Price updates</span><span className="sub">Every minute, market hours</span></div>
       </div>
       <div className="card" style={{ marginBottom: 14 }} data-testid="investor-card">
         <div className="row" style={{ alignItems: "center" }}>

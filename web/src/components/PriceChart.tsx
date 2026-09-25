@@ -76,9 +76,18 @@ function thin(pts: HistoryPoint[], n = 180): HistoryPoint[] {
 }
 
 const dayKey = (ts: string) => ts.slice(0, 10);
-const scrubLabel = (ts: string, intraday: boolean) => new Date(ts).toLocaleString("en-US", intraday
-  ? { weekday: "short", hour: "numeric", minute: "2-digit" }
-  : { month: "short", day: "numeric", year: "numeric" });
+/** The zone a market's sessions are dated in: a KRX close is Wednesday in Seoul, even when it is still
+ *  Tuesday evening in Pacific (the header said "Wed close" over a chart that said "Tue"; r3 power-user). */
+export const chartZone = (symbol: string): string | undefined => (/\.(KS|KQ)$/i.test(symbol) ? "Asia/Seoul" : undefined);
+/** The scrub readout's time: the hour on 1D, the day within a year (no year: it only added noise), the
+ *  full date from 1Y out (r3 design m5). */
+export function scrubLabel(ts: string, range: RangeKey, timeZone?: string): string {
+  const d = new Date(ts);
+  if (range === "1D") return d.toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone });
+  if (range === "1Y" || range === "2Y" || range === "5Y") return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone });
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone });
+}
+const dayIn = (d: Date, timeZone?: string) => d.toLocaleDateString("en-CA", { timeZone });
 
 export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost, dayPct = null, crypto = false }: {
   api: Api; symbol: string; currency: string; livePrice: number | null; liveAsOf: string | null;
@@ -128,7 +137,8 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
   const headPct = intraday && dayPct !== null ? dayPct : view?.chg ?? 0;
   // 1D on a holiday or a weekend: the line is the last session, and the header says which day it was
   const last = pts?.length ? new Date(pts[pts.length - 1].ts) : null;
-  const notToday = intraday && last !== null && last.toDateString() !== new Date().toDateString();
+  const tz = chartZone(symbol);
+  const notToday = intraday && last !== null && dayIn(last, tz) !== dayIn(new Date(), tz);
   // partial history: distinct trading days against what the range holds. Five sessions is a full stock
   // week ("showing 5d of data" on a complete week was wrong); a coin trades all seven days.
   const expected = (rangeHours(range) / 24) * ((crypto ? 7 : 5) / 7);
@@ -150,10 +160,10 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
         {sp ? (
           // the scrub readout replaces the header while a finger is on the line
           <span className="sub num" data-testid="scrub-readout" aria-live="polite">
-            <strong className="num" style={{ color: "var(--as-ink)" }}>{moneyExact(sp.price, currency)}</strong> · {scrubLabel(sp.ts, intraday)}
+            <strong className="num" style={{ color: "var(--as-ink)" }}>{moneyExact(sp.price, currency)}</strong> · {scrubLabel(sp.ts, range, tz)}
           </span>
         ) : (
-          <span className="sub">Price · {notToday && last ? `last session, ${last.toLocaleDateString("en-US", { weekday: "short" })}` : range}</span>
+          <span className="sub">Price · {notToday && last ? `last session, ${last.toLocaleDateString("en-US", { weekday: "short", timeZone: tz })}` : range}</span>
         )}
         {view && !sp && (
           <span className={`num ${glClass(headPct)}`} data-testid="range-change" style={{ fontSize: 13 }}>

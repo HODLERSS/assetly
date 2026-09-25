@@ -1,13 +1,25 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Api } from "../lib/api";
 
-// ASK — grounded Q&A about the user's own portfolio, presented as a chat.
+// ASK: grounded Q&A about the user's own portfolio, presented as a chat.
+// Suggestions read the way a person asks ("provide insights", "1W and 1M movement in $ and %" read as a
+// query language; r1-r3 design audits).
+export const ASK_FIRST_QUESTION = "How healthy is my portfolio?";
 const SUGGESTIONS = [
-  "Assess my portfolio and provide insights",
-  "What was my 1W and 1M movement in $ and %?",
+  ASK_FIRST_QUESTION,
+  "How did I do this week and this month?",
   "What should I watch this week?",
   "What's my biggest risk right now?",
 ];
+
+// An answer can take up to ~40s when the model retries (ask's budget). Three dots for 40 seconds read as
+// broken (r3 intelligence: a 97s first answer), so the wait says what is happening as it grows.
+export const ASK_SLOW_MS = 8_000;
+export const ASK_SLOWER_MS = 20_000;
+const WAIT_COPY = ["", "Still thinking…", "Taking longer than usual, pulling fresh data…"];
+export const ASK_FAILED = "That didn't go through. Try again.";
+export const ASK_OFFLINE = "You're offline. Ask needs a connection.";
+const offline = () => typeof navigator !== "undefined" && navigator.onLine === false;
 
 type Turn = { q: string; a: string | null; followups?: string[]; error?: string };
 
@@ -52,6 +64,8 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
   const [q, setQ] = useState("");
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [busy, setBusy] = useState(false);
+  const [wait, setWait] = useState<0 | 1 | 2>(0);   // how long the current answer has taken: see WAIT_COPY
+  const retryRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const autoRef = useRef<string | null>(null);
@@ -80,13 +94,31 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
     // the conversation so far, so a follow-up ("why did that happen?") is answered about the last answer
     const history = turns.filter((t) => t.a && !t.error).map((t) => ({ q: t.q, a: t.a as string }));
     setTurns((t) => [...t, { q: text, a: null }]);
+    setWait(0);
+    const t1 = setTimeout(() => setWait(1), ASK_SLOW_MS), t2 = setTimeout(() => setWait(2), ASK_SLOWER_MS);
     try {
+      if (offline()) throw new Error("offline");
       const { answer, followups } = await api.ask(text, history);
       setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: answer, followups } : x)));
-    } catch (e) {
-      setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: "", error: e instanceof Error ? e.message : "Something broke — try again." } : x)));
-    } finally { setBusy(false); onAnswered?.(); }
+    } catch {
+      // the server's own messages ("The analyst lost the thread…", "not configured") are not for a reader
+      setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: "", error: offline() ? ASK_OFFLINE : ASK_FAILED } : x)));
+    } finally { clearTimeout(t1); clearTimeout(t2); setWait(0); setBusy(false); onAnswered?.(); }
   };
+  // Retry asks the failed question again in its place, with the same conversation before it
+  const retry = (i: number) => {
+    const failed = turns[i];
+    if (!failed || busy) return;
+    setTurns((t) => t.filter((_, j) => j !== i));
+    retryRef.current = failed.q;
+  };
+  useEffect(() => {
+    const q0 = retryRef.current;
+    if (q0 === null) return;
+    retryRef.current = null;
+    void submit(q0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns]);
 
   return (
     <>
@@ -97,7 +129,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
         )}
       </div>
       <p className="mutedc" style={{ fontSize: 12.5, margin: "2px 0 10px" }}>
-        Your holdings, your numbers — answered from your data.
+        Answers about your holdings, from your own numbers.
       </p>
       {turns.length === 0 && (
         <div className="chips wrap">
@@ -110,16 +142,22 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
         {turns.map((t, i) => (
           <div key={i} style={{ display: "grid", gap: 10 }}>
             <div className="bubble user">{t.q}</div>
-            {t.a === null && (
+            {t.a === null && (<>
               <div className="bubble ai typing" aria-busy="true" aria-label="Thinking"><i /><i /><i /></div>
-            )}
+              {wait > 0 && <p className="sub ask-wait" data-testid="ask-wait" aria-live="polite">{WAIT_COPY[wait]}</p>}
+            </>)}
             {t.a !== null && !t.error && (
               <div className="bubble ai" data-testid="ask-answer">
                 <Md text={t.a} />
                 <p className="bubble-foot">Not financial advice</p>
               </div>
             )}
-            {t.error && <div className="error-note" role="alert">{t.error}</div>}
+            {t.error && (
+              <div className="error-note inline-note" role="alert" data-testid="ask-error">
+                <span>{t.error}</span>
+                {i === turns.length - 1 && <button className="chip" disabled={busy} onClick={() => retry(i)}>Retry</button>}
+              </div>
+            )}
             {i === turns.length - 1 && !busy && t.a && !t.error && (t.followups?.length ?? 0) > 0 && (
               <div className="chips wrap" style={{ padding: 0 }} aria-label="Follow-up questions">
                 {t.followups!.map((f) => (

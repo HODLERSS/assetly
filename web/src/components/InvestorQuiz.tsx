@@ -30,8 +30,10 @@ export function investorLabel(v: Investor): string {
   const style = QUIZ[0].opts.filter(([k]) => arr(v.styles, ["value"]).includes(k)).map(([, l]) => l).join(" + ") || "Value";
   const lvls = arr(v.level, ["novice"]);
   const lvl = QUIZ.find((q) => q.key === "level")!.opts.filter(([k]) => lvls.includes(k)).map(([, l]) => l).join("/") || "Just starting";
-  const hz = QUIZ.find((q) => q.key === "horizon")!.opts.filter(([k]) => arr(v.horizon, ["3-10y"]).includes(k)).map(([, l]) => l).join(", ");
-  return `${lvl} · ${style} · ${hz || "3–10 years"}`;
+  // one horizon never breaks inside itself: "3–" / "10 years" on an iPhone 16e (r3 native m6)
+  const whole = (l: string) => l.replace(/–/g, "⁠–⁠").replace(/ /g, " ");
+  const hz = QUIZ.find((q) => q.key === "horizon")!.opts.filter(([k]) => arr(v.horizon, ["3-10y"]).includes(k)).map(([, l]) => whole(l)).join(", ");
+  return `${lvl} · ${style} · ${hz || whole("3–10 years")}`;
 }
 
 export function InvestorQuiz({ initial, draft, startAt = 0, onDone, onSkip, onProgress, doneLabel = "Continue" }: {
@@ -86,7 +88,7 @@ export function InvestorQuiz({ initial, draft, startAt = 0, onDone, onSkip, onPr
       <div style={{ display: "flex", gap: 10, marginTop: 14, alignItems: "center" }}>
         <button className="btn" style={{ flex: "0 0 auto", width: "auto", padding: "10px 18px" }} onClick={next}>{last ? doneLabel : "Continue"}</button>
         {i > 0 && <button className="chip" onClick={() => setI(i - 1)}>← Back</button>}
-        {onSkip && <button className="chip" data-testid="quiz-skip" onClick={() => onSkip(complete(v))}>Skip — use defaults</button>}
+        {onSkip && <button className="chip" data-testid="quiz-skip" onClick={() => onSkip(complete(v))}>Skip for now</button>}
       </div>
     </section>
   );

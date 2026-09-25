@@ -10,6 +10,33 @@ import { PullToRefresh } from "../components/PullToRefresh";
 import { openExternal } from "../lib/native";
 
 const NEWS_TIMEOUT_MS = 12_000;
+// The feed was one ungrouped wall about 5,600pt tall (r1-r3 design audits): a page at a time, by day.
+export const NEWS_PAGE = 40;
+const offline = () => typeof navigator !== "undefined" && navigator.onLine === false;
+const clock = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+/** "Today", "Yesterday", else "Wed, Sep 23" (the reader's own calendar); no date: "Earlier". */
+export function newsDay(iso: string | null, now: Date = new Date()): string {
+  if (!iso) return "Earlier";
+  const d = new Date(iso);
+  if (Number.isNaN(+d)) return "Earlier";
+  const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((start(now) - start(d)) / 86400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+/** Consecutive runs of items under their day's heading (the list is newest first). */
+export function groupByDay(items: NewsItem[], now: Date = new Date()): { day: string; items: NewsItem[] }[] {
+  const out: { day: string; items: NewsItem[] }[] = [];
+  for (const n of items) {
+    const day = newsDay(n.published_at, now);
+    if (out.length && out[out.length - 1].day === day) out[out.length - 1].items.push(n);
+    else out.push({ day, items: [n] });
+  }
+  return out;
+}
 
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
 export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending = false, onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen, onRefreshSymbol, symbolRefreshing = {}, symbolFresh = {} }: {
@@ -24,6 +51,9 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending
   const [filter, setFilter] = useState<string | null>(null);
   const [items, setItems] = useState<NewsItem[]>([]);
   const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">("loading");
+  const [limit, setLimit] = useState(NEWS_PAGE);
+  const [keptAt, setKeptAt] = useState<number | null>(null);   // a failed refresh over a list loaded earlier: its time
+  const [loadedAt] = useState(() => new Map<string, number>());
   const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
   const [cache] = useState(() => new Map<string, NewsItem[]>());   // instant chip flips
   const [top5, setTop5] = useState<Insight | null>(null);          // Assetly Intelligence, portfolio-wide
@@ -55,11 +85,13 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending
     const key = filter ?? "__all__";
     if (cache.has(key)) { setItems(cache.get(key)!); setState("ok"); }   // show instantly, refresh behind
     else setState("loading");
+    setKeptAt(null);
     const held = newsRows.map((r) => r.symbol);
     const scope = filter ?? held;
     // one copy per story (URL or headline), entities decoded. Offline, a request can hang instead of failing,
     // and a pull then spun and settled on nothing (r2 power-user audit): past the limit it is an error with Retry.
-    const load = () => Promise.race([api.getNews(scope),
+    // offline it fails at once instead of spinning over an empty page (r3 native m4)
+    const load = () => offline() ? Promise.reject(new Error("offline")) : Promise.race([api.getNews(scope),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), NEWS_TIMEOUT_MS))]).then(dedupeNews);
     load()
       .then(async (n) => {
@@ -72,14 +104,20 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending
           n = await load();
           if (!live) return;
         }
-        cache.set(key, n);
+        cache.set(key, n); loadedAt.set(key, Date.now());
         setItems(n);
         setState("ok");
       })
-      .catch(() => { if (live) setState("error"); })
+      .catch(() => {
+        if (!live) return;
+        // a list this visit already loaded stays on screen, dated, under the error (r3 design m3)
+        if (cache.has(key)) { setItems(cache.get(key)!); setKeptAt(loadedAt.get(key) ?? Date.now()); }
+        setState("error");
+      })
       .finally(() => { settled.current?.(); settled.current = null; });
     return () => { live = false; };
   }, [api, filter, rows, retryN]);
+  useEffect(() => { setLimit(NEWS_PAGE); }, [filter]);
 
   // only what is still held: bullets about a removed holding wait for the rerun instead of leading the card
   const intel = top5 ? heldOnly(top5, rows, readRemovals(uid)) : null;
@@ -96,7 +134,8 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending
           </button>
         ))}
       </div>
-      {filter && <InsightsCard api={api} symbol={filter} onRefresh={onRefreshSymbol ? () => onRefreshSymbol(filter) : undefined} refreshing={!!symbolRefreshing[filter]} fresh={symbolFresh[filter] ?? null} />}
+      {filter && <InsightsCard api={api} symbol={filter} onRefresh={onRefreshSymbol ? () => onRefreshSymbol(filter) : undefined} refreshing={!!symbolRefreshing[filter]} fresh={symbolFresh[filter] ?? null}
+        crypto={rows.some((r) => r.symbol === filter && r.kind === "crypto")} />}
       {!filter && intel && (intel.bullets.length > 0 || intel.news5.length > 0 || catchingUp) && (
         <section className="card insights" data-testid="news-top5-card" aria-label="Portfolio intelligence">
           <div className="insights-head">
@@ -128,27 +167,38 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending
         </section>
       )}
       {state === "error" && (
-        <div className="error-note" role="alert">
-          Couldn't load news. <button className="chip" onClick={() => setRetryN((n) => n + 1)} style={{ marginLeft: 8 }}>Retry</button>
+        <div className="error-note inline-note" role="alert" data-testid="news-error">
+          <span>{offline() ? "You're offline." : "Couldn't load news."}{keptAt !== null ? ` Showing news from ${clock(keptAt)}.` : ""}</span>
+          <button className="chip" onClick={() => setRetryN((n) => n + 1)}>Retry</button>
         </div>
       )}
       {state === "pulling" && (
         <p className="empty" aria-busy="true">Pulling the latest stories{filter ? ` for ${filter}` : ""}…</p>
       )}
       {state === "ok" && items.length === 0 && (
-        <p className="empty">{rows.length === 0 ? "Add a position and its news follows." : `Nothing fresh${filter ? ` for ${filter}` : ""} right now — we'll keep watching.`}</p>
+        <p className="empty">{rows.length === 0 ? "Add a position and its news follows." : `Nothing fresh${filter ? ` for ${filter}` : ""} right now. We'll keep watching.`}</p>
       )}
-      <div className="card">
-        {items.map((n) => (
-          <a key={n.id} className="row" href={n.url} target="_blank" rel="noreferrer noopener" style={{ textDecoration: "none", display: "flex" }}
-             onClick={(e) => { e.preventDefault(); void openExternal(n.url); }}>
-            <span>
-              <span style={{ fontWeight: 500 }}>{n.title}</span><br />
-              <span className="sub">{(() => { const rr = rows.find((x) => x.symbol === n.symbol); return rr ? labelParts(rr, dispKr === "KRW").main : n.symbol; })()} · {n.source} · {timeAgo(n.published_at)}</span>
-            </span>
-          </a>
-        ))}
-      </div>
+      {(state === "ok" || state === "loading" || keptAt !== null) && groupByDay(items.slice(0, limit)).map((g) => (
+        <section key={g.day} aria-label={g.day} data-testid="news-day">
+          <h3 className="news-day">{g.day}</h3>
+          <div className="card">
+            {g.items.map((n) => (
+              <a key={n.id} className="row" href={n.url} target="_blank" rel="noreferrer noopener" style={{ textDecoration: "none", display: "flex" }}
+                 onClick={(e) => { e.preventDefault(); void openExternal(n.url); }}>
+                <span>
+                  <span style={{ fontWeight: 500 }}>{n.title}</span><br />
+                  <span className="sub">{(() => { const rr = rows.find((x) => x.symbol === n.symbol); return rr ? labelParts(rr, dispKr === "KRW").main : n.symbol; })()} · {n.source} · {timeAgo(n.published_at)}</span>
+                </span>
+              </a>
+            ))}
+          </div>
+        </section>
+      ))}
+      {(state === "ok" || state === "loading" || keptAt !== null) && items.length > limit && (
+        <button className="btn secondary" data-testid="news-more" style={{ marginTop: 12 }} onClick={() => setLimit((l) => l + NEWS_PAGE)}>
+          Show more ({items.length - limit} older)
+        </button>
+      )}
     </PullToRefresh>
   );
 }

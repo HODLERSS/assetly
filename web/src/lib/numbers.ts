@@ -84,7 +84,11 @@ export function entryPreview(opts: { kind: string; qty: string; cost?: string; c
   const cashish = opts.kind === "cash" || opts.kind === "debt";
   const q = parseAmount(opts.qty);
   if (!q.ok || q.value <= 0) return null;
-  if (cashish) return `${opts.kind === "debt" ? "Amount owed" : "Amount"}: ${moneyExact(q.value, opts.currency)}`;
+  // an amount typed in another currency ("\u20a91,000" on a dollar stock) is refused on save; the echo never
+  // restates it as "$1,000.00" beside that error (r3 power-user)
+  const foreign = (raw: string) => readAmount(raw, cashish ? "cash" : "cost", opts.currency).error !== null && typedCurrency(raw) !== null;
+  if (cashish) return foreign(opts.qty) ? null : `${opts.kind === "debt" ? "Amount owed" : "Amount"}: ${moneyExact(q.value, opts.currency)}`;
+  if (foreign(opts.cost ?? "")) return null;
   const c = parseAmount(opts.cost ?? "");
   const unit = opts.unit ?? (q.value === 1 ? "share" : "shares");
   if (!c.ok) return `${formatQty(q.value)} ${unit}`;

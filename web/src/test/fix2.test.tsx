@@ -305,7 +305,7 @@ describe("F6 a brief is dated against the live book", () => {
   });
   it("an assessment written for other holdings says which", () => {
     const a = assessment({ sections: { ...assessment().sections, held: ["NVDA"] } });
-    expect(briefFreshness(a, { held: ["NVDA", "VOO", "TSLA"] })).toEqual({ stale: true, note: "Based on NVDA only." });
+    expect(briefFreshness(a, { held: ["NVDA", "VOO", "TSLA"] })).toEqual({ stale: true, note: "Written before your latest changes.", bookChanged: true });
     expect(briefFreshness(a, { held: ["NVDA"] }).stale).toBe(false);
   });
   it("Home: a stale midday is labelled and de-emphasised, and the lede opens the full read", async () => {
@@ -335,7 +335,7 @@ describe("F7 names, numbers and dates people read", () => {
       row({ holding_id: "d1", symbol: "$DEBT", name: "Debt (USD)", nickname: "Car loan", kind: "debt", account: "bank", qty: 12500, price: 1, value: 12500, cost_basis: 12500, total_gl: 0, change_pct: 0 })]) });
     render(<App api={api} />);
     await userEvent.click(await within(await screen.findByTestId("positions-card")).findByRole("button", { name: /Car loan/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /^remove position$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^remove debt$/i }));
     const dlg = screen.getByRole("dialog", { name: /confirm removal/i });
     expect(dlg.textContent).toMatch(/Remove Debt · Car loan\?/);
     expect(dlg.textContent).not.toMatch(/\$DEBT/);
@@ -487,11 +487,13 @@ describe("F10 Home, Settings, Ask, sign-out", () => {
 });
 
 describe("F11 assessment card copy", () => {
-  it("fits one line, and a failed run is 'paused', never 'Building'", async () => {
+  it("fits one line, and a failed run says it didn't finish, never 'Building'", async () => {
     localStorage.setItem("assetly-assess:u-test", JSON.stringify({ startedAt: new Date().toISOString(), first: true, error: "The assessment didn't finish." }));
     render(<App api={stubApi()} />);
     const card = await screen.findByTestId("assessment-card");
-    expect(card.textContent).toMatch(/^Assessment paused/);
+    expect(card.textContent).toMatch(/^Assessment didn't finish/);
+    expect(card.textContent).toMatch(/only the write-up is missing\. Try again\./);
+    expect(card.textContent).not.toMatch(/paused/);
     expect(card.textContent).not.toMatch(/Building/);
   });
   it("steps read as progress: a spinner on the active step, a hollow circle on the next", async () => {

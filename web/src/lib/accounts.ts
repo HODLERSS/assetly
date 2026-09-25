@@ -23,3 +23,15 @@ export function defaultAccount(kind: string): Account {
 }
 
 export const isRetirement = (a: string) => a === "401k" || a === "ira";
+
+/** The account a holding is shown in. A coin added by hand is filed under "brokerage" (the untagged
+ *  default), and its detail said "Brokerage account" for a coin that is in no brokerage (r3 newcomer): it
+ *  reads as Crypto. A coin the reader moved to an IRA says IRA; an imported one keeps its brokerage. */
+export function shownAccount(r: { kind: string; account: string; source?: string | null }): string {
+  return r.kind === "crypto" && r.account === "brokerage" && r.source !== "snaptrade" ? "crypto" : r.account;
+}
+
+/** The line under a position's price: "IRA account", "Crypto account", "Bank account". */
+export function accountHeading(r: { kind: string; account: string; source?: string | null }): string {
+  return `${accountLabel(shownAccount(r))} account`;
+}

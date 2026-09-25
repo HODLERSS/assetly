@@ -4,7 +4,7 @@
 // preferences, not account data, and stay.
 import { clearRemovals } from "./heldIntel";
 
-export const USER_KEYS = ["assetly-next-steps", "assetly-connect-at", "assetly-onboarding"];
+export const USER_KEYS = ["assetly-next-steps", "assetly-connect-at", "assetly-onboarding", "assetly-briefs"];
 export const userKeysFor = (uid: string) => [`assetly-assess:${uid}`, `assetly-book:${uid}`];
 
 export function clearUserLocalState(uid: string) {

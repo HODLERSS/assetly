@@ -14,14 +14,14 @@ import { TabIcon } from "./components/TabIcon";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { applyTheme, getTheme, watchSystemTheme } from "./lib/theme";
 import { onAuthReturn, onForeground, onOAuthReturn } from "./lib/native";
-import { useEdgeSwipeBack } from "./lib/swipeBack";
+import { snapshotUnder, useEdgeSwipeBack, type Underlay } from "./lib/swipeBack";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { clearBadge, pushEnabled, registerPush } from "./lib/push";
 import { PositionScreen } from "./screens/Position";
 import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
 import { SettingsScreen } from "./screens/Settings";
-import { AskScreen } from "./screens/Ask";
+import { ASK_FIRST_QUESTION, AskScreen } from "./screens/Ask";
 import { Icon } from "./components/Icon";
 
 export type Tab = "home" | "news" | "ask" | "settings";
@@ -31,7 +31,9 @@ export type View =
   | { kind: "position"; holdingId: string };
 
 const REFRESH_MS = 60_000;
-const STALE_ON_RETURN_MS = 30_000;   // back from the background with a book older than this: refresh now
+const STALE_ON_RETURN_MS = 30_000;
+const LOAD_TIMEOUT_MS = 8_000;
+export const PRICES_FAILED = "Couldn't refresh prices.";   // back from the background with a book older than this: refresh now
 
 // Last-known book per user, so a cold open paints holdings instead of a blank or an empty-state
 // flash. Only an onboarded profile is cached: a null onboarded_at would route a returning user
@@ -161,7 +163,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
           if (cur !== "news") setNewsAlert(true);
           // connect moment: a fresh assessment means news + intelligence are in -> ask the first question now
           if (connectPendingRef.current || freshSinceConnect) {
-            setAutoAsk({ question: "Assess my portfolio and provide insights", key: connectPendingRef.current ?? connectAt ?? String(Date.now()) });
+            setAutoAsk({ question: ASK_FIRST_QUESTION, key: connectPendingRef.current ?? connectAt ?? String(Date.now()) });
             connectPendingRef.current = null;
             try { sessionStorage.removeItem("assetly-connect-at"); } catch { /* none */ }
           }
@@ -212,7 +214,12 @@ export function App({ api = defaultApi }: { api?: Api }) {
     lastLoadRef.current = Date.now();
     try {
       // rates travel with the book: rows valued in one currency never paint without the other's rate
-      const [p, r, rates] = await Promise.all([api.getProfile(), api.getPortfolio(), api.getFxRates().catch(() => null)]);
+      // Offline, a request can hang instead of failing, and a pull to refresh spun for 4.5s+ with no word
+      // (r3 power-user). Past the limit it is a failed refresh, said the same way as any other.
+      const [p, r, rates] = await Promise.race([
+        Promise.all([api.getProfile(), api.getPortfolio(), api.getFxRates().catch(() => null)]),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), LOAD_TIMEOUT_MS)),
+      ]);
       const fxNow = rates && Object.keys(rates).length > 1 ? rates : fxRef.current;   // a failed FX read keeps the last good rates
       setProfile(p);
       setRows(r);
@@ -221,7 +228,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setLastOkAt(new Date().toISOString());
       if (uidRef.current && p) writeBookCache(uidRef.current, p, r, fxNow);
     } catch {
-      setError("Couldn't refresh your prices. Tap Retry.");
+      setError(PRICES_FAILED);
     } finally {
       setBooted(true);
     }
@@ -318,7 +325,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
 
   // Edge swipe back on the pushed screens (Add position, Position detail): the same exit as their back button.
   const mainRef = useRef<HTMLElement>(null);
-  useEdgeSwipeBack(mainRef, view.kind !== "tab", () => { setError(null); setHomeAlert(false); setView({ kind: "tab", tab: "home" }); });
+  const homeSnapRef = useRef<Underlay | null>(null);   // Home as it was left: drawn under a swipe back
+  useEdgeSwipeBack(mainRef, view.kind !== "tab", () => { setHomeAlert(false); setView({ kind: "tab", tab: "home" }); }, () => homeSnapRef.current);
 
   // Book-changed pipeline for MANUAL adds: a run of adds (one after another) is coalesced into ONE
   // orchestrator call, the same chain a brokerage connect runs (sync -> news -> intelligence -> assessment).
@@ -369,6 +377,21 @@ export function App({ api = defaultApi }: { api?: Api }) {
     if (prev === view) return;
     const backHome = view.kind === "tab" && view.tab === "home" && prev.kind !== "tab";
     try { window.scrollTo({ top: backHome ? homeScrollRef.current : 0, left: 0 }); } catch { /* not a browser */ }
+    // Home's cards finish their height a frame or two after this runs, and the first restore landed ~66pt
+    // off (r3 native m2): hold the saved position for a moment, until the reader touches the screen
+    if (backHome && typeof requestAnimationFrame === "function") {
+      const y = homeScrollRef.current, until = Date.now() + 600;
+      let done = false;
+      const stop = () => { done = true; window.removeEventListener("touchstart", stop); window.removeEventListener("wheel", stop); };
+      window.addEventListener("touchstart", stop, { passive: true });
+      window.addEventListener("wheel", stop, { passive: true });
+      const hold = () => {
+        if (done) return;
+        if (Math.abs(window.scrollY - y) > 1) { try { window.scrollTo({ top: y, left: 0 }); } catch { /* not a browser */ } }
+        if (Date.now() < until) requestAnimationFrame(hold); else stop();
+      };
+      requestAnimationFrame(hold);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewKey]);
 
@@ -399,8 +422,10 @@ export function App({ api = defaultApi }: { api?: Api }) {
 
   const go = (v: View) => {
     const cur = viewRef.current;
-    if (cur.kind === "tab" && cur.tab === "home") homeScrollRef.current = window.scrollY;
-    setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "news") setNewsAlert(false); if (v.kind === "tab" && v.tab === "home") setHomeAlert(false); setView(v); };
+    if (cur.kind === "tab" && cur.tab === "home") { homeScrollRef.current = window.scrollY; if (v.kind !== "tab") homeSnapRef.current = snapshotUnder(mainRef.current); }
+    // a failed price refresh stays said on every screen until a refresh succeeds: clearing it on navigation
+    // put the live dots back on prices that were not live
+    if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "news") setNewsAlert(false); if (v.kind === "tab" && v.tab === "home") setHomeAlert(false); setView(v); };
   const tab = view.kind === "tab" ? view.tab : null;
 
   return (
@@ -420,14 +445,14 @@ export function App({ api = defaultApi }: { api?: Api }) {
         : <div className={"status-note" + (noticeKind === "ok" ? " ok" : "")} role="status" data-testid="brokerage-notice">
             <span className="lead">{noticeKind === "busy" ? <span className="progress-dot" aria-hidden="true" /> : <Icon name="check" />}{notice}</span>
           </div>)}
-      {error && (
-        <div className="error-note" role="alert">
-          {error} <button className="chip" onClick={load} style={{ marginLeft: 8 }}>Retry</button>
-        </div>
-      )}
-
       <main className="screen" ref={mainRef}>
         <h1 className="sr-only">Assetly</h1>
+        {/* inset in the gutter like every other card, one message and its one action (r3 design m2) */}
+        {error && (
+          <div className="error-note inline-note" role="alert" data-testid="prices-error" style={{ marginTop: 0 }}>
+            <span>{error}</span> <button className="chip" onClick={() => void load()}>Retry</button>
+          </div>
+        )}
         {view.kind === "add" && (
           <AddPosition api={api} onRefresh={load} onAdded={scheduleBookChange} baseCurrency={profile?.base_currency ?? "USD"}
             onDone={() => go({ kind: "tab", tab: "home" })}
@@ -435,6 +460,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         )}
         {view.kind === "position" && (
           <PositionScreen api={api} dispKr={profile?.display_kr ?? "KRW"} row={rows.find((r) => r.holding_id === view.holdingId) ?? null}
+            others={(() => { const me = rows.find((r) => r.holding_id === view.holdingId); return me ? rows.filter((r) => r.symbol === me.symbol && r.holding_id !== me.holding_id) : []; })()}
             onChanged={load} onRemoved={async () => {
               // a removal changes the book as much as an add: the assessment and the intelligence are rerun
               // (leaving this screen flushes the run), and the removed name is remembered so the cards

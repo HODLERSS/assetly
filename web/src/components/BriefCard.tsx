@@ -3,6 +3,7 @@ import type { Api, BriefEdition, DailyBrief } from "../lib/api";
 import { getSnapshot, load as loadTrack, loadSpeech, subscribe, toggle as togglePlayer } from "../lib/player";
 import { hasDeviceVoice } from "../lib/speech";
 import { Icon } from "./Icon";
+import { briefBasis, type BookName } from "../lib/briefBasis";
 
 // The Daily Brief — three personal research notes a trading day: morning (pre-open),
 // midday pulse (11am CT), closing note (post-close) — plus the Portfolio Assessment, the
@@ -35,25 +36,29 @@ function clock(iso: string, now: Date): string {
 }
 
 /** Whether a brief still describes the book on screen, and the line that dates it when it doesn't.
- *  - Assessment: stale while a newer run is pending (it predates today's adds or removals), or when it was
- *    written for different holdings.
+ *  - Every edition: written for other holdings (sections.held, or for older rows the holdings its text names;
+ *    see lib/briefBasis) -> "Written before your latest changes." It is never presented as current.
+ *  - Assessment: also stale while a newer run is pending (it predates today's adds or removals).
  *  - Intraday editions: always carry their time; stale when the book's day move has flipped sign since
  *    (sections.day_sign), when written on an earlier day, or (older rows without day_sign) after 2 hours.
  *  Every field is optional: rows written before the server stamped them fall back to generated_at. */
-export function briefFreshness(brief: DailyBrief, opts: { now?: Date; liveDayPct?: number | null; pendingSince?: string | null; held?: string[] | null } = {}):
-  { stale: boolean; note: string | null } {
+const memo = new WeakMap<object, DailyBrief[]>();
+const SAVED_KEY = "assetly-briefs";   // cleared at sign-out (lib/localState)
+function readSaved(): DailyBrief[] | null {
+  try { const v = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "null"); return Array.isArray(v) ? (v as DailyBrief[]) : null; } catch { return null; }
+}
+
+export const BOOK_CHANGED_NOTE = "Written before your latest changes.";
+export function briefFreshness(brief: DailyBrief, opts: { now?: Date; liveDayPct?: number | null; pendingSince?: string | null;
+  held?: string[] | null; book?: BookName[] | null; totalUsd?: number | null } = {}):
+  { stale: boolean; note: string | null; bookChanged?: boolean } {
   const now = opts.now ?? new Date();
   const s = brief.sections ?? ({} as DailyBrief["sections"]);
-  if (brief.edition === "assessment") {
-    if (opts.pendingSince && +new Date(brief.generated_at) < +new Date(opts.pendingSince)) {
-      return { stale: true, note: "Your last assessment, before today's changes. The new one is on its way." };
-    }
-    const was = Array.isArray(s.held) ? s.held : null, is = opts.held ?? null;
-    if (was && is && (was.length !== is.length || was.some((x) => !is.includes(x)))) {
-      return { stale: true, note: was.length && was.length <= 3 ? `Based on ${was.join(", ")} only.` : "Written for an earlier version of your portfolio." };
-    }
-    return { stale: false, note: null };
+  if (brief.edition === "assessment" && opts.pendingSince && +new Date(brief.generated_at) < +new Date(opts.pendingSince)) {
+    return { stale: true, note: "Your last assessment, before today's changes. The new one is on its way." };
   }
+  const book = opts.book ?? (opts.held ? opts.held.map((symbol) => ({ symbol, kind: "stock" })) : null);
+  if (briefBasis(brief, book, opts.totalUsd ?? null).stale) return { stale: true, note: BOOK_CHANGED_NOTE, bookChanged: true };
   if (!INTRADAY.has(brief.edition)) return { stale: false, note: null };
   const at = s.as_of || brief.generated_at;
   const when = clock(at, now);
@@ -66,7 +71,7 @@ export function briefFreshness(brief: DailyBrief, opts: { now?: Date; liveDayPct
   return { stale: false, note: `Written at ${when}.` };
 }
 
-export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = null }: {
+export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = null, book = null, totalUsd = null, onRefreshAssessment }: {
   api: Api;
   /** the book's day move now, in % (the headline's figure) */
   liveDayPct?: number | null;
@@ -74,8 +79,18 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
   pendingSince?: string | null;
   /** the symbols held now */
   held?: string[] | null;
+  /** the holdings now, with their names: a brief that names others was written for another book */
+  book?: BookName[] | null;
+  /** the book's gross assets now, in USD (an older assessment states its total; far off = another book) */
+  totalUsd?: number | null;
+  /** start a fresh assessment (offered on an assessment written for another book, when none is running) */
+  onRefreshAssessment?: () => void;
 }) {
-  const [briefs, setBriefs] = useState<DailyBrief[] | undefined>(undefined);
+  const [refreshAsked, setRefreshAsked] = useState(false);
+  // the last answer for this session paints at once when Home comes back (a skeleton that grew into the card
+  // after Back pushed the restored scroll ~66pt off; r3 native m2)
+  const [briefs, setBriefs] = useState<DailyBrief[] | undefined>(() => memo.get(api));
+  const [savedCopy, setSavedCopy] = useState(false);   // offline: the copy kept on this device
   const [picked, setPicked] = useState<BriefEdition | null>(null);
   const [open, setOpen] = useState(false);
   const player = useSyncExternalStore(subscribe, getSnapshot);
@@ -84,10 +99,16 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
     let live = true; let tries = 0;
     const load = () => api.getDailyBriefs().then((b) => {
       if (!live) return;
-      setBriefs(b);
+      memo.set(api, b); setBriefs(b); setSavedCopy(false);
+      try { localStorage.setItem(SAVED_KEY, JSON.stringify(b)); } catch { /* private mode */ }
       // a fresh account's first brief is still generating: keep looking for ~4 minutes
       if (!b.length && tries++ < 16) setTimeout(load, 15000);
-    }).catch(() => { if (live) setBriefs([]); });
+    }).catch(() => {
+      if (!live) return;
+      // offline: the brief read last time stays, marked as a saved copy, instead of the card vanishing (r3 native m4)
+      const kept = memo.get(api) ?? readSaved();
+      setBriefs(kept ?? []); setSavedCopy(!!kept?.length);
+    });
     load();
     return () => { live = false; };
   }, [api]);
@@ -101,7 +122,10 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
     </section>
   );
   if (!briefs.length) return null;
-  const brief = (picked && briefs.find((b) => b.edition === picked)) ?? briefs[briefs.length - 1];
+  const freshOf = (b: DailyBrief) => briefFreshness(b, { liveDayPct, pendingSince, held, book, totalUsd });
+  // opens on the newest edition written for THIS book; one written for another book is a tap away, labelled
+  const current = [...briefs].reverse().find((b) => !freshOf(b).bookChanged) ?? briefs[briefs.length - 1];
+  const brief = (picked && briefs.find((b) => b.edition === picked)) ?? current;
   const meta = ED_META[brief.edition] ?? ED_META.morning;
   const dow = new Date(brief.brief_date + "T12:00:00Z").getUTCDay();
   const title = brief.edition === "weekend" && dow !== 0 && dow !== 6 ? "Holiday Read" : meta.title;
@@ -129,9 +153,10 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
   };
 
   const s = brief.sections;
-  const fresh = briefFreshness(brief, { liveDayPct, pendingSince, held });
+  const fresh = freshOf(brief);
+  const canRefresh = brief.edition === "assessment" && !!fresh.bookChanged && !pendingSince && !!onRefreshAssessment && !refreshAsked;
   return (
-    <section className={"card insights" + (fresh.stale ? " brief-stale" : "")} data-testid="brief-card" data-stale={fresh.stale || undefined}
+    <section className={"card insights" + (fresh.stale ? " brief-stale" : "") + (fresh.bookChanged ? " brief-other-book" : "")} data-testid="brief-card" data-stale={fresh.stale || undefined}
       aria-label={`Your ${title.toLowerCase()}`}>
       <div className="insights-head">
         <span className="insights-brand">{title} · {dateLabel}</span>
@@ -155,7 +180,14 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
           ))}
         </div>
       )}
-      {fresh.note && <p className="sub brief-asof" data-testid="brief-asof">{fresh.note}</p>}
+      {savedCopy && <p className="sub brief-asof" data-testid="brief-saved">Saved copy. Couldn't refresh your brief.</p>}
+      {fresh.note && (
+        <p className="sub brief-asof" data-testid="brief-asof">
+          <span>{fresh.note}</span>
+          {canRefresh && <button className="chip" data-testid="brief-refresh-assessment"
+            onClick={() => { setRefreshAsked(true); onRefreshAssessment!(); }}>Refresh assessment</button>}
+        </p>
+      )}
       {/* the lede itself opens the full read; the small book icon was the only way in (r2 newcomer audit) */}
       <p className="prose brief-lede" style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, fontWeight: open || fresh.stale ? 400 : 500 }}
         role="button" tabIndex={0} aria-expanded={open} data-testid="brief-lede"
@@ -168,7 +200,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
           <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>{meta.positions}</p>
           {s.positions.map((p, i) => (
             <p key={i} style={{ margin: "0 0 7px", fontSize: 13, lineHeight: 1.5 }}>
-              <strong>{p.name}</strong> — {p.note}{" "}
+              <strong>{p.name}</strong>: {p.note}{" "}
               <span className="sub">{meta.watch}: {p.watch}</span>
             </p>
           ))}

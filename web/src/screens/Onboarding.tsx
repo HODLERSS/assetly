@@ -7,7 +7,10 @@ import { openConnectPortal, platformTag } from "../lib/native";
 import { Icon } from "../components/Icon";
 import { AmountField, EntryPreview } from "../components/AmountField";
 import { entryPreview, readAmount } from "../lib/numbers";
-import { ccySymbol } from "../lib/format";
+import { ccySymbol, companyName } from "../lib/format";
+
+/** The company as people say it, unless that only repeats the ticker. */
+const shortName = (r: SymbolRow) => { const n = companyName(r.name); return n && n.toUpperCase() !== r.symbol.toUpperCase() ? n : r.name; };
 import { useSymbolSearch } from "../lib/search";
 
 // Long enough for a slow phone network, short enough that nobody thinks the app has died.
@@ -102,7 +105,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   // bounded: worst case the user sees an error and can press the button again, or skip past it.
   const guard = <T,>(p: Promise<T>): Promise<T> => Promise.race([
     p,
-    new Promise<T>((_, rej) => setTimeout(() => rej(new Error("That took too long. Check your connection and try again — or skip and add holdings later.")), SETUP_TIMEOUT_MS)),
+    new Promise<T>((_, rej) => setTimeout(() => rej(new Error("That took too long. Check your connection and try again, or skip and add holdings later.")), SETUP_TIMEOUT_MS)),
   ]);
 
   /** Leave setup with nothing in the book: Home's empty state offers connect and manual add. */
@@ -159,7 +162,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
             </p>
           </>)}
           {importDone && n === 0 && (<>
-            <p style={{ margin: 0, fontWeight: 600 }}>Connected — the import is still running</p>
+            <p style={{ margin: 0, fontWeight: 600 }}>Connected. Your import is still running.</p>
             <p className="sub" style={{ margin: "6px 0 0" }}>Your positions will appear on Home in a minute. You can continue now.</p>
           </>)}
         </div>
@@ -169,7 +172,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
         </button>
         {err && (
           <button className="linky" data-testid="ob-skip-import" disabled={busy} onClick={skipForNow} style={{ marginTop: 6 }}>
-            Skip for now — your positions are already imported
+            Skip for now. Your positions are already imported.
           </button>
         )}
       </main>
@@ -207,7 +210,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
           }}><Icon name="bolt" /> Connect your brokerage</button>
           <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 2px 0" }}>
             Robinhood, Fidelity, Schwab, and more. Positions and cost basis import in seconds.
-            Read-only — Assetly can never trade or move money.
+            Read-only: Assetly can never trade or move money.
           </p>
           {snaptrade && snaptrade !== "connected" && (
             <div className="error-note" role="alert" style={{ marginTop: 10 }}>
@@ -219,7 +222,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
           </p>
           <div className="field">
             <label htmlFor="ob-q">Find your first position</label>
-            <input id="ob-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ticker or name — try NVDA or Tesla"
+            <input id="ob-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ticker or name, like NVDA or Tesla"
                    autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="off" enterKeyHint="search" />
           </div>
           <div className="card">
@@ -232,7 +235,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
                 catch (e) { setErr(e instanceof Error ? e.message : "Could not add that ticker."); }
                 finally { setBusy(false); }
               }}>
-                <span><span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span></span>
+                <span><span className="sym">{r.symbol}</span> <span className="sub">{shortName(r)}</span></span>
                 <span className="sub">{r.exchange}</span>
               </button>
             ))}
@@ -243,7 +246,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
             {q.trim() && !searching && !searchErr && results.length === 0 && <p className="empty">No match for “{q.trim()}”. Try a ticker (AAPL) or a company name.</p>}
           </div>
           <button className="linky" data-testid="ob-skip" disabled={busy} onClick={skipForNow} style={{ marginTop: 6 }}>
-            Skip for now — add holdings later
+            Skip for now, add holdings later
           </button>
           <button className="chip" disabled={busy} onClick={() => setQuizDone(false)} style={{ marginTop: 6 }}>← Back</button>
         </section>
@@ -251,7 +254,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
 
       {step === 2 && picked && (
         <section aria-label="Shares and cost">
-          <p style={{ marginBottom: 12 }}><span className="sym">{picked.symbol}</span> · {picked.name}
+          <p style={{ marginBottom: 12 }}><span className="sym">{picked.symbol}</span> · {shortName(picked)}
             <button className="chip" style={{ marginLeft: 10 }} disabled={busy} onClick={() => { setStep(1); setPicked(null); setFieldErr({}); setErr(null); }}>Change</button></p>
           <AmountField id="ob-qty" label={picked.kind === "crypto" ? "Quantity" : "Shares"} value={qty} placeholder="e.g. 10"
             onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} />
