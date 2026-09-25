@@ -13,9 +13,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { dayTag, marketOf } from "../_shared/calendar.ts";
 import { ensureHistory, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
+import { earningsFilings } from "../_shared/filings.ts";
 import {
   adviceHits, aliasesFor, booksKorean, chipInLanguage, cleanFollowups, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, isEarningsCallTitle, questionIsKorean,
   isTradeQuestion, NO_HISTORY, pctText, priceConfusions, stripAdvice, usableNews, withNoCallLine, wrongLanguage, type PosFact,
+  curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, wrongDeliveriesDates,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -211,6 +213,16 @@ Deno.serve(async (req) => {
   // the previous session's close, so "what did X close at?" has its own labelled number
   const { data: quotes } = held.length ? await admin.from("prices").select("symbol,prev_close").in("symbol", held.map((r) => r.symbol)) : { data: [] };
   const prevClose = new Map((quotes ?? []).map((q) => [String(q.symbol), q.prev_close === null ? null : Number(q.prev_close)]));
+  // Company size, so a premise like "TSLA is cheaper per share than AVGO, so it's the better deal" can be checked
+  // and a model never infers company value from a share price (round 3 invented "TSLA has more shares, so its
+  // company value is larger": both halves false). Shares outstanding come from SEC filings (filings-sync).
+  const { data: shareRows } = held.length
+    ? await admin.from("symbols").select("symbol,shares_outstanding,shares_as_of").in("symbol", held.map((r) => r.symbol)).then((r) => r, () => ({ data: [] }))
+    : { data: [] };
+  const sharesOut = new Map(((shareRows ?? []) as { symbol: string; shares_outstanding: number | null; shares_as_of: string | null }[])
+    .filter((x) => Number(x.shares_outstanding) > 0).map((x) => [x.symbol, { n: Number(x.shares_outstanding), asOf: x.shares_as_of }]));
+  const bigMoney = (v: number) => v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : `$${Math.round(v / 1e6)}M`;
+  const bigCount = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : `${(n / 1e6).toFixed(0)}M`;
 
   const stats: string[] = [];
   let totNow = 0;
@@ -228,6 +240,7 @@ Deno.serve(async (req) => {
     const bits = [
       `share price ${px === null ? "n/a" : money(px, cur)}${cur !== "USD" && px !== null ? ` (about ${money(usd(px, cur))})` : ""}`,
       ...(prevClose.get(r.symbol) ? [`previous session close ${money(prevClose.get(r.symbol)!, cur)}`] : []),
+      ...(sharesOut.get(r.symbol) && px !== null ? [`company market cap about ${bigMoney(usd(px, cur) * sharesOut.get(r.symbol)!.n)} (${bigCount(sharesOut.get(r.symbol)!.n)} shares outstanding, SEC filing)`] : []),
       `shares ${Number(r.qty ?? 0)}`,
       `position value ${money(valUsd)} (${weight(valUsd)} of assets)`,
       `day ${r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%"} [${dayTag(mk)}]`,
@@ -267,8 +280,8 @@ Deno.serve(async (req) => {
     const [{ data: dn }, { data: dt }, { data: df }] = await Promise.all([
       admin.from("news").select("symbol,title,url,source,summary,published_at").in("symbol", digSyms).gte("published_at", since14).order("published_at", { ascending: false }).limit(160),
       admin.from("transcripts").select("symbol,title,published_at").in("symbol", digSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(48),
-      admin.from("filings").select("symbol,form,filed_at,items").in("symbol", digSyms).order("filed_at", { ascending: false }).limit(120)
-        .then((r) => r.error ? admin.from("filings").select("symbol,form,filed_at").in("symbol", digSyms).order("filed_at", { ascending: false }).limit(120) : r),
+      // only the forms that date a report, 13 months deep (a page of "newest of any form" lost the year-ago quarter)
+      earningsFilings(admin, digSyms).then((data) => ({ data })),
     ]);
     for (const s of digSyms) {
       const r = held.find((h) => h.symbol === s)!;
@@ -280,7 +293,11 @@ Deno.serve(async (req) => {
       const ff = fs.slice(0, 2).map((x) => `${x.form} ${String(x.filed_at).slice(5, 10)}`);
       // judged again at read time: rows stored before the ingest gate still hold option chains and off-topic stories
       const nn = (dn ?? []).filter((x) => x.symbol === s && usableNews(x, aka)).slice(0, 2).map((x) => `"${String(x.title).slice(0, 90)}" [${x.source} ${String(x.published_at).slice(5, 10)}]`);
-      const bits = [...(earn ? [earn.replace(/^[^:]+:\s*/, "")] : ["no earnings date on file"]), ...talks, ...(ff.length ? ["filings " + ff.join(", ")] : []), ...nn];
+      const dlv = deliveriesEstimate(s, today);
+      const bits = [...(earn ? [earn.replace(/^[^:]+:\s*/, "")] : ["no earnings date on file"]),
+        // a deliveries report is not earnings (round 3: "Q3 deliveries due late October"; Tesla's came Oct 2)
+        ...(dlv ? [`${dlv.quarter} deliveries report expected ~${dlv.est.slice(5).replace("-", "/")} (est; about the 2nd day after the quarter ends, separate from earnings)`] : []),
+        ...talks, ...(ff.length ? ["filings " + ff.join(", ")] : []), ...nn];
       digest += `\n${nameOf(r)}: ${bits.join(" · ")}`;
     }
   }
@@ -324,6 +341,9 @@ Deno.serve(async (req) => {
   // the language of the QUESTION decides the answer's language, trade questions included (round 2: "테슬라
   // 팔까요?" came back in English because the example opener below was English and the model copied it)
   const ko = questionIsKorean(question);
+  const pickQ = isPickQuestion(question);
+  const bookNames = held.map((r) => ({ symbol: r.symbol, names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] }));
+  const dlvFacts = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], est: deliveriesEstimate(r.symbol, today)?.est ?? null }));
   const lastA = turns.length ? turns[turns.length - 1].a : "";
   const saidNoCall = tradeQ && /can'?t tell you|not my call|your call|정해드릴 수 없|말씀드릴 수 없/i.test(lastA);
   const opener = ko ? `"매도 여부는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다."` : `"I can't tell you whether to sell, but here's what it hinges on."`;
@@ -332,7 +352,7 @@ Deno.serve(async (req) => {
     : "";
   const ccyLine = korean
     ? `Money: portfolio totals and position values are US dollars ($); Korean shares also show their won price. Write won amounts with the ₩ sign.`
-    : `Money: every amount is in US dollars ($). This account holds nothing in Korean won: never write ₩ or won amounts.`;
+    : `Money: every amount is in US dollars ($). This account holds nothing in Korean won: write ₩ only when the user asks for won, converting at the rate on file: USD/KRW ${Math.round(fxMap.get("KRW") ?? 1380).toLocaleString("en-US")} (₩ per $1); say it is a conversion at that rate.`;
   const prompt = `TODAY is ${today} (US Eastern date).
 ${ccyLine}
 User's portfolio (deterministic; the ONLY source of numbers). For each holding: "share price" is the price of ONE share; "position value" is what the user's whole holding is worth. They are different numbers: a question about the stock's price or close gets the SHARE PRICE, never the position value. Each "day" figure is tagged with the session it belongs to: a LIVE session is today's move so far, a "past (not today)" session is named by its day, and a live move is never "yesterday".
@@ -346,6 +366,7 @@ ${convoBlock}Question: "${question}"
 
 ${READER}
 Answer as THEIR analyst (see the reader profile): direct, specific, tight. Ground qualitative answers in the signals, headlines, filings and earnings material above, not just prices. Numbers come only from the stats block.
+PREMISE LAW: check every fact the question takes for granted against the stats first ("X is cheaper than Y", "X is down this month", "X reports next week"). If it is false, say so in the first line with the real figures, then answer. A share price says nothing about a company's size or value: compare companies by market cap only when it is given above, and never infer shares outstanding or company value from a share price. Dates: earnings, deliveries and other events only as given above; a deliveries report is not an earnings report; never invent a date.
 ANSWER LAW (above everything else): you give INFORMATION, never a trade instruction or a verdict on their own holdings. Never tell them to buy, sell, hold, add, trim, swap, rotate or take profits, never give a verdict ("Verdict: hold", "a buy here", "top pick", "the one I'd dump"), never rank their holdings by which is best or worst to own or keep (a ranking by a stated metric over a stated window, like 1-month return, is fine), never call a holding cheap, expensive, undervalued, overvalued, a bargain or a buying opportunity (state the metric instead: its P/E versus its own history), and never size a position ("put $X into", "buy N shares"). Instead explain what is driving it, the risks, the scenarios, what to watch next (a date or a level), and what a buy case or a sell case would rest on.${tradeQ ? (saidNoCall ? ` This question asks what to trade or which holding wins; your previous answer already said the call is theirs, so do not repeat that line: go straight to the balanced considerations on both sides.` : ` This question asks what to trade or which holding wins: open with ONE short, natural line in your own words that the decision is theirs to make (the sense of ${opener}), then give the balanced considerations on both sides. One line, never a wall of disclaimer.`) : ""}
 LANGUAGE (decided by the CURRENT question only, never by the holdings' names or the conversation so far): ${ko ? "the question is in KOREAN: write the entire answer AND every followup in natural Korean (tickers and US company names may stay as written)." : "the question is in ENGLISH: write the entire answer AND every followup in English, even when earlier turns or Korean holdings' names are in Korean (use a Korean company's English name)."}
 ${EVIDENCE_LAW}
@@ -357,13 +378,20 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   let key = Deno.env.get("MARA_API_KEY") ?? "";
   if (!key) { const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" }); key = data ?? ""; }
   if (!key) return json({ ok: false, error: "not configured" }, 500);
-  const system = `You are a direct, analytical portfolio assistant. You explain and inform; you never tell the user what to buy or sell. Respond ONLY with strict JSON: {"answer": "...", "followups": ["...", "..."]}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, ${complex ? "170" : "80"} words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no boilerplate disclaimers.${korean ? " Refer to Korean companies by name, never numeric KRX codes; write won amounts with the ₩ sign." : " All money is US dollars; never write won."} The followups value: AFTER writing the answer, reread it and offer 2-3 natural next questions this user would ask, each under 12 words, ending with ?, starting with Why, What or How, written in the language of the CURRENT question (a Korean question: in Korean, asking 왜, 무엇 or 어떻게), answerable from their portfolio stats, news, SEC filings, or earnings data, never repeating the question just answered, and NEVER asking whether or how much to buy, sell, add or trim.`;
-  const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number) => {
+  const system = `You are a direct, analytical portfolio assistant. You explain and inform; you never tell the user what to buy or sell. Respond ONLY with strict JSON: {"answer": "...", "followups": ["...", "..."]}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, ${complex ? "170" : "80"} words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no boilerplate disclaimers.${korean ? " Refer to Korean companies by name, never numeric KRX codes; write won amounts with the ₩ sign." : " All money is US dollars; write won only when asked, converted at the USD/KRW rate given."} The followups value: AFTER writing the answer, reread it and offer 2-3 natural next questions this user would ask, each under 12 words, ending with ?, starting with Why, What or How, written in the language of the CURRENT question (a Korean question: in Korean, asking 왜, 무엇 or 어떻게), answerable from their portfolio stats, news, SEC filings, or earnings data, never repeating the question just answered, and NEVER asking whether or how much to buy, sell, add or trim.`;
+  // Round 3 measured a 97.5s first answer: a 45s first attempt, backoff, a 35s retry and a 35s rewrite. Now the
+  // primary model gets 20s, the fast lane (gpt-oss, same prompt and guards) whatever is left of ~29s, and the
+  // corrective rewrite runs only when it can finish inside that budget; otherwise the code-side guards
+  // (deletion, language-matched opener) stand alone.
+  const FAST = "gpt-oss-120b", BUDGET = 29000;
+  const left = () => BUDGET - (Date.now() - t0);
+  const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3") => {
+    if (timeoutMs < 1500) return null;
     const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), timeoutMs);
     const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {   // base overridable for local fixture runs
       signal: ac.signal,
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M3", messages: msgs, temperature, max_tokens: 6000, response_format: { type: "json_object" } }),
+      body: JSON.stringify({ model, messages: msgs, temperature, max_tokens: 6000, response_format: { type: "json_object" } }),
     }).catch(() => null);
     clearTimeout(timer);
     if (!r || !r.ok) return null;
@@ -372,31 +400,34 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   };
   const base = [{ role: "system", content: system }, { role: "user", content: prompt }];
   let parsedA: { answer: string; followups: string[] } | null = null;
-  // Reliability: each attempt gets a hard timeout (a hung call otherwise eats the whole 150s and surfaces
-  // as a transport error = "unavailable"); 3 attempts with short backoff outlast a slow wave.
-  for (let attempt = 0; attempt < 3 && !parsedA; attempt++) {
-    if (Date.now() - t0 > 110000) break;
-    if (attempt > 0) await new Promise((res) => setTimeout(res, 2500 * attempt));
-    parsedA = await ask(base, attempt === 0 ? 0.2 : 0.4, attempt === 0 ? 45000 : 35000);
-  }
+  parsedA = await ask(base, 0.2, Math.min(20000, left()));
+  if (!parsedA) parsedA = await ask(base, 0.3, Math.min(14000, left()), FAST);
+  if (!parsedA && left() > 6000) parsedA = await ask(base, 0.4, left(), FAST);
   const deDash = (v: string) => v.trim().replace(/\s*—\s*/g, ": ").replace(/\s*–\s*/g, ": ");
-  let answer = deDash(parsedA?.answer ?? "");
+  // one bullet per line before any check: a shortlist written "• A. • B." on one line reads as one line otherwise
+  let answer = normalizeBullets(deDash(parsedA?.answer ?? ""));
   // ---- verifier: a trade instruction or a position value quoted as a share price gets ONE rewrite ----
   const problems = (a: string) => [
-    ...adviceHits(a, { verdictQuestion: tradeQ }).map((s) => `It tells the user what to trade or passes a verdict (a ranking of what to keep or dump, or a cheap/expensive call): "${s.slice(0, 120)}". Rewrite it as information (drivers, risks, the metric itself, what a buy or sell case would rest on).`),
+    ...adviceHits(a, { verdictQuestion: tradeQ || pickQ }).map((s) => `It tells the user what to trade or passes a verdict (a ranking of what to keep or dump, or a cheap/expensive call): "${s.slice(0, 120)}". Rewrite it as information (drivers, risks, the metric itself, what a buy or sell case would rest on).`),
     ...priceConfusions(a, posFacts).map((h) => `It quotes ${h.match} as a share price, but that is the user's POSITION VALUE; the share price is in the stats.`),
     ...(wrongLanguage(question, a) ? [ko ? "It is written in English but the question is in Korean: write the whole answer and the followups in Korean."
       : "It is written in Korean but the question is in English: write the whole answer and the followups in English."] : []),
+    ...(pickQ ? curatedListHits(a, bookNames) : []).slice(0, 1).map(() => `It answers a pick question with a shortlist of some holdings. Do not single out names: explain what such a decision rests on (concentration, drivers, risks) for the book as a whole, or give one neutral fact per holding for ALL holdings in order of weight.`),
+    ...wrongDeliveriesDates(a, dlvFacts, today).map((s) => `"${s.slice(0, 120)}" dates a deliveries report that is not in the data (a deliveries report is not earnings).`),
   ];
   const found = answer ? problems(answer) : [];
-  if (found.length && Date.now() - t0 < 75000) {
+  if (found.length && left() > 5000) {
     const fixed = await ask([...base, { role: "assistant", content: JSON.stringify({ answer, followups: parsedA?.followups ?? [] }) },
-      { role: "user", content: `Your answer broke the rules:\n- ${found.join("\n- ")}\nReturn the corrected JSON in the same shape. Keep everything else that was right.` }], 0.2, 35000);
-    if (fixed && problems(deDash(fixed.answer)).length < found.length) { parsedA = fixed; answer = deDash(fixed.answer); }
+      { role: "user", content: `Your answer broke the rules:\n- ${found.join("\n- ")}\nReturn the corrected JSON in the same shape. Keep everything else that was right.` }], 0.2, Math.min(12000, left()), FAST);
+    if (fixed && problems(normalizeBullets(deDash(fixed.answer))).length < found.length) { parsedA = fixed; answer = normalizeBullets(deDash(fixed.answer)); }
   }
   // ...and whatever survives the rewrite is removed or corrected in code
   if (!answer) return json({ ok: false, error: "The analyst lost the thread mid-answer. Ask again." }, 502);
-  const guarded = fixPriceConfusions(stripAdvice(answer, { verdictQuestion: tradeQ }), posFacts).trim();
+  // code-side guards, on EVERY answer (whether or not an opener is added): verdicts and valuation calls, a
+  // shortlist answering a pick question, a deliveries date that is not in the data
+  const dropLines = new Set([...(pickQ ? curatedListHits(answer, bookNames) : []), ...wrongDeliveriesDates(answer, dlvFacts, today)]);
+  const pruned = answer.split("\n").map((l) => (dropLines.has(l.trim()) ? "" : [...dropLines].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
+  const guarded = fixPriceConfusions(stripAdvice(normalizeBullets(pruned), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
   answer = guarded ? withNoCallLine(ko ? guarded : fixArticles(guarded), question, lastA)
     : ko ? "매매 여부는 제가 정해드릴 수 없지만, 무엇이 움직이고 있는지, 위험 요인과 다음에 볼 것을 짚어드릴 수 있습니다."
     : "I can't tell you what to trade, but I can walk through what's driving it, the risks, and what to watch next.";
