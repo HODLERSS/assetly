@@ -14,6 +14,13 @@ const CORS = {
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 type Sections = { lede: string; overnight: string; positions: { name: string; note: string; watch: string }[]; desk_view: string; calendar?: string[]; horizon?: string; ideas?: string[] };
+/** The text a script may be made from. daily-brief also stores its BASIS on the row (as_of, day_sign, day_pct,
+ *  day_usd, held, day_by_symbol) for the client's staleness check; those are not brief content and must never
+ *  be spoken or offered as allowed figures. */
+const briefText = (raw: unknown): Sections => {
+  const { as_of: _a, day_sign: _s, day_pct: _p, day_usd: _u, held: _h, day_by_symbol: _d, ...rest } = (raw ?? {}) as Record<string, unknown>;
+  return rest as unknown as Sections;
+};
 
 function parseJsonBlock(raw: string): Record<string, unknown> | null {
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
@@ -304,7 +311,7 @@ Deno.serve(async (req) => {
     if (!scriptOnly && testIds.has(row.user_id) && !(isInternal && body.tts_test === true)) continue;
     if (elapsed() > 110) { errors.push("wall clock; remaining rows next sweep"); break; }
     try {
-      const s = row.sections as Sections;
+      const s = briefText(row.sections);
       const dayLine = new Date(String(row.brief_date) + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
       const ed = String(row.edition);
       // every edition speaks BLUF in at most ~90 seconds at a NORMAL pace: bottom line first, then only what matters

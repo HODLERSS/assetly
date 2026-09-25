@@ -11,8 +11,12 @@
 //   4 fact-check       (every number verified against the deterministic stats, or cut)
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
-import { aliasesFor, booksKorean, deDirect, earningsLine, EVIDENCE_LAW, isJunkNews, liveNotYesterday, pctText, plainScrub, type FilingLite } from "../_shared/intel.ts";
+import {
+  aliasesFor, booksKorean, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, liveNotYesterday, offLensIdea, overlap, pctText, plainScrub,
+  usableNews, valuationHits, wrongEarningsDates, type FilingLite,
+} from "../_shared/intel.ts";
 import { windowReturns } from "../_shared/history.ts";
+import { userIdFrom } from "../_shared/auth.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -84,7 +88,7 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
 
 
 // ---- reader profile: the 6 sign-up answers steer VOICE, EMPHASIS and PURPOSE, never the facts ----
-type Investor = { styles?: string[] | string; purpose?: string[] | string; horizon?: string[] | string; target?: string[] | string; risk?: string[] | string; level?: string[] | string };
+type Investor = { styles?: string[] | string; purpose?: string[] | string; horizon?: string[] | string; target?: string[] | string; risk?: string[] | string; level?: string[] | string; defaulted?: string[] };
 // answers may be single strings (old profiles) or arrays (multi-select quiz): normalize, and reduce where one value must win
 const toArr = (x: unknown, d: string[]): string[] => Array.isArray(x) ? (x.length ? x.map(String) : d) : (typeof x === "string" && x ? [x] : d);
 const LVL_ORDER = ["novice", "intermediate", "advanced", "pro"];
@@ -131,11 +135,15 @@ function readerBlock(inv: Investor | null | undefined): string {
   const pp = v.purpose.map((x) => purpG[x] ?? "").filter(Boolean).join(" ");
   const hz = horG[longestHz(v.horizon)] ?? horG["3-10y"];
   const rk = v.risk.map((x) => riskG[x] ?? "").filter(Boolean).join(" and ");
+  // round 2: a newcomer who skipped the quiz was told about "its 8-12% annual return goal", the quiz default.
+  // A client that marks skipped answers (investor.defaulted) gets no target at all; either way the figure is a
+  // lens, never quoted back as the reader's own goal.
+  const targetSet = raw.target !== undefined && !(Array.isArray(raw.defaulted) && raw.defaulted.includes("target"));
   return `READER PROFILE (personalize EMPHASIS, VOCABULARY and FRAMING for this one reader; facts and numbers stay identical):
 - ${lvlG[v.level] ?? lvlG.novice}
 - Lens: ${st || styleG.value}. Apply the lens TO this book in EVERY position note and the structure section: the first judgment in each comes through this lens (value: what it is worth versus its price and the downside; income: state in EVERY position note whether and roughly how well that holding pays the owner, dividend or yield posture included, and in the structure section how much income the whole book actually produces), even when the book does not match the lens. Even the one-line verdict must carry the lens: name what kind of book it is AND what that means through this lens (for income: what the book pays its owner; for value: what it costs versus what it earns).
 - ${pp || purpG.watch}
-- ${hz}; target return ${v.target.join(" or ")}/yr; ${rk || riskG.hold}.`;
+- ${hz}; ${targetSet ? `target return ${v.target.join(" or ")}/yr (a lens for judging fit; never quote it back as "your X% goal")` : "no return target stated: never mention a return goal or target"}; ${rk || riskG.hold}.`;
 }
 
 const krName = (sy: string, nick?: string | null, nm?: string | null) =>
@@ -144,8 +152,8 @@ const krName = (sy: string, nick?: string | null, nm?: string | null) =>
 /** "+4.1%" over the trailing window, or "not enough price history yet": read point by point (see
  *  _shared/history.ts), never by reusing a shorter window when the stored history is thin. */
 // deno-lint-ignore no-explicit-any
-const windowsText = async (admin: any, symbol: string, days: number[]): Promise<Record<number, string>> => {
-  const wr = await windowReturns(admin, symbol, days);
+const windowsText = async (admin: any, symbol: string, days: number[], mkt?: "US" | "KR" | null): Promise<Record<number, string>> => {
+  const wr = await windowReturns(admin, symbol, days, Date.now(), mkt);
   return Object.fromEntries(days.map((d) => [d, pctText(wr.pct[d] ?? null)]));
 };
 
@@ -318,9 +326,10 @@ Deno.serve(async (req) => {
     if (!internalTok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); internalTok = data ?? ""; }
     const isInternal = !!internalTok && (req.headers.get("x-internal-token") ?? "") === internalTok;
     if (!isSvc && !isInternal) {
-      const { data: ud } = await admin.auth.getUser(bearerJwt);
-      // a caller may only target themself: refuse outright rather than silently widening to everyone
-      if (ud?.user?.id !== onlyUserId) return json({ ok: false, error: "forbidden target" }, 403);
+      // a caller may only target themself: refuse outright rather than silently widening to everyone. The token
+      // is verified by signature and expiry (_shared/auth.ts), like every other user-facing function: GoTrue's
+      // getUser refused tokens whose session a sign-out elsewhere had revoked.
+      if (await userIdFrom(admin, bearerJwt) !== onlyUserId) return json({ ok: false, error: "forbidden target" }, 403);
     }
   }
   const noAudio = body.noAudio === true;   // battery/test runs must not spend TTS quota
@@ -384,9 +393,9 @@ Deno.serve(async (req) => {
   ].filter(Boolean).join(" · ");
   const leaderLines = LEADERS.map((sy) => { const p = px.get(sy); return p && p.chg !== null ? `${sy} ${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%` : null; }).filter(Boolean).join(" · ");
   const since24h = new Date(Date.now() - 24 * 3600000).toISOString();
-  const { data: leaderNews } = await admin.from("news").select("symbol,title,url,source").in("symbol", LEADERS)
+  const { data: leaderNews } = await admin.from("news").select("symbol,title,url,source,summary").in("symbol", LEADERS)
     .gte("published_at", since24h).order("published_at", { ascending: false }).limit(20);
-  const leaderHeads = (leaderNews ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 7).map((n) => `- ${n.symbol}: ${String(n.title).slice(0, 90)}`).join("\n");
+  const leaderHeads = (leaderNews ?? []).filter((n) => usableNews(n, aliasesFor(n.symbol))).slice(0, 7).map((n) => `- ${n.symbol}: ${String(n.title).slice(0, 90)}`).join("\n");
 
   // ---- users ----
   const { data: pf } = await admin.from("portfolio").select("user_id, symbol, kind, account, currency, qty, price, value, change_pct, nickname, name, cost_basis, total_gl");
@@ -417,6 +426,7 @@ Deno.serve(async (req) => {
   userIds = userIds.slice(0, 10);
 
   let wrote = 0;
+  let superseded = false;
   const errors: string[] = [];
   for (const uid of userIds) {
     const tStart = Date.now();
@@ -446,6 +456,9 @@ Deno.serve(async (req) => {
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
         .sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
       const korean = booksKorean(rows);
+      // headlines are judged again at read time (rows stored before news-sync's gate still hold option chains
+      // and stories about other companies): these are the names that make a story about each holding
+      const akaOf = (sy: string) => { const h = holdings.find((x) => x.symbol === sy); return aliasesFor(sy, h?.name); };
       // Every figure carries its label: POSITION VALUE (the whole holding) apart from SHARE PRICE (one share),
       // and every day move stamped with the session it belongs to, in every edition. A morning brief written
       // 31 minutes after the open called Microsoft's live +3.7% "yesterday" (2026-09-25); on a Korea edition the
@@ -483,6 +496,9 @@ Deno.serve(async (req) => {
           (trDates ?? []).filter((t) => t.symbol === sy), briefDate);
       }).filter(Boolean);
       const earnLine = nextEarn.length ? "\n" + nextEarn.map((x) => "- " + x).join("\n") : "(none on file)";
+      // the same estimates as data, so a calendar or watch item that dates a holding's report elsewhere is dropped
+      const earnEsts = holdings.map((h) => ({ names: [krName(h.symbol, h.nickname, h.name), ...aliasesFor(h.symbol, h.name)],
+        est: earnSyms.includes(h.symbol) ? earningsEstimate(((filDates ?? []) as (FilingLite & { symbol: string })[]).filter((f) => f.symbol === h.symbol), (trDates ?? []).filter((t) => t.symbol === h.symbol), briefDate)?.est ?? null : null }));
       const dateLaw = `TODAY is ${briefDate}. Anything dated before today is the PAST and must NOT appear in calendar or watch. Earnings dates may come ONLY from NEXT EARNINGS ESTIMATES: a "last reported" date is history, and a next date is an ESTIMATE: in prose say "expected around late November", in calendar write it as "~Nov 25 (est)"; never state an estimate as a confirmed day and never invent a date.`;
       const krHeldAny = holdings.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"));
       const sessionLaw = `SESSIONS (deterministic; obey over any instinct):\n${sessionLine("US")}${krHeldAny ? "\n" + sessionLine("KR") : ""}\nDAY-CHANGE LAW: a holding's "day" figure belongs to ITS market's session above. Only a market that is OPEN or closed under 3 hours ago is today's tape. Anything older is past tense with the session named ("in Friday's Korean session"), mentioned at most once, and never in the lede unless it moved over 3% or has fresh news. Never add a "today" gain or loss across markets whose sessions ended more than 3 hours apart: keep them apart ("US names +$X in today's session; the Korean names were flat in Friday's").`;
@@ -539,11 +555,11 @@ Deno.serve(async (req) => {
             const dispN = krName(r.symbol, r.nickname, r.name);
             const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
             const [{ data: news }, { data: fils }, { data: tr }, hist, { data: ins }] = await Promise.all([
-              admin.from("news").select("title,url,source,published_at").eq("symbol", r.symbol).gte("published_at", since14).order("published_at", { ascending: false }).limit(16)
-                .then((q) => ({ data: (q.data ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 8) })),
+              admin.from("news").select("title,url,source,summary,published_at").eq("symbol", r.symbol).gte("published_at", since14).order("published_at", { ascending: false }).limit(16)
+                .then((q) => ({ data: (q.data ?? []).filter((n) => usableNews(n, aliasesFor(r.symbol, r.name))).slice(0, 8) })),
               admin.from("filings").select("form,filed_at").eq("symbol", r.symbol).order("filed_at", { ascending: false }).limit(4),
               admin.from("transcripts").select("title,content,published_at").eq("symbol", r.symbol).order("published_at", { ascending: false, nullsFirst: false }).limit(1),
-              windowsText(admin, r.symbol, [30, 365]),
+              windowsText(admin, r.symbol, [30, 365], marketOf(r.symbol, r.kind, r.currency)),
               admin.from("insights").select("bullets").eq("symbol", r.symbol).order("generated_at", { ascending: false }).limit(1),
             ]);
             perf.push(`${dispN} 30d ${hist[30]}, 1y ${hist[365]}`);
@@ -591,6 +607,8 @@ QUALITY MEMOS:
 ${memosOut.slice(0, 5).map((m) => `- ${m.name}: business: ${m.business}. quality: ${m.quality}. role: ${m.role}. long case: ${m.long_case}. tripwire: ${m.tripwire}. near: ${m.near}`).join("\n")}
 STRUCTURE FACT (deterministic): ${skStructure || "none"}
 GAPS (deterministic hints; refine with judgment): ${skMissing || "none"}`;
+        const styles = toArr((invBy.get(uid) as Investor | null | undefined)?.styles, ["value"]);
+        const incomeLens = styles.some((x) => x === "income" || x === "value" || x === "index");
         const shapeA = `Return STRICT JSON:\n{"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "horizon": str, "ideas": [str], "calendar": []}`;
         const editorPrompt = `Write the ${briefDate} PORTFOLIO ASSESSMENT for ONE investor who just put these positions into Assetly. It is a first look at the QUALITY and STRUCTURE of what they own, over the next quarter and the next few years. It is NOT a daily brief: no overnight tape, no day moves, no futures, no session talk.
 
@@ -602,7 +620,7 @@ overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their 
 positions: the 3-4 largest equity, fund, or crypto holdings by weight (2 only if the book has two), largest first; every such holding above 20% of assets MUST appear; cash and debt are NEVER positions (they belong in YOUR BOOK and STRUCTURE only). note <= 34 words of flowing prose: what the business is, the quality verdict (for a company: moat, growth, balance sheet; for a fund: what it holds, concentration, cost; for a coin: adoption, supply, custody), and its role in this book; a strength AND a risk or condition, written as sentences, NEVER as "Strength:" / "Risk:" labels: the LAST sentence of every note must be the risk, and must start with "The risk:" or "But" (never a positive clause after "while"); at most two numbers, from the data only, and NEVER state a holding's size twice: give its WEIGHT (25.6% of book) or its DOLLAR VALUE ($5,900), never both, because they are one fact and the weight is the more useful half. If the note also carries a threshold, that threshold is one of the two. watch 5-10 words, no padding words: the thesis TRIPWIRE, MEASURABLE (a metric with a threshold, a guidance item, or a dated event); vague words like "significantly", "sharply", "weakens" are forbidden; NEVER verbs like monitor, watch, track, keep an eye.
 desk_view: STRUCTURE, exactly two or three sentences. Sentence 1: the ONE concentration, correlation, currency or leverage fact that most shapes this book, with its percentage from the data - a single fact, NEVER a list of holdings with their moves. THE WHOLE desk_view MAY CONTAIN AT MOST THREE FIGURES: one weight in sentence 1 and at most two more anywhere after it. Naming several holdings with a percentage each is the laundry list this section exists to replace; say "the rest is spread across five smaller positions" instead of listing them. Sentence 2 MUST start with "This means" and say what that structure does FOR them: if the concentration fits their stated risk appetite, style and target, name the upside it is buying (the exposure they wanted, the compounding it allows, the cost it avoids); if it does not fit, name what it has delivered for them so far. Sentence 3 (optional): the single condition that would turn it into a problem. No performance figures here (they belong in the notes), no list of returns, no single-day numbers. <= 50 words. Never invent a hypothetical loss or drawdown percentage.
 horizon: exactly two labeled clauses in this shape: "${HZ1}: ... ${HZ2}: ..." The first names what actually decides the ${HZ1.toLowerCase()} for THIS book (a print, a cycle, a macro number); any date you write must be AFTER today and come from NEXT EARNINGS ESTIMATES, otherwise say "the next earnings print" without a date. The second names what must be true over the ${HZ2.toLowerCase()} for this book to deliver. 36-46 words total.
-ideas: 2-3 items, <= 14 words each, each about a GAP in this book (not about the names already held): name the gap, then the specific theme or instrument type worth researching to fill it (e.g. "No income sleeve: dividend-growth ETFs", "All-US book: developed-market ex-US index funds"). Never start with Add, Buy, Consider, or Allocate (write "No income sleeve: dividend-growth ETFs" or "All-US book: developed-market ex-US index funds"; after the colon name the instrument type directly, never a verb); never a price target.
+ideas: 2-3 items, <= 14 words each, each about a GAP in this book (not about the names already held): name the gap, then the specific theme or instrument type worth researching to fill it (e.g. ${incomeLens ? `"No income sleeve: dividend-growth ETFs", ` : `"One-theme book: AI software and infrastructure beyond chips", `}"All-US book: developed-market ex-US index funds"). The gaps must fit THIS reader's lens and purpose (READER PROFILE)${incomeLens ? "" : `: this reader invests for growth, so never propose dividend, income or bond products; a missing asset class may be named only as a diversification FACT ("No bond or international exposure: one driver moves everything"), never as a product to research`}. Never write a return target or goal as a figure. Never start with Add, Buy, Consider, or Allocate (write "No income sleeve: dividend-growth ETFs" or "All-US book: developed-market ex-US index funds"; after the colon name the instrument type directly, never a verb); never a price target.
 LENGTH TARGET: ${holdings.length <= 2 ? `220-320 words in total. This book has only ${holdings.length} holding${holdings.length > 1 ? "s" : ""}: give each note a deeper quality read of 36-48 words, and use the full budgets for the book, structure and horizon.` : "280-360 words in total, a two-minute read."} Use the budget: lede 18-28 words, book 34-48, ${holdings.length <= 2 ? "each note 36-48" : "each note 24-30"}, structure 32-44, horizon 32-42, each idea 8-13. Shorter than the floors reads thin; longer than the caps gets cut.
 ADVICE LAW: never tell them to buy, sell, trim, add, or take profits. You describe, you judge quality, you point at what to research.
 HORIZON LAW: forbidden words and phrases: today, tonight, overnight, yesterday, this morning, premarket, after-hours, after market close, at the bell, futures, session, intraday. Timeframes are weeks, months, quarters, years.
@@ -640,6 +658,9 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           const negClause = riskSeg ? riskSeg.split(/,\s*/).find((c) => NEG.test(c)) : undefined;
           let phrase = (negClause ?? riskSeg ?? String(m?.tripwire ?? "")).replace(/[.\s]+$/, "");
           if (!NEG.test(phrase) && m?.tripwire) phrase = String(m.tripwire).replace(/[.\s]+$/, "");
+          // the card prints the tripwire right under the note: a risk clause that only repeats it is dropped
+          // (round 2: "The risk: top-ten holdings exceed 35%" above "Tripwire: Top-ten holdings exceed 35%")
+          if (overlap(phrase, p.watch) >= 0.7) return p;
           // keep the note near its cap: a long note gets a short risk clause
           phrase = phrase.split(/\s+/).slice(0, p.note.split(/\s+/).length > 24 ? 8 : 11).join(" ");   // the memo segment can be long
           // lowercasing the lead-in word turns an ACRONYM into nonsense ("CET1" -> "cET1"), so only a
@@ -763,14 +784,14 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         const { data: prevWeekend } = await admin.from("daily_briefs").select("generated_at, sections").eq("user_id", uid).eq("edition", "weekend")
           .gte("brief_date", ymdShift(briefDate, -3)).lt("brief_date", briefDate).order("generated_at", { ascending: false }).limit(1).maybeSingle();
         const newsSince = prevWeekend ? String(prevWeekend.generated_at) : sinceClose;
-        const { data: newNewsRaw } = await admin.from("news").select("symbol,title,url,source,published_at").in("symbol", holdings.slice(0, 12).map((r) => r.symbol))
+        const { data: newNewsRaw } = await admin.from("news").select("symbol,title,url,source,summary,published_at").in("symbol", holdings.slice(0, 12).map((r) => r.symbol))
           .gte("published_at", newsSince).order("published_at", { ascending: false }).limit(60);
-        const newNews = (newNewsRaw ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 40);
+        const newNews = (newNewsRaw ?? []).filter((n) => usableNews(n, akaOf(n.symbol))).slice(0, 40);
         // Sunday's (or a second holiday's) read only earns its place with new information since the previous one
         if (prevWeekend && !force && !(newNews ?? []).length) { errors.push(uid.slice(0, 8) + ": weekend read skipped, nothing new since the last one"); continue; }
         const nameBy = new Map(holdings.map((r) => [r.symbol, krName(r.symbol, r.nickname, r.name)]));
         const weekLines: string[] = [];
-        const weekOf = await Promise.all(holdings.slice(0, 10).map((r) => windowsText(admin, r.symbol, [7])));
+        const weekOf = await Promise.all(holdings.slice(0, 10).map((r) => windowsText(admin, r.symbol, [7], marketOf(r.symbol, r.kind, r.currency))));
         holdings.slice(0, 10).forEach((r, i) => weekLines.push(`${nameBy.get(r.symbol)}: week ${weekOf[i][7]}, ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets`));
         const newsLines = (newNews ?? []).slice(0, 24).map((n) => `- ${nameBy.get(n.symbol) ?? n.symbol} [${n.source}, ${String(n.published_at).slice(0, 10)}]: ${String(n.title).slice(0, 110)}`).join("\n");
         // the positions list is decided in code: only companies with something new since the close may appear
@@ -824,11 +845,11 @@ ${STYLE_RULES}\n${READER}`;
             const dispN = krName(r.symbol, r.nickname, r.name);
             const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
             const [{ data: news }, { data: fils }, { data: tr }, hist] = await Promise.all([
-              admin.from("news").select("title,url,source,published_at").eq("symbol", r.symbol).gte("published_at", since14).order("published_at", { ascending: false }).limit(20)
-                .then((q) => ({ data: (q.data ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 10) })),
+              admin.from("news").select("title,url,source,summary,published_at").eq("symbol", r.symbol).gte("published_at", since14).order("published_at", { ascending: false }).limit(20)
+                .then((q) => ({ data: (q.data ?? []).filter((n) => usableNews(n, aliasesFor(r.symbol, r.name))).slice(0, 10) })),
               admin.from("filings").select("form,filed_at").eq("symbol", r.symbol).order("filed_at", { ascending: false }).limit(5),
               admin.from("transcripts").select("title,content,published_at").eq("symbol", r.symbol).order("published_at", { ascending: false, nullsFirst: false }).limit(1),
-              windowsText(admin, r.symbol, [30, 365]),
+              windowsText(admin, r.symbol, [30, 365], marketOf(r.symbol, r.kind, r.currency)),
             ]);
             const memoPrompt = `Internal analyst memo on ${dispN} (${r.symbol}) for a portfolio where it is ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets. Day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"} [${dayTag(marketOf(r.symbol, r.kind, r.currency))}], 30d ${hist[30]}, 1y ${hist[365]} ("not enough price history yet" means no figure exists).
 ${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}, ${callAgeLine(tr[0].published_at, briefDate)}):\n${String(tr[0].content).slice(0, 4000)}` : "No earnings call on file."}
@@ -918,8 +939,8 @@ lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their h
             try {
               const dispN = krName(r.symbol, r.nickname, r.name);
               const since7 = new Date(Date.now() - 7 * 86400000).toISOString();
-              const { data: newsRaw } = await admin.from("news").select("title,url,source").eq("symbol", r.symbol).gte("published_at", since7).order("published_at", { ascending: false }).limit(12);
-              const news = (newsRaw ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 6);
+              const { data: newsRaw } = await admin.from("news").select("title,url,source,summary").eq("symbol", r.symbol).gte("published_at", since7).order("published_at", { ascending: false }).limit(12);
+              const news = (newsRaw ?? []).filter((n) => usableNews(n, aliasesFor(r.symbol, r.name))).slice(0, 6);
               const m = await askModel(key, "You are a buy-side analyst. Terse.",
                 `Quick memo on ${dispN}, ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of the portfolio, day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}.
 News (7d):
@@ -933,9 +954,9 @@ Return STRICT JSON {"name": "${dispN}", "changed": str, "watch": str}. changed: 
         }
         const nameBy = new Map(holdings.map((r) => [r.symbol, krName(r.symbol, r.nickname, r.name)]));
         const since8h = new Date(Date.now() - 8 * 3600000).toISOString();
-        const { data: freshNewsRaw } = await admin.from("news").select("symbol,title,url,source").in("symbol", holdings.slice(0, 8).map((r) => r.symbol))
+        const { data: freshNewsRaw } = await admin.from("news").select("symbol,title,url,source,summary").in("symbol", holdings.slice(0, 8).map((r) => r.symbol))
           .gte("published_at", since8h).order("published_at", { ascending: false }).limit(12);
-        const freshNews = (freshNewsRaw ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 12);
+        const freshNews = (freshNewsRaw ?? []).filter((n) => usableNews(n, akaOf(n.symbol))).slice(0, 12);
         const freshHeads = freshNews.map((n) => `- ${nameBy.get(n.symbol) ?? n.symbol}: ${String(n.title).slice(0, 90)}`).join("\n");
         const pnlOf = (rs: typeof assets) => rs.reduce((a, r) => r.change_pct === null ? a : a + usd(Number(r.value ?? 0), r.currency) * (Number(r.change_pct) / 100) / (1 + Number(r.change_pct) / 100), 0);
         const dayPnl = pnlOf(assets);
@@ -1309,6 +1330,50 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // trimmed to 100 words is worse than a slightly redundant one. Restore it alongside.
       if (wcAll(sections) < dietFloor && wcAll(preDiet) > wcAll(sections)) sections = preDiet;
 
+      if (!backfillOnly) {
+        // earnings dates only from the computed estimates (round 2: "Microsoft earnings call Sep 28")
+        const wrongDates = new Set(wrongEarningsDates([...(sections.calendar ?? []), ...sections.positions.map((p) => p.watch)], earnEsts, briefDate));
+        sections.calendar = (sections.calendar ?? []).filter((c) => !wrongDates.has(c));
+        sections.positions = sections.positions.map((p) => wrongDates.has(p.watch) ? { ...p, watch: "Next report date not confirmed yet" } : p);
+        // a valuation call ("looks cheap", "a bargain") is a verdict: the sentence goes, the rest of the note stays
+        const deValue = (t: string) => { const bad = valuationHits(t); if (!bad.length) return t; const kept = t.split(/(?<=[.!?])\s+/).filter((x) => !bad.some((b) => b.includes(x.trim()) || x.includes(b))); return kept.length ? kept.join(" ") : t; };
+        sections.positions = sections.positions.map((p) => ({ ...p, note: dropEcho(deValue(p.note), p.watch) }));
+        if (edition === "assessment") {
+          const styles = toArr((invBy.get(uid) as Investor | null | undefined)?.styles, ["value"]);
+          const fit = (sections.ideas ?? []).map(deValue).filter((x) => !offLensIdea(x, styles));
+          // every idea pushed a product this reader does not invest in: the gap itself stays, as a fact
+          sections.ideas = fit.length ? fit : (sections.ideas ?? []).length ? ["No bond or income exposure: one growth driver moves the whole book"] : [];
+        }
+        // "A ultra-concentrated book" (round 2): articles fixed in code, English editions only
+        const art = (t: string) => fixArticles(t);
+        sections.lede = art(sections.lede); sections.overnight = art(sections.overnight); sections.desk_view = art(sections.desk_view);
+        if (sections.horizon) sections.horizon = art(sections.horizon);
+        sections.positions = sections.positions.map((p) => ({ ...p, note: art(p.note), watch: art(p.watch) }));
+        sections.ideas = (sections.ideas ?? []).map(art); sections.calendar = (sections.calendar ?? []).map(art);
+      }
+      // THE BASIS: what the brief was written against, so a client can tell when its premise has gone stale
+      // (round 2: a Midday Pulse said Microsoft's jump "limits today's loss" under a +$5,842 day, because it
+      // was written at 11:31 when the book was red). Contract (all optional for readers):
+      //   as_of          ISO time the prices were read       day_sign  -1 | 0 | 1 (0 under 0.05%)
+      //   day_pct        the book's day move, %               day_usd   the book's day move, USD
+      //   held           symbols in the book                  day_by_symbol  { SYMBOL: day % } for the 12 largest
+      const dayUsd = assets.reduce((a, r) => r.change_pct === null || r.symbol.startsWith("$") ? a : a + usd(Number(r.value ?? 0), r.currency) * (Number(r.change_pct) / 100) / (1 + Number(r.change_pct) / 100), 0);
+      const dayPctB = total - dayUsd > 0 ? dayUsd / (total - dayUsd) * 100 : 0;
+      const basis = {
+        as_of: new Date().toISOString(), day_sign: Math.abs(dayPctB) < 0.05 ? 0 : Math.sign(dayPctB), day_pct: Number(dayPctB.toFixed(2)), day_usd: Math.round(dayUsd),
+        held: holdings.map((r) => r.symbol),
+        day_by_symbol: Object.fromEntries(holdings.slice(0, 12).filter((r) => r.change_pct !== null).map((r) => [r.symbol, Number(Number(r.change_pct).toFixed(2))])),
+      };
+      if (!backfillOnly) Object.assign(sections, basis);
+
+      // A superseded PORTFOLIO ASSESSMENT is not written: when the user added more while this run was writing,
+      // a newer run (assessment_status.started_at) owns the row, and a one-stock verdict must not land in front
+      // of the whole book (round 2 newcomer: "every dollar tied to Nvidia" above a 99% VOO book).
+      if (edition === "assessment" && typeof body.run === "string" && !backfillOnly) {
+        const { data: st } = await admin.from("assessment_status").select("started_at").eq("user_id", uid).maybeSingle().then((r) => r, () => ({ data: null }));
+        if (st?.started_at && +new Date(String(st.started_at)) > +new Date(body.run) + 1000) { superseded = true; continue; }
+      }
+
       const { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
         audio_path: null,   // new text => stale audio; narrate re-runs for this row
@@ -1338,5 +1403,5 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       }
     } catch (e) { errors.push(uid.slice(0, 8) + ": " + (e instanceof Error ? e.message : String(e))); }
   }
-  return json({ ok: true, users: userIds.length, wrote, briefDate, errors: errors.slice(0, 5) });
+  return json({ ok: true, users: userIds.length, wrote, briefDate, ...(superseded ? { superseded: true } : {}), errors: errors.slice(0, 5) });
 });
