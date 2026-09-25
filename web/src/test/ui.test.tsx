@@ -1073,7 +1073,9 @@ describe("U13 persona-fleet fixes", () => {
     expect(screen.getByText(/avg \$195\.00/)).toBeTruthy();
   });
   it("short history under a long range gets a partial-data caption", async () => {
-    const api = stubApi();   // stub history spans ~2 days; default range = 1M
+    // history relative to today (the fixed stub dates age past the 1M window); default range = 1M
+    const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString();
+    const api = stubApi({ getHistory: vi.fn().mockResolvedValue([{ ts: day(2), price: 190 }, { ts: day(1), price: 195 }]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
