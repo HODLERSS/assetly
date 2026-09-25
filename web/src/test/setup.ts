@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import "@testing-library/react";
 
 // This jsdom build ships no localStorage (Node prints "localStorage is not available"),
@@ -18,4 +19,10 @@ if (typeof globalThis.localStorage === "undefined") {
       get length() { return store.size; },
     },
   });
+}
+
+// jsdom has no scrolling: App resets the scroll on every view change (window.scrollTo), which jsdom
+// reports as "Not implemented". A spy stands in so tests can assert where the page was sent.
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: vi.fn() });
 }

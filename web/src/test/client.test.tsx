@@ -212,7 +212,7 @@ describe("C3 lot deletion", () => {
     const api = stubApi({ getLots: vi.fn().mockResolvedValue([twoLots[0]]) });
     await openPosition(api, /Reddit/i);
     await userEvent.click(await screen.findByRole("button", { name: /edit lot 10 shares/i }));
-    await userEvent.click(screen.getByRole("button", { name: /removes the position/i }));
+    await userEvent.click(screen.getByRole("button", { name: /delete lot and position/i }));
     expect(screen.getByText(/deleting it removes RDDT from your portfolio/i)).toBeTruthy();
     await userEvent.click(within(screen.getByRole("dialog", { name: /confirm delete/i })).getByRole("button", { name: /^remove position$/i }));
     await waitFor(() => expect(api.removeHolding).toHaveBeenCalledWith("h1"));
@@ -346,12 +346,12 @@ describe("C7 first run: the assessment wait is visible and honest", () => {
     await screen.findByTestId("added-strip");
     await userEvent.click(screen.getByRole("button", { name: /done/i }));
   }
-  it("after a run of adds Home keeps a 'Building your first Portfolio Assessment' card (no toast), polling for it", async () => {
+  it("after a run of adds Home keeps a 'Your first assessment' card (no toast), polling for it", async () => {
     const api = stubApi();
     await addRun(api);
     const card = await screen.findByTestId("assessment-card");
-    expect(card.textContent).toMatch(/Building your first Portfolio Assessment/);
-    expect(card.textContent).toMatch(/Usually 2 to 4 minutes/);
+    expect(card.textContent).toMatch(/Your first assessment/);
+    expect(card.textContent).toMatch(/Usually takes 2 to 4 minutes/);
     await waitFor(() => expect(api.getAssessmentStatus).toHaveBeenCalled());
     expect(localStorage.getItem("assetly-assess:u-test")).toBeTruthy();   // survives a reload
   });
@@ -359,13 +359,13 @@ describe("C7 first run: the assessment wait is visible and honest", () => {
     const api = stubApi({ getAssessmentStatus: vi.fn().mockResolvedValue({ status: "pending", generatedAt: null, intelligenceAt: new Date().toISOString(), hadEarlier: false }) });
     await addRun(api);
     const card = await screen.findByTestId("assessment-card");
-    await within(card).findByRole("button", { name: /read it in news/i });
+    await within(card).findByRole("button", { name: /see today's news/i });
     expect(card.querySelector('li[data-done="true"]')).toBeTruthy();
   });
   it("an earlier assessment makes it an update, not a first", async () => {
     const api = stubApi({ getAssessmentStatus: vi.fn().mockResolvedValue({ status: "pending", generatedAt: null, intelligenceAt: null, hadEarlier: true }) });
     await addRun(api);
-    await waitFor(() => expect(screen.getByTestId("assessment-card").textContent).toMatch(/Updating your Portfolio Assessment/));
+    await waitFor(() => expect(screen.getByTestId("assessment-card").textContent).toMatch(/Updating your assessment/));
   });
   it("when it lands the card goes and the stored run is cleared", async () => {
     const at = new Date(Date.now() + 1000).toISOString();
@@ -383,7 +383,7 @@ describe("C7 first run: the assessment wait is visible and honest", () => {
     await within(card).findByText(/couldn't start your assessment/i);
     await userEvent.click(within(card).getByRole("button", { name: /try again/i }));
     await waitFor(() => expect(brokerageConnected).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.getByTestId("assessment-card").textContent).toMatch(/Usually 2 to 4 minutes/));
+    await waitFor(() => expect(screen.getByTestId("assessment-card").textContent).toMatch(/Usually takes 2 to 4 minutes/));
   });
   it("a run in flight resumes after a reload; one past the long timeout says so and offers a retry", async () => {
     localStorage.setItem("assetly-assess:u-test", JSON.stringify({ startedAt: new Date(Date.now() - 90_000).toISOString(), first: true }));

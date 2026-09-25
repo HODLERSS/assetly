@@ -14,13 +14,13 @@ describe("zero never carries a sign", () => {
   it("amounts that round to zero print as a neutral $0", () => {
     expect(signedMoney(-0.06)).toBe("$0");
     expect(signedMoney(0.4)).toBe("$0");
-    expect(signedMoney(-0.6)).toBe("-$1");
+    expect(signedMoney(-0.6)).toBe("−$1");
     expect(money(-0.3)).toBe("$0");
     expect(signedMoneyCompact(-0.06, "USD")).toBe("$0");
     expect(signedMoneyCompact(-0.2, "KRW")).toBe("₩0");
-    expect(signedMoneyCompact(-1500, "USD")).toBe("-$1.5K");
+    expect(signedMoneyCompact(-1500, "USD")).toBe("−$1.5K");
     expect(signedPct(-0.001)).toBe("0.00%");
-    expect(signedPct(-0.05)).toBe("-0.05%");
+    expect(signedPct(-0.05)).toBe("−0.05%");
     expect(moneyClass(-0.06)).toBe("mutedc");
     expect(moneyClass(-3)).toBe("loss");
   });

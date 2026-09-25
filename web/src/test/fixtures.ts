@@ -32,6 +32,7 @@ export function stubApi(over: Partial<Api> = {}): Api {
     excludeImport: vi.fn().mockResolvedValue(undefined),
     snaptradeSync: vi.fn().mockResolvedValue(undefined),
     brokerageConnected: vi.fn().mockResolvedValue(undefined),
+    markAssessmentPending: vi.fn().mockResolvedValue(undefined),
     getDailyBriefs: vi.fn().mockResolvedValue([]),
     getAssessmentStatus: vi.fn().mockResolvedValue({ status: "pending", generatedAt: null, intelligenceAt: null }),
     getBriefAudioUrl: vi.fn().mockResolvedValue(null),

@@ -81,6 +81,7 @@ function stubApi(over: Partial<Api> = {}): Api {
     excludeImport: vi.fn().mockResolvedValue(undefined),
     snaptradeSync: vi.fn().mockResolvedValue(undefined),
     brokerageConnected: vi.fn().mockResolvedValue(undefined),
+    markAssessmentPending: vi.fn().mockResolvedValue(undefined),
     getDailyBriefs: vi.fn().mockResolvedValue([]),
     getBriefAudioUrl: vi.fn().mockResolvedValue(null),
     warmup: vi.fn().mockResolvedValue(undefined),
@@ -348,7 +349,7 @@ describe("U45 brief arrival light", () => {
     // the watcher polls every 20s in production; in tests, drive one tick via the exposed interval
     await screen.findByLabelText("Your brief is ready", {}, { timeout: 25000 });
     await userEvent.click(tabs().getByRole("button", { name: /Your brief is ready|^Home$/ }));
-    expect((await screen.findByTestId("brief-banner")).textContent).toContain("Listen");
+    expect((await screen.findByTestId("brief-banner")).textContent).toMatch(/to listen/i);
     await vi.waitFor(() => expect(screen.queryByLabelText("Your brief is ready")).toBeNull());
   }, 40000);   // the brief watcher polls every 20s; this test waits for one real tick
 });
@@ -366,7 +367,7 @@ describe("U46 debt in totals", () => {
     expect(nw.textContent!.replace(/[^0-9-]/g, "")).toBe(String(Math.round(expectedNet)).replace(/[^0-9-]/g, ""));
     const ad = screen.getByTestId("assets-debt");
     expect(ad.textContent).toContain("assets");
-    expect(ad.textContent).toContain("-$250,000");
+    expect(ad.textContent).toContain("−$250,000");
     // all-time G/L% is computed against equity cost only: no debt-driven distortion
     const gl = screen.getByTestId("total-gl").textContent!;
     expect(gl).not.toContain("NaN");
@@ -606,7 +607,7 @@ describe("U27 holdings filters", () => {
     await waitFor(() => expect(screen.getByTestId("positions-card").textContent).not.toContain("005930.KS"));
     expect(screen.getByTestId("positions-card").textContent).toContain("BTC-USD");
   });
-  it("chips are All, KR, US, Ret only and single-select", async () => {
+  it("chips are All, Korea, US, Retirement only and single-select", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(three()) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
@@ -618,8 +619,8 @@ describe("U27 holdings filters", () => {
     await userEvent.click(screen.getByRole("button", { name: /^US$/ }));
     await waitFor(() => expect(screen.queryByText("005930.KS")).toBeNull());
     expect(screen.getByTestId("positions-card").textContent).toContain("QQQM");
-    await userEvent.click(screen.getByRole("button", { name: /^Ret$/ }));
-    await waitFor(() => expect(screen.getByRole("button", { name: /^Ret$/ }).getAttribute("aria-pressed")).toBe("true"));
+    await userEvent.click(screen.getByRole("button", { name: /^Retirement$/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Retirement$/ }).getAttribute("aria-pressed")).toBe("true"));
     expect(screen.getByRole("button", { name: /^US$/ }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByTestId("positions-card").textContent).toContain("QQQM");
     expect(screen.getByTestId("positions-card").textContent).not.toContain("RDDT");
@@ -895,7 +896,7 @@ describe("U18 labels + bank accounts", () => {
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await screen.findByText("Emergency fund");
     await screen.findByText("Travel fund");
-    expect(screen.getAllByText(/cash balance · Bank/).length).toBe(2);
+    expect(screen.getByTestId("positions-card").textContent!.match(/cash balance · Bank/g)!.length).toBe(2);
   });
 });
 
@@ -971,7 +972,7 @@ describe("U15 debt", () => {
     await waitFor(() => expect(net.textContent).toBe("$3,000"));      // 4,800 - 1,800
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await screen.findByText(/debt balance/);
-    expect(screen.getByText("-$1,800")).toBeTruthy();
+    expect(screen.getByText("−$1,800")).toBeTruthy();
   });
   it("debt quick add: amount-owed field, cost pinned at 1", async () => {
     const api = stubApi();
@@ -1144,7 +1145,7 @@ describe("U11 price chart on position", () => {
       expect(screen.getByRole("tab", { name: k })).toBeTruthy();
     }
     await userEvent.click(screen.getByRole("tab", { name: "1D" }));
-    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24));
+    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 96));   // four days: a holiday still has a last session
     await userEvent.click(screen.getByRole("tab", { name: "YTD" }));
     await waitFor(() => {
       const hours = (apiRef.getHistory as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1] as number;
@@ -1155,12 +1156,12 @@ describe("U11 price chart on position", () => {
     await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 366 * 2));
   });
   it("1D draws the intraday prints, not one collapsed daily point", async () => {
+    const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
     apiRef = stubApi({ getHistory: vi.fn().mockResolvedValue([
-      { ts: "2026-08-24T14:00:00Z", price: 190 }, { ts: "2026-08-24T15:00:00Z", price: 195 },
-      { ts: "2026-08-24T16:00:00Z", price: 193 },
+      { ts: ago(50), price: 190 }, { ts: ago(35), price: 195 }, { ts: ago(20), price: 193 },
     ]) });
     await openPosition();
-    await screen.findByTestId("price-chart");
+    // (1M collapses these same-day prints to one point, so there is no 1M line to wait for)
     await userEvent.click(screen.getByRole("tab", { name: "1D" }));
     await waitFor(() => {
       const d = screen.getByTestId("price-chart").querySelector("path")?.getAttribute("d") ?? "";
@@ -1188,7 +1189,7 @@ describe("U4 edit lots", () => {
     await userEvent.type(qty, "12");
     await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
     await waitFor(() => expect(api.updateLot).toHaveBeenCalledWith("l1", expect.objectContaining({ qty: 12 })));
-    expect(screen.getByText(/derived from lots/i)).toBeTruthy();
+    expect(screen.getByText(/average cost comes from your lots/i)).toBeTruthy();
   });
 });
 
@@ -1268,7 +1269,7 @@ describe("U9 empty state", () => {
   it("no positions → Relay-voice CTA", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([]) });
     render(<App api={api} />);
-    await screen.findByText(/no runners on the track/i);
+    await screen.findByText(/nothing here yet/i);
     expect(screen.getByRole("button", { name: /add positions manually/i })).toBeTruthy();
   });
 });
@@ -1331,9 +1332,9 @@ describe("U48 portfolio assessment card", () => {
     expect(screen.getByRole("button", { name: /listen to your brief/i })).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: /read · 2 min/i }));
     const body = await screen.findByTestId("brief-body");
-    expect(body.textContent).toContain("Your book");
+    expect(body.textContent).toContain("Your portfolio");   // plain labels, not "Your book"
     expect(body.textContent).toContain("Quality read");
-    expect(body.textContent).toContain("Tripwire: Hyperscaler capex guidance cut");
+    expect(body.textContent).toContain("What would change it: Hyperscaler capex guidance cut");
     expect(body.textContent).toContain("Structure & risk");
     expect(screen.getByTestId("brief-horizon").textContent).toContain("Next 3 years");
     expect(screen.getAllByTestId("brief-idea")).toHaveLength(2);
@@ -1409,7 +1410,7 @@ describe("U50 investor profile in settings", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Advanced" }));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.updateInvestor).toHaveBeenCalledWith(
-      { styles: ["value", "growth"], purpose: ["watch"], horizon: ["3-10y", "1-3y"], target: ["8-12%"], risk: ["hold", "trim"], level: ["novice", "advanced"] }));
+      { styles: ["value", "growth"], purpose: ["watch"], horizon: ["3-10y", "1-3y"], target: ["8-12%"], risk: ["trim"], level: ["advanced"] }));   // one answer each: a tap replaces
   });
 });
 
@@ -1699,7 +1700,7 @@ describe("U51 delete account (Apple 5.1.1(v))", () => {
     render(<SettingsScreen api={api} profile={null} rows={[]} onChanged={() => {}} onSignedOut={onSignedOut} />);
     await userEvent.click(screen.getByTestId("delete-account"));
     const dlg = await screen.findByRole("dialog", { name: /delete account/i });
-    expect(dlg.textContent).toMatch(/cannot be undone/i);
+    expect(dlg.textContent).toMatch(/can't be undone/i);
     await userEvent.click(within(dlg).getByRole("button", { name: /keep my account/i }));
     expect(deleteAccount).not.toHaveBeenCalled();
     await userEvent.click(screen.getByTestId("delete-account"));
