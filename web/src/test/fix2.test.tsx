@@ -96,7 +96,8 @@ describe("F2 scroll position on navigation", () => {
     render(<App api={stubApi()} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(within(screen.getByRole("navigation", { name: "Tabs" })).getByRole("button", { name: /news/i }));
-    expect(window.scrollTo).toHaveBeenLastCalledWith({ top: 0, left: 0 });
+    // the reset runs in an effect after the view commits; under full-suite load that can land a tick later
+    await waitFor(() => expect(window.scrollTo).toHaveBeenLastCalledWith({ top: 0, left: 0 }));
   });
 });
 
