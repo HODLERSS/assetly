@@ -4,6 +4,8 @@
 // Pass 2 (background, EdgeRuntime.waitUntil): full transcript/filing pull, then a
 //   richer regeneration that silently upgrades the card. The hourly cron owns it after.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { backfillShort, windowReturns } from "../_shared/history.ts";
+import { EVIDENCE_LAW, isEarningsCallTitle, isJunkNews, pctText } from "../_shared/intel.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -12,15 +14,6 @@ const CORS = {
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-function pctOver(history: { ts: string; price: number }[], days: number): string {
-  if (!history.length) return "n/a";
-  const cutoff = Date.now() - days * 86400000;
-  const start = history.find((h) => +new Date(h.ts) >= cutoff);
-  const last = history[history.length - 1];
-  if (!start || start === last) return "n/a";
-  return (((last.price / start.price) - 1) * 100).toFixed(1) + "%";
-}
 
 const deDash = (v: unknown) => String(v).replace(/\s*—\s*/g, ", ").replace(/\s*–\s*/g, ", ");
 
@@ -87,41 +80,46 @@ Deno.serve(async (req) => {
     key = Deno.env.get("MARA_API_KEY") ?? "";
     if (!key) { const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" }); key = data ?? ""; }
     if (!key) return json({ ok: false, error: "not configured" }, 500);
-    // Pass 1 waits for news at most 3.5s; everything slower belongs to pass 2.
+    // Pass 1 waits for news (and a year of daily prices for a symbol held for the first time) at most 3.5s;
+    // everything slower belongs to pass 2. The backfill is what gives a new holding real 1M / 1Y windows.
     const since6h = new Date(Date.now() - 6 * 3600000).toISOString();
     const { count: nFresh } = await admin.from("news").select("id", { count: "exact", head: true })
       .eq("symbol", symbol).gte("published_at", since6h);
-    if (!(nFresh ?? 0)) await Promise.race([call("news-sync"), sleep(3500)]);
+    await Promise.race([Promise.all([nFresh ? Promise.resolve(null) : call("news-sync"), backfillShort(admin, [symbol], { cap: 1 }).catch(() => null)]), sleep(3500)]);
   }
 
   const gather = async (deep: boolean) => {
     const since30 = new Date(Date.now() - 30 * 86400000).toISOString();
-    const [{ data: srow }, { data: news }, { data: fils }, { data: tr }, { data: hist }] = await Promise.all([
-      admin.from("symbols").select("name,kind").eq("symbol", symbol).maybeSingle(),
-      admin.from("news").select("title,source,published_at").eq("symbol", symbol).gte("published_at", since30)
-        .order("published_at", { ascending: false }).limit(deep ? 12 : 8),
+    const [{ data: srow }, { data: newsRaw }, { data: fils }, { data: tr }, wr] = await Promise.all([
+      admin.from("symbols").select("name,kind,currency").eq("symbol", symbol).maybeSingle(),
+      admin.from("news").select("title,url,source,published_at").eq("symbol", symbol).gte("published_at", since30)
+        .order("published_at", { ascending: false }).limit(deep ? 24 : 16),
       admin.from("filings").select("form,filed_at").eq("symbol", symbol).order("filed_at", { ascending: false }).limit(6),
       admin.from("transcripts").select("title,content,published_at").eq("symbol", symbol)
-        .order("published_at", { ascending: false, nullsFirst: false }).limit(1),
-      admin.from("price_history").select("ts,price").eq("symbol", symbol)
-        .gte("ts", new Date(Date.now() - 731 * 86400000).toISOString()).order("ts", { ascending: true }).limit(2000),
+        .order("published_at", { ascending: false, nullsFirst: false }).limit(4),
+      // windows read point by point: the old ascending 2,000-row pull was capped at 1,000 rows and a thin
+      // history made every window "since it was added"
+      windowReturns(admin, symbol, [30, 365, 730]),
     ]);
-    const history = (hist ?? []).map((h) => ({ ts: String(h.ts), price: Number(h.price) }));
-    const perf = { d30: pctOver(history, 30), y1: pctOver(history, 365), y2: pctOver(history, 730) };
-    const latestTr = tr?.[0];
+    const news = (newsRaw ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, deep ? 12 : 8);
+    const perf = { d30: pctText(wr.pct[30] ?? null), y1: pctText(wr.pct[365] ?? null), y2: pctText(wr.pct[730] ?? null) };
+    // a conference talk is not an earnings call
+    const latestTr = (tr ?? []).find((t) => isEarningsCallTitle(t.title));
+    const korean = symbol.endsWith(".KS") || symbol.endsWith(".KQ") || srow?.currency === "KRW";
     const prompt = `First-look brief for a retail investor who JUST added ${srow?.name ?? symbol} (${symbol}).
-Price change: 30d ${perf.d30}, 1y ${perf.y1}, 2y ${perf.y2}.
+Price change: 30d ${perf.d30}, 1y ${perf.y1}, 2y ${perf.y2} ("not enough price history yet" means no figure exists; never estimate one).
 ${latestTr ? `Latest earnings call ("${String(latestTr.title).slice(0, 120)}", ${String(latestTr.published_at).slice(0, 10)}):\n${String(latestTr.content).slice(0, deep ? 6000 : 3000)}` : "No earnings call transcript on file."}
 ${(fils ?? []).length ? `SEC filings: ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}
 Headlines (30d):
-${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (none on file yet)"}
+${news.map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (none on file yet)"}
+${EVIDENCE_LAW}
 
 Return STRICT JSON: {"bullets": [exactly 2 strings], "trend": str}.
 bullet 1: the latest earnings call in one line WITH its date. If none on file, the most recent fundamental signal instead, honestly labeled.
 bullet 2: the single biggest story of the past month, interpreted, never restated.
 trend: the 2-year trajectory in ONE sentence, max 20 words.
-Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes. Write won amounts with the \u20a9 sign. Plain punchy language. Never use em dashes or semicolons.`;
-    return { prompt, hadTranscript: !!latestTr, newsCount: (news ?? []).length };
+Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes.${korean ? " Write won amounts with the \u20a9 sign." : " Money is US dollars; never write won."} Plain punchy language. Never use em dashes or semicolons.`;
+    return { prompt, hadTranscript: !!latestTr, newsCount: news.length };
   };
 
   const writeGlance = async (content: string | null) => {
