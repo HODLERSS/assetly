@@ -19,7 +19,7 @@ import {
   isTradeQuestion, NO_HISTORY, pctText, priceConfusions, stripAdvice, usableNews, withNoCallLine, wrongLanguage, type PosFact,
   curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, plainScrub, PORTFOLIO_PLAIN, wrongDeliveriesDates,
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
-  buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, digitsForWritten, diversifiedClaims, dropInstructionEcho,
+  buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions, digitsForWritten, diversifiedClaims, dropInstructionEcho,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -545,7 +545,12 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // the husk text is held to the same report dates as everything else (round 5: "NVDA … late October")
   { const bad = new Set(wrongEarningsMonths(guarded, askEsts)); if (bad.size) guarded = guarded.split("\n").filter((l) => ![...bad].some((b) => l.includes(b))).join("\n") || defaultInfo(); }
   // "on file" is pipeline language (round 5: "BTC: no dividend data on file")
-  answer = plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN))), question, lastA, turns.length ? turns[turns.length - 1].q : ""))));
+  // round 6e: a fraction word must match the share it names ("over a third" for a 21.1% holding)
+  const fracHold = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100 }));
+  const cashShare = book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
+  const cryptoShareA = held.filter((r) => r.kind === "crypto").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
+  const fracGroupsA = [{ label: /\bcash\b/i, value: cashShare }, { label: /\bcrypto\b/i, value: cryptoShareA }];
+  answer = plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(fixFractions(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), fracHold, fracGroupsA)), question, lastA, turns.length ? turns[turns.length - 1].q : ""))));
   // the code-built answer is 4-5 checked bullets (~100 words with the opener): the phone cap must not cut its
   // last bullet, which is the one about what a buyer weighs
   answer = trimAnswer(answer, builtInCode ? 150 : cap + 10);

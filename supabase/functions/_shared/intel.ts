@@ -1608,3 +1608,37 @@ export function assessmentReader(reader: string): string {
     .replace(/, P\/E, /, ", ")
     .replace(/(Never condescend\.)/, "Well-known names stay exactly as written, never shortened or respelled: S&P 500, Nasdaq-100, ETF (say once what it is: a fund that trades like a stock), and P/E when you explain it once in plain words (its price tag against profits). $1");
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 6e: a fraction word is a figure ("one-third of the book tied to a single theme" when that theme is 21.1%,
+// "over a third"). Each fraction phrase is checked against the share it describes: the holding or group named
+// nearest to it in the sentence (a holding's weight, a theme / crypto / cash / top-three share). Within 5 points
+// (or on the right side of "over" / "under") it stays; otherwise it becomes the exact percentage. A fraction with
+// nothing named to check it against is left alone.
+const FRAC_VAL: Record<string, number> = { "half": 50, "one-half": 50, "a half": 50, "a third": 100 / 3, "one-third": 100 / 3, "one third": 100 / 3, "two-thirds": 200 / 3, "two thirds": 200 / 3,
+  "a quarter": 25, "one-quarter": 25, "one quarter": 25, "three-quarters": 75, "three quarters": 75, "a fifth": 20, "one-fifth": 20, "one fifth": 20 };
+const FRAC_RE = /\b((?:well |just |roughly |about |around |nearly |almost |over |more than |under |less than |close to )*)(one[- ]half|a half|half|two[- ]thirds|one[- ]third|a third|three[- ]quarters|one[- ]quarter|a quarter|one[- ]fifth|a fifth)\b(?=\s+of\s+(?:the\s+|your\s+|its\s+|this\s+|all\s+)?(?:book|portfolio|assets|holdings|money|invested|total|wealth|equit(?:y|ies)|stock holdings)\b)/gi;
+export function fixFractions(text: string, holdings: { names: string[]; weight: number }[], groups: { label: RegExp; value: number }[] = [], tolPp = 5): string {
+  return splitSentences(text).map((sent) => sent.replace(FRAC_RE, (m: string, mods: string, frac: string, at: number) => {
+    const v = FRAC_VAL[frac.toLowerCase().replace(/\s+/g, " ")] ?? FRAC_VAL[frac.toLowerCase().replace(" ", "-")];
+    if (v === undefined) return m;
+    // the share the fraction describes: the nearest named holding or group in the sentence
+    const cands: { value: number; d: number }[] = [];
+    for (const h of holdings) for (const n of h.names) {
+      if (!n) continue;
+      const k = firstIdx(sent, [n]);
+      if (k !== Infinity) cands.push({ value: h.weight, d: Math.abs(k - at) });
+    }
+    for (const g of groups) {
+      const mm = sent.match(new RegExp(g.label.source, g.label.flags.replace("g", "")));
+      if (mm && mm.index !== undefined && g.value >= 0) cands.push({ value: g.value, d: Math.abs(mm.index - at) });
+    }
+    if (!cands.length) return m;
+    const share = cands.sort((a, b) => a.d - b.d)[0].value;
+    const md = mods.toLowerCase();
+    const ok = /\b(?:over|more than)\b/.test(md) ? share >= v - 1 && share <= v + 15
+      : /\b(?:under|less than|nearly|almost|close to)\b/.test(md) ? share <= v + 1 && share >= v - 15
+      : Math.abs(share - v) <= tolPp;
+    return ok ? m : `${share.toFixed(1)}%`;
+  })).join(" ");
+}

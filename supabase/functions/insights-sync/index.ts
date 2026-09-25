@@ -7,7 +7,7 @@ import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } 
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
   YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
-  digitsForWritten, dropInstructionEcho,
+  digitsForWritten, dropInstructionEcho, fixFractions,
 } from "../_shared/intel.ts";
 import { dividendRows, ensureHistory, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
@@ -559,7 +559,7 @@ ${VALUE_LAW}`;
       // a holding's weight is its own ("30.1% Bitcoin weight" was Bitcoin + Ether, round 5)
       const weightFacts = assets.filter((r) => !r.symbol.startsWith("$")).map((r) => ({ names: [nOf(r.symbol), ...aliasesFor(r.symbol, r.name)], weight: usd(r) / total * 100 }));
       const cryptoShare = assets.filter((r) => r.kind === "crypto").reduce((a, r) => a + usd(r), 0) / total * 100;
-      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => fixWeights(fixArticles(plainScrub(fixPriceConfusions(deJust(isNovice ? noviceScrub(x) : x, pAge), posFacts), PORTFOLIO_PLAIN)), weightFacts, [{ label: /\bcrypto\b/i, value: cryptoShare }]));
+      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => fixWeights(fixArticles(plainScrub(fixPriceConfusions(deJust(isNovice ? noviceScrub(x) : x, pAge), posFacts), PORTFOLIO_PLAIN)), weightFacts, [{ label: /\bcrypto\b/i, value: cryptoShare }])).map((x) => fixFractions(x, weightFacts, [{ label: /\bcrypto\b/i, value: cryptoShare }]));
       // The book may have changed while the model wrote (round 2: PEP and F were removed at 12:18 and a card
       // stamped 12:20 still led with "Pepsi near yearly lows"): a line about a symbol that has left the book is
       // dropped, and so is a line that contradicts the live numbers or passes a verdict.

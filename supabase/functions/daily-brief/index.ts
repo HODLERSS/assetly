@@ -14,7 +14,7 @@ import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekday
 import {
   aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
-  assessmentReader, capNoteKeepRisk, mergeChecked, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
+  assessmentReader, capNoteKeepRisk, fixFractions, mergeChecked, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
 } from "../_shared/intel.ts";
 import { dividendLine, dividendRows, windowReturns } from "../_shared/history.ts";
@@ -1589,8 +1589,20 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           if (h.kind === "crypto") return false;
           return !d?.div_as_of ? null : Number(d.div_last) > 0;
         };
+        // round 6e: a fraction word is checked against the share it names ("one-third of the book tied to a single
+        // theme" when the top theme is 21.1%)
+        const themeShare = new Map<string, number>();
+        for (const r of holdings) { const th = themeOf(r.symbol, r.kind); themeShare.set(th, (themeShare.get(th) ?? 0) + usd(Number(r.value ?? 0), r.currency) / total * 100); }
+        const escR = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const fracGroups = [
+          { label: /\b(?:single|one|top|biggest|largest|dominant|main) theme\b/i, value: Math.max(0, ...[...themeShare].filter(([th]) => th !== "other").map(([, v]) => v)) },
+          ...[...themeShare].filter(([th]) => th !== "other").map(([th, v]) => ({ label: new RegExp(`\\b${escR(th)}\\b`, "i"), value: v })),
+          { label: /\btop (?:three|3)\b/i, value: holdings.slice(0, 3).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / total * 100 },
+          { label: /\bcrypto\b/i, value: exposure.crypto }, { label: /\bcash\b/i, value: exposure.cash }, { label: /\bbonds?\b/i, value: exposure.bonds },
+          { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity },
+        ];
         const clean = (t: string) => {
-          const x = fixWeights(fixAgreement(fixExposure(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN)))), exposure)), weightFacts, weightGroups);
+          const x = fixWeights(fixAgreement(fixExposure(fixFractions(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN)))), weightFacts, fracGroups), exposure)), weightFacts, weightGroups);
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
