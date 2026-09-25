@@ -27,6 +27,7 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
   const [removing, setRemoving] = useState<{ id: string; institution: string } | null>(null);   // keep/delete sheet
   const [removeErr, setRemoveErr] = useState<string | null>(null);
   const [stBusy, setStBusy] = useState(false);
+  const [connErr, setConnErr] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     api.snaptrade("status").then(async (r) => {
@@ -168,16 +169,23 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
           {!st?.connected && (
             <button className="chip" disabled={stBusy} onClick={async () => {
               setStBusy(true);
-              try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } finally { setStBusy(false); }
+              setConnErr(null);
+              try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); }
+              catch (e) { setConnErr(e instanceof Error && e.message ? e.message : "Could not start the brokerage link."); }
+              finally { setStBusy(false); }
             }}>Connect brokerage</button>
           )}
           {st?.connected && (
             <button className="chip" disabled={stBusy} onClick={async () => {
               setStBusy(true);
-              try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } finally { setStBusy(false); }
+              setConnErr(null);
+              try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); }
+              catch (e) { setConnErr(e instanceof Error && e.message ? e.message : "Could not start the brokerage link."); }
+              finally { setStBusy(false); }
             }}>+ Add another brokerage</button>
           )}
         </div>
+        {connErr && <div className="error-note" role="alert" data-testid="settings-connect-error" style={{ margin: "4px 14px 12px" }}>{connErr}</div>}
       </div>
       {removing && (
         <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Remove brokerage connection">

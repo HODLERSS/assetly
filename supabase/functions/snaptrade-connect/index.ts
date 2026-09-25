@@ -157,6 +157,17 @@ Deno.serve(async (req) => {
     return json({ ok: true, connected: false });
   }
   // action === "connect": ensure a SnapTrade user, then hand back the Connection Portal URL
+  // Early access runs on SnapTrade's free key, which allows a handful of connected users (5). Past that the
+  // portal fails inside SnapTrade's own UI with no way back, so say it here, plainly, before opening it.
+  // SNAPTRADE_MAX_CONNECTED lifts the cap (0 = unlimited) once a production key is in place.
+  const cap = Number(Deno.env.get("SNAPTRADE_MAX_CONNECTED") ?? "5");
+  if (cap > 0 && !(Array.isArray(row?.institutions) && row.institutions.length)) {
+    const { count } = await admin.from("snaptrade_tokens").select("user_id", { count: "exact", head: true })
+      .neq("user_id", uid).not("institutions", "is", null).neq("institutions", "{}");
+    if ((count ?? 0) >= cap) {
+      return json({ ok: false, full: true, error: "Brokerage import is full during early access. Add your holdings by hand for now: it takes about a minute, and you can connect later." });
+    }
+  }
   let secret = row?.st_secret ?? null;
   if (!secret) {
     const reg = await stCall(cid, key, "POST", "/snapTrade/registerUser", "", { userId: uid });

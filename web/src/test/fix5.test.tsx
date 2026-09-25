@@ -389,3 +389,18 @@ describe("K8 Import: busy, one call per tap, errors said, the web window opened 
     expect(chip.textContent).toMatch(/Import$/);
   });
 });
+
+describe("early access: brokerage import full", () => {
+  it("Settings shows the server's message instead of swallowing a refused connect", async () => {
+    const msg = "Brokerage import is full during early access. Add your holdings by hand for now: it takes about a minute, and you can connect later.";
+    const api = stubApi({ snaptrade: vi.fn().mockImplementation(async (action: string) => {
+      if (action === "connect") throw new Error(msg);
+      return { ok: true, connected: false };
+    }) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(within(screen.getByRole("navigation", { name: "Tabs" })).getByRole("button", { name: /settings/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Connect brokerage" }));
+    expect((await screen.findByTestId("settings-connect-error")).textContent).toBe(msg);
+  });
+});
