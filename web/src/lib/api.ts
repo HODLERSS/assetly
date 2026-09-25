@@ -51,6 +51,7 @@ export type Investor = { styles: string[]; purpose: string[]; horizon: string[];
 export const INVESTOR_DEFAULT: Investor = { styles: ["value"], purpose: ["watch"], horizon: ["3-10y"], target: ["8-12%"], risk: ["hold"], level: ["novice"] };
 export type Profile = { id: string; display_name: string | null; base_currency: "USD" | "KRW"; display_us: "USD" | "KRW"; display_kr: "USD" | "KRW"; markets: string[]; onboarded_at: string | null; investor?: Investor | null };
 
+const ASK_TIMEOUT_MS = 60_000;
 const nm = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 const warmupFired = new Set<string>();
 
@@ -461,7 +462,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
     async ask(question: string, history?: AskTurn[]): Promise<{ answer: string; followups: string[] }> {
       const turns = (history ?? []).filter((t) => t && String(t.q ?? "").trim()).slice(-3)
         .map((t) => ({ q: String(t.q).slice(0, 300), a: String(t.a ?? "").slice(0, 700) }));
-      const { data, error } = await sb.functions.invoke("ask", { body: turns.length ? { question, history: turns } : { question } });
+      // the function's own budget is ~40s; past 60s the request is lost (a dropped connection can hang
+      // without failing), and the screen offers Retry instead of thinking forever
+      const { data, error } = await Promise.race([
+        sb.functions.invoke("ask", { body: turns.length ? { question, history: turns } : { question } }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Ask timed out.")), ASK_TIMEOUT_MS)),
+      ]);
       if (error || !data?.ok) throw new Error(data?.error ?? "Ask is unavailable right now.");
       return { answer: String(data.answer), followups: Array.isArray(data.followups) ? data.followups.map(String).slice(0, 3) : [] };
     },
