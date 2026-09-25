@@ -114,8 +114,22 @@ export async function historyHasGaps(admin: Db, symbol: string, mkt: Mkt | null,
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 /** Fetch ~`range` of daily closes for one symbol and upsert them into price_history. Idempotent: rows are
  *  keyed (symbol, ts), and a re-run writes the same close timestamps. Returns the number of days written. */
+/** The Yahoo chart URL for a daily backfill. Round 7 poweruser: `range=5y` starts on the first session AFTER the
+ *  5-years-ago date (Sep 27, 2021 for a Sep 25, 2026 run), so the 5Y chart had no base close on or before its start
+ *  and read TSLA +41.06% ("showing 1824d") against Yahoo's +44.16%. A 5y backfill now asks for 5 years plus 14 days
+ *  (period1/period2), which always includes the base session. */
+export function backfillUrl(yahoo: string, range: string, now = Date.now()): string {
+  const base = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahoo)}`;
+  const years = /^(\d+)y$/.exec(range);
+  if (years) {
+    const d = new Date(now); d.setUTCFullYear(d.getUTCFullYear() - Number(years[1]));
+    const p1 = Math.floor((d.getTime() - 14 * 86400000) / 1000), p2 = Math.floor(now / 1000) + 86400;
+    return `${base}?period1=${p1}&period2=${p2}&interval=1d&includePrePost=false`;
+  }
+  return `${base}?range=${range}&interval=1d&includePrePost=false`;
+}
 export async function backfillDaily(admin: Db, symbol: string, yahoo: string, range = "5y"): Promise<number> {
-  const r = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahoo)}?range=${range}&interval=1d&includePrePost=false`,
+  const r = await fetch(backfillUrl(yahoo, range),
     { headers: { "User-Agent": UA, Accept: "application/json" } }).catch(() => null);
   if (!r || !r.ok) return 0;
   const pts = parseYahooDaily(await r.json().catch(() => ({})));
@@ -165,7 +179,8 @@ const tried = new Map<string, number>();
 const RETRY_MS = 7 * 86400000;
 // Every symbol backfilled before the 5-year daily backfill and its purge of mis-stamped rows is done again once
 // (round 5 poweruser: 2Y / 5Y bases read Monday-stamped weekly rows).
-const HISTORY_RESET = Date.parse("2026-09-25T21:00:00Z");
+// round 7: bumped so every symbol is redone once with the 5y + 14d span (the base close before the 5Y start)
+const HISTORY_RESET = Date.parse("2026-09-26T01:00:00Z");
 
 /** Backfill every symbol in the list whose history is short (or all of them with force); at most `cap`
  *  per call, four at a time. A symbol backfilled in the last 7 days is skipped unless forced (it is as long
@@ -276,7 +291,7 @@ export async function dividendRows(admin: Db, symbols: string[]): Promise<Map<st
 /** `ccy` is the holding's currency and `perUsd` how many units of it buy one dollar (1 for USD). Per-share and
  *  per-holding figures stay in the holding's currency; `annual` is always US dollars, so a portfolio total can sum
  *  it (Samsung's ₩50,460 a year was summed as $50,460 into a "$65,824 income, 56% of assets" answer, 2026-09-25). */
-export function dividendLine(name: string, d: DivRow | undefined, shares: number, ccy = "USD", perUsd = 1): { line: string; amounts: number[]; annual: number } {
+export function dividendLine(name: string, d: DivRow | undefined, shares: number, ccy = "USD", perUsd = 1): { line: string; amounts: number[]; annual: number; current?: boolean } {
   // never checked yet (div_as_of null) is "unknown", not "pays nothing": a $0.00 income answer was shown live
   if (!d || !d.div_as_of) return { line: `${name}: dividend data not loaded yet (unknown, do not state an amount or $0)`, amounts: [], annual: 0 };
   if (!(Number(d.div_last) > 0)) return { line: `${name}: pays no dividend`, amounts: [], annual: 0 };
@@ -301,5 +316,6 @@ export function dividendLine(name: string, d: DivRow | undefined, shares: number
       + `your ${shares} shares ≈ ${f(annualNative)} a year${current ? ` at the current rate (${f(last)} ${rhythm === "quarterly" ? "a quarter" : "per payment"}; the last 12 months paid ${f(shares * ttm)})` : ""}${ccy === "USD" ? "" : ` (≈ ${usdF(annual)})`}, ≈ ${f(shares * last)} per payment${nextEx ? `; next ex-date expected around ${nextEx} (est)` : ""}`,
     amounts: [last, ttm, perYear, annualNative, shares * last, shares * ttm, shares * perYear, ...(ccy === "USD" ? [] : [annual])].filter((x) => x > 0),
     annual,
+    current,   // income is the current rate (after a raise): every place that states it says so (round 7)
   };
 }

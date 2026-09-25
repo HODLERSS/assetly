@@ -257,6 +257,23 @@ export function splitSentences(t: string): string[] {
   return out;
 }
 const sentencesOf = (t: string): string[] => splitSentences(t);
+/** Apply a sentence-level transform LINE BY LINE, keeping every newline and each line's bullet lead ("• ", "- ",
+ *  "1. "). Round 7: dropInstructionEcho and fixFractions ran splitSentences() over the whole answer and rejoined
+ *  with " ", which flattened every bulleted Ask answer into one paragraph. A line the transform empties is dropped. */
+export function perLine(text: string, fn: (line: string) => string): string {
+  const src = String(text ?? "");
+  if (!src.includes("\n")) {
+    const lead = src.match(/^[\s•*\-–·]+|^\s*\d{1,2}[.)]\s+/)?.[0] ?? "";
+    const out = fn(src.slice(lead.length));
+    return out.trim() ? lead + out : "";
+  }
+  return src.split("\n").map((line) => {
+    if (!line.trim()) return line;
+    const lead = line.match(/^[\s•*\-–·]+|^\s*\d{1,2}[.)]\s+/)?.[0] ?? "";
+    const out = fn(line.slice(lead.length));
+    return out.trim() ? lead + out : null;
+  }).filter((l): l is string => l !== null).join("\n");
+}
 const bare = (s: string) => s.replace(/^[\s•*\-–·\d.)]+/, "").replace(/\*\*/g, "").trim();
 
 // A figure a reader can check: a multiple, a ratio against an average, a percentage over a named window.
@@ -280,7 +297,10 @@ export function valuationHits(text: string): string[] {
     const debate = /\bbulls?\b[\s\S]*\bbears?\b|\bbears?\b[\s\S]*\bbulls?\b/i.test(s);   // both sides of an argument is information
     // "could double on a $2T IPO" (round 5 GOOGL card): "could" reads as hedged, but a doubling or tripling of
     // value in the app's voice is a price call unless a named source says it
-    if (s && /\bcould (?:double|triple|quadruple)\b|\b(?:doubles?|triples?) (?:from here|in value)\b/i.test(s) && !namedSource) { hits.push(raw); continue; }
+    if (s && /\b(?:could|would|will|should|might) (?:double|triple|quadruple)\b|\b(?:doubles?|triples?) (?:from here|in value)\b/i.test(s) && !namedSource) { hits.push(raw); continue; }
+    // round 7 cards: reassurance and verdicts in the app's voice ("a cooldown after a 31.9% surge, not a thesis
+    // break", "a legal headline, not a near-term financial hit", "makes Google Cloud the clear second growth engine")
+    if (s && /\bnot a thesis break\b|\bthesis (?:is |remains |stays )?(?:still )?(?:intact|unchanged|holds|on track)\b|\bnot a (?:near-term |real |material |lasting )?(?:financial )?hit\b|\bthe clear (?:second |next |new |main )?(?:growth )?(?:engine|winner|leader)\b|\bjust a (?:cooldown|breather|pause)\b|\ba (?:normal|healthy) (?:breather|pullback|cooldown)\b|\b(?:keeps?|keeping) (?:the |your )?(?:portfolio|book|plan|goals?) on track\b/i.test(s) && !namedSource) { hits.push(raw); continue; }
     if (!s || (ATTRIBUTED.test(s) && (!valuationWord || namedSource || debate))) continue;
     // round 4: "a hidden asset the market isn't fully pricing", "17x versus the S&P's 25x leaves cushion", "the
     // long-term story still looks solid" (to "is it on sale?"): verdicts in the app's voice
@@ -404,22 +424,32 @@ export function isTradeQuestion(q: string): boolean {
 
 // the model's own ways of saying the decision is theirs; round 3 found a second, canned opener stacked on top of
 // "The call is yours; here is what each side rests on." and "정리 여부는 본인 판단이지만"
-const NO_CALL = /\b(can'?t|cannot|won'?t|don'?t|isn'?t (?:mine|my place))\b[^.]{0,40}\b(tell you|say|make|pick|decide|call|recommend|rank)\b|\b(not|isn'?t) my call\b|\byour (?:own )?(?:call|decision|choice)\b|\b(?:call|decision|choice) (?:is|stays|remains) (?:yours|your own|up to you)\b|\bup to you\b|\bthat's your decision\b|\b(?:is|are|stays|remains) (?:yours|your own|your call)\b|\byours to (?:make|decide|call)\b|제가 (정해|결정)|정하실 몫|결정하실 몫|판단하실 몫|본인이 (?:정|결정|판단)|(말씀|정해|골라|추천해)\s?드릴 수 없|판단은[^.]{0,20}몫|결정은[^.]{0,20}몫|본인(?:의)? (?:판단|선택|결정)|직접 (?:결정|판단)|스스로 (?:결정|판단)/i;
+const NO_CALL = /\b(can'?t|cannot|won'?t|don'?t|isn'?t (?:mine|my place))\b[^.]{0,40}\b(tell you|say|make|pick|decide|call|recommend|rank)\b|\b(not|isn'?t) my call\b|\byour (?:own )?(?:call|decision|choice)\b|\b(?:call|decision|choice) (?:is|stays|remains) (?:yours|your own|up to you)\b|\bup to you\b|\bthat's your decision\b|\b(?:is|are|stays|remains) (?:yours|your own|your call)\b|\byours to (?:make|decide|call)\b|제가 (정해|결정)|정하실 몫|결정하실 몫|판단하실 몫|본인이 (?:정|결정|판단)|(말씀|정해|골라|추천해)\s?드릴 수 없|판단은[^.]{0,20}몫|결정은[^.]{0,20}몫|본인(?:의)? (?:판단|선택|결정)|직접 (?:결정|판단)|스스로 (?:결정|판단)|(?:결정|판단|선택)[은는이]?[^.]{0,15}달려 있|드리기 어렵|드릴 수는 없|권해\s?드릴 수 없|추천(?:해)?\s?드리기 어렵/i;
 /** A "should I sell X" answer opens with ONE short, natural line that the decision is theirs, then gives
  *  the considerations. Added in code when the model left it out, and never twice in a row: round 2 found the
  *  same canned opener on six answers in one conversation, which read robotic. */
-export function withNoCallLine(answer: string, question: string, _previousAnswer = "", _previousQuestion = ""): string {
+export function withNoCallLine(answer: string, question: string, _previousAnswer = "", _previousQuestion = "", decision?: boolean): string {
   // Every trade or pick answer carries it, unless THIS answer's first sentence already declines (round 5: it was
   // dropped whenever the previous turn had said "your call", and a trade question after a trade question went
-  // out bare). The previous turn no longer matters: one short line per answer is the price of never advising.
-  const first = splitSentences(answer)[0] ?? "";
-  if (!(isTradeQuestion(question) || isPickQuestion(question)) || NO_CALL.test(first)) return answer;
+  // out bare). `decision` lets the caller mark a follow-up turn ("and if it were $120K?") as a decision question.
+  if (!(decision ?? (isTradeQuestion(question) || isPickQuestion(question)))) return answer;
+  // EXACTLY one opener (round 7: "매매 여부는…" stacked on the model's own "매매 결정은 고객님께 달려 있지만…"):
+  // a refusal that opens the answer is the opener; every other refusal sentence goes
+  const sents0 = splitSentences(answer);
+  const firstIsRefusal = !!sents0[0] && NO_CALL.test(sents0[0]);
+  let kept = 0;
+  answer = perLine(String(answer ?? ""), (line) => splitSentences(line).filter((x) => {
+    if (!NO_CALL.test(x)) return true;
+    kept++;
+    return firstIsRefusal && kept === 1;
+  }).join(" "));
+  if (firstIsRefusal) return answer;
   // the opener speaks the BODY's language, so the two can never mix (the body has already been held to the
   // question's language; this only matters when that failed)
   const ko = String(answer ?? "").trim() ? isKoreanText(answer) : questionIsKorean(question);
   // the line fits the question (round 6: "whether to trade it" answered "what should I buy with my cash?" and
   // "what's your top pick?", where "it" refers to nothing)
-  const cashQ = /\b(?:cash|money|\$\s?\d[\d,.]*\s?[kK]?|what (?:should|do) i buy|what to buy|where (?:should|do) i (?:put|invest))\b|현금|돈으로|뭘 사|무엇을 사|어디에 (?:넣|투자)/i.test(question);
+  const cashQ = /\b(?:cash|money|what (?:should|do) i buy|what to buy|where (?:should|do) i (?:put|invest))\b|\$\s?\d[\d,.]*\s?[kK]?\b|현금|돈으로|뭘 사|무엇을 사|어디에 (?:넣|투자)/i.test(question);
   const pickOnly = isPickQuestion(question) && !/\b(?:sell|trim|take profits?|dump|exit|cut|reduce|buy more|add to)\b|팔|매도|정리|더 살/i.test(question);
   const line = ko
     ? (cashQ ? "무엇을 살지는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다." : pickOnly ? "종목을 골라드릴 수는 없지만, 그 선택이 무엇에 달려 있는지는 이렇습니다." : "매매 여부는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다.")
@@ -581,7 +611,7 @@ export function dedupePhrases(t: string): string {
  *  Microsoft stake jumped 3.7% yesterday" when Microsoft had fallen 0.5% yesterday and was up 3.7% live.
  *  Only a sentence carrying the exact live figure is touched, so a real reference to yesterday survives. */
 export function liveNotYesterday(text: string, live: { names: string[]; pct: number }[]): string {
-  return String(text ?? "").split(/(?<=[.!?])\s+/).map((sent) => {
+  return String(text ?? "").split(/(?<=[.!?])[ \t]+/).map((sent) => {
     if (!/\byesterday\b/i.test(sent)) return sent;
     const figs = [...sent.matchAll(/(\d+(?:\.\d+)?)\s?%/g)].map((m) => Number(m[1]));
     const hit = live.some((m) => m.names.some((n) => n && new RegExp(`(^|[^\\p{L}])${esc(n)}`, "iu").test(sent))
@@ -738,7 +768,7 @@ export function overlap(a: string, b: string): number {
 export function dropEcho(note: string, watch: string): string {
   const w = String(watch ?? "");
   if (tokensOf(w).size < 3) return note;
-  const parts = String(note ?? "").split(/(?<=[.!?])\s+/);
+  const parts = String(note ?? "").split(/(?<=[.!?])[ \t]+/);
   if (parts.length < 2) return note;
   const kept = parts.filter((p, i) => i === 0 || overlap(p.replace(/^(?:the\s+)?risk:\s*/i, ""), w) < 0.7);
   return kept.join(" ");
@@ -762,7 +792,7 @@ export function offLensIdea(idea: string, styles: string[]): boolean {
  *  "where would my cash go"). An answer to it that lists some of the holdings IS the pick. */
 export function isPickQuestion(q: string): boolean {
   const t = String(q ?? "");
-  return /\bthe one\b|\bwhich (?:one|stock|stocks|holding|holdings|name|names|position|positions)?\b|\bwhere (?:would|should|could)\b|\byou(?:'?d| would) (?:dump|sell|buy|keep|pick|choose|add|cut|ditch|drop)\b|\bwould you (?:dump|sell|buy|keep|pick|choose|add|cut|ditch|drop)\b|\b(?:top|best|your) pick\b|\bif you had\b|\bwhat (?:would|should|could|can) (?:you|i) (?:do|buy) with\b|\bwhat should i buy\b/i.test(t)
+  return /\bthe one\b|\bwhich (?:of (?:my|your|the|these) )?(?:one|ones|stock|stocks|holding|holdings|name|names|position|positions)\b[^?.]{0,50}\b(?:buy|sell|dump|trim|keep|add|cut|ditch|drop|own|pick|choose|get rid|invest in|put|double down|load up|best|worst)\b|\bwhere (?:would|should|could)\b|\byou(?:'?d| would) (?:dump|sell|buy|keep|pick|choose|add|cut|ditch|drop)\b|\bwould you (?:dump|sell|buy|keep|pick|choose|add|cut|ditch|drop)\b|\b(?:top|best|your) pick\b|\bif you had\b|\bwhat (?:would|should|could|can) (?:you|i) (?:do|buy) with\b|\bwhat should i buy\b/i.test(t)
     || /(어떤 종목|어느 종목|하나만|어디에|뭘 사|무엇을 사|뭘 팔|무엇을 팔)/.test(t);
 }
 /** Lines of an answer that open on a holding's name, when they cover SOME but not all of the book: a curated
@@ -1334,11 +1364,17 @@ export function buildPortfolioParagraph(holdings: { name: string; usd: number }[
  *  poweruser). A figure next to a holding's name and a weight word must be that holding's weight, unless the
  *  sentence labels it as a group ("crypto 30.1%") and it equals that group's share. Corrected from the book. */
 export function fixWeights(text: string, holdings: { names: string[]; weight: number }[], groups: { label: RegExp; value: number }[] = [], tolPp = 0.6): string {
-  return splitSentences(text).map((s) => {
+  return perLine(text, (line) => splitSentences(line).map((s) => {
     if (!/\b(?:weight(?:ing)?|of (?:assets|the portfolio|your portfolio|the book|holdings)|stake|allocation|position|share)\b/i.test(s)) return s;
     return s.replace(/(\d+(?:\.\d+)?)\s?%/g, (m: string, n: string, at: number) => {
       const v = Number(n);
       const near = s.slice(Math.max(0, at - 40), at + m.length + 30);
+      // Round 7: "META dropped 3.3% and makes up 12.8% of assets" became "META dropped 12.8%": a figure after a move
+      // verb or a sign is a MOVE, and only a figure with a weight word right beside it is a weight
+      const before = s.slice(Math.max(0, at - 28), at), after = s.slice(at + m.length, at + m.length + 36);
+      if (/\b(?:rose|fell|dropped|drops?|climbed|climbs?|gained|gains?|slipped|slips?|jumped|jumps?|surged|sank|tumbled|rallied|declined|lost|added|adds|up|down|higher|lower|increased|decreased|advanced|eased|dipped|slid|soared|plunged|moved)\b[^.%\d]{0,14}$|[+\-−]\s?$/i.test(before)) return m;
+      if (!/^\s*(?:\)|,)?\s*(?:[A-Z][\w.&'-]*\s+){0,2}(?:of (?:assets|the portfolio|your portfolio|the book|holdings|total)|(?:portfolio |position |book )?(?:weight|weighting|stake|allocation|share)\b|in (?:the |your )?(?:portfolio|book))/i.test(after)
+        && !/\b(?:weight(?:ing)?|stake|allocation|position|share|makes? up|accounts? for|represents?|is|at)\b[^.%\d]{0,16}$/i.test(before)) return m;
       if (groups.some((g) => g.label.test(near) && Math.abs(g.value - v) <= tolPp)) return m;
       // a weight of something INSIDE a holding ("VOO's tech weight at 38%", "sector weight", "exposure to chips")
       // describes the fund, not the portfolio (round 6: rewritten to VOO's 21.1% portfolio weight)
@@ -1353,7 +1389,7 @@ export function fixWeights(text: string, holdings: { names: string[]; weight: nu
       if (holdings.some((h) => Math.abs(h.weight - v) <= 0.05 && h !== who)) return m;   // another holding's weight: leave to the reader
       return `${who.weight.toFixed(1)}%`;
     });
-  }).join(" ");
+  }).join(" "));
 }
 
 /** Every sentence a stored brief must lose on repair: the grammar pass (broken, verbless) and the advice pass
@@ -1406,7 +1442,12 @@ export type HuskInput = {
   holdings: { name: string; symbol: string; kind: string | null; usd: number }[];
   cashUsd: number; assetsUsd: number; today: string;
   reports: { name: string; est: string | null; range?: [string, string] }[];
-  dividends: { name: string; annualUsd: number; nextEx: string | null }[];
+  dividends: { name: string; annualUsd: number; nextEx: string | null; current?: boolean }[];
+  // round 7: the husk fits the question. sell/trim/dump questions get a SELLER's frame, "rank my holdings" a ranking
+  // by stated metrics, and a trade question about ONE holding an answer built around that holding
+  mode?: "buy" | "sell" | "rank";
+  returns1m?: Record<string, number | null>;
+  focus?: { name: string; weight: number; usd: number; gainUsd: number | null; dayPct: number | null; r1m: number | null; r3m: number | null; report?: string | null; divAnnual?: number; divCurrent?: boolean };
 };
 const addDaysYmd = (ymd: string, n: number) => new Date(Date.parse(ymd + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
 // "upcoming" means strictly after today (round 6: an ex-date estimated for today was listed as coming up)
@@ -1418,6 +1459,8 @@ const NUM_WORD = ["", "one", "two", "three"];
  *  Concentration, theme mix with crypto and cash, reports in the next 45 days (estimates), dividend payers and
  *  income with ex-dates in the next 45 days, and what a buyer would weigh. Never names anything to buy. */
 export function buildHusk(inp: HuskInput, ko: boolean): string {
+  if (inp.focus) return focusHusk(inp, ko);
+  if (inp.mode === "rank") return rankHusk(inp, ko);
   const A = inp.assetsUsd || 1;
   const hs = [...inp.holdings].filter((h) => h.usd > 0).sort((a, b) => b.usd - a.usd);
   const top = hs.slice(0, 3);
@@ -1429,7 +1472,9 @@ export function buildHusk(inp: HuskInput, ko: boolean): string {
   // a theme under half a percent is noise in a mix line ("AI semiconductors 0.0%", round 6 mock)
   const topThemes = [...themes.entries()].filter(([t, v]) => t !== "other" && v / A * 100 >= 0.5).sort((a, b) => b[1] - a[1]).slice(0, 3);
   const cryptoListed = topThemes.some(([t]) => t === "crypto");
-  const reports = inp.reports.filter((r) => within(r.range ? r.range[0] : r.est, inp.today, 45) || within(r.est, inp.today, 45));
+  // in date order (round 7: "TSLA Oct 21, AAPL Oct 29, MSFT Oct 28")
+  const reports = inp.reports.filter((r) => within(r.range ? r.range[0] : r.est, inp.today, 45) || within(r.est, inp.today, 45))
+    .sort((a, b) => String(a.range ? a.range[0] : a.est).localeCompare(String(b.range ? b.range[0] : b.est)));
   const payers = inp.dividends.filter((d) => d.annualUsd > 0).sort((a, b) => b.annualUsd - a.annualUsd);
   const income = payers.reduce((a, d) => a + d.annualUsd, 0);
   const soonEx = payers.filter((d) => within(d.nextEx, inp.today, 45));
@@ -1439,7 +1484,8 @@ export function buildHusk(inp: HuskInput, ko: boolean): string {
     if (top.length) out.push(top.length === 1 ? `• 집중도: 보유 종목은 ${top[0].name} 하나로 자산의 ${topShare.toFixed(0)}%입니다.` : `• 집중도: 상위 ${top.length}개 종목(${top.map((h) => `${h.name} ${pct1(h.usd / A * 100, true)}`).join(", ")})이 자산의 ${topShare.toFixed(0)}%입니다.`);
     out.push(`• 구성: ${[...topThemes.map(([t, v]) => `${THEME_KO[t] ?? t} ${pct1(v / A * 100, true)}`), ...(crypto > 0 && !cryptoListed ? [`암호화폐 ${pct1(crypto, true)}`] : []), `현금 ${pct1(cashPct, true)}(${usdText(inp.cashUsd)})`].join(", ")}입니다.`);
     out.push(reports.length ? `• 45일 안에 예상되는 실적 발표(추정): ${reports.map((r) => `${r.name} ${r.range ? `${md(r.range[0])}~${md(r.range[1])}` : md(r.est!) + "경"}`).join(", ")}.` : "• 45일 안에 실적 발표가 예상되는 보유 종목은 없습니다.");
-    out.push(payers.length ? `• 배당: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` 외 ${payers.length - 4}개` : ""}에서 연 약 ${usdText(income)}이 나옵니다. ${soonEx.length ? `45일 안의 배당락(추정): ${soonEx.map((d) => `${d.name} ${md(d.nextEx!)}경`).join(", ")}.` : "45일 안에 배당락이 예상되는 종목은 없습니다."}` : "• 배당: 기록상 배당을 주는 보유 종목이 없습니다.");
+    out.push(payers.length ? `• 배당: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` 외 ${payers.length - 4}개` : ""}에서 연 약 ${usdText(income)}이 나옵니다${payers.some((d) => d.current) ? "(현재 배당률 기준)" : ""}. ${soonEx.length ? `45일 안의 배당락(추정): ${soonEx.map((d) => `${d.name} ${md(d.nextEx!)}경`).join(", ")}.` : "45일 안에 배당락이 예상되는 종목은 없습니다."}` : "• 배당: 기록상 배당을 주는 보유 종목이 없습니다.");
+    if (inp.mode === "sell") { out.push(`• 파는 쪽에서 보통 따지는 것: 차익에 붙는 세금, 한 종목(상위 ${top[0]?.name ?? ""} ${pct1((top[0]?.usd ?? 0) / A * 100, true)})에 원하는 것보다 많이 실려 있는지, 처음 산 이유가 아직 유효한지.`); return out.join("\n"); }
     out.push(`• 이런 결정에서 보통 따지는 것: 새 돈이 이미 ${topShare.toFixed(0)}%인 ${top.length === 1 ? top[0].name : "상위 종목"} 비중을 더 키우는지, ${crypto > 0 ? `포트폴리오가 암호화폐(현재 ${pct1(crypto)})에 얼마나 흔들리길 원하는지` : `현금(현재 ${pct1(cashPct)})을 얼마나 남겨둘지`}, 투자 기간과 세금.`);
     return out.join("\n");
   }
@@ -1447,7 +1493,11 @@ export function buildHusk(inp: HuskInput, ko: boolean): string {
   const mix = [...topThemes.map(([t, v]) => `${t} ${pct1(v / A * 100)}`), ...(crypto > 0 && !cryptoListed ? [`crypto ${pct1(crypto)}`] : [])];
   out.push(`• Mix: ${mix.length ? mix.join(", ") + ", and " : ""}cash ${pct1(cashPct)} (${usdText(inp.cashUsd)}).`);
   out.push(reports.length ? `• Reports expected in the next 45 days (estimates): ${reports.map((r) => `${r.name} ${r.range ? spanOfMonth(r.range) : "~" + md(r.est!)}`).join(", ")}.` : "• No holding has an earnings report expected in the next 45 days.");
-  out.push(payers.length ? `• Dividends: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` and ${payers.length - 4} more` : ""} pay about ${usdText(income)} a year together; ${soonEx.length ? `ex-dates expected in the next 45 days: ${soonEx.map((d) => `${d.name} ~${md(d.nextEx!)}`).join(", ")}.` : "none has an ex-date expected in the next 45 days."}` : "• Dividends: no holding pays a dividend on record.");
+  out.push(payers.length ? `• Dividends: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` and ${payers.length - 4} more` : ""} pay about ${usdText(income)} a year together${payers.some((d) => d.current) ? " at the current rate" : ""}; ${soonEx.length ? `ex-dates expected in the next 45 days: ${soonEx.map((d) => `${d.name} ~${md(d.nextEx!)}`).join(", ")}.` : "none has an ex-date expected in the next 45 days."}` : "• Dividends: no holding pays a dividend on record.");
+  if (inp.mode === "sell") {
+    out.push(`• What a seller usually weighs here: the tax on any gain, whether one holding (${top[0]?.name ?? "the largest"} is ${pct1((top[0]?.usd ?? 0) / A * 100)}) is more of the portfolio than you want, and whether the reason you bought still holds.`);
+    return out.join("\n");
+  }
   out.push(`• What a buyer usually weighs here: whether new money adds to the ${topShare.toFixed(0)}% already in ${top.length === 1 ? top[0].name : `the top ${NUM_WORD[top.length]}`}, ${crypto > 0 ? `how much of the portfolio should swing with crypto (${pct1(crypto)} now)` : `how much to keep in cash (${pct1(cashPct)} now)`}, and your time horizon and taxes.`);
   return out.join("\n");
 }
@@ -1530,9 +1580,9 @@ export const digitsForWritten = (t: string): string => String(t ?? "").replace(S
 const ECHO_TAIL = /,?\s*(?:so |which makes it |making it |and )?(?:it(?:'s| is) |this is )?(?:context|background),? not (?:news|a new development)\b/gi;
 const ECHO_SENT = /\b(?:per the data(?: block)?|as instructed|the ONLY (?:figures|numbers|source|dates?)|(?:data|stats) block|from the data above|in the data (?:provided|given)|deterministic(?:ally)?|the prompt|quote-page (?:and|or) option-chain)\b/i;
 export function dropInstructionEcho(text: string): string {
-  const t = String(text ?? "").replace(ECHO_TAIL, "");
-  const kept = splitSentences(t).filter((x) => !ECHO_SENT.test(x));
-  return kept.length ? kept.join(" ") : t;
+  const src = String(text ?? "");
+  const out = perLine(src, (line) => splitSentences(line.replace(ECHO_TAIL, "")).filter((x) => !ECHO_SENT.test(x)).join(" "));
+  return out.trim() ? out : src.replace(ECHO_TAIL, "");
 }
 
 /** A claim that a single stock or a coin "holds many stocks" / is diversified (round 6: "QQQ·VOO·NVDA는 여러 종목을
@@ -1619,7 +1669,7 @@ const FRAC_VAL: Record<string, number> = { "half": 50, "one-half": 50, "a half":
   "a quarter": 25, "one-quarter": 25, "one quarter": 25, "three-quarters": 75, "three quarters": 75, "a fifth": 20, "one-fifth": 20, "one fifth": 20 };
 const FRAC_RE = /\b((?:well |just |roughly |about |around |nearly |almost |over |more than |under |less than |close to )*)(one[- ]half|a half|half|two[- ]thirds|one[- ]third|a third|three[- ]quarters|one[- ]quarter|a quarter|one[- ]fifth|a fifth)\b(?=\s+of\s+(?:the\s+|your\s+|its\s+|this\s+|all\s+)?(?:book|portfolio|assets|holdings|money|invested|total|wealth|equit(?:y|ies)|stock holdings)\b)/gi;
 export function fixFractions(text: string, holdings: { names: string[]; weight: number }[], groups: { label: RegExp; value: number }[] = [], tolPp = 5): string {
-  return splitSentences(text).map((sent) => sent.replace(FRAC_RE, (m: string, mods: string, frac: string, at: number) => {
+  return perLine(text, (line) => splitSentences(line).map((sent) => sent.replace(FRAC_RE, (m: string, mods: string, frac: string, at: number) => {
     const v = FRAC_VAL[frac.toLowerCase().replace(/\s+/g, " ")] ?? FRAC_VAL[frac.toLowerCase().replace(" ", "-")];
     if (v === undefined) return m;
     // the share the fraction describes: the nearest named holding or group in the sentence
@@ -1640,5 +1690,137 @@ export function fixFractions(text: string, holdings: { names: string[]; weight: 
       : /\b(?:under|less than|nearly|almost|close to)\b/.test(md) ? share <= v + 1 && share >= v - 15
       : Math.abs(share - v) <= tolPp;
     return ok ? m : `${share.toFixed(1)}%`;
-  })).join(" ");
+  })).join(" "));
+}
+
+const signed1 = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+/** The code-built answer for a trade question about ONE holding: that holding's facts, then what the decision rests
+ *  on, in a seller's or a buyer's frame. */
+function focusHusk(inp: HuskInput, ko: boolean): string {
+  const f = inp.focus!;
+  const sell = inp.mode === "sell";
+  const money = (v: number) => usdText(Math.abs(v));
+  if (ko) {
+    return [
+      `• ${f.name}: 자산의 ${pct1(f.weight, true)}(${usdText(f.usd)})${f.gainUsd !== null ? `, 매수 이후 ${f.gainUsd >= 0 ? "+" : "-"}${money(f.gainUsd)}` : ""}.`,
+      `• 움직임: ${[f.dayPct !== null ? `오늘 ${signed1(f.dayPct)}` : "", f.r1m !== null ? `1개월 ${signed1(f.r1m)}` : "", f.r3m !== null ? `3개월 ${signed1(f.r3m)}` : ""].filter(Boolean).join(", ") || "기간 수익률 데이터 없음"}.`,
+      f.report ? `• 다음 실적 발표(추정): ${f.report}.` : "",
+      f.divAnnual ? `• 배당: 연 약 ${usdText(f.divAnnual)}${f.divCurrent ? "(현재 배당률 기준)" : ""}.` : "",
+      sell ? "• 파는 쪽에서 보통 따지는 것: 차익에 붙는 세금, 이 종목 비중이 원하는 수준보다 큰지, 처음 산 이유가 아직 유효한지." : "• 사는 쪽에서 보통 따지는 것: 새 돈이 이 종목 비중을 얼마나 키우는지, 다음 실적 전후의 변동, 투자 기간.",
+    ].filter(Boolean).join("\n");
+  }
+  return [
+    `• ${f.name} is ${pct1(f.weight)} of your portfolio (${usdText(f.usd)})${f.gainUsd !== null ? `, ${f.gainUsd >= 0 ? "up" : "down"} ${money(f.gainUsd)} since you bought` : ""}.`,
+    `• Moves: ${[f.dayPct !== null ? `today ${signed1(f.dayPct)}` : "", f.r1m !== null ? `1 month ${signed1(f.r1m)}` : "", f.r3m !== null ? `3 months ${signed1(f.r3m)}` : ""].filter(Boolean).join(", ") || "no window figures yet"}.`,
+    f.report ? `• Next report expected ${f.report} (estimate).` : "",
+    f.divAnnual ? `• Dividend: about ${usdText(f.divAnnual)} a year${f.divCurrent ? " at the current rate" : ""}.` : "",
+    sell ? `• What a seller usually weighs here: the tax on the gain, whether ${pct1(f.weight)} in ${f.name} is more than you want in one name, and whether the reason you bought it still holds.`
+      : `• What a buyer usually weighs here: how far new money would lift ${f.name} above its ${pct1(f.weight)} weight, the swing around the next report, and your time horizon.`,
+  ].filter(Boolean).join("\n");
+}
+/** "Rank my holdings": a ranking by stated metrics, never by which to keep (r5 did this correctly). */
+function rankHusk(inp: HuskInput, ko: boolean): string {
+  const A = inp.assetsUsd || 1;
+  const hs = [...inp.holdings].filter((h) => h.usd > 0).sort((a, b) => b.usd - a.usd);
+  const byW = hs.slice(0, 8).map((h) => `${h.name} ${pct1(h.usd / A * 100, ko)}`).join(", ");
+  const r = inp.returns1m ?? {};
+  const byR = hs.filter((h) => typeof r[h.symbol] === "number").sort((a, b) => (r[b.symbol]! - r[a.symbol]!)).slice(0, 8).map((h) => `${h.name} ${signed1(r[h.symbol]!)}`).join(", ");
+  if (ko) return [`• 비중 순: ${byW}.`, byR ? `• 1개월 수익률 순: ${byR}.` : "", "• 어떤 종목을 남기거나 뺄지는 순위가 아니라 목표, 기간, 세금에 달려 있습니다."].filter(Boolean).join("\n");
+  return [`• By weight: ${byW}.`, byR ? `• By 1-month return: ${byR}.` : "", "• Which to keep or cut depends on your goals, horizon and taxes, not on the ranking itself."].filter(Boolean).join("\n");
+}
+
+/** A sell-side question ("should I sell TSLA", "which one would you trim", "dump"). */
+export const isSellQuestion = (q: string): boolean => /\b(?:sell|trim|dump|take profits?|get rid of|exit|cut|reduce|ditch|unload|offload|cash out|lighten)\b|팔|매도|정리|익절|손절|줄일/i.test(String(q ?? ""));
+/** "Rank my holdings (best to worst)". */
+export const isRankQuestion = (q: string): boolean => /\brank(?:ing|ed)?\b|\bbest to worst\b|\bworst to best\b|순위|순서대로/i.test(String(q ?? ""));
+
+/** Korean names for common US holdings, so the Korean guards recognise "애플", "마이크로소프트" (round 7: a 4-name
+ *  shortlist in Korean slipped past curatedListHits, which only knew the English names). */
+const KO_NAMES: Record<string, string[]> = {
+  AAPL: ["애플"], MSFT: ["마이크로소프트", "마소"], NVDA: ["엔비디아"], META: ["메타"], GOOGL: ["구글", "알파벳"], GOOG: ["구글", "알파벳"],
+  AMZN: ["아마존"], AVGO: ["브로드컴"], TSLA: ["테슬라"], NFLX: ["넷플릭스"], AMD: ["AMD"], PLTR: ["팔란티어"], QQQ: ["나스닥"], QQQM: ["나스닥"],
+  VOO: ["S&P 500", "S&P500"], SPY: ["S&P 500"], KO: ["코카콜라"], JNJ: ["존슨앤드존슨"], SCHD: ["SCHD"], BTC: ["비트코인"], "BTC-USD": ["비트코인"], ETH: ["이더리움"], "ETH-USD": ["이더리움"],
+  SOFI: ["소파이"], INTC: ["인텔"], ORCL: ["오라클"], CRM: ["세일즈포스"], COIN: ["코인베이스"], MSTR: ["마이크로스트래티지"],
+};
+export const koNamesFor = (sym: string): string[] => KO_NAMES[sym] ?? [];
+
+/** A named buy suggestion in answer to a trade / pick / cash question (round 7: "$120K cash" follow-up got "Adding
+ *  to the index fund (QQQM) would increase broad market exposure. Buying more dividend-paying shares like
+ *  Microsoft or Broadcom could raise annual income. Consider more shares in under-weighted areas like Google or
+ *  Amazon before earnings."). Scenario framing is allowed elsewhere; under a decision question it IS the pick. */
+export function suggestionHits(text: string, book: { names: string[] }[]): string[] {
+  const VERB = /\b(?:adding (?:to|more)|add(?:ing)? more|buying more|buy(?:ing)? more|more shares (?:in|of)|consider(?:ing)? (?:more|adding|buying|a position)|increas(?:e|ing) (?:your |the )?(?:stake|position|exposure|weight) in|top(?:ping)? up|putting (?:it|the cash|money|some) (?:in|into)|(?:could|would) go (?:in|into|to)|under-?weighted (?:areas|names|holdings) like|a good (?:home|place) for)\b|더 담|추가 매수|비중을 (?:늘|높)|더 사|사 모으|넣는 (?:것|게)|편입/i;
+  return sentencesOf(text).filter((s) => VERB.test(s) && book.some((b) => b.names.some((n) => n && n.length >= 2 && nameIn(s, n))));
+}
+
+/** "Apple is my biggest holding" (round 7: accepted when NVDA is 19.2% and Apple 13.6%). The premise in the QUESTION
+ *  is checked against the book; the correction line comes back, or null when the premise holds or names nothing. */
+export function holdingRankPremise(question: string, holdings: { names: string[]; weight: number }[], ko = false): string | null {
+  const q = String(question ?? "");
+  const big = /\b(?:is|are)\s+(?:my|the)\s+(?:biggest|largest|top|main|heaviest|single biggest|single largest)\s+(?:holding|position|stock|bet|weight)\b|(?:가장|제일)\s?(?:큰|많은|비중이 큰)\s?(?:종목|보유|비중)/i;
+  const small = /\b(?:is|are)\s+(?:my|the)\s+(?:smallest|tiniest|least)\s+(?:holding|position|stock)\b|(?:가장|제일)\s?(?:작은|적은)\s?(?:종목|보유|비중)/i;
+  const which = big.test(q) ? "big" : small.test(q) ? "small" : null;
+  if (!which || holdings.length < 2) return null;
+  const named = holdings.filter((h) => h.names.some((n) => n && nameIn(q, n)));
+  if (named.length !== 1) return null;
+  const sorted = [...holdings].sort((a, b) => b.weight - a.weight);
+  const truth = which === "big" ? sorted[0] : sorted[sorted.length - 1];
+  if (truth === named[0] || Math.abs(truth.weight - named[0].weight) < 0.05) return null;
+  const n0 = named[0].names[0], t0 = truth.names[0];
+  if (ko) return `${which === "big" ? "가장 큰" : "가장 작은"} 보유 종목은 ${n0}가 아니라 ${t0}(${truth.weight.toFixed(1)}%)입니다. ${n0}는 ${named[0].weight.toFixed(1)}%입니다.`;
+  return `Your ${which === "big" ? "biggest" : "smallest"} holding is ${t0} at ${truth.weight.toFixed(1)}%, not ${n0}; ${n0} is ${named[0].weight.toFixed(1)}%.`;
+}
+/** Sentences that call a holding the biggest / smallest when it is not (the answer repeating a false premise). */
+export function holdingRankClaims(text: string, holdings: { names: string[]; weight: number }[]): string[] {
+  if (holdings.length < 2) return [];
+  const sorted = [...holdings].sort((a, b) => b.weight - a.weight);
+  return sentencesOf(text).filter((s) => {
+    const big = /\b(?:the )?(?:biggest|largest|top|heaviest)(?: single)? (?:holding|position|stock|weight)\b|가장 큰 (?:종목|보유|비중)/i.test(s);
+    const small = /\b(?:the )?(?:smallest|tiniest)(?: single)? (?:holding|position|stock)\b|가장 작은 (?:종목|보유|비중)/i.test(s);
+    if (!big && !small) return false;
+    const named = holdings.filter((h) => h.names.some((n) => n && nameIn(s, n)));
+    if (named.length !== 1) return false;
+    const truth = big ? sorted[0] : sorted[sorted.length - 1];
+    return named[0] !== truth && Math.abs(truth.weight - named[0].weight) >= 0.05;
+  });
+}
+
+/** A holding's portfolio WEIGHT printed as its day MOVE ("META dropped 12.8%" when META is 12.8% of assets and fell
+ *  3.3%, round 6/7 midday). Used on stored briefs, whose original figure is gone: the sentence goes. */
+export function weightAsMoveHits(text: string, facts: { names: string[]; weight: number; pct: number | null }[]): string[] {
+  return sentencesOf(text).filter((s) => facts.some((f) => f.names.some((n) => {
+    if (!n || !nameIn(s, n)) return false;
+    const re = new RegExp(`${/[가-힣]/.test(n) ? esc(n) : `(?<![A-Za-z0-9])${esc(n)}(?![A-Za-z0-9])`}[^.%]{0,30}?\\b(?:rose|fell|dropped|climbed|gained|slipped|jumped|surged|sank|tumbled|rallied|declined|lost|added|up|down)\\s+(?:by\\s+|about\\s+)?(\\d+(?:\\.\\d+)?)\\s?%`, "i");
+    const m = s.match(re);
+    if (!m) return false;
+    const v = Number(m[1]);
+    return Math.abs(v - f.weight) <= 0.05 && (f.pct === null || Math.abs(Math.abs(f.pct) - v) > 0.2);
+  })));
+}
+
+/** A portfolio or holding yield that is not one we computed ("a yield near 0.5%" when the book yields 0.30% TTM /
+ *  0.34% at the current rate, round 6/7 morning). */
+export function wrongYieldClaims(text: string, allowed: number[], tol = 0.06): string[] {
+  return sentencesOf(text).filter((s) => {
+    if (!/\byield(?:s|ing)?\b|배당\s?수익률/i.test(s)) return false;
+    const figs = [...s.matchAll(/(\d+(?:\.\d+)?)\s?%/g)].map((m) => Number(m[1]));
+    return figs.length > 0 && figs.every((v) => !allowed.some((a) => Math.abs(a - v) <= tol));
+  });
+}
+
+/** A brief written during the day states the book's live day gain and total; the header above it moves on (round 7
+ *  poweruser: "A $211 gain lifts today's book to $116,500" under a header reading +$319 / $116,620). Each such
+ *  figure is labelled with the time it was read, once per sentence ("$116,500 (as of 4:05 PM ET)"). */
+export function labelLiveFigures(text: string, figures: number[], label: string): string {
+  const figs = figures.filter((f) => Number.isFinite(f) && Math.abs(f) >= 1);
+  if (!figs.length) return String(text ?? "");
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sent) => {
+    if (sent.includes(label)) return sent;
+    let lastEnd = -1;
+    for (const m of sent.matchAll(/[+\-−]?\$(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g)) {
+      const v = Number(m[1].replace(/,/g, ""));
+      if (figs.some((f) => Math.abs(Math.abs(f) - v) <= Math.max(1, Math.abs(f) * 0.005))) lastEnd = (m.index ?? 0) + m[0].length;
+    }
+    return lastEnd < 0 ? sent : `${sent.slice(0, lastEnd)} (${label})${sent.slice(lastEnd)}`;
+  }).join(" "));
 }
