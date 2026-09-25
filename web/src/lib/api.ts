@@ -157,6 +157,25 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { error } = await sb.from("lots").delete().eq("id", id);
       if (error) throw error;
     },
+    /** Move a position to another account. When that account already holds the same symbol (and label),
+     *  the two are one position: this one's lots fold into it and its id is returned instead. */
+    async setHoldingAccount(holding_id: string, account: Account): Promise<string> {
+      const { error } = await sb.from("holdings").update({ account }).eq("id", holding_id);
+      if (!error) return holding_id;
+      if (error.code !== "23505") throw error;   // anything but the (user, symbol, account, nickname) unique key
+      const { data: cur, error: e1 } = await sb.from("holdings").select("user_id,symbol,nickname").eq("id", holding_id).single();
+      if (e1) throw e1;
+      const { data: target, error: e2 } = await sb.from("holdings").select("id,source")
+        .eq("user_id", cur.user_id).eq("symbol", cur.symbol).eq("account", account).eq("nickname", cur.nickname).single();
+      if (e2) throw e2;
+      // a synced holding's lots are rewritten by every sync: manual lots folded into it would vanish
+      if (target.source === "snaptrade") throw new Error(`${cur.symbol} is already synced from your brokerage in that account.`);
+      const { error: e3 } = await sb.from("lots").update({ holding_id: target.id }).eq("holding_id", holding_id);
+      if (e3) throw e3;
+      const { error: e4 } = await sb.from("holdings").delete().eq("id", holding_id);
+      if (e4) throw e4;
+      return String(target.id);
+    },
     async removeHolding(holding_id: string) {
       const { error } = await sb.from("holdings").delete().eq("id", holding_id);
       if (error) throw error;

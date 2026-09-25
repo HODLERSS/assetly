@@ -5,6 +5,9 @@ import { InvestorQuiz } from "../components/InvestorQuiz";
 import { marketOf } from "../lib/markets";
 import { openConnectPortal, platformTag } from "../lib/native";
 import { Icon } from "../components/Icon";
+import { AmountField, EntryPreview } from "../components/AmountField";
+import { entryPreview, readAmount } from "../lib/numbers";
+import { ccySymbol } from "../lib/format";
 
 // Long enough for a slow phone network, short enough that nobody thinks the app has died.
 const SETUP_TIMEOUT_MS = 12000;
@@ -26,6 +29,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   const [cost, setCost] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
   const [searchErr, setSearchErr] = useState<string | null>(null);
   const [imported, setImported] = useState<PortfolioRow[] | null>(null);   // null = not polling
   const [importDone, setImportDone] = useState(false);
@@ -105,11 +109,13 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   };
 
   const finish = async () => {
+    if (!picked) return;
+    const q = readAmount(qty, picked.kind === "crypto" ? "units" : "shares"), c = readAmount(cost, "cost");
+    setFieldErr({ qty: q.error ?? undefined, cost: c.error ?? undefined });
+    if (q.value === null || c.value === null) return;
     setBusy(true); setErr(null);
     try {
-      const nQty = parseFloat(qty), nCost = parseFloat(cost);
-      if (!picked || !(nQty > 0) || !(nCost >= 0)) throw new Error("Shares must be positive and cost can't be negative.");
-      await api.addPosition(picked.symbol, nQty, nCost);
+      await api.addPosition(picked.symbol, q.value, c.value);
       void api.refreshNews([picked.symbol]);                // stories land while the user looks around
       const m = marketOf({ symbol: picked.symbol, kind: picked.kind });   // inferred, never asked
       await api.completeOnboarding([m === "KR" ? "KR" : m === "CRYPTO" ? "Crypto" : "US"], "USD", inv ?? INVESTOR_DEFAULT);
@@ -230,15 +236,12 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
       {step === 2 && picked && (
         <section aria-label="Shares and cost">
           <p style={{ marginBottom: 12 }}><span className="sym">{picked.symbol}</span> · {picked.name}</p>
-          <div className="field">
-            <label htmlFor="ob-qty">Shares</label>
-            <input id="ob-qty" className="num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="10" />
-          </div>
-          <div className="field">
-            <label htmlFor="ob-cost">Cost per share ({picked.currency === "KRW" ? "₩" : "$"})</label>
-            <input id="ob-cost" className="num" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="166.55" />
-          </div>
-          <p className="mutedc" style={{ fontSize: 12.5, marginBottom: 12 }}>Purchase date is optional — add it later from the position.</p>
+          <AmountField id="ob-qty" label={picked.kind === "crypto" ? "Quantity" : "Shares"} value={qty} placeholder="e.g. 10"
+            onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} />
+          <AmountField id="ob-cost" label={`Cost per ${picked.kind === "crypto" ? "coin" : "share"} (${ccySymbol(picked.currency).trim()})`} value={cost}
+            placeholder="What you paid" onChange={(v) => { setCost(v); setFieldErr((f) => ({ ...f, cost: undefined })); }} error={fieldErr.cost} />
+          <EntryPreview text={entryPreview({ kind: picked.kind, qty, cost, currency: picked.currency, unit: picked.kind === "crypto" ? picked.symbol : undefined })} />
+          <p className="mutedc" style={{ fontSize: 12.5, marginBottom: 12 }}>Don't know your cost? Use today's price and fix it later from the position. Purchase date is optional too.</p>
           {err && <div className="error-note" role="alert">{err}</div>}
           <button className="btn" disabled={busy} onClick={finish}>{busy ? "Saving…" : "Add position"}</button>
         </section>
