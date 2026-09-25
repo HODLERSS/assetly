@@ -26,7 +26,7 @@ const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
 };
 
 export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone, loading = false,
-  assessment = null, onAssessRetry, onAssessDismiss, onOpenNews, pricesAsOf = null }: {
+  assessment = null, onAssessRetry, onAssessDismiss, onOpenNews, pricesAsOf = null, briefRev = 0 }: {
   api: Api; rows: PortfolioRow[]; loading?: boolean;
   totals: { value: number; assets: number; debt: number; gl: number; cost: number; day: number; mixed: boolean; fx: FxRates | number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
@@ -35,6 +35,8 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   assessment?: AssessState | null; onAssessRetry?: () => void; onAssessDismiss?: () => void; onOpenNews?: () => void;
   /** set when the last refresh failed: the time of the prices on screen. Nothing reads as live then. */
   pricesAsOf?: string | null;
+  /** bumped by App when a newer brief lands or the connection comes back: the card reloads its editions */
+  briefRev?: number;
 }) {
   // App already drops empty holdings; a 0-share row must never reach Movers or the list whoever renders Home
   const rows = book.filter(isHeld);
@@ -208,7 +210,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
       )}
       {assessment && <AssessmentCard state={assessment} onRetry={() => onAssessRetry?.()} onDismiss={() => onAssessDismiss?.()} onOpenNews={onOpenNews} />}
       {/* a fresh assessment remounts the brief card so it shows at once (its own look-up gave up after 4 min) */}
-      <BriefCard api={api} key={assessment?.readyAt ?? "brief"} liveDayPct={liveDayPct} held={heldSymbols} book={rows}
+      <BriefCard api={api} key={`${assessment?.readyAt ?? "brief"}:${briefRev}`} liveDayPct={liveDayPct} held={heldSymbols} book={rows}
         totalUsd={convertCcy(totals.assets, baseCurrency, "USD", totals.fx)}
         pendingSince={assessPending ? assessment!.startedAt : null} onRefreshAssessment={onAssessRetry} />
       {nextArmed && rows.filter((r) => r.kind !== "cash" && r.kind !== "debt").length < 3 && (

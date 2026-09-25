@@ -345,7 +345,7 @@ function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", n
           </div>
         )}
         <div className="field"><label htmlFor="lot-note">Note (optional)</label>
-          <input id="lot-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. DCA week 3" /></div>
+          <input id="lot-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. DCA week 3" enterKeyHint="done" onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} /></div>
         <button className="btn" disabled={busy} onClick={save}>{busy ? "Saving…" : lot ? "Save changes" : "Add lot"}</button>
         {onDelete && <button className="btn danger-quiet" style={{ marginTop: 8 }} disabled={busy} onClick={() => setConfirmDelete(true)}>{lastLot ? "Delete lot and position" : "Delete this lot"}</button>}
         <button className="btn secondary" style={{ marginTop: 8 }} disabled={busy} onClick={onClose}>Cancel</button>

@@ -90,6 +90,13 @@ export function App({ api = defaultApi }: { api?: Api }) {
   // the book the brief watcher judges against (null until the first load): a brief about other holdings is
   // never announced as "Your brief is ready" (r4 newcomer)
   const briefBookRef = useRef<PortfolioRow[] | null>(null);
+  const [briefRev, setBriefRev] = useState(0);
+  // back online: the brief card drops its "Saved copy" line by reloading (r6 native m3)
+  useEffect(() => {
+    const on = () => setBriefRev((n) => n + 1);
+    window.addEventListener("online", on);
+    return () => window.removeEventListener("online", on);
+  }, []);
   // brief watcher: a new brief (first brief, or the next edition) lights Home when the user is elsewhere
   useEffect(() => {
     if (!session) return;
@@ -108,6 +115,9 @@ export function App({ api = defaultApi }: { api?: Api }) {
         if (seenBriefRef.current === null) { seenBriefRef.current = key; return; }
         if (key !== seenBriefRef.current) {
           const onHome = viewRef.current.kind === "tab" && viewRef.current.tab === "home";
+          // the card on Home loaded its editions when it mounted: reload it, or the banner announces a brief
+          // the card doesn't show yet (and ▶ would play the previous edition; r6 native M1)
+          setBriefRev((n) => n + 1);
           if (onHome) seenBriefRef.current = key;
           setBriefBanner({ audio: !!latest.audio_path, edition: latest.edition });
           if (!onHome) setHomeAlert(true);
@@ -414,11 +424,14 @@ export function App({ api = defaultApi }: { api?: Api }) {
   // from a pushed screen puts the list where it was.
   const homeScrollRef = useRef(0);
   const prevViewRef = useRef<View>(view);
+  const holdStopRef = useRef<(() => void) | null>(null);   // the Home scroll hold still running, if any
   const viewKey = view.kind === "tab" ? `tab:${view.tab}` : view.kind === "position" ? "position" : "add";
   useLayoutEffect(() => {
     const prev = prevViewRef.current;
     prevViewRef.current = view;
     if (prev === view) return;
+    // a Home scroll hold still running must not drag the NEXT screen down to Home's position
+    holdStopRef.current?.(); holdStopRef.current = null;
     const backHome = view.kind === "tab" && view.tab === "home" && prev.kind !== "tab";
     try { window.scrollTo({ top: backHome ? homeScrollRef.current : 0, left: 0 }); } catch { /* not a browser */ }
     // Home's cards finish their height a frame or two after this runs, and the first restore landed ~66pt
@@ -427,6 +440,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       const y = homeScrollRef.current, until = Date.now() + 600;
       let done = false;
       const stop = () => { done = true; window.removeEventListener("touchstart", stop); window.removeEventListener("wheel", stop); };
+      holdStopRef.current = stop;
       window.addEventListener("touchstart", stop, { passive: true });
       window.addEventListener("wheel", stop, { passive: true });
       const hold = () => {
@@ -527,7 +541,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
           <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"} loading={!booted}
             dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"}
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
-            briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)}
+            briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)} briefRev={briefRev}
             assessment={assess.state} onAssessRetry={retryAssessment} onAssessDismiss={assess.dismiss}
             onOpenNews={() => go({ kind: "tab", tab: "news" })}
             // always the prices' own time, the newest print on screen: the fetch time moved the label 37 minutes

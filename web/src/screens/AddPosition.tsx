@@ -150,7 +150,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
             <AmountField id="add-qty" label={`${picked.kind === "debt" ? "Amount owed" : "Amount"} (${ccySymbol(ccy).trim()})`}
               value={qty} onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} autoFocus />
             <div className="field"><label htmlFor="add-label">Label (optional)</label>
-              <input id="add-label" value={label} onChange={(e) => setLabel(e.target.value)} enterKeyHint="next"
+              <input id="add-label" value={label} onChange={(e) => setLabel(e.target.value)} enterKeyHint="done" onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                      placeholder={picked.kind === "debt" ? "e.g. Car loan" : "e.g. Emergency fund"} /></div>
           </>) : (<>
           <AmountField id="add-qty" label={picked.kind === "crypto" ? "Quantity" : "Shares"} value={qty}
@@ -173,7 +173,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
           {!fieldErr.qty && !fieldErr.cost && <EntryPreview text={entryPreview({ kind: picked.kind, qty, cost, currency: picked.kind === "cash" || picked.kind === "debt" ? ccy : picked.currency,
             unit: picked.kind === "crypto" ? qtyUnit(picked) : undefined })} />}
           <div className="field"><label htmlFor="add-note">Note (optional)</label>
-            <input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Earnings dip buy" enterKeyHint="done" /></div>
+            <input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Earnings dip buy" enterKeyHint="done" onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} /></div>
           {err && <div className="error-note" role="alert">{err}</div>}
           <button className="btn" disabled={busy} onClick={() => once(async () => {
             const isCash = picked.kind === "cash" || picked.kind === "debt";

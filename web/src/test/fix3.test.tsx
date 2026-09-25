@@ -398,3 +398,17 @@ describe("G9 moving into an account that already holds the symbol asks first", (
   });
 });
 
+
+describe("r6 native M1: the Home card reloads when a newer brief lands", () => {
+  it("coming back online reloads the card's editions, so a brief that landed meanwhile is shown", async () => {
+    const close = brief("close", { lede: "NVDA closed up.", held: ["NVDA"] }, new Date(Date.now() - 3 * 3600_000).toISOString());
+    const next = brief("close", { lede: "NVDA added to its gain after hours.", held: ["NVDA"] });
+    const getDailyBriefs = vi.fn().mockResolvedValue([close]);
+    render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue(nvdaOnly), getDailyBriefs })} />);
+    const card = await screen.findByTestId("brief-card");
+    expect(within(card).getByTestId("brief-lede").textContent).toBe("NVDA closed up.");
+    getDailyBriefs.mockResolvedValue([close, next]);
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    await waitFor(() => expect(within(screen.getByTestId("brief-card")).getByTestId("brief-lede").textContent).toBe("NVDA added to its gain after hours."));
+  });
+});
