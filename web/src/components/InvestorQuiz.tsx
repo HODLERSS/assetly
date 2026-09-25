@@ -4,8 +4,10 @@ import { INVESTOR_DEFAULT } from "../lib/api";
 
 // Six tap-only questions; no typing, skippable at any point (skip keeps what was answered and fills the rest with defaults).
 // Used at sign-up (Onboarding step 1) and in Settings for later edits.
-// every question is multi-select ("pick all that fit") and advances with its own Continue button
-export const QUIZ: { key: keyof Investor; q: string; opts: [string, string][] }[] = [
+// Most questions are multi-select ("pick all that fit"); experience and the drawdown reaction are one
+// answer each (a person is not both "Just starting" and "Professional"; r1 + r2 design audits). Answers
+// are stored as arrays either way. Every question advances with its own Continue button.
+export const QUIZ: { key: keyof Investor; q: string; opts: [string, string][]; single?: boolean }[] = [
   { key: "styles", q: "What kind of investor are you? Pick all that fit.", opts: [
     ["value", "Value"], ["growth", "Growth"], ["income", "Dividends & income"], ["index", "Index & passive"],
     ["ai_tech", "AI & tech"], ["trader", "Opportunistic trader"], ["crypto", "Crypto"]] },
@@ -16,9 +18,9 @@ export const QUIZ: { key: keyof Investor; q: string; opts: [string, string][] }[
     ["<1y", "Under 1 year"], ["1-3y", "1–3 years"], ["3-10y", "3–10 years"], ["10y+", "10+ years"]] },
   { key: "target", q: "What yearly returns would make you happy? Pick all that apply.", opts: [
     ["4-8%", "Steady 4–8%"], ["8-12%", "Market-like 8–12%"], ["12-25%", "Aggressive 12–25%"], ["25%+", "Swing big 25%+"]] },
-  { key: "risk", q: "A holding drops 25% in a month. What would you consider? Pick all that apply.", opts: [
+  { key: "risk", q: "A holding drops 25% in a month. What would you most likely do?", single: true, opts: [
     ["buy_more", "Buy more"], ["hold", "Hold on"], ["trim", "Trim a bit"], ["sell", "Get out"]] },
-  { key: "level", q: "How experienced are you? Pick all that describe you.", opts: [
+  { key: "level", q: "How experienced are you?", single: true, opts: [
     ["novice", "Just starting"], ["intermediate", "Intermediate"], ["advanced", "Advanced"], ["pro", "Professional"]] },
 ];
 
@@ -58,9 +60,10 @@ export function InvestorQuiz({ initial, draft, startAt = 0, onDone, onSkip, onPr
   const q = QUIZ[i];
   const last = i === QUIZ.length - 1;
   const next = () => (last ? onDone(complete(v)) : setI(i + 1));
-  const set = (key: keyof Investor, val: string) => {
+  const set = (key: keyof Investor, val: string, single = false) => {
     setV((p) => {
       const cur = p[key];
+      if (single) return { ...p, [key]: cur.length === 1 && cur[0] === val ? [] : [val] };   // radio, tap again to clear
       return { ...p, [key]: cur.includes(val) ? cur.filter((x) => x !== val) : [...cur, val] };
     });
   };
@@ -68,12 +71,12 @@ export function InvestorQuiz({ initial, draft, startAt = 0, onDone, onSkip, onPr
     <section aria-label="Investor profile" data-testid="investor-quiz">
       <p className="sub" style={{ margin: "0 0 4px" }}>Question {i + 1} of {QUIZ.length}</p>
       <p style={{ margin: "0 0 10px", fontWeight: 600 }}>{q.q}</p>
-      <div className="chips" style={{ padding: 0, flexWrap: "wrap", gap: 8 }} role="group" aria-label={q.q}>
+      <div className="chips" style={{ padding: 0, flexWrap: "wrap", gap: 8 }} role={q.single ? "radiogroup" : "group"} aria-label={q.q}>
         {q.opts.map(([key, label]) => {
           const on = v[q.key].includes(key);
           return (
             <button key={key} className="chip" aria-pressed={on} style={on ? { fontWeight: 700 } : undefined}
-              onClick={() => set(q.key, key)}>{label}</button>
+              onClick={() => set(q.key, key, q.single)}>{label}</button>
           );
         })}
       </div>

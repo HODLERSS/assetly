@@ -119,7 +119,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
 
   const finish = async () => {
     if (!picked) return;
-    const q = readAmount(qty, picked.kind === "crypto" ? "units" : "shares"), c = readAmount(cost, "cost");
+    const q = readAmount(qty, picked.kind === "crypto" ? "units" : "shares"), c = readAmount(cost, "cost", picked.currency);
     setFieldErr({ qty: q.error ?? undefined, cost: c.error ?? undefined });
     if (q.value === null || c.value === null) return;
     setBusy(true); setErr(null);
@@ -140,7 +140,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   if (imported !== null) {
     const n = imported.length;
     return (
-      <main className="screen" style={{ paddingTop: 28 }}>
+      <main className="screen" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 28px)" }}>
         <h1 className="h1">Set up Assetly</h1>
         <p className="mutedc" style={{ marginBottom: 18 }}>Brokerage connected</p>
         <div className="card" data-testid="ob-import">
@@ -178,7 +178,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
 
   if (!quizDone) {
     return (
-      <main className="screen" style={{ paddingTop: 28 }}>
+      <main className="screen" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 28px)" }}>
         <h1 className="h1">Set up Assetly</h1>
         <p className="mutedc" style={{ marginBottom: 18 }} data-testid="ob-step">Step 1 of 3 · About a minute, all taps. It shapes every insight you get.</p>
         <InvestorQuiz draft={draft?.raw} startAt={draft?.i ?? 0}
@@ -190,7 +190,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   }
 
   return (
-    <main className="screen" style={{ paddingTop: 28 }}>
+    <main className="screen" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 28px)" }}>
       <h1 className="h1">Set up Assetly</h1>
       <p className="mutedc" style={{ marginBottom: 18 }} data-testid="ob-step">Step {step + 1} of 3</p>
 
@@ -226,7 +226,9 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
             {results.map((r) => (
               <button key={r.symbol} className="row" disabled={busy} onClick={async () => {
                 setErr(null); setBusy(true);
-                try { await api.ensureSymbol(r); setPicked(r); setStep(2); }
+                // a different ticker starts from empty fields: Back from step 2 must not carry NVDA's
+                // shares and cost onto the next pick (r2 newcomer audit)
+                try { await api.ensureSymbol(r); if (r.symbol !== picked?.symbol) { setQty(""); setCost(""); setFieldErr({}); } setPicked(r); setStep(2); }
                 catch (e) { setErr(e instanceof Error ? e.message : "Could not add that ticker."); }
                 finally { setBusy(false); }
               }}>
@@ -237,6 +239,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
             {busy && <p className="empty">Adding to Assetly…</p>}
             {err && <div className="error-note" role="alert">{err}</div>}
             {searchErr && <div className="error-note" role="alert">{searchErr}</div>}
+            {q.trim() && searching && results.length === 0 && <p className="empty" aria-busy="true" data-testid="searching">Searching…</p>}
             {q.trim() && !searching && !searchErr && results.length === 0 && <p className="empty">No match for “{q.trim()}”. Try a ticker (AAPL) or a company name.</p>}
           </div>
           <button className="linky" data-testid="ob-skip" disabled={busy} onClick={skipForNow} style={{ marginTop: 6 }}>

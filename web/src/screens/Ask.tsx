@@ -53,6 +53,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const autoRef = useRef<string | null>(null);
   // the connect moment asks the first question on the user's behalf, once per key, once the data is in
   useEffect(() => {
@@ -72,6 +73,9 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
     const text = question.trim();
     if (!text || busy) return;
     setQ("");
+    // the keyboard goes down on send: the answer is the thing to read, and it streamed into the 40% of the
+    // screen the keyboard left (r2 native audit m2)
+    inputRef.current?.blur();
     setBusy(true);
     // the conversation so far, so a follow-up ("why did that happen?") is answered about the last answer
     const history = turns.filter((t) => t.a && !t.error).map((t) => ({ q: t.q, a: t.a as string }));
@@ -86,7 +90,12 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
 
   return (
     <>
-      <h2 className="h1">Ask</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2 className="h1">Ask</h2>
+        {turns.length > 0 && !busy && (
+          <button className="chip" data-testid="ask-new-chat" onClick={() => { setTurns([]); setQ(""); }}>New chat</button>
+        )}
+      </div>
       <p className="mutedc" style={{ fontSize: 12.5, margin: "2px 0 10px" }}>
         Your holdings, your numbers — answered from your data.
       </p>
@@ -123,7 +132,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
         <div ref={endRef} />
       </div>
       <form className="ask-composer" onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
-        <input aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
+        <input ref={inputRef} aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
                placeholder="Ask about your portfolio…" enterKeyHint="send" autoComplete="off" />
         <button className="btn" disabled={busy || !q.trim()}>{busy ? "…" : "Send"}</button>
       </form>

@@ -47,7 +47,10 @@ export function AuthScreen() {
   const legal = (url: string) => (ev: MouseEvent) => { if (native) { ev.preventDefault(); void openExternal(url); } };
 
   return (
-    <main className="screen" style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 12, minHeight: "100dvh" }}>
+    // Not `.screen`: that class carries the tab bar's bottom padding and no top inset, so centring in
+    // 100dvh pushed the logo up under the status-bar strip on every iPhone (r2 native audit, 2026-09-25).
+    // .auth-screen centres inside the real safe area instead.
+    <main className="auth-screen">
       <div style={{ textAlign: "center", marginBottom: 20 }}>
         <svg width="64" height="30" viewBox="0 0 32 12" aria-hidden="true" style={{ color: "var(--as-primary)" }}>
           <rect x="0" y="3" width="14" height="6" rx="3" fill="currentColor" />
@@ -102,13 +105,14 @@ export function AuthScreen() {
       <p className="mutedc" style={{ fontSize: 12.5, textAlign: "center", marginTop: 8 }} data-testid="auth-trust">
         Read-only. We can never trade or move money.
       </p>
+      <button type="button" className="linky auth-github" onClick={() => signInWithOAuth("github")} data-testid="auth-github">
+        Continue with GitHub
+      </button>
+      {/* the legal line is the last thing on the page */}
       <p className="auth-legal" data-testid="auth-legal">
         By continuing you agree to the <a href={TERMS_URL} target="_blank" rel="noreferrer noopener" onClick={legal(TERMS_URL)}>Terms</a> and{" "}
         <a href={PRIVACY_URL} target="_blank" rel="noreferrer noopener" onClick={legal(PRIVACY_URL)}>Privacy Policy</a>.
       </p>
-      <button type="button" className="linky auth-github" onClick={() => signInWithOAuth("github")} data-testid="auth-github">
-        Continue with GitHub
-      </button>
     </main>
   );
 }

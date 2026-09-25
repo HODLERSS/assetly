@@ -140,7 +140,7 @@ input, select { font: inherit; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
   background: var(--as-primary); color: var(--as-on-primary); border: 0; border-radius: var(--as-radius);
   padding: 13px 16px; font-weight: 600; }
-.btn.secondary { background: var(--as-surface); color: var(--as-ink); border: 1px solid var(--as-rule); }
+.btn.secondary { background: var(--as-surface); color: var(--as-ink); border: 1px solid var(--as-field-border); }   /* 3:1, never reads as disabled */
 .btn.danger { background: var(--as-loss); }
 /* A destructive action on a page (Remove position, Delete account) is red TEXT, the iOS convention: it
    should not be the heaviest thing on a detail screen. The solid .danger fill is for the confirm step. */

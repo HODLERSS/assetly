@@ -7,13 +7,16 @@ import { getTheme, setTheme, THEME_CHOICES, type ThemeChoice } from "../lib/them
 import { isNative, openConnectPortal, openExternal, platformTag } from "../lib/native";
 import { pushEnabled, registerPush, setPushEnabled } from "../lib/push";
 import { LEGAL_BASE } from "../lib/legal";
+import { marketOf } from "../lib/markets";
+import { useInFlight } from "../lib/inflight";
 
-const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? "1.0";
+// injected at build from package.json (vite.config.ts); "1.0" showed in the 1.0.1 build (r2 audits)
+const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? "dev";
 
 // Gap screen g2: account, currency matrix, markets, sign out. The matrix (totals / US assets /
 // KR assets, each USD or KRW) appears once the book actually holds KRW — no clutter before that.
-export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
-  api: Api; profile: Profile | null; rows: PortfolioRow[];
+export function SettingsScreen({ api, profile, rows, email = null, onChanged, onSignedOut }: {
+  api: Api; profile: Profile | null; rows: PortfolioRow[]; email?: string | null;
   onChanged: () => Promise<void> | void; onSignedOut: () => void;
 }) {
   const [theme, setThemeState] = useState<ThemeChoice>(() => getTheme());
@@ -43,6 +46,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
   const [deleting, setDeleting] = useState(false);          // confirm sheet
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const [signingOut, signOut] = useInFlight();
   const togglePush = async () => {
     setPushBusy(true);
     try {
@@ -58,6 +62,9 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
   const dispUs = profile?.display_us ?? "USD";
   const dispKr = profile?.display_kr ?? "KRW";
   const hasKrw = rows.some((r) => r.currency === "KRW") || base === "KRW";
+  const heldMarkets = [...new Set(rows.map((r) => marketOf(r)).filter((m): m is "US" | "KR" | "CRYPTO" => m !== null))]
+    .sort((a, b) => ["US", "KR", "CRYPTO"].indexOf(a) - ["US", "KR", "CRYPTO"].indexOf(b))
+    .map((m) => (m === "KR" ? "Korea" : m === "CRYPTO" ? "Crypto" : "US"));
 
   useEffect(() => {
     let live = true;
@@ -86,7 +93,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
     <>
       <h2 className="h1">Settings</h2>
       <div className="card" style={{ marginBottom: 14 }}>
-        <div className="row"><span>Signed in as</span><span className="sub">{profile?.display_name ?? "—"}</span></div>
+        <div className="row"><span>Signed in as</span><span className="sub settings-email" data-testid="signed-in-as">{email ?? profile?.display_name ?? "—"}</span></div>
         {hasKrw ? (
           <>
             {ccyRow("View totals in", base, (c) => api.updateBaseCurrency(c))}
@@ -100,7 +107,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
           <div className="row"><span>Exchange rate</span>
             <span className="sub num" data-testid="fx-rate-row">₩{Math.round(fx.rate).toLocaleString("en-US")}/$ · {timeAgo(fx.asOf)}</span></div>
         )}
-        <div className="row" style={{ alignItems: "center" }} data-testid="appearance-row">
+        <div className="row settings-appearance" style={{ alignItems: "center" }} data-testid="appearance-row">
           <span>Appearance</span>
           <span className="chips" role="group" aria-label="Appearance">
             {THEME_CHOICES.map((t) => (
@@ -109,8 +116,9 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
             ))}
           </span>
         </div>
-        <div className="row"><span>Markets</span><span className="sub">{(profile?.markets ?? []).join(" · ") || "—"}</span></div>
-        <div className="row"><span>Price cadence</span><span className="sub num">every 60s market hours</span></div>
+        {/* the markets actually held, not the ones picked at setup ("Markets: US" with two KRX holdings) */}
+        <div className="row"><span>Markets</span><span className="sub" data-testid="markets-row">{heldMarkets.length ? heldMarkets.join(" · ") : (profile?.markets ?? []).join(" · ") || "—"}</span></div>
+        <div className="row"><span>Price updates</span><span className="sub">Every minute while markets are open</span></div>
       </div>
       <div className="card" style={{ marginBottom: 14 }} data-testid="investor-card">
         <div className="row" style={{ alignItems: "center" }}>
@@ -215,21 +223,18 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
         <div className="row" style={{ alignItems: "center" }}><span>Support</span>
           <button className="chip" onClick={() => void openExternal(`${LEGAL_BASE}/support.html`)}>Open</button></div>
         <div className="row"><span>Version</span><span className="sub num">{APP_VERSION}</span></div>
-        <p className="mutedc" style={{ fontSize: 12.5, marginTop: 8 }} data-testid="not-advice">
+        <p className="mutedc" style={{ fontSize: 12.5, padding: "10px 14px 12px" }} data-testid="not-advice">
           Assetly describes what you own. It is information, not investment advice, and never a recommendation to buy or sell.
         </p>
       </div>
-      <button className="btn secondary" onClick={async () => { await api.signOut(); onSignedOut(); }}>Sign out</button>
+      <button className="btn secondary" disabled={signingOut} onClick={() => signOut(async () => { await api.signOut(); onSignedOut(); })}>{signingOut ? "Signing out…" : "Sign out"}</button>
       <button className="btn danger-quiet" style={{ marginTop: 10 }} onClick={() => { setDeleteErr(null); setDeleting(true); }} data-testid="delete-account">Delete account</button>
-      <p className="mutedc" style={{ fontSize: 12.5, marginTop: 14 }}>
-        Deleting your account removes your holdings, lots, briefs, insights, narration audio and any brokerage connection permanently.
-      </p>
       {deleting && (
         <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Delete account">
           <div className="sheet">
             <h2>Delete your account?</h2>
             <p className="mutedc" style={{ marginBottom: 14 }}>
-              Everything goes: holdings, lots, briefs, insights, narration audio and the brokerage connection. This cannot be undone.
+              This permanently deletes your holdings, briefs and brokerage connection. It can't be undone.
             </p>
             {deleteErr && <div className="error-note" role="alert">{deleteErr}</div>}
             <button className="btn danger" disabled={deleteBusy} data-testid="delete-confirm" onClick={async () => {

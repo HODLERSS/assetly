@@ -9,8 +9,13 @@
 /* "Building your assessment" card on Home */
 .assess-card { padding: 14px; margin-bottom: 16px; }
 .assess-card .assess-steps { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
-.assess-card .assess-steps li { display: flex; align-items: center; gap: 8px; }
+.assess-card .assess-steps li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .assess-card .assess-steps li[data-done="true"] { color: var(--as-gain); }
+.assess-card .assess-steps li[data-step="next"] { color: var(--as-muted); }
+.step-mark { width: 14px; height: 14px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
+.step-mark.next { border: 1.5px solid var(--as-field-border); }
+.step-mark.active { border: 2px solid var(--as-rule); border-top-color: var(--as-primary); animation: spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .step-mark.active { animation: none; border-color: var(--as-primary); } }
 .assess-card .assess-foot { margin: 10px 0 0; font-size: 12.5px; color: var(--as-muted); }
 .assess-card .assess-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
@@ -22,11 +27,29 @@
 .sheet-confirm { margin: 0 0 12px; }
 
 /* sign-in: provider marks and the legal line */
+/* Sign-in centres in the safe area: status bar above, home indicator below, no tab bar to clear. */
+.auth-screen { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px; min-height: 100dvh;
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 16px calc(env(safe-area-inset-bottom, 0px) + 24px); }
 .auth-provider { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
 .auth-provider svg { flex: none; }
 .auth-legal { font-size: 12px; text-align: center; color: var(--as-muted); margin: 4px 0 0; }
-.auth-legal a { color: inherit; text-decoration: underline; }
+.auth-legal a { color: inherit; text-decoration: underline; padding: 12px 2px; margin: -12px -2px; }   /* 44px tap height, same line box */
 .auth-github { font-size: 13px; }
 
 /* per-market "today" lines under the headline */
 .day-split { margin-top: 2px; }
+
+/* a brief whose premise has moved on: dated, and quieter than the numbers above it */
+.brief-asof { margin: 0 0 4px; font-size: 12px; }
+.brief-stale .prose { opacity: .72; }
+.brief-lede { cursor: pointer; }
+
+/* 320pt: the price on a position's second line was cut to "$1…". The account is on the detail screen;
+   the price is what the line is for. */
+@media (max-width: 359px) { .row .row-acct { display: none; } }
+
+/* Settings at large text (AX5 = 1.4x): the Appearance chips drop under their label instead of clipping
+   "Dark" to "D", and a long email ellipsizes in place */
+.settings-appearance { flex-wrap: wrap; }
+.settings-appearance .chips { padding: 0; margin-left: auto; }
+.settings-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

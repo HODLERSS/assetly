@@ -47,6 +47,15 @@ function notHoldable(r: SymbolRow): boolean {
 function asksForMarketData(q: string): boolean {
   return /^\^/.test(q) || q.includes("=") || /^usd\s*\/?\s*[a-z]{3}$/i.test(q);
 }
+/** Names shared by several listings, where the one people mean is not the first alphabetically:
+ *  "coca-cola" matched COKE, KOF and CCEP before KO; "vanguard s&p" put a London UCITS line above VOO. */
+const MEANT: Record<string, string> = {
+  "coca-cola": "KO", "coca cola": "KO", "coke": "KO",
+  "vanguard s&p": "VOO", "vanguard s&p 500": "VOO", "vanguard 500": "VOO",
+  "google": "GOOGL", "alphabet": "GOOGL", "berkshire hathaway": "BRK-B", "s&p 500": "SPY",
+};
+/** A listing abroad (VUSA.L, SHOP.TO): below the home listing at the same match level. Korean lines are home. */
+const foreignLine = (sym: string) => /\.[A-Z]{1,3}$/i.test(sym) && !/\.(KS|KQ)$/i.test(sym) && !sym.startsWith("$");
 const LEVERED = /\b(\d(\.\d)?x|ultra(pro)?|bull|bear|leveraged|inverse|short)\b/i;
 
 /** Order and filter a merged result list for a query. Exact ticker, then exact name, then ticker prefix,
@@ -68,6 +77,8 @@ export function rankSymbols(q: string, rows: SymbolRow[], preferCcy = "USD"): Sy
     else if (name.includes(t)) s = 5;
     else s = 6;   // the remote search matched it on something we can't see (e.g. a former name)
     if (LEVERED.test(r.name ?? "")) s += 0.5;
+    if (foreignLine(r.symbol)) s += 0.3;
+    if (MEANT[t] && r.symbol.toUpperCase() === MEANT[t]) s = Math.min(s, 0.5);
     if (r.kind === "cash" || r.kind === "debt") {
       const want = krwAsked ? "KRW" : preferCcy;
       s += r.currency === want ? 0 : r.currency === "USD" ? 0.2 : 0.4;
