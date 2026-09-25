@@ -3,6 +3,7 @@
 // of onboarding they can read AND listen to an assessment, without waiting for cron.
 // Returns immediately; the heavy chain runs in the background.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -16,9 +17,7 @@ Deno.serve(async (req) => {
   const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const base = Deno.env.get("SUPABASE_URL")!;
   const admin = createClient(base, svc);
-  const jwt = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
-  const { data: ud } = await admin.auth.getUser(jwt);
-  const uid = ud?.user?.id;
+  const uid = await userIdFrom(admin, bearerOf(req));
   if (!uid) return json({ ok: false, error: "not signed in" }, 401);
 
   // needs at least one priced, non-cash holding to be worth a brief

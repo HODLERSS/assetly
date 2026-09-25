@@ -1,6 +1,9 @@
 // Brief-retry: own the "get today's brief written" job with a full 150s per attempt.
 // Each request makes ONE daily-brief attempt; on failure it re-schedules itself (waitUntil) with
 // backoff up to MAX attempts, so the orchestrator never spends its clock on the brief.
+// For the PORTFOLIO ASSESSMENT it also owns public.assessment_status (the row the client's progress card
+// polls): running (with the attempt number) while it works, ready when the row lands, failed when the
+// attempts run out or the book is too small to assess.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-token", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -25,8 +28,12 @@ Deno.serve(async (req) => {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
   const headers = { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json", "x-internal-token": itok };
 
+  const assess = edition === "assessment";
+  const setStatus = (patch: Record<string, unknown>) => !assess ? Promise.resolve() : admin.from("assessment_status")
+    .upsert({ user_id: uid, updated_at: new Date().toISOString(), ...patch }, { onConflict: "user_id" }).then(() => {}, () => {});
   const work = (async () => {
     await new Promise((res) => setTimeout(res, DELAY[Math.min(attempt - 1, DELAY.length - 1)]));
+    await setStatus({ state: "running", step: "writing", attempt });
     const { data: before } = await admin.from("daily_briefs").select("generated_at").eq("user_id", uid).eq("brief_date", today).eq("edition", edition).maybeSingle();
     let dbStatus = "none"; let dbBody = "";
     const r = await fetch(`${base}/functions/v1/daily-brief`, { method: "POST", headers, body: JSON.stringify({ force: true, user_id: uid, edition }) })
@@ -35,7 +42,13 @@ Deno.serve(async (req) => {
     await admin.from("snaptrade_events").insert({ user_id: uid, kind: "brief_trace", seen: true, detail: { attempt, edition, dbStatus, dbBody } }).then(() => {}, () => {});
     const { data: after } = await admin.from("daily_briefs").select("generated_at, model").eq("user_id", uid).eq("brief_date", today).eq("edition", edition).maybeSingle();
     const wrote = (r?.wrote ?? 0) > 0 || (after && (!before || after.generated_at !== before.generated_at));
-    if (wrote) return;
+    if (wrote) { await setStatus({ state: "ready", step: "done", finished_at: new Date().toISOString(), error: null }); return; }
+    // daily-brief skips an empty book, or one under $100, without an error: nothing to retry, and the client
+    // must stop waiting
+    const users = (r as { users?: number } | null)?.users;
+    const skipped = r !== null && (users === 0 || users === 1) && !((r as { errors?: unknown[] }).errors ?? []).length;
+    if (skipped) { await setStatus({ state: "failed", step: "skipped", finished_at: new Date().toISOString(), error: users === 0 ? "no positions to assess" : "book too small to assess (under $100)" }); return; }
+    if (attempt >= MAX) { await setStatus({ state: "failed", step: "gave up", finished_at: new Date().toISOString(), error: dbBody.slice(0, 200) || dbStatus }); return; }
     if (attempt < MAX) {
       // hand off IMMEDIATELY; the next request sleeps its own backoff on its own clock
       await fetch(`${base}/functions/v1/brief-retry`, { method: "POST", headers, body: JSON.stringify({ user_id: uid, edition, attempt: attempt + 1 }) }).catch(() => null);
