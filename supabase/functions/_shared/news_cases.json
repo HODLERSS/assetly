@@ -1,0 +1,37 @@
+{
+  "_about": "Shared vectors for the news rules: supabase/functions/_shared/news_rules.ts (Deno test news_rules_test.ts) and its port in web/src/lib/news.ts (vitest news-rules.test.ts) must both pass every case. Every title here was seen in production on 2026-09-25.",
+  "junk": [
+    { "title": "QQQM Nov 2026 260.000 call (QQQM261120C00260000) Stock Historical Prices & Data", "url": "https://news.google.com/rss/articles/x", "source": "Yahoo Finance", "junk": true },
+    { "title": "VOO Oct 2026 682.500 put (VOO261023P00682500) interactive stock chart", "url": "https://news.google.com/rss/articles/x", "source": "uk.finance.yahoo.com", "junk": true },
+    { "title": "AVGO 261218 500.00C (AVGO261218C500000) Stock Options Chain | Quotes &amp; News", "url": "https://news.google.com/rss/articles/x", "source": "Moomoo", "junk": true },
+    { "title": "$Broadcom (AVGO.US)$ Shorted 32 shares at $363.58 and took profit at $352.36 after the strong reversal confirmed.", "url": "https://news.google.com/rss/articles/x", "source": "Moomoo", "junk": true },
+    { "title": "NVIDIA (NVDA) Stock Price | Quotes & News", "url": "https://news.google.com/rss/articles/x", "source": "Pluang", "junk": true },
+    { "title": "C Price History for Citigroup Stock", "url": "https://www.barchart.com/stocks/quotes/C/price-history", "source": "Barchart.com", "junk": true },
+    { "title": "Broadcom Falls 2% as $230 Billion AI Target Doubles the Delivery Test", "url": "https://finance.yahoo.com/technology/ai/articles/broadcom-falls-2", "source": "Yahoo Finance", "junk": false },
+    { "title": "Stocktwits: Nvidia's Rally Explained", "url": "https://stocktwits.com/news-articles/markets/equity/x", "source": "Stocktwits", "junk": false },
+    { "title": "Why Broadcom Stock Is Worth $650", "url": "https://news.google.com/rss/articles/x", "source": "morningstar.com", "junk": false }
+  ],
+  "usable": [
+    { "symbol": "NVDA", "name": "NVIDIA Corp", "title": "Is Ford Stock a Buy for Its Dividend?", "url": "https://www.fool.com/x", "source": "The Motley Fool", "usable": false },
+    { "symbol": "NVDA", "name": "NVIDIA Corp", "title": "Joby Aviation Is Flying Routes in Dubai", "url": "https://www.fool.com/y", "source": "The Motley Fool", "usable": false },
+    { "symbol": "NVDA", "name": "NVIDIA Corp", "title": "Nvidia Tests Key Level Amid Trump-Xi Talks, China Challenge", "url": "https://www.investors.com/x", "source": "Investor's Business Daily", "usable": true },
+    { "symbol": "META", "name": "Meta Platforms Inc", "title": "Zscaler Sinks 9% After Guidance", "url": "https://finance.yahoo.com/x", "source": "Yahoo Finance", "usable": false },
+    { "symbol": "META", "name": "Meta Platforms Inc", "title": "Instagram tests a new feed for teens", "url": "https://www.theverge.com/x", "source": "The Verge", "usable": true },
+    { "symbol": "VOO", "name": "Vanguard S&P 500 ETF", "title": "A Strong September Labor Market Report To Crush Stocks And Bonds", "url": "https://seekingalpha.com/article/4949788", "source": "Seeking Alpha", "summary": "The S&P 500 could slide if payrolls surprise to the upside.", "usable": true },
+    { "symbol": "VOO", "name": "Vanguard S&P 500 ETF", "title": "A Strong September Labor Market Report To Crush Stocks And Bonds", "url": "https://seekingalpha.com/article/4949788", "source": "Seeking Alpha", "usable": false },
+    { "symbol": "AVGO", "name": "Broadcom Inc", "title": "QQQM Nov 2026 260.000 call (QQQM261120C00260000) Stock Historical Prices", "url": "https://news.google.com/x", "source": "Yahoo Finance", "usable": false },
+    { "symbol": "MSFT", "name": "Microsoft Corp", "title": "8-K filed: 8-K", "url": "https://www.sec.gov/Archives/x", "source": "SEC Filing", "usable": true },
+    { "symbol": "005930.KS", "name": "Samsung Electronics", "name_kr": "삼성전자", "title": "삼성전자, 3분기 실적 기대감에 강세", "url": "https://n.news.naver.com/x", "source": "연합뉴스", "usable": true }
+  ],
+  "publisher": [
+    { "url": "https://www.fool.com/investing/2026/09/25/amd-just-joined/?.tsrc=rss", "source": "Yahoo Finance", "publisher": "The Motley Fool" },
+    { "url": "https://247wallst.com/investing/etf/2026/09/25/if-i-were-25/", "source": "Yahoo Finance", "publisher": "24/7 Wall St." },
+    { "url": "https://www.trefis.com/stock/avgo/articles/1", "source": "Yahoo Finance", "publisher": "Trefis" },
+    { "url": "https://www.manufacturingdive.com/news/x", "source": "Yahoo Finance", "publisher": "Manufacturing Dive" },
+    { "url": "https://www.cryptoprowl.com/x", "source": "Yahoo Finance", "publisher": "CryptoProwl" },
+    { "url": "https://unknown-publisher.io/x", "source": "Yahoo Finance", "publisher": "unknown-publisher.io" },
+    { "url": "https://finance.yahoo.com/m/b1289cca", "source": "Yahoo Finance", "publisher": "Yahoo Finance" },
+    { "url": "https://news.google.com/rss/articles/x", "source": "morningstar.com", "publisher": "morningstar.com" },
+    { "url": "https://unknown-publisher.io/x", "source": "Reuters", "publisher": "Reuters" }
+  ]
+}

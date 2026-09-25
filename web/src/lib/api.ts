@@ -3,6 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { rankSymbols, searchQuery } from "./search";
+import { cleanNews } from "./news";
 
 export type SymbolRow = {
   symbol: string; name: string; exchange: string; currency: string; kind: string;
@@ -27,7 +28,7 @@ export type Insight = {
 };
 /** One earlier Ask exchange: the question and the answer the user saw. */
 export type AskTurn = { q: string; a: string };
-export type NewsItem ={ id: string; symbol: string; title: string; url: string; source: string; published_at: string | null };
+export type NewsItem ={ id: string; symbol: string; title: string; url: string; source: string; published_at: string | null; summary?: string | null };
 export type BriefSections = {
   lede: string; overnight: string;
   positions: { name: string; note: string; watch: string }[];
@@ -280,13 +281,24 @@ export function makeApi(sb: SupabaseClient = supabase) {
                held_symbols: Array.isArray(r.held_symbols) ? (r.held_symbols as string[]) : null };
     },
     async getNews(scope?: string | string[]): Promise<NewsItem[]> {
-      let q = sb.from("news").select("id,symbol,title,url,source,published_at")
-        .order("published_at", { ascending: false, nullsFirst: false }).limit(50);
-      if (typeof scope === "string") q = q.eq("symbol", scope);
-      else if (Array.isArray(scope)) { if (scope.length === 0) return []; q = q.in("symbol", scope); }
-      const { data, error } = await q;
+      if (Array.isArray(scope) && scope.length === 0) return [];
+      // Rows stored before the server's ingest gate still hold option chains and stories about other companies,
+      // so the same gate runs again here (lib/news.ts cleanNews). Over-fetch so a page of 50 survives it.
+      const page = (cols: string) => {
+        let q = sb.from("news").select(cols).order("published_at", { ascending: false, nullsFirst: false }).limit(150);
+        if (typeof scope === "string") q = q.eq("symbol", scope);
+        else if (Array.isArray(scope)) q = q.in("symbol", scope);
+        return q;
+      };
+      let { data, error } = await page("id,symbol,title,url,source,summary,published_at");
+      if (error) ({ data, error } = await page("id,symbol,title,url,source,published_at"));   // a schema without summary
       if (error) throw error;
-      return (data ?? []) as NewsItem[];
+      const rows = (data ?? []) as unknown as NewsItem[];
+      const syms = [...new Set(rows.map((r) => r.symbol))];
+      const { data: cat } = syms.length ? await sb.from("symbols").select("symbol,name,name_kr").in("symbol", syms) : { data: [] };
+      const names: Record<string, { name?: string | null; name_kr?: string | null }> = {};
+      for (const c of (cat ?? []) as { symbol: string; name: string | null; name_kr: string | null }[]) names[c.symbol] = c;
+      return cleanNews(rows, names).slice(0, 50);
     },
     /** First-look intelligence for a just-added symbol; fire-and-forget from the UI.
      *  Deduped per session so the pick-time head start and the post-add call don't double-spend. */

@@ -13,6 +13,11 @@
 //
 // Progress for the client: public.assessment_status (one row per user: queued -> running -> ready | failed,
 // with started_at / updated_at / finished_at). This function writes "queued"; brief-retry owns the rest.
+// started_at is the RUN's identity: every later write is scoped to it, so a run that a newer one replaced
+// can never flip the row back to ready. A body of {pending:true} only marks a new run queued (step
+// "waiting") and returns: the client calls it the moment a position is added, before its debounced kick, so
+// the stale assessment can be hidden at once (round 2 newcomer: a one-stock verdict stayed up ~80s under a
+// "ready" banner while the book had changed).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { backfillShort } from "../_shared/history.ts";
@@ -59,12 +64,17 @@ Deno.serve(async (req) => {
   // horizons, gaps. The clock editions (morning / midday / close) keep arriving on their cron cadence.
   const edition = "assessment";
   const startedAt = new Date().toISOString();
+  if (body.pending === true) {
+    await admin.from("assessment_status").upsert({ user_id: uid, state: "queued", step: "waiting", attempt: 0, started_at: startedAt,
+      updated_at: startedAt, finished_at: null, error: null }, { onConflict: "user_id" }).then(() => {}, () => {});
+    return json({ ok: true, pending: true, started_at: startedAt });
+  }
   // the progress row the client polls; an error here (table not migrated yet) never blocks the chain.
   // A new run upserts the whole row; later steps PATCH it (a partial upsert would trip the NOT NULL state).
   await admin.from("assessment_status").upsert({ user_id: uid, state: "queued", step: "sync", attempt: 0, started_at: startedAt,
     updated_at: startedAt, finished_at: null, error: null }, { onConflict: "user_id" }).then(() => {}, () => {});
   const setStatus = (patch: Record<string, unknown>) => admin.from("assessment_status")
-    .update({ updated_at: new Date().toISOString(), ...patch }).eq("user_id", uid).then(() => {}, () => {});
+    .update({ updated_at: new Date().toISOString(), ...patch }).eq("user_id", uid).eq("started_at", startedAt).then(() => {}, () => {});
 
   const trace: Record<string, unknown> = { started: startedAt, edition };
   // written first and updated per step, so a chain the runtime reaps still leaves evidence
@@ -92,7 +102,7 @@ Deno.serve(async (req) => {
     // 3. the assessment: handed to brief-retry NOW, which owns its own wall clock per attempt (up to 6
     //    attempts with backoff) and narrates via daily-brief -> narrate. The orchestrator's clock is never spent here.
     try {
-      const br = await fetch(`${base}/functions/v1/brief-retry`, { method: "POST", headers, body: JSON.stringify({ user_id: uid, edition, attempt: 1 }) });
+      const br = await fetch(`${base}/functions/v1/brief-retry`, { method: "POST", headers, body: JSON.stringify({ user_id: uid, edition, attempt: 1, run: startedAt }) });
       trace.brief = `${br.status} ` + (await br.text().catch(() => "")).slice(0, 120);
       // a refused hand-off (stale INTERNAL_TOKEN in a function's frozen env, a boot error) must not leave the
       // client's progress card waiting on a run that never started

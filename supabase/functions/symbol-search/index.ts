@@ -118,7 +118,7 @@ async function yahooSearch(qRaw: string): Promise<CatalogRow[]> {
 
 type ChartData = {
   price: number; prev_close: number | null; currency: string; market_state: string;
-  as_of: string; history: { ts: string; price: number }[];
+  as_of: string; history: { ts: string; price: number }[]; name?: string | null;
 };
 
 function chartPoints(res: Record<string, any>): { ts: string; price: number }[] {
@@ -169,6 +169,7 @@ async function yahooChart(yahoo: string): Promise<ChartData | null> {
     market_state: "unknown",
     as_of: new Date((meta.regularMarketTime ?? Date.now() / 1000) * 1000).toISOString(),
     history,
+    name: (meta.longName || meta.shortName || null) as string | null,
   };
 }
 
@@ -201,8 +202,11 @@ Deno.serve(async (req) => {
     const chart: ChartData | null = fixture ? (body.chart ?? null) : await yahooChart(e.yahoo);
     if (!chart) return json({ ok: false, error: `Could not verify ${e.symbol} with the market data source` }, 422);
     const currency = chart.currency === "KRW" ? "KRW" : "USD";
+    // a caller that only knows the ticker ("AVGO") must not name the company after it: the Home list showed
+    // "AVGO AVGO" (round 2). Yahoo's own long name fills in.
+    const bareName = e.name.trim().toUpperCase() === e.symbol.toUpperCase() || e.name.trim().toUpperCase() === e.yahoo.toUpperCase();
     const row = {
-      symbol: e.symbol, name: e.name.slice(0, 200),
+      symbol: e.symbol, name: (bareName && chart.name ? chart.name : e.name).slice(0, 200),
       exchange: (e.exchange ?? "NASDAQ").slice(0, 40), currency,
       kind: ["equity", "etf", "fund", "crypto"].includes(e.kind) ? e.kind : "equity",
       yahoo: e.yahoo, active: true,

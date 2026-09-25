@@ -4,8 +4,9 @@
 // Pass 2 (background, EdgeRuntime.waitUntil): full transcript/filing pull, then a
 //   richer regeneration that silently upgrades the card. The hourly cron owns it after.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { backfillShort, windowReturns } from "../_shared/history.ts";
-import { EVIDENCE_LAW, isEarningsCallTitle, isJunkNews, pctText } from "../_shared/intel.ts";
+import { ensureHistory, windowReturns } from "../_shared/history.ts";
+import { adviceHits, aliasesFor, dayMoveMismatches, EVIDENCE_LAW, fixArticles, isEarningsCallTitle, levelMismatches, type LiveFact, pctText, usableNews } from "../_shared/intel.ts";
+import { dayTag, marketOf } from "../_shared/calendar.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -85,48 +86,61 @@ Deno.serve(async (req) => {
     const since6h = new Date(Date.now() - 6 * 3600000).toISOString();
     const { count: nFresh } = await admin.from("news").select("id", { count: "exact", head: true })
       .eq("symbol", symbol).gte("published_at", since6h);
-    await Promise.race([Promise.all([nFresh ? Promise.resolve(null) : call("news-sync"), backfillShort(admin, [symbol], { cap: 1 }).catch(() => null)]), sleep(3500)]);
+    await Promise.race([Promise.all([nFresh ? Promise.resolve(null) : call("news-sync"), ensureHistory(admin, [symbol], { cap: 1, budgetMs: 3500 })]), sleep(3500)]);
   }
 
   const gather = async (deep: boolean) => {
     const since30 = new Date(Date.now() - 30 * 86400000).toISOString();
-    const [{ data: srow }, { data: newsRaw }, { data: fils }, { data: tr }, wr] = await Promise.all([
-      admin.from("symbols").select("name,kind,currency").eq("symbol", symbol).maybeSingle(),
-      admin.from("news").select("title,url,source,published_at").eq("symbol", symbol).gte("published_at", since30)
-        .order("published_at", { ascending: false }).limit(deep ? 24 : 16),
+    const [{ data: srow }, { data: newsRaw }, { data: fils }, { data: tr }, { data: quote }] = await Promise.all([
+      admin.from("symbols").select("name,name_kr,kind,currency").eq("symbol", symbol).maybeSingle(),
+      admin.from("news").select("title,url,source,summary,published_at").eq("symbol", symbol).gte("published_at", since30)
+        .order("published_at", { ascending: false }).limit(deep ? 32 : 24),
       admin.from("filings").select("form,filed_at").eq("symbol", symbol).order("filed_at", { ascending: false }).limit(6),
       admin.from("transcripts").select("title,content,published_at").eq("symbol", symbol)
         .order("published_at", { ascending: false, nullsFirst: false }).limit(4),
-      // windows read point by point: the old ascending 2,000-row pull was capped at 1,000 rows and a thin
-      // history made every window "since it was added"
-      windowReturns(admin, symbol, [30, 365, 730]),
+      admin.from("prices").select("price,change_pct,currency,as_of").eq("symbol", symbol).maybeSingle(),
     ]);
-    const news = (newsRaw ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, deep ? 12 : 8);
+    // windows read point by point, judged in the holding's own sessions: the old ascending 2,000-row pull was
+    // capped at 1,000 rows and a thin history made every window "since it was added"
+    const mk = marketOf(symbol, srow?.kind, srow?.currency);
+    const wr = await windowReturns(admin, symbol, [30, 365, 730], Date.now(), mk);
+    const aka = [symbol, ...aliasesFor(symbol, srow?.name, srow?.name_kr)];
+    const news = (newsRaw ?? []).filter((n) => usableNews(n, aka)).slice(0, deep ? 12 : 8);
+    const px = quote?.price === null || quote?.price === undefined ? null : Number(quote.price);
+    const chg = quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct);
+    const facts: LiveFact[] = [{ names: aka, pct: chg, price: px }];
     const perf = { d30: pctText(wr.pct[30] ?? null), y1: pctText(wr.pct[365] ?? null), y2: pctText(wr.pct[730] ?? null) };
     // a conference talk is not an earnings call
     const latestTr = (tr ?? []).find((t) => isEarningsCallTitle(t.title));
     const korean = symbol.endsWith(".KS") || symbol.endsWith(".KQ") || srow?.currency === "KRW";
     const prompt = `First-look brief for a retail investor who JUST added ${srow?.name ?? symbol} (${symbol}).
+Share price (ONE share) ${px === null ? "n/a" : (korean ? "\u20a9" + Math.round(px).toLocaleString("en-US") : "$" + px.toFixed(2))}; day change ${chg === null ? "n/a" : (chg >= 0 ? "+" : "") + chg.toFixed(1) + "%"} [${dayTag(mk)}]. These are the ONLY price and day-move figures you may state.
 Price change: 30d ${perf.d30}, 1y ${perf.y1}, 2y ${perf.y2} ("not enough price history yet" means no figure exists; never estimate one).
 ${latestTr ? `Latest earnings call ("${String(latestTr.title).slice(0, 120)}", ${String(latestTr.published_at).slice(0, 10)}):\n${String(latestTr.content).slice(0, deep ? 6000 : 3000)}` : "No earnings call transcript on file."}
 ${(fils ?? []).length ? `SEC filings: ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}
 Headlines (30d):
 ${news.map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (none on file yet)"}
 ${EVIDENCE_LAW}
+Information, never a verdict: never call it cheap, expensive, undervalued, overvalued, a bargain or a buying opportunity, and never tell anyone to buy, sell or hold.
 
 Return STRICT JSON: {"bullets": [exactly 2 strings], "trend": str}.
 bullet 1: the latest earnings call in one line WITH its date. If none on file, the most recent fundamental signal instead, honestly labeled.
 bullet 2: the single biggest story of the past month, interpreted, never restated.
 trend: the 2-year trajectory in ONE sentence, max 20 words.
 Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes.${korean ? " Write won amounts with the \u20a9 sign." : " Money is US dollars; never write won."} Plain punchy language. Never use em dashes or semicolons.`;
-    return { prompt, hadTranscript: !!latestTr, newsCount: news.length };
+    return { prompt, hadTranscript: !!latestTr, newsCount: news.length, facts };
   };
 
-  const writeGlance = async (content: string | null) => {
+  // a line that contradicts the live quote ("VOO down 0.6%" at +0.45%) or passes a verdict is not stored
+  const okLine = (l: string, facts: LiveFact[]) => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length;
+  const writeGlance = async (content: string | null, facts: LiveFact[] = []) => {
     const parsed = content ? parseGlance(content) : null;
     if (!parsed) return false;
+    const bullets = parsed.bullets.map(fixArticles).filter((b) => okLine(b, facts));
+    if (bullets.length < 2) return false;
+    const windows = parsed.windows.trend && !okLine(parsed.windows.trend, facts) ? {} : parsed.windows;
     const { error: e } = await admin.from("insights").insert({
-      symbol, bullets: parsed.bullets, windows: parsed.windows,
+      symbol, bullets, windows,
       model: fixture ? "fixture" : (Deno.env.get("MARA_MODEL") ?? "MiniMax-M3"),
     });
     return !e;
@@ -137,11 +151,11 @@ Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes.$
   let content: string | null;
   if (fixture) content = JSON.stringify(body.canned ?? { bullets: ["fixture call verdict with date", "fixture biggest headline take"], trend: "fixture two-year trajectory in one line" });
   else content = await askModel(key, g1.prompt, 5000);
-  const wrote = await writeGlance(content);
+  const wrote = await writeGlance(content, g1.facts);
   if (!wrote && !fixture) {
-    // one immediate retry on a transient model failure keeps the promise to the UI
+    // one immediate retry on a transient model failure (or a take that contradicted the quote) keeps the promise to the UI
     const retry = await askModel(key, g1.prompt, 5000);
-    if (!(await writeGlance(retry))) return json({ ok: false, error: "unparseable" }, 502);
+    if (!(await writeGlance(retry, g1.facts))) return json({ ok: false, error: "unparseable" }, 502);
   } else if (!wrote) {
     return json({ ok: false, error: "unparseable" }, 502);
   }
@@ -154,7 +168,7 @@ Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes.$
         const g2 = await gather(true);
         if (g2.hadTranscript || g2.newsCount > g1.newsCount) {
           const richer = await askModel(key, g2.prompt, 8000);
-          await writeGlance(richer);
+          await writeGlance(richer, g2.facts);
         }
       } catch { /* the hourly lap covers it */ }
     })();

@@ -4,8 +4,11 @@
 // Stored in public.insights; rendered clearly separated from raw news. Fixture mode for tests.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } from "../_shared/calendar.ts";
-import { aliasesFor, booksKorean, earningsLine, EVIDENCE_LAW, fixPriceConfusions, isEarningsCallTitle, isJunkNews, pctText, plainScrub, type PosFact } from "../_shared/intel.ts";
-import { windowReturns } from "../_shared/history.ts";
+import {
+  adviceHits, aliasesFor, booksKorean, dayMoveMismatches, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, isEarningsCallTitle, levelMismatches,
+  type LiveFact, mentionedSymbols, pctText, plainScrub, type PosFact, usableNews,
+} from "../_shared/intel.ts";
+import { ensureHistory, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 
 const CORS = {
@@ -29,7 +32,7 @@ async function askMara(key: string, model: string, prompt: string, maxTokens = 1
     body: JSON.stringify({
       model,
       messages: [
-        { role: "system", content: "You are a sharp buy-side equity analyst writing for busy retail investors. Be specific, opinionated, and honest about uncertainty. Plain language, no hedging filler, no disclaimers. Use concrete numbers from the provided data. Respond with the JSON object ONLY — your first character must be '{'. Never write analysis prose outside the JSON." },
+        { role: "system", content: "You are a sharp buy-side equity analyst writing for busy retail investors. Be specific, opinionated about what matters and why, and honest about uncertainty; never about whether to buy or sell. Plain language, no hedging filler, no disclaimers. Use concrete numbers from the provided data, exactly as given. Respond with the JSON object ONLY — your first character must be '{'. Never write analysis prose outside the JSON." },
         { role: "user", content: prompt },
       ],
       temperature: 0.3, max_tokens: maxTokens,
@@ -106,6 +109,22 @@ function deJust(text: string, callAge: number | null): string {
   return text.replace(STALE_JUST, "$2");
 }
 function sessNote(mkt: "US" | "KR", now = new Date()): string { return sessionLine(mkt, now); }
+
+/** What is wrong with each line of a take, against the live numbers it was written from: a day move that is
+ *  not the session's move ("VOO down 0.6%" at +0.45%), a price level that is not where it trades ("BTC near
+ *  $78K" at $83.7K), a trade instruction or a valuation call ("looks cheap", "sets up well"). Round 2 saw all
+ *  three on cards written after the round-1 deploy. */
+function takeProblems(lines: string[], facts: LiveFact[]): string[] {
+  const out: string[] = [];
+  for (const l of lines) {
+    for (const s of dayMoveMismatches(l, facts)) out.push(`"${s}" states a day move that is not the session move in the data`);
+    for (const s of levelMismatches(l, facts)) out.push(`"${s}" puts the price somewhere it is not trading (see the share price in the data)`);
+    for (const s of adviceHits(l)) out.push(`"${s}" is a buy/sell or cheap/expensive call; state the fact or the metric instead`);
+  }
+  return out;
+}
+const lineOk = (l: string, facts: LiveFact[]) => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length;
+const VALUE_LAW = `VERDICT LAW: information, never a verdict. Never call the stock cheap, expensive, undervalued, overvalued, a bargain or a buying opportunity, never say a drop "sets up well" or offers "downside protection", never tell anyone to buy, sell, hold or add. State the metric (a P/E against its own history, a target and who set it) and what would change the picture. Day moves and prices come ONLY from the data above, with its session label.`;
 
 
 // ---- reader profile: the 6 sign-up answers steer VOICE, EMPHASIS and PURPOSE, never the facts ----
@@ -265,28 +284,40 @@ Deno.serve(async (req) => {
   targets = targets.sort((a, b) =>
     openNow(a) - openNow(b) || (age.get(a) ?? 0) - (age.get(b) ?? 0) || (invested.get(b) ?? 0) - (invested.get(a) ?? 0)).slice(0, 16);
 
+  // Self-healing price history: every lap backfills a few held symbols whose daily history does not reach back
+  // 400 days (a symbol added without the backfill, like AMZN in round 2, read a 28-day move as its "1M").
+  // Bounded and idempotent; the connect path does its own before it calls here.
+  const healed = !fixture && !force && !onlyUser ? await ensureHistory(admin, held, { cap: 6, budgetMs: 20000 }) : null;
+  // ...and a catalog name that is only the ticker ("AVGO AVGO" on Home) gets the company's real name
+  if (!fixture && !force && !onlyUser) await Promise.race([repairNames(admin, held, 3).catch(() => []), new Promise((res) => setTimeout(res, 6000))]);
+
   let wrote = 0;
   const errors: string[] = [];
   for (const symbol of targets) {
     try {
-      const { data: srow } = await admin.from("symbols").select("name").eq("symbol", symbol).single();
+      const { data: srow } = await admin.from("symbols").select("name, name_kr").eq("symbol", symbol).single();
+      const aka = aliasesFor(symbol, srow?.name, (srow as { name_kr?: string | null } | null)?.name_kr);
       const since7 = new Date(Date.now() - 7 * 86400000).toISOString();
       const since30 = new Date(Date.now() - 30 * 86400000).toISOString();
-      const { data: news7raw } = await admin.from("news").select("title,url,source,published_at")
+      const { data: news7raw } = await admin.from("news").select("title,url,source,summary,published_at")
         .eq("symbol", symbol).gte("published_at", since7)
-        .order("published_at", { ascending: false }).limit(40);
-      // quote pages, option chains and single-user posts are not news (an AVGO card once read a Moomoo
-      // user's 32-share trade as "confirms support")
-      const news7 = (news7raw ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 25);
+        .order("published_at", { ascending: false }).limit(60);
+      // quote pages, option chains, single-user posts and stories not about this holding are not its news (an
+      // AVGO card read a Moomoo user's 32-share trade as "confirms support"); judged at READ time too, because
+      // rows stored before the ingest gate are still in the table
+      const news7 = (news7raw ?? []).filter((n) => usableNews(n, aka)).slice(0, 25);
       const { count: n30 } = await admin.from("news").select("id", { count: "exact", head: true })
         .eq("symbol", symbol).gte("published_at", since30);
       // windows read point by point (the latest price, and the price at each window's start): the old
       // ascending 2,000-row pull was capped at 1,000 rows and never reached today; a window the history does
       // not cover says so instead of reusing a shorter one
-      const wr = await windowReturns(admin, symbol, WINDOWS.map(([, d]) => d));
+      const wr = await windowReturns(admin, symbol, WINDOWS.map(([, d]) => d), Date.now(), mktOf(symbol));
       const perf = Object.fromEntries(WINDOWS.map(([k, d]) => [k, pctText(wr.pct[d] ?? null)]));
       const { data: quote } = await admin.from("prices").select("price,change_pct,currency,as_of").eq("symbol", symbol).maybeSingle();
-      const price = quote?.price ?? wr.last?.price ?? null;
+      // the live quote, unless the history holds a newer tick (a quote row the minute job stopped updating
+      // must not put Bitcoin "near $78K" when it trades at $83.7K)
+      const quoteFresh = quote?.price !== null && quote?.price !== undefined && (!wr.last || +new Date(String(quote.as_of ?? 0)) >= +new Date(wr.last.ts) - 5 * 60000);
+      const price = quoteFresh ? Number(quote!.price) : wr.last?.price ?? (quote?.price ?? null);
       const cur = String(quote?.currency ?? "USD");
       const { data: fils } = await admin.from("filings").select("form,title,filed_at")
         .eq("symbol", symbol).order("filed_at", { ascending: false }).limit(10);
@@ -318,17 +349,32 @@ Headlines from the last 7 days (${n30 ?? 0} stories in 30d):
 ${news7.map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (no fresh headlines)"}
 ${(fils ?? []).length ? `\nSEC filings (last 9 months): ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}${latestTr ? `\nLatest earnings call ("${latestTr.title}", ${latestTr.published_at}):\n${String(latestTr.content).slice(0, 7000)}\n${callAgeNote(latestTr.published_at)}\n${calls.slice(1).length ? "Older calls on file: " + calls.slice(1).map((t) => t.title).join(" | ") : ""}` : "\n(no earnings transcript on file yet)"}${talks.length ? `\nConference talks on file (NOT earnings reports; never call them results): ${talks.map((t) => `${t.title} (${String(t.published_at).slice(0, 10)})`).join(" | ")}` : ""}
 ${EVIDENCE_LAW}
+${VALUE_LAW}
 
 Return STRICT JSON: {"bullets": [3-4 strings], "trend": str}.
 bullets: the sharpest takes on what matters RIGHT NOW, synthesizing news, the earnings call, and price action. Respect the call's age above: a call older than a week is context for a take, never the news itself. DAY-CHANGE LAW: a day figure is today's tape only while the market is open or closed under 3 hours; otherwise it is past tense with the session named, and on a day the market is closed the takes are about the week and the news, never a move. Each 10-15 words MAX. Interpret, never restate headlines. Refer to the company by NAME, never numeric KRX codes.${korean ? " Write won amounts with the \u20a9 sign." : " Money is US dollars; never write won."} Plain punchy language. Never use em dashes or semicolons.
 trend: ONE sentence, max 20 words, covering the recent move and the longer-term picture together.`;
         content = await askMaraFb(key, model, prompt);
+        // one corrective rewrite when a line contradicts the live numbers or passes a verdict
+        const first = content ? parseInsight(content) : null;
+        const facts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price) }];
+        const found = first ? takeProblems([...first.bullets, String(first.windows?.trend ?? "")], facts) : [];
+        if (found.length) {
+          const redo = await askMaraFb(key, model, `${prompt}\n\nYOUR DRAFT:\n${content}\nIt broke these rules:\n- ${found.slice(0, 6).join("\n- ")}\nReturn the corrected JSON in the same shape; keep everything that was right.`).catch(() => null);
+          const second = redo ? parseInsight(redo) : null;
+          if (second && takeProblems([...second.bullets, String(second.windows?.trend ?? "")], facts).length < found.length) content = redo;
+        }
       }
       const parsed = content ? parseInsight(content) : null;
       if (!parsed) { errors.push(symbol + ": unparseable raw[" + String(content).slice(0, 260).replace(/\n/g, " ") + "]"); continue; }
       const trAge = callAgeDays(latestTr?.published_at);
+      // whatever still contradicts the numbers (or passes a verdict) is dropped, never stored
+      const liveFacts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price) }];
+      const bullets = parsed.bullets.map((b) => fixArticles(deJust(b, trAge))).filter((b) => lineOk(b, liveFacts));
+      if (bullets.length < 2) { errors.push(symbol + ": take contradicted the live numbers; kept the previous one"); continue; }
+      const windows = parsed.windows?.trend && !lineOk(String(parsed.windows.trend), liveFacts) ? {} : parsed.windows;
       const { error: upErr } = await admin.from("insights").insert({
-        symbol, bullets: parsed.bullets.map((b) => deJust(b, trAge)), windows: parsed.windows, model,
+        symbol, bullets, windows, model,
       });
       if (upErr) errors.push(symbol + ": " + upErr.message); else wrote++;
     } catch (e) { errors.push(symbol + ": " + (e instanceof Error ? e.message : String(e))); }
@@ -391,6 +437,10 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
         return `${nOf(r.symbol)} (${r.kind}${acct}): ${Number(r.qty ?? 0)} shares at a share price of ${px === null ? "n/a" : "$" + (px >= 1000 ? Math.round(px).toLocaleString("en-US") : px.toFixed(2))} = position value $${Math.round(usd(r))} (${(usd(r) / total * 100).toFixed(1)}% of assets); day ${r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%"} [${dayTag(marketOf(r.symbol, r.kind, r.currency))}]`;
       }).join("\n");
       const posFacts: PosFact[] = assets.filter((r) => !r.symbol.startsWith("$")).map((r) => ({ names: [nOf(r.symbol), ...aliasesFor(r.symbol, r.name)], price: pxOf(r), value: usd(r) }));
+      const bookNames = assets.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash" && r.kind !== "debt")
+        .map((r) => ({ symbol: r.symbol, names: [nOf(r.symbol), ...aliasesFor(r.symbol, r.name)] }));
+      const liveFacts: LiveFact[] = assets.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash" && r.kind !== "debt")
+        .map((r) => ({ names: [nOf(r.symbol), ...aliasesFor(r.symbol, r.name)], pct: r.change_pct === null ? null : Number(r.change_pct), price: pxOf(r) }));
       const korean = booksKorean(rows);
       const { data: invRow } = await admin.from("profiles").select("investor").eq("id", uid).maybeSingle();
       const READER = readerBlock(invRow?.investor as Investor | null);
@@ -403,7 +453,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const since7 = new Date(Date.now() - 7 * 86400000).toISOString();
       const [{ data: trsAll }, { data: nws }, { data: fls }] = await Promise.all([
         admin.from("transcripts").select("symbol,title,published_at").in("symbol", sigSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(30),
-        admin.from("news").select("symbol,title,url,source,published_at").in("symbol", sigSyms).gte("published_at", since7).order("published_at", { ascending: false }).limit(120),
+        admin.from("news").select("symbol,title,url,source,summary,published_at").in("symbol", sigSyms).gte("published_at", since7).order("published_at", { ascending: false }).limit(160),
         admin.from("filings").select("symbol,form,filed_at,items").in("symbol", sigSyms).order("filed_at", { ascending: false }).limit(150)
           .then((r) => r.error ? admin.from("filings").select("symbol,form,filed_at").in("symbol", sigSyms).order("filed_at", { ascending: false }).limit(150) : r),
       ]);
@@ -412,7 +462,8 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const callLines = sigSyms.map((sy) => { const t = trs.find((x) => x.symbol === sy); return t ? `- ${nOf(sy)}: ${String(t.title).slice(0, 80)} (call date ${String(t.published_at).slice(0, 10)}, ${callAgeDays(t.published_at) ?? "?"} days ago${(callAgeDays(t.published_at) ?? 0) > CALL_FRESH_DAYS ? ", background, not news" : ", fresh"})` : null; }).filter(Boolean).join("\n");
       const todayEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
       const earnLines = sigSyms.map((sy) => earningsLine(nOf(sy), ((fls ?? []) as { symbol: string; form: string; filed_at: string; items?: string | null }[]).filter((f) => f.symbol === sy), (trsAll ?? []).filter((t) => t.symbol === sy), todayEt)).filter(Boolean).map((x) => "- " + x).join("\n");
-      const newsLines = sigSyms.map((sy) => (nws ?? []).filter((x) => x.symbol === sy && !isJunkNews(x.title, x.url, x.source)).slice(0, 2).map((x) => `- ${nOf(sy)} [${x.source}]: ${String(x.title).slice(0, 90)}`).join("\n")).filter(Boolean).join("\n");
+      const akaOf = new Map(bookNames.map((b) => [b.symbol, b.names]));
+      const newsLines = sigSyms.map((sy) => (nws ?? []).filter((x) => x.symbol === sy && usableNews(x, akaOf.get(sy) ?? aliasesFor(sy))).slice(0, 2).map((x) => `- ${nOf(sy)} [${x.source}]: ${String(x.title).slice(0, 90)}`).join("\n")).filter(Boolean).join("\n");
       let content: string | null;
       let prompt = "";
       if (fixture) {
@@ -440,7 +491,8 @@ news5: the top 5 signals from this week across their holdings, RANKED by importa
 ${READER}
 Bullet 3 must speak to THIS reader's lens, purpose and horizon (see the profile above).
 Respect the session notes: never present the last session's move as happening today. Refer to Korean companies by NAME, never numeric KRX codes like 005930.KS.${korean ? " Write won amounts with the \u20a9 sign." : " Money is US dollars; never write won."} Plain punchy language. Never use em dashes or semicolons. No generic advice, and never a buy or sell instruction.
-${EVIDENCE_LAW}`;
+${EVIDENCE_LAW}
+${VALUE_LAW}`;
         content = await askMaraFb(key, model, prompt, 14000, force && onlyUser ? 35000 : 75000);
       }
       let parsed = content ? parseInsight(content) : null;
@@ -453,10 +505,25 @@ ${EVIDENCE_LAW}`;
       const pAge = Number.isFinite(freshestCall) ? freshestCall : null;
       const isNovice = ["novice", "intermediate"].includes(topLevel(toArr((invRow?.investor as Investor | null | undefined)?.level, ["novice"])));
       // a position value quoted as a share price is corrected from the same data block the model was given
-      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => fixPriceConfusions(deJust(isNovice ? noviceScrub(x) : x, pAge), posFacts));
-      const { error: piErr } = await admin.from("portfolio_insights").insert({ user_id: uid, bullets: scrubB(parsed.bullets).slice(0, 3), news5: parsed.news5 ? scrubB(parsed.news5) : parsed.news5, model });
+      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => fixArticles(fixPriceConfusions(deJust(isNovice ? noviceScrub(x) : x, pAge), posFacts)));
+      // The book may have changed while the model wrote (round 2: PEP and F were removed at 12:18 and a card
+      // stamped 12:20 still led with "Pepsi near yearly lows"): a line about a symbol that has left the book is
+      // dropped, and so is a line that contradicts the live numbers or passes a verdict.
+      const { data: nowRows } = await admin.from("portfolio").select("symbol").eq("user_id", uid);
+      const heldNow = new Set((nowRows ?? []).map((r) => String(r.symbol)));
+      const gone = new Set(bookNames.map((b) => b.symbol).filter((sy) => !heldNow.has(sy)));
+      const keep = (x: string) => lineOk(x, liveFacts) && !mentionedSymbols(x, bookNames).some((sy) => gone.has(sy));
+      const bullets = scrubB(parsed.bullets).filter(keep).slice(0, 3);
+      const news5 = parsed.news5 ? scrubB(parsed.news5).filter(keep) : parsed.news5;
+      if (bullets.length < 2) { errors.push("user " + uid.slice(0, 8) + ": take contradicted the live book; kept the previous one"); continue; }
+      const heldBook = bookNames.map((b) => b.symbol).filter((sy) => !gone.has(sy));
+      const tagged = { bullet_symbols: bullets.map((b) => mentionedSymbols(b, bookNames)), news5_symbols: news5 ? news5.map((b) => mentionedSymbols(b, bookNames)) : null, held_symbols: heldBook };
+      const row = { user_id: uid, bullets, news5, model };
+      // the symbol tags arrive with migration 38; before it the row is written without them
+      let { error: piErr } = await admin.from("portfolio_insights").insert({ ...row, ...tagged });
+      if (piErr && /bullet_symbols|news5_symbols|held_symbols|column/i.test(piErr.message)) ({ error: piErr } = await admin.from("portfolio_insights").insert(row));
       if (piErr) errors.push("user " + uid.slice(0, 8) + ": " + piErr.message); else pWrote++;
     } catch (e) { errors.push("user: " + (e instanceof Error ? e.message : String(e))); }
   }
-  return json({ ok: true, targets: targets.length, wrote, portfolios: userIds.length, portfolioWrote: pWrote, errors: errors.slice(0, 5) });
+  return json({ ok: true, targets: targets.length, wrote, portfolios: userIds.length, portfolioWrote: pWrote, ...(healed && healed !== "timeout" && Object.keys(healed).length ? { backfilled: healed } : {}), errors: errors.slice(0, 5) });
 });
