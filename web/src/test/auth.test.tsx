@@ -23,19 +23,24 @@ beforeEach(() => { native.on = false; native.opened = []; oauth.mockClear(); });
 
 const order = () => [...document.querySelectorAll("[data-testid^='auth-'], form")]
   .map((el) => el.getAttribute("data-testid") ?? "email-form")
-  .filter((t) => ["auth-apple", "auth-google", "email-form", "auth-github"].includes(t));
+  .filter((t) => ["auth-apple", "auth-google", "auth-github", "email-form"].includes(t));
 
 describe("sign-in screen", () => {
-  it("iOS: Apple, then Google, then email; GitHub last as a quiet text link", () => {
+  it("iOS: Apple, then Google, then GitHub as an outline provider button with its mark, then email (r7 m-4)", () => {
     native.on = true;
     render(<AuthScreen />);
-    expect(order()).toEqual(["auth-apple", "auth-google", "email-form", "auth-github"]);
-    expect(screen.getByTestId("auth-github").className).toMatch(/\blinky\b/);
-    expect(screen.getByTestId("auth-github").className).not.toMatch(/\bbtn\b/);
+    expect(order()).toEqual(["auth-apple", "auth-google", "auth-github", "email-form"]);
+    const gh = screen.getByTestId("auth-github");
+    // the same family as Google's button: secondary (outline), never the one filled button, never a lone text link
+    expect(gh.className).toMatch(/\bbtn\b/);
+    expect(gh.className).toMatch(/\bsecondary\b/);
+    expect(gh.className).toMatch(/\bauth-provider\b/);
+    expect(gh.className).not.toMatch(/\blinky\b/);
+    expect(gh.querySelector("svg")?.getAttribute("fill")).toBe("currentColor");
   });
-  it("web: Google leads (no Apple button), GitHub still reachable at the end", async () => {
+  it("web: Google leads (no Apple button), GitHub right under it", async () => {
     render(<AuthScreen />);
-    expect(order()).toEqual(["auth-google", "email-form", "auth-github"]);
+    expect(order()).toEqual(["auth-google", "auth-github", "email-form"]);
     await userEvent.click(screen.getByTestId("auth-github"));
     expect(oauth).toHaveBeenCalledWith("github");
   });

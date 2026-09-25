@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Api, Investor, PortfolioRow, SymbolRow } from "../lib/api";
 import { INVESTOR_DEFAULT } from "../lib/api";
 import { InvestorQuiz } from "../components/InvestorQuiz";
+import { ConnectNote, connectMsg, type ConnectMsg } from "../components/ConnectNote";
 import { marketOf } from "../lib/markets";
 import { openConnectPortal, platformTag } from "../lib/native";
 import { Icon } from "../components/Icon";
@@ -49,6 +50,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   }, [draft, inv, quizDone, step, picked, qty, cost]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [connMsg, setConnMsg] = useState<ConnectMsg | null>(null);   // the Connect tap's result, right under the button
   const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
   // "Use today's price" on the first add too: a newcomer meets the cost field here first, and it had only the
   // hint text (r5 newcomer m7). `quoted` is the figure it filled and its session's date: saved unchanged, the lot
@@ -215,14 +217,15 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
       {step === 1 && (
         <section aria-label="Add your holdings">
           <button className="btn" data-testid="ob-connect" disabled={busy} onClick={async () => {
-            setErr(null); setBusy(true);
+            setErr(null); setConnMsg(null); setBusy(true);
             try {
               const r = await guard(api.snaptrade("connect", { platform: platformTag() }));
               if (!r.url) throw new Error("The brokerage link didn't come back. Try again.");
               await openConnectPortal(r.url);
-            } catch (e) { setErr(e instanceof Error ? e.message : "Could not start the brokerage link."); }
+            } catch (e) { setConnMsg(connectMsg(e)); }
             finally { setBusy(false); }   // without this the screen stays disabled forever
           }}><Icon name="bolt" /> Connect your brokerage</button>
+          <ConnectNote msg={connMsg} testId="ob-connect-note" />
           <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 2px 0" }}>
             Robinhood, Fidelity, Schwab, and more. Positions and cost basis import in seconds.
             Read-only: Assetly can never trade or move money.

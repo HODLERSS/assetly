@@ -6,6 +6,7 @@ import { noteRemoval } from "./lib/heldIntel";
 import { foreignBrief } from "./lib/briefBasis";
 import { clearUserLocalState } from "./lib/localState";
 import { offlineNow, setPricesDown } from "./lib/net";
+import { useKeepScrollAnchor } from "./lib/scrollAnchor";
 import type { Session } from "@supabase/supabase-js";
 import { completeNativeAuth, supabase } from "./lib/supabase";
 import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
@@ -117,8 +118,11 @@ export function App({ api = defaultApi }: { api?: Api }) {
           const onHome = viewRef.current.kind === "tab" && viewRef.current.tab === "home";
           // the card on Home loaded its editions when it mounted: reload it, or the banner announces a brief
           // the card doesn't show yet (and ▶ would play the previous edition; r6 native M1)
+          // once per brief: the key is announced here, on Home or off it. Marking it only on Home bumped briefRev
+          // and re-armed the banner every 20s tick while the user was elsewhere, and brought a dismissed banner
+          // back for the same brief (r7 design n-4). Off Home the card mounts fresh on return anyway.
+          seenBriefRef.current = key;
           setBriefRev((n) => n + 1);
-          if (onHome) seenBriefRef.current = key;
           setBriefBanner({ audio: !!latest.audio_path, edition: latest.edition });
           if (!onHome) setHomeAlert(true);
         }
@@ -227,6 +231,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   }, []);
 
   const lastLoadRef = useRef(0);
+  const authMissRef = useRef(0);   // back-to-back loads that came back without the signed-in user (see apply)
   const loadSeqRef = useRef(0), appliedSeqRef = useRef(0);
   const [slow, setSlow] = useState(false);   // a refresh past LOAD_TIMEOUT_MS that has not answered yet
   const load = useCallback(async () => {
@@ -237,10 +242,25 @@ export function App({ api = defaultApi }: { api?: Api }) {
     const book = Promise.all([api.getProfile(), api.getPortfolio(), api.getFxRates().catch(() => null),
       Promise.resolve().then(() => api.getRecentLots()).then((l) => l ?? [], () => [])]);
     let done = false;
+    let dropped = false;   // the reply was not this signed-in user's book: nothing painted, a retry is queued
+    const uid = uidRef.current;
     const apply = ([p, book0, rates, lots]: Awaited<typeof book>) => {
       const r = withSameDayLots(book0, lots);
       done = true;
       if (seq < appliedSeqRef.current) return;   // a newer refresh already painted: this older reply is stale
+      // Signed in, but the reads went out without the user: right after a sign-in (or a sign-out mid-refresh)
+      // the client can answer before its session is in place. getProfile says so with null, and the portfolio
+      // read, under row-level rules, with an empty book. Painting that left a signed-in Home with 0 rows and
+      // "Nothing here yet" until the next minute's poll (r7 power-user m5). Hold the skeleton and read again.
+      if (uid !== uidRef.current || !uidRef.current) { dropped = true; return; }
+      if (!p) {
+        dropped = true;
+        if (authMissRef.current++ < 4) { setTimeout(() => { if (uidRef.current === uid) void load(); }, 1500); return; }
+        dropped = false;   // still no profile after ~6s: say the refresh failed rather than hold the skeleton forever
+        setError(PRICES_FAILED);
+        return;
+      }
+      authMissRef.current = 0;
       appliedSeqRef.current = seq;
       const fxNow = rates && Object.keys(rates).length > 1 ? rates : fxRef.current;   // a failed FX read keeps the last good rates
       setProfile(p);
@@ -272,7 +292,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     }, LOAD_TIMEOUT_MS));
     setTimeout(() => { if (!done) failed(offlineNow()); }, LOAD_GIVE_UP_MS);
     await Promise.race([settled, waited]);
-    setBooted(true);
+    if (!dropped) setBooted(true);
   }, [api]);
 
   const [notice, setNotice] = useState<string | null>(null);
@@ -379,6 +399,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
 
   // Edge swipe back on the pushed screens (Add position, Position detail): the same exit as their back button.
   const mainRef = useRef<HTMLElement>(null);
+  // the prices banner and "Prices as of" come and go above the reader: keep their place (r7 design n-3)
+  useKeepScrollAnchor(mainRef, !!error);
   const homeSnapRef = useRef<Underlay | null>(null);   // Home as it was left: drawn under a swipe back
   useEdgeSwipeBack(mainRef, view.kind !== "tab", () => { setHomeAlert(false); setView({ kind: "tab", tab: "home" }); }, () => homeSnapRef.current);
 
@@ -497,6 +519,14 @@ export function App({ api = defaultApi }: { api?: Api }) {
           </svg>
           Assetly
         </span>
+        {!error && slow && (
+          // a slow but live backend: the numbers below are the last good ones, and the reply paints when it lands.
+          // It sits in the header row beside the wordmark, so the hero total never moves when it comes and goes
+          // (in the page flow it pushed the total down ~30pt and back a second later; r7 design n-2).
+          <span className="sub topbar-status" role="status" data-testid="prices-slow">
+            <span className="progress-dot" aria-hidden="true" />Updating prices…
+          </span>
+        )}
       </header>
 
       {notice && (noticeKind === "warn"
@@ -511,10 +541,6 @@ export function App({ api = defaultApi }: { api?: Api }) {
           <div className="error-note inline-note" role="alert" data-testid="prices-error" style={{ marginTop: 0 }}>
             <span>{error}</span> <button className="chip" onClick={() => void load()}>Retry</button>
           </div>
-        )}
-        {!error && slow && (
-          // a slow but live backend: the numbers below are the last good ones, and the reply paints when it lands
-          <p className="sub inline-note" role="status" data-testid="prices-slow" style={{ margin: "0 0 8px" }}>Updating prices…</p>
         )}
         {view.kind === "add" && (
           <AddPosition api={api} onRefresh={load} onAdded={scheduleBookChange} baseCurrency={profile?.base_currency ?? "USD"}

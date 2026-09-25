@@ -2,6 +2,7 @@ import { openConnectPortal, platformTag } from "../lib/native";
 import { useState } from "react";
 import type { Account, Api, SymbolRow } from "../lib/api";
 import { InsightsCard } from "../components/InsightsCard";
+import { ConnectNote, connectMsg, type ConnectMsg } from "../components/ConnectNote";
 import { Icon } from "../components/Icon";
 import { AmountField, DateField, EntryPreview } from "../components/AmountField";
 import { ACCOUNTS, accountLabel, defaultAccount } from "../lib/accounts";
@@ -35,6 +36,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [connMsg, setConnMsg] = useState<ConnectMsg | null>(null);   // Import tap result: under the card, with its gutter
   const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
   const [quote, setQuote] = useState<{ symbol: string; price: number; asOf: string | null } | null>(null);   // for "Use today's price"
   const [, once] = useInFlight();   // the save's re-entry guard; `busy` above is what the screen shows
@@ -75,9 +77,9 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
           <div className="card">
             {!q.trim() && (<>
               <button className="row" disabled={busy} data-testid="snaptrade-import" onClick={async () => {
-                setErr(null); setBusy(true);
+                setErr(null); setConnMsg(null); setBusy(true);
                 try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); }
-                catch (e) { setErr(e instanceof Error ? e.message : "Could not start the brokerage link."); setBusy(false); }
+                catch (e) { setConnMsg(connectMsg(e)); setBusy(false); }
               }}>
                 {/* short enough for one line at 375 ("positions land i\u2026" was cut; r3 design m6) */}
                 <span><span className="sym"><Icon name="bolt" size={13} /> Import</span> <span className="sub">Connect a brokerage, read-only</span></span>
@@ -114,6 +116,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
             {q.trim() && searching && results.length === 0 && <p className="empty" aria-busy="true" data-testid="searching">Searching…</p>}
             {q.trim() && !searching && !searchErr && results.length === 0 && <p className="empty">No match for “{q.trim()}”. Try a ticker (AAPL) or a company name.</p>}
           </div>
+          {!q.trim() && <ConnectNote msg={connMsg} testId="add-connect-note" />}
           {added.length > 0 && (
             <div data-testid="added-strip" style={{ marginTop: 14 }}>
               <p className="sub" style={{ margin: "0 2px 6px" }}>

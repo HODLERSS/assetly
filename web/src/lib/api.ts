@@ -500,6 +500,7 @@ export function makeApi(sb: SupabaseClient = supabase) {
     async snaptrade(action: "status" | "connect" | "disconnect" | "connections" | "remove_connection" | "exclusions" | "restore", extra?: Record<string, unknown>): Promise<{ ok: boolean; connected?: boolean; url?: string; last_sync_at?: string | null; institutions?: string[]; connections?: { id: string; institution: string; disabled: boolean }[]; exclusions?: string[] }> {
       const { data, error } = await sb.functions.invoke("snaptrade-connect", { body: { action, ...(extra ?? {}) } });
       if (error && !data) throw new Error("Brokerage link is unavailable right now.");
+      if (data?.full === true) throw new ImportFullError();
       if (!data?.ok && action !== "remove_connection") throw new Error(data?.error ?? "Brokerage link is unavailable right now.");
       return data ?? { ok: false };
     },
@@ -596,3 +597,14 @@ export function makeApi(sb: SupabaseClient = supabase) {
 
 export type Api = ReturnType<typeof makeApi>;
 export const api = makeApi();
+
+/** Early access: brokerage import is at capacity (snaptrade-connect answers {full:true}). An expected product
+ *  state, not a failure: callers show it as a neutral note, never the red error (r7 design n-1). */
+export const IMPORT_FULL_MSG = "Brokerage import is at capacity during early access. Add your holdings by hand for now: it takes about a minute, and you can connect later.";
+export class ImportFullError extends Error {
+  readonly full = true;
+  constructor() { super(IMPORT_FULL_MSG); this.name = "ImportFullError"; }
+}
+export function isImportFull(e: unknown): boolean {
+  return e instanceof ImportFullError || (typeof e === "object" && e !== null && (e as { full?: unknown }).full === true);
+}
