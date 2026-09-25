@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertCcy, dayChangeAmount, type FxRates } from "./lib/format";
+import { isHeld, sortByBaseValue } from "./lib/portfolio";
 import type { Session } from "@supabase/supabase-js";
 import { completeNativeAuth, supabase } from "./lib/supabase";
 import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
@@ -29,20 +30,25 @@ const REFRESH_MS = 60_000;
 // Last-known book per user, so a cold open paints holdings instead of a blank or an empty-state
 // flash. Only an onboarded profile is cached: a null onboarded_at would route a returning user
 // through setup for a frame.
+// v2 carries the FX rates the book was last valued at. Without them the cached rows painted before
+// getFxRates() answered, every KRW holding dropped out of the total, and net worth opened ~$13k low
+// before jumping back (launch audit, 2026-09-25). A v1 entry still paints; its rates arrive with load().
 const BOOK_KEY = (uid: string) => `assetly-book:${uid}`;
-function readBookCache(uid: string): { profile: Profile; rows: PortfolioRow[] } | null {
+type BookCache = { profile: Profile; rows: PortfolioRow[]; fx: FxRates | null };
+function readBookCache(uid: string): BookCache | null {
   try {
     const raw = localStorage.getItem(BOOK_KEY(uid));
     if (!raw) return null;
-    const v = JSON.parse(raw) as { v: number; profile: Profile; rows: PortfolioRow[] };
-    if (v.v !== 1 || !v.profile?.onboarded_at || !Array.isArray(v.rows)) return null;
-    return { profile: v.profile, rows: v.rows };
+    const v = JSON.parse(raw) as { v: number; profile: Profile; rows: PortfolioRow[]; fx?: FxRates | null };
+    if ((v.v !== 1 && v.v !== 2) || !v.profile?.onboarded_at || !Array.isArray(v.rows)) return null;
+    const fx = v.v === 2 && v.fx && typeof v.fx === "object" && Number(v.fx.USD) === 1 ? v.fx : null;
+    return { profile: v.profile, rows: v.rows, fx };
   } catch { return null; }
 }
-function writeBookCache(uid: string, profile: Profile, rows: PortfolioRow[]) {
+function writeBookCache(uid: string, profile: Profile, rows: PortfolioRow[], fx: FxRates | null) {
   try {
     if (!profile.onboarded_at) { localStorage.removeItem(BOOK_KEY(uid)); return; }
-    localStorage.setItem(BOOK_KEY(uid), JSON.stringify({ v: 1, profile, rows }));
+    localStorage.setItem(BOOK_KEY(uid), JSON.stringify({ v: 2, profile, rows, fx }));
   } catch { /* private mode or quota: the server copy still loads */ }
 }
 function clearBookCache(uid: string) { try { localStorage.removeItem(BOOK_KEY(uid)); } catch { /* ignore */ } }
@@ -51,12 +57,14 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [rows, setRows] = useState<PortfolioRow[]>([]);
+  const [rawRows, setRows] = useState<PortfolioRow[]>([]);   // as the server sent them; `rows` below is the shaped book
   // The book starts empty and Home reads an empty book as "connect your brokerage". Until the first
   // load (server or the cached copy below) has answered, Home shows a skeleton instead of that prompt.
   const [booted, setBooted] = useState(false);
   const uidRef = useRef<string | null>(null);   // whose cached book to clear at sign-out
   const [fx, setFx] = useState<FxRates | null>(null);   // units per USD, every currency the price pipeline tracks
+  const fxRef = useRef<FxRates | null>(null);
+  fxRef.current = fx;
   const [view, setView] = useState<View>({ kind: "tab", tab: "home" });
   const [error, setError] = useState<string | null>(null);
   const [askAlert, setAskAlert] = useState(false);
@@ -192,14 +200,16 @@ export function App({ api = defaultApi }: { api?: Api }) {
 
   const load = useCallback(async () => {
     try {
-      const [p, r] = await Promise.all([api.getProfile(), api.getPortfolio()]);
+      // rates travel with the book: rows valued in one currency never paint without the other's rate
+      const [p, r, rates] = await Promise.all([api.getProfile(), api.getPortfolio(), api.getFxRates().catch(() => null)]);
+      const fxNow = rates && Object.keys(rates).length > 1 ? rates : fxRef.current;   // a failed FX read keeps the last good rates
       setProfile(p);
       setRows(r);
+      if (fxNow) setFx(fxNow);
       setError(null);
-      if (uidRef.current && p) writeBookCache(uidRef.current, p, r);
-      api.getFxRates().then((v) => setFx(v)).catch(() => {});
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "The feed missed a handoff. Pull to retry.");
+      if (uidRef.current && p) writeBookCache(uidRef.current, p, r, fxNow);
+    } catch {
+      setError("Couldn't refresh your prices. Tap Retry.");
     } finally {
       setBooted(true);
     }
@@ -259,7 +269,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     // Last known book first (stale-while-revalidate): a returning user sees their holdings on the
     // first frame, and the server copy replaces it a moment later.
     const cached = readBookCache(session.user.id);
-    if (cached) { setProfile(cached.profile); setRows(cached.rows); setBooted(true); }
+    if (cached) { setProfile(cached.profile); setRows(cached.rows); if (cached.fx) setFx(cached.fx); setBooted(true); }
     load();
     // brokerage auto-sync deltas: greet returning users with what arrived while they were away
     api.snaptradeEvents().then(async (evs) => {
@@ -314,6 +324,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
   }, [runBookPipeline]);
 
   const base = profile?.base_currency ?? "USD";
+  // The book every screen sees: only rows that hold something, biggest first in the base currency.
+  const rows = useMemo(() => sortByBaseValue(rawRows.filter(isHeld), base, fx), [rawRows, base, fx]);
   const totals = useMemo(() => {
     let assets = 0, debt = 0, cost = 0, day = 0, unconverted = 0, mixed = false;
     for (const r of rows) {
@@ -371,6 +383,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         {view.kind === "position" && (
           <PositionScreen api={api} dispKr={profile?.display_kr ?? "KRW"} row={rows.find((r) => r.holding_id === view.holdingId) ?? null}
             onChanged={load} onRemoved={async () => { await load(); go({ kind: "tab", tab: "home" }); }}
+            onMoved={async (id) => { await load(); setView({ kind: "position", holdingId: id }); }}
             onBack={() => go({ kind: "tab", tab: "home" })} />
         )}
         {view.kind === "tab" && view.tab === "home" && (
