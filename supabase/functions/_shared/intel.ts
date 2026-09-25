@@ -417,7 +417,14 @@ export function withNoCallLine(answer: string, question: string, _previousAnswer
   // the opener speaks the BODY's language, so the two can never mix (the body has already been held to the
   // question's language; this only matters when that failed)
   const ko = String(answer ?? "").trim() ? isKoreanText(answer) : questionIsKorean(question);
-  return (ko ? "매매 여부는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다." : "I can't tell you whether to trade it, but here's what the decision rests on.") + "\n" + answer;
+  // the line fits the question (round 6: "whether to trade it" answered "what should I buy with my cash?" and
+  // "what's your top pick?", where "it" refers to nothing)
+  const cashQ = /\b(?:cash|money|\$\s?\d[\d,.]*\s?[kK]?|what (?:should|do) i buy|what to buy|where (?:should|do) i (?:put|invest))\b|현금|돈으로|뭘 사|무엇을 사|어디에 (?:넣|투자)/i.test(question);
+  const pickOnly = isPickQuestion(question) && !/\b(?:sell|trim|take profits?|dump|exit|cut|reduce|buy more|add to)\b|팔|매도|정리|더 살/i.test(question);
+  const line = ko
+    ? (cashQ ? "무엇을 살지는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다." : pickOnly ? "종목을 골라드릴 수는 없지만, 그 선택이 무엇에 달려 있는지는 이렇습니다." : "매매 여부는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다.")
+    : (cashQ ? "I can't tell you what to buy, but here's what that decision rests on in your portfolio." : pickOnly ? "I can't pick a holding for you, but here's what that choice rests on." : "I can't tell you whether to trade it, but here's what the decision rests on.");
+  return line + "\n" + answer;
 }
 /** Follow-up chips ask why / what / how, never "should I buy/sell/add". Caught: "Should I add to Meta on
  *  this dip?", "How much NVDA should I buy with the cash?", "Which holding should I add to next?". Round 2:
@@ -623,7 +630,10 @@ const NOT_TODAY = /(?:1주|일주일|한 주|주간|한 달|1개월|\d+개월|�
 export function dayMoveMismatches(text: string, facts: LiveFact[], tolPp = 0.35): string[] {
   const bad: string[] = [];
   for (const raw of sentencesOf(text)) {
-    const s = bare(raw);
+    // a word approximation is a figure too (round 6: "each rose about half a percent" when NVDA rose 0.22%)
+    const s = bare(raw).replace(/\b(?:about |roughly |around |nearly |almost )?half (?:a|of a|of one) percent(?:age point)?\b/gi, "0.5%")
+      .replace(/\b(?:about |roughly |around )?a quarter (?:of a )?percent\b/gi, "0.25%").replace(/\b(?:about |roughly |around )?a tenth of a percent\b/gi, "0.1%")
+      .replace(/\b(?:about |roughly |around )?(?:one|a) percent\b/gi, "1%");
     if (!s || NOT_TODAY.test(s)) continue;
     const moves: { idx: number; val: number }[] = [];
     for (const m of s.matchAll(MOVE_FWD)) moves.push({ idx: m.index ?? 0, val: Number(m[2]) * (NEG_MOVE.test(m[1].split(/\s+/).pop()!) || /\bdown\b|\blower\b/i.test(m[1]) ? -1 : 1) });
@@ -638,12 +648,18 @@ export function dayMoveMismatches(text: string, facts: LiveFact[], tolPp = 0.35)
     if (!moves.length) continue;
     for (const mv of moves) {
       // the holding the figure belongs to: the nearest one named before it, else the only one there is
-      const named = facts.map((f) => ({ f, at: firstIdx(s, f.names) })).filter((x) => x.at <= mv.idx).sort((a, b) => b.at - a.at)[0]?.f
-        ?? (facts.length === 1 ? facts[0] : undefined);
-      if (!named || named.pct === null || !Number.isFinite(named.pct)) continue;
-      const live = named.pct;
-      const wrongSign = Math.abs(live) >= 0.1 && Math.abs(mv.val) >= 0.1 && Math.sign(live) !== Math.sign(mv.val);
-      if (wrongSign || Math.abs(Math.abs(mv.val) - Math.abs(live)) > tolPp) { bad.push(raw); break; }
+      const before = facts.map((f) => ({ f, at: firstIdx(s, f.names) })).filter((x) => x.at <= mv.idx).sort((a, b) => b.at - a.at);
+      // "QQQ, Nvidia and VOO each rose ..." states the move for EVERY holding named before it
+      const group = /\b(?:each|all|both|every one of them|all three|all two)\b/i.test(s) ? before.map((x) => x.f) : [];
+      const named = before[0]?.f ?? (facts.length === 1 ? facts[0] : undefined);
+      const whom = group.length > 1 ? group : named ? [named] : [];
+      const off = whom.some((f) => {
+        if (f.pct === null || !Number.isFinite(f.pct)) return false;
+        const live = f.pct;
+        const wrongSign = Math.abs(live) >= 0.1 && Math.abs(mv.val) >= 0.1 && Math.sign(live) !== Math.sign(mv.val);
+        return wrongSign || Math.abs(Math.abs(mv.val) - Math.abs(live)) > tolPp;
+      });
+      if (off) { bad.push(raw); break; }
     }
   }
   return bad;
@@ -875,6 +891,9 @@ export function brokenSentences(text: string): string[] {
       || /\$\d{1,3}(?:,\d{3})*(?:\.\d+)?[kKmMbB]?\s+(?!(?:vs|versus|to|and|or|from|plus|minus|over|against|in|of|per|at)\b)[a-z]+\s+\$\d/.test(s)
       || /\b(?:for|of|to|in|on) book\b/i.test(s)
       || /\b(?:a|an|the)\s*[.!?]$/i.test(s)
+      // round 6: "lags S&P 500 by than ten percent", "is the main portfolio.", "US companies, weighted.", "and keep
+      // health", "has sheet"
+      || /\bby than\b|\bis the (?:main|biggest|largest|key) (?:portfolio|book)\s*[.!?]?$|,\s*weighted\s*[.!?]?$|\bkeep health\b|\bhas sheet\b|\bprovides exposure and\b/i.test(s)
       || verblessList(raw).length > 0;
   });
 }
@@ -942,7 +961,8 @@ const VERB_HINT = /\b(is|are|was|were|be|been|has|have|had|rose|fell|gained|lost
 export function verblessList(text: string): string[] {
   return sentencesOf(text).filter((raw) => {
     const s = bare(raw).replace(/\([^)]*\)/g, " ");
-    return (s.match(/,/g) ?? []).length >= 2 && (raw.match(/\d/g) ?? []).length >= 4 && !VERB_HINT.test(s);
+    // a thousands separator is not a list comma ("the ₩1,862,000 price" is one figure)
+    return (s.match(/(?<!\d),|,(?!\d)/g) ?? []).length >= 2 && (raw.match(/\d/g) ?? []).length >= 4 && !VERB_HINT.test(s);
   });
 }
 
@@ -1067,10 +1087,13 @@ export const NOVICE_PLAIN: Gloss[] = [
   { re: /\brebalanc(?:e|ing)\b/gi, plain: "reshuffle", sample: "rebalancing" },
   { re: /\bgrowth premium\b/gi, plain: "high price tag", sample: "growth premium" },
   { re: /\bvaluations?\b/gi, plain: "price tag", sample: "valuation" },
+  // round 6: "the ₩1,862,000 print" (a price print) became "the ₩1,862,000 report": after a figure it is a price
+  { re: /(?<=\d[\d,.]*\s)print\b/gi, plain: "price", sample: "1,862,000 print" },
   { re: /\bprint\b/gi, plain: "report", sample: "print" },
   { re: /\bcrypto[- ]beta\b/gi, plain: "crypto exposure", sample: "crypto-beta" },
 ];
 // words that follow a term as a VERB, an adverb or a function word (so the term is a noun, not a modifier)
+const GLOSS_HEAD = /^(?:risks?|scrutiny|plans?|warnings?|cycles?|budgets?|growth|guidance|boom|bust|story|concerns?|fears?|pressures?|outlook|trends?|levels?|ratios?|numbers?|figures?|data|headwinds?|tailwinds?|exposure|profile|strategy|discipline|targets?|surge|slowdown|cuts?|hikes?|spending|question|debate|premium|reset|squeeze|math|picture|trajectory|momentum|limits?|caps?|floor|ceiling|threshold|signals?|metrics?|expansion|compression|gap|spread|trade)$/i;
 const NOT_NOUN = /^(?:is|are|was|were|be|been|has|have|had|and|or|but|of|in|on|at|to|for|with|by|as|that|which|who|than|from|into|over|under|about|remains?|stays?|looks?|seems?|rose|fell|grew|grows|rises|falls|jumps?|jumped|slows?|slowed|climbs?|climbed|drops?|dropped|matters?|hits?|tops?|beats?|misses|means?|surges?|surged|soars?|sinks?|lags?|leads?|weighs?|keeps?|helps?|hurts?|tracks?|trails?|runs?|comes?|goes|holds?|makes?|takes?|needs?|continues?|continued|shows?|showed|suggests?|could|would|should|will|may|might|can|must|also|still|now|again|alone|itself|too|here|there|this|these|those|the|a|an|its|their|our|your|his|her|if|while|because|so|when|where|then|just|only|even|both|each|every|ever|never|already|below|above|near|around|across|after|before|since|until|through|during|without|within|against|toward|towards|per|vs|versus|up|down|out|off|higher|lower|more|less)$/i;
 /** A beginner reader's plain words, grammatical in context. Round 4: "AI capex scrutiny" became "AI spending on
  *  equipment and buildout scrutiny", because a multi-word gloss was dropped in front of the noun the term was
@@ -1085,7 +1108,9 @@ export function noviceGloss(text: string): string {
       x = x.replace(new RegExp(`(?:\\b(?:the|a|an)\\s+)?(?:${g.re.source})\\s+(?<noun>[a-z][a-z-]{2,})\\b`, g.re.flags.includes("i") ? "gi" : "g"), (...a: unknown[]) => {
         // (a named group: the map's own pattern may carry numbered groups)
         const m = String(a[0]), noun = String((a[a.length - 1] as { noun: string }).noun);
-        return NOT_NOUN.test(noun) ? m : `${noun} of ${/^(?:its|their)\s/.test(bareGloss) ? bareGloss : "the " + bareGloss}`;
+        // round 6 trace: "drawdown exceeds 20%" became "exceeds of the drop from the top 20%": only a known NOUN
+        // head after the term makes it a modifier ("drawdown risk" -> "risk of the drop from the top")
+        return NOT_NOUN.test(noun) || !GLOSS_HEAD.test(noun) ? m : `${noun} of ${/^(?:its|their)\s/.test(bareGloss) ? bareGloss : "the " + bareGloss}`;
       });
     }
   }
@@ -1095,8 +1120,9 @@ export function noviceGloss(text: string): string {
     const esc = g.plain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     x = x.replace(new RegExp(`(^|(?<![A-Z]\\.[A-Z])[.!?]\\s+|\\n)(${esc})`, "g"), (_m, p: string, w: string) => p + w.charAt(0).toUpperCase() + w.slice(1));
   }
-  return fixGlossArticles(x).replace(/\b([Aa]n?|[Tt]he)\s+(its|their|his|her)\b/g, (_m, art: string, poss: string) => (/^[A-Z]/.test(art) ? poss.charAt(0).toUpperCase() + poss.slice(1) : poss))
-    .replace(/\bof the (its|their)\b/g, "of $1");
+  // a modifier rewrite can open a sentence ("Drawdown risk" -> "risk of the drop from the top")
+  return capSentenceStarts(fixGlossArticles(x).replace(/\b([Aa]n?|[Tt]he)\s+(its|their|his|her)\b/g, (_m, art: string, poss: string) => (/^[A-Z]/.test(art) ? poss.charAt(0).toUpperCase() + poss.slice(1) : poss))
+    .replace(/\bof the (its|their)\b/g, "of $1"));
 }
 
 /** "86 %" / "86 percent" spacing and "+ 3.2%" are normalised to "86%" and "+3.2%" (round 4 assessment). */
@@ -1125,13 +1151,14 @@ export function parseDividends(body: { chart?: { result?: { events?: { dividends
   let nextEx: string | null = null;
   if (freqDays && freqDays >= 20) {
     let t = Date.parse(last.ymd + "T12:00:00Z") + freqDays * 86400000;
-    while (t < Date.parse(todayYmd + "T12:00:00Z")) t += freqDays * 86400000;
+    // strictly AFTER today (round 6: VOO's "~Sep 25" on Sep 25 read as "buy today to get the dividend")
+    while (t <= Date.parse(todayYmd + "T12:00:00Z")) t += freqDays * 86400000;
     nextEx = new Date(t).toISOString().slice(0, 10);
     // the same quarter a year earlier sets the date when it is on file (round 5: KO's Q4 ex-date comes around
     // Dec 1, not "last + 91" Dec 18): the payment a year before the rhythm's date, plus 364 days
     const want = t - 364 * 86400000;
     const yearAgo = pts.map((p) => Date.parse(p.ymd + "T12:00:00Z")).filter((x) => Math.abs(x - want) <= 25 * 86400000).sort((a, b) => Math.abs(a - want) - Math.abs(b - want))[0];
-    if (yearAgo && yearAgo + 364 * 86400000 >= Date.parse(todayYmd + "T12:00:00Z")) nextEx = new Date(yearAgo + 364 * 86400000).toISOString().slice(0, 10);
+    if (yearAgo && yearAgo + 364 * 86400000 > Date.parse(todayYmd + "T12:00:00Z")) nextEx = new Date(yearAgo + 364 * 86400000).toISOString().slice(0, 10);
   }
   const perYear = freqDays ? last.amount * Math.max(1, Math.round(365 / freqDays)) : null;
   return { last: last.amount, lastEx: last.ymd, ttm: ttm > 0 ? Number(ttm.toFixed(4)) : null, perYear, freqDays, nextEx, yieldPct: price && ttm > 0 ? Number((ttm / price * 100).toFixed(2)) : null };
@@ -1201,7 +1228,7 @@ export const fixAgreement = (t: string): string => String(t ?? "").replace(
 /** Promotional or unsupported product claims in the app's voice ("captures the full S&P 500 upside while
  *  avoiding individual stock fees", round 5): not analysis. */
 export function promoClaims(text: string): string[] {
-  return sentencesOf(text).filter((s) => /\bcaptures? (?:the )?(?:full|entire|all (?:of )?the)\b[^.]{0,40}\bupside\b|\bavoid(?:s|ing)? (?:individual[- ])?stock fees\b|\bwithout (?:the |any )?(?:risk|downside)\b|\b(?:risk-free|guaranteed|can'?t lose|no-lose)\b/i.test(s));
+  return sentencesOf(text).filter((s) => /\bcaptures? (?:the )?(?:full|entire|all (?:of )?the)\b[^.]{0,40}\bupside\b|\bavoid(?:s|ing)? (?:individual[- ])?stock fees\b|\bwithout (?:the |any )?(?:risk|downside)\b|\b(?:risk-free|guaranteed|can'?t lose|no-lose)\b|\bwhile keeping (?:costs|fees|expenses) low\b|\bat (?:almost )?no cost\b/i.test(s));
 }
 /** A return forecast in the app's voice ("should support a 4-8% annual return", round 5). */
 export function returnForecasts(text: string): string[] {
@@ -1256,9 +1283,16 @@ export function unattributedDollars(text: string, own: number[]): string[] {
   });
 }
 /** "no cash paid out" / "pays no dividend" about a holding that pays one (round 5: VOO, $1.962 a share in June). */
+const NO_DIV = /\bno (?:cash|dividends?|payouts?|income) (?:is )?(?:paid|paid out|payout)?\b|\bpays? no (?:cash|dividends?)\b|\b(?:doesn'?t|does not|do not|don'?t|never) pays? (?:a |any )?(?:cash |regular )?(?:dividends?|payouts?|cash)\b|\bno cash paid out\b|\bnon-?dividend\b|배당(?:을|이)?\s?(?:없|주지 않|지급하지 않)/i;
+const PAYS_DIV = /\bpays? (?:a |an |its )?(?:small |modest |regular |quarterly |steady )?(?:cash )?dividends?\b|\bprovides? (?:a )?(?:modest |small )?dividend\b|배당(?:을)? (?:주|지급)/i;
 export function dividendContradictions(text: string, payers: { names: string[] }[]): string[] {
-  return sentencesOf(text).filter((s) => /\bno (?:cash|dividends?|payouts?|income) (?:is )?(?:paid|paid out|payout)?\b|\bpays? no (?:cash|dividends?)\b|\bdoesn'?t pay (?:a )?(?:cash|dividends?)\b|\bno cash paid out\b/i.test(s)
-    && payers.some((p) => p.names.some((n) => n && nameIn(s, n))));
+  return sentencesOf(text).filter((s) => NO_DIV.test(s) && payers.some((p) => p.names.some((n) => n && nameIn(s, n))));
+}
+/** Dividend sentences in a position note that contradict the holding's own record (round 6 trace: the fact-checker,
+ *  given no dividend data, wrote "It does not pay a dividend" into the NVDA and QQQ notes). `pays` is the record:
+ *  true, false, or null when unknown (then any dividend claim goes). */
+export function noteDividendClaims(note: string, pays: boolean | null): string[] {
+  return sentencesOf(note).filter((s) => (NO_DIV.test(s) && pays !== false) || (!NO_DIV.test(s) && PAYS_DIV.test(s) && pays !== true));
 }
 
 /** Data-pipeline words in reader copy ("no dividend data on file", "the rate on file", round 5). */
@@ -1299,6 +1333,9 @@ export function fixWeights(text: string, holdings: { names: string[]; weight: nu
       const v = Number(n);
       const near = s.slice(Math.max(0, at - 40), at + m.length + 30);
       if (groups.some((g) => g.label.test(near) && Math.abs(g.value - v) <= tolPp)) return m;
+      // a weight of something INSIDE a holding ("VOO's tech weight at 38%", "sector weight", "exposure to chips")
+      // describes the fund, not the portfolio (round 6: rewritten to VOO's 21.1% portfolio weight)
+      if (/\b(?:tech|technology|sector|industry|semiconductors?|chips?|software|financials?|energy|health ?care|top[- ](?:ten|10|five|5)|mega-?caps?|magnificent|category|index|the index's|fund's)\s+(?:weight(?:ing)?|share|exposure|concentration|allocation)\b|\bexposure to\b|\bweight(?:ing)? (?:in|of) (?:tech|technology|the index|the fund|the S&P)\b/i.test(near)) return m;
       // the holding named closest to the figure (before it, or right after: "30.1% Bitcoin weight")
       const cands = holdings.map((h) => {
         const i = h.names.map((nm) => { const k = firstIdx(s, [nm]); return k === Infinity ? Infinity : Math.abs(k - at); }).reduce((a, b) => Math.min(a, b), Infinity);
@@ -1321,19 +1358,12 @@ export function repairDrops(text: string): string[] {
 }
 
 type ClockEdition = "morning" | "midday" | "close" | "assessment" | "weekend" | "kr_open" | "kr_close";
-/** The editions a run for `edition` treats as LIVE: the edition itself and the one before it on the same day.
- *  A live row written by an older daily-brief is REGENERATED from current data; only older ones are patched in
- *  code (round 5: a patched morning kept a fragment, and "yesterday" for moves that were live). */
+/** The editions a run for `edition` treats as LIVE: only the edition itself, whose window is still open. A live
+ *  row written by an older daily-brief is REGENERATED from current data; every other edition is patched in place.
+ *  Round 6: the previous edition was regenerated too, so the close run rewrote the Midday Pulse at 4:31 PM and it
+ *  shipped "MIDDAY PULSE · Written at 4:31 PM": a past-window edition keeps its timing and is patched instead. */
 export function liveEditions(edition: ClockEdition): ClockEdition[] {
-  switch (edition) {
-    case "morning": return ["morning"];
-    case "midday": return ["midday", "morning"];
-    case "close": return ["close", "midday"];
-    case "kr_open": return ["kr_open"];
-    case "kr_close": return ["kr_close", "kr_open"];
-    case "weekend": return ["weekend"];
-    default: return [];
-  }
+  return edition === "assessment" ? [] : [edition];
 }
 
 /** Holding themes (moved here from daily-brief so Ask's code-built answer can state the theme mix). */
@@ -1372,7 +1402,8 @@ export type HuskInput = {
   dividends: { name: string; annualUsd: number; nextEx: string | null }[];
 };
 const addDaysYmd = (ymd: string, n: number) => new Date(Date.parse(ymd + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
-const within = (ymd: string | null | undefined, today: string, days: number) => !!ymd && ymd >= today && ymd <= addDaysYmd(today, days);
+// "upcoming" means strictly after today (round 6: an ex-date estimated for today was listed as coming up)
+const within = (ymd: string | null | undefined, today: string, days: number) => !!ymd && ymd > today && ymd <= addDaysYmd(today, days);
 const usdText = (v: number) => `$${Math.round(v >= 1000 ? Math.round(v / 100) * 100 : v).toLocaleString("en-US")}`;
 const pct1 = (v: number, ko = false) => v > 0 && v < 0.05 ? (ko ? "0.1% 미만" : "under 0.1%") : `${v.toFixed(1)}%`;
 const NUM_WORD = ["", "one", "two", "three"];
@@ -1410,7 +1441,7 @@ export function buildHusk(inp: HuskInput, ko: boolean): string {
   out.push(`• Mix: ${mix.length ? mix.join(", ") + ", and " : ""}cash ${pct1(cashPct)} (${usdText(inp.cashUsd)}).`);
   out.push(reports.length ? `• Reports expected in the next 45 days (estimates): ${reports.map((r) => `${r.name} ${r.range ? spanOfMonth(r.range) : "~" + md(r.est!)}`).join(", ")}.` : "• No holding has an earnings report expected in the next 45 days.");
   out.push(payers.length ? `• Dividends: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` and ${payers.length - 4} more` : ""} pay about ${usdText(income)} a year together; ${soonEx.length ? `ex-dates expected in the next 45 days: ${soonEx.map((d) => `${d.name} ~${md(d.nextEx!)}`).join(", ")}.` : "none has an ex-date expected in the next 45 days."}` : "• Dividends: no holding pays a dividend on record.");
-  out.push(`• What a buyer usually weighs here: whether new money adds to the ${topShare.toFixed(0)}% already in ${top.length === 1 ? top[0].name : `the top ${NUM_WORD[top.length]}`}, ${crypto > 0 ? `how much of the portfolio should swing with crypto (${pct1(crypto)} now)` : `how much to keep in cash (${pct1(cashPct)} now)`}, and their time horizon and taxes.`);
+  out.push(`• What a buyer usually weighs here: whether new money adds to the ${topShare.toFixed(0)}% already in ${top.length === 1 ? top[0].name : `the top ${NUM_WORD[top.length]}`}, ${crypto > 0 ? `how much of the portfolio should swing with crypto (${pct1(crypto)} now)` : `how much to keep in cash (${pct1(cashPct)} now)`}, and your time horizon and taxes.`);
   return out.join("\n");
 }
 
@@ -1462,3 +1493,100 @@ export function wrongDividendTiming(text: string, divs: { names: string[]; nextE
     return named.length > 0 && named.some((d) => !within(d.nextEx, today, 45));
   });
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 6: written sections keep figures as DIGITS. The fact-checker model spelled them out ("below forty percent",
+// "expense over zero point three percent" for 0.03%): narration-style numbers belong only in the Listen script.
+const ONES: Record<string, number> = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19 };
+const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const NUMW = `(?:${[...Object.keys(TENS), ...Object.keys(ONES)].join("|")})(?:[- ](?:${Object.keys(ONES).join("|")}))?`;
+const SPELLED_PCT = new RegExp(`\\b(${NUMW}(?: hundred(?: (?:and )?${NUMW})?)?)(?: point (${Object.keys(ONES).slice(0, 10).join("|")}))? percent\\b`, "gi");
+const SPELLED_ANY = new RegExp(`\\b(?:${NUMW}) (?:hundred|thousand|million|billion|percent)\\b|\\bzero point\\b|\\b(?:${NUMW}) point (?:${Object.keys(ONES).slice(0, 10).join("|")})\\b`, "gi");
+function wordsToInt(w: string): number | null {
+  let total = 0, cur = 0;
+  for (const t of w.toLowerCase().replace(/-/g, " ").split(/\s+/).filter((x) => x && x !== "and")) {
+    if (t in ONES) cur += ONES[t]; else if (t in TENS) cur += TENS[t]; else if (t === "hundred") cur = (cur || 1) * 100; else return null;
+  }
+  return total + cur;
+}
+/** Spelled-out figures in written text ("forty percent", "five hundred", "zero point three"). */
+export const spelledNumbers = (t: string): string[] => [...String(t ?? "").matchAll(SPELLED_ANY)].map((m) => m[0]);
+/** "forty percent" -> "40%", "one point five percent" -> "1.5%". Only a "<number> percent" phrase is converted. */
+export const digitsForWritten = (t: string): string => String(t ?? "").replace(SPELLED_PCT, (m, n: string, dec?: string) => {
+  const v = wordsToInt(n);
+  if (v === null) return m;
+  return `${v}${dec ? "." + ONES[dec.toLowerCase()] : ""}%`;
+});
+
+/** Our own prompt instructions echoed into reader copy (round 6 poweruser: "…two weeks old, so it is context, not
+ *  news"). The clause goes when it is a tail; a sentence that only talks about our data goes whole. */
+const ECHO_TAIL = /,?\s*(?:so |which makes it |making it |and )?(?:it(?:'s| is) |this is )?(?:context|background),? not (?:news|a new development)\b/gi;
+const ECHO_SENT = /\b(?:per the data(?: block)?|as instructed|the ONLY (?:figures|numbers|source|dates?)|(?:data|stats) block|from the data above|in the data (?:provided|given)|deterministic(?:ally)?|the prompt|quote-page (?:and|or) option-chain)\b/i;
+export function dropInstructionEcho(text: string): string {
+  const t = String(text ?? "").replace(ECHO_TAIL, "");
+  const kept = splitSentences(t).filter((x) => !ECHO_SENT.test(x));
+  return kept.length ? kept.join(" ") : t;
+}
+
+/** A claim that a single stock or a coin "holds many stocks" / is diversified (round 6: "QQQ·VOO·NVDA는 여러 종목을
+ *  담고 있어 상대적으로 안정적"). Returns the sentences that make it about a holding that is not a fund. */
+export function diversifiedClaims(text: string, holdings: { names: string[]; fund: boolean }[]): string[] {
+  const CLAIM = /\b(?:hold|holds|holding|own|owns|contain|contains|spread across|made up of)\s+(?:many|hundreds of|dozens of|a basket of|lots of|\d{2,} )\s*(?:different )?(?:stocks|companies|holdings)\b|\bdiversified\b|\bbroad(?:ly)? (?:spread|diversified)\b|여러 종목|분산(?:되어|돼|된|투자)|다양한 종목|종목을 담/i;
+  return sentencesOf(text).filter((s) => CLAIM.test(s) && holdings.some((h) => !h.fund && h.names.some((n) => n && nameIn(s, n))));
+}
+
+/** A cause that is only the move itself ("SoFi fell 1.3% after a MarketBeat article noted its drop", round 6). */
+export function circularCauses(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\b(?:after|as|because|since|on)\b[^.]{0,40}\b(?:article|report|story|headline|piece|post)\b[^.]{0,30}\b(?:noted|reported|said|showed|highlighted|flagged|pointed to|covered|described)\b[^.]{0,12}\b(?:its|the|a) (?:drop|decline|fall|slide|dip|gain|rise|rally|jump|move|slump)\b/i.test(s));
+}
+
+/** Sentence starts after a real sentence end are capitalised; an abbreviation ("vs.", "e.g.", "U.S.") is not an
+ *  end (round 6 trace: noviceScrub turned "price tag extreme vs. peers" into "vs. Peers"). */
+export function capSentenceStarts(t: string): string {
+  return String(t ?? "").replace(/(^|(?<=[a-z0-9%)])[.!?]\s+)([a-z])/g, (m: string, a: string, b: string, off: number, whole: string) =>
+    /\b(?:vs|e\.g|i\.e|etc|approx|est|U\.S|U\.K|Inc|Co|Corp|Ltd|No|St|Mr|Ms|Dr|Jr|Sr|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.\s*$/.test(whole.slice(0, off + a.length)) ? m : a + b.toUpperCase());
+}
+
+// Round 6 trace: fitCap on a position note dropped trailing sentences until it fit, and the LAST sentence of every
+// note is its risk ("the risk: data-center growth below 30%"), so a 34-word note on a 33-word cap lost its risk
+// and ensureRisk then glued a memo fragment in its place. A note sheds its MIDDLE sentences first, never the
+// risk, and may run a few words over rather than lose it.
+export const capNoteKeepRisk = (note: string, cap: number, fit: (t: string, cap: number) => string = (t) => t): string => {
+  const wc = (x: string) => x.split(/\s+/).filter(Boolean).length;
+  const t = String(note ?? "").trim();
+  if (wc(t) <= cap) return t;
+  const sents = splitSentences(t);
+  if (sents.length <= 1) return fit(t, cap);
+  const keep = sents.slice();
+  while (wc(keep.join(" ")) > cap && keep.length > 2) keep.splice(keep.length - 2, 1);
+  return keep.join(" ");
+};
+
+/** The fact-checker's JSON, accepted FIELD BY FIELD (round 6 trace: given the draft, the checker spelled figures out,
+ *  "below forty percent", "zero point three percent" for 0.03%, and wrote "It does not pay a dividend" into the
+ *  NVDA and QQQ notes). A field keeps the checker's text only when it spells no figure the draft wrote in digits,
+ *  brings no figure found in neither the draft nor the data, and makes no dividend claim the draft did not make. */
+type Draftish = { lede: string; overnight: string; desk_view: string; horizon?: string; ideas?: string[]; positions: { name: string; note: string; watch: string }[] };
+export function mergeChecked<T extends Draftish>(draft: T, checked: T, data: string): T {
+  const figs = (t: string) => (String(t ?? "").match(/\d[\d,]*(?:\.\d+)?%?/g) ?? []).map((x) => x.replace(/,/g, ""));
+  const known = new Set([...figs(JSON.stringify(draft)), ...figs(data)]);
+  const DIV = /\bdividends?\b|\bpayouts?\b|배당/i;
+  const ok = (before: string, after: string) => typeof after === "string" && !!after.trim()
+    && spelledNumbers(after).length <= spelledNumbers(before).length
+    && figs(after).every((f) => known.has(f))
+    && !(DIV.test(after) && !DIV.test(before));
+  const pick = (b: string, a: string) => (ok(b, a) ? a : b);
+  const out: T = { ...draft,
+    lede: pick(draft.lede, checked.lede), overnight: pick(draft.overnight, checked.overnight), desk_view: pick(draft.desk_view, checked.desk_view),
+    ...(draft.horizon !== undefined || checked.horizon !== undefined ? { horizon: pick(draft.horizon ?? "", checked.horizon ?? "") } : {}),
+    ideas: (draft.ideas ?? []).map((x, i) => pick(x, (checked.ideas ?? [])[i] ?? x)),
+    positions: draft.positions.map((p) => {
+      const c = checked.positions.find((q) => String(q.name).toLowerCase() === String(p.name).toLowerCase());
+      // a watch must stay MEASURABLE: the checker swapped "Nasdaq-100 drawdown >20%" for "Top-heavy in mega-cap tech"
+      const watchOk = !c || !figs(p.watch).length || figs(c.watch).length > 0;
+      return c ? { ...p, note: pick(p.note, c.note), watch: watchOk ? pick(p.watch, c.watch) : p.watch } : p;
+    }).filter((p) => checked.positions.some((q) => String(q.name).toLowerCase() === String(p.name).toLowerCase()) || draft.positions.length <= 2),
+  };
+  return out;
+}
+

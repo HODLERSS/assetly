@@ -186,13 +186,13 @@ const earNumbers = (t: string) => t
   // "$3 million", "$3.2 billion", "$85k", "$1.1bn", "USD 3 million", "-$706", "+$48": magnitude first, currency last
   .replace(/([+\-−]?)(?:\$|USD\s?|US\$)\s?([\d,]+(?:\.\d+)?)\s?(thousand|million|billion|trillion|mm|mn|bn|tn|[kKmMbBtT])\b(?:\s+dollars)?/g, (_, sg, d, suf) =>
     SIGN(sg) + roundUsd(Number(String(d).replace(/,/g, "")) * (MAG[String(suf).toLowerCase()] ?? 1)))
-  .replace(/([+\-−]?)(?:\$|USD\s?|US\$)\s?([\d,]+(?:\.\d+)?)(?:\s+dollars)?/g, (_, sg, d) => SIGN(sg) + roundUsd(Number(String(d).replace(/,/g, ""))))
+  .replace(/([+\-−]?)(?:\$|USD\s?|US\$)\s?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(?:\s+dollars)?/g, (_, sg, d) => SIGN(sg) + roundUsd(Number(String(d).replace(/,/g, ""))))
   // "8%-12%", "8-12%", "8% to 12%": one range, one unit, no dash read aloud
   .replace(/([+\-−]?)(\d+(?:\.\d+)?)\s?%?\s?(?:-|–|—|to)\s?(\d+(?:\.\d+)?)\s?%/g, (_, sg, a, b) => `${SIGN(sg)}${roundPct(Number(a))} to ${roundPct(Number(b))} percent`)
   .replace(/([+\-−]?)(\d+(?:\.\d+)?)\s?(?:%|percent\b)/g, (_, sg, n) => SIGN(sg) + roundPct(Number(n)) + " percent")
   // won: same law, magnitude then currency
   .replace(/₩\s?([\d,]+(?:\.\d+)?)\s?(thousand|million|billion|trillion|[kKmMbB])\b/g, (_, d, suf) => `${d} ${String(suf).length === 1 ? { k: "thousand", m: "million", b: "billion" }[String(suf).toLowerCase()] : String(suf).toLowerCase()} won`)
-  .replace(/₩\s?([\d,]+(?:\.\d+)?)/g, "$1 won")
+  .replace(/₩\s?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)/g, "$1 won")   // a comma AFTER the figure is punctuation, not a digit group
   // "Q3" is "third quarter"; "YTD" is "year to date"; a bare ratio "2x" is "2 times"
   .replace(/\bQ([1-4])\b/g, (_, q) => `${QTR[Number(q)]} quarter`)
   .replace(/\bYTD\b/g, "year to date")

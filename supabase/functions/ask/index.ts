@@ -19,7 +19,7 @@ import {
   isTradeQuestion, NO_HISTORY, pctText, priceConfusions, stripAdvice, usableNews, withNoCallLine, wrongLanguage, type PosFact,
   curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, plainScrub, PORTFOLIO_PLAIN, wrongDeliveriesDates,
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
-  buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming,
+  buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, digitsForWritten, diversifiedClaims, dropInstructionEcho,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -277,7 +277,9 @@ Deno.serve(async (req) => {
       bits.push(`${label} ${pctText(pct)} (${signedUsd(valUsd - then)})`);
     }
     const who = r.name && r.name !== nameOf(r) ? `${r.name}, ${r.symbol}` : r.symbol;
-    stats.push(`- ${nameOf(r)} (${who === nameOf(r) ? "" : who + "; "}${r.kind}${acct}): ${bits.join(" · ")}`);
+    // round 6: a Korean answer called NVDA a fund that "holds many stocks": every holding's TYPE is stated
+    const typeOf = r.kind === "etf" || r.kind === "fund" ? "fund (ETF: holds many stocks)" : r.kind === "crypto" ? "crypto coin (not a company, not diversified)" : r.kind === "bond" ? "bond" : "single stock (one company, not diversified)";
+    stats.push(`- ${nameOf(r)} (${who === nameOf(r) ? "" : who + "; "}type: ${typeOf}${acct}): ${bits.join(" · ")}`);
     posFacts.push({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], price: px === null ? null : usd(px, cur), value: valUsd });
   }
   const investedUsd = held.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
@@ -515,7 +517,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // shortlist answering a pick question, a deliveries date that is not in the data
   const dropLines = new Set([...(pickQ ? curatedListHits(answer, bookNames) : []), ...wrongDeliveriesDates(answer, dlvFacts, today),
     ...dayMoveMismatches(answer, moveFacts, 0.15), ...wrongEarningsMonths(answer, askEsts), ...unsupportedCauses(answer, causeSource), ...wrongDividendAmounts(answer, divFacts),
-    ...wrongDividendTiming(answer, divTiming, today)]);
+    ...wrongDividendTiming(answer, divTiming, today),
+    // round 6: "QQQ·VOO·NVDA는 여러 종목을 담고 있어" (NVDA is one company); "SoFi fell after an article noted its drop"
+    ...diversifiedClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], fund: r.kind === "etf" || r.kind === "fund" }))), ...circularCauses(answer)]);
   const pruned = answer.split("\n").map((l) => (dropLines.has(l.trim()) ? "" : [...dropLines].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
 
   let guarded = fixPriceConfusions(stripAdvice(normalizeBullets(pruned), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
@@ -541,7 +545,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // the husk text is held to the same report dates as everything else (round 5: "NVDA … late October")
   { const bad = new Set(wrongEarningsMonths(guarded, askEsts)); if (bad.size) guarded = guarded.split("\n").filter((l) => ![...bad].some((b) => l.includes(b))).join("\n") || defaultInfo(); }
   // "on file" is pipeline language (round 5: "BTC: no dividend data on file")
-  answer = plainDataWords(tidyNumbers(withNoCallLine(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), question, lastA, turns.length ? turns[turns.length - 1].q : "")));
+  answer = plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN))), question, lastA, turns.length ? turns[turns.length - 1].q : ""))));
   // the code-built answer is 4-5 checked bullets (~100 words with the opener): the phone cap must not cut its
   // last bullet, which is the one about what a buyer weighs
   answer = trimAnswer(answer, builtInCode ? 150 : cap + 10);

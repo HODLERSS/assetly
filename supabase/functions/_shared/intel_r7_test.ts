@@ -56,7 +56,7 @@ Deno.test("r7 opener: every trade or pick answer carries it unless its first sen
   // Korean
   assert(withNoCallLine("• 삼성전자 비중은 9%입니다.", "삼성전자 팔까?").startsWith("매매 여부는"));
   // a pick question ("현금으로 뭘 사야 할까?")
-  assert(withNoCallLine("• 현금은 $2,500입니다.", "현금으로 뭘 사야 할까?").startsWith("매매 여부는"));
+  assert(withNoCallLine("• 현금은 $2,500입니다.", "현금으로 뭘 사야 할까?").startsWith("무엇을 살지는"));
   // not a trade question: untouched
   assertEquals(withNoCallLine("• NVDA rose 2%.", "why is NVDA up?"), "• NVDA rose 2%.");
 });
@@ -85,10 +85,10 @@ Deno.test("r7 repair chain: fragments and advice go, ordinary sentences stay", (
   assertEquals(repairDrops("Microsoft rose 3.7% in early trading after its cloud update. Nvidia is 18% of the portfolio."), []);
 });
 
-Deno.test("r7 live editions: the current edition and the one before it are regenerated, never patched", () => {
+Deno.test("r7 live editions: only the current edition is regenerated; past-window editions are patched", () => {
   assertEquals(liveEditions("morning"), ["morning"]);
-  assertEquals(liveEditions("midday"), ["midday", "morning"]);
-  assertEquals(liveEditions("close"), ["close", "midday"]);
-  assertEquals(liveEditions("kr_close"), ["kr_close", "kr_open"]);
+  assertEquals(liveEditions("midday"), ["midday"]);   // round 6: the morning, past its window, is patched
+  assertEquals(liveEditions("close"), ["close"]);
+  assertEquals(liveEditions("kr_close"), ["kr_close"]);
   assertEquals(liveEditions("assessment"), []);
 });
