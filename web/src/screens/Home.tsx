@@ -300,7 +300,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
                 <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span>
                 {/* a balance has no daily move: "0.00% ($0) today" on cash was noise */}
                 {r.kind !== "cash" && r.kind !== "debt" && (<><br />
-                <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)}{r.change_pct !== null && (() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} {moveSession(r).label}{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
+                <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)}{r.change_pct !== null && (() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} <span className="row-session">{moveSession(r).label}</span>{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
               </span>
             </button>
           );

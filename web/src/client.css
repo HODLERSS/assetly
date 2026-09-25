@@ -28,6 +28,12 @@
 .sheet { max-height: calc(100% - env(safe-area-inset-top, 0px) - 12px);
   overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .kb-open .sheet-back { bottom: var(--as-kb-inset, 0px); }
+/* the keyboard's Done, inside the sheet (the WebKit accessory bar is off app-wide; lib/shell.ts) */
+.sheet-kbbar { display: none; }
+.kb-open .sheet-kbbar { display: flex; justify-content: flex-end; position: sticky; top: -18px; z-index: 1;
+  margin: -18px -16px 6px; padding: 8px 16px; background: var(--as-surface); border-bottom: 1px solid var(--as-rule); }
+/* "Use today's price" sits under the cost it fills */
+.chip.use-quote { margin: -4px 0 12px; }
 
 /* in-sheet confirmation (lot delete) */
 .sheet-confirm { margin: 0 0 12px; }
@@ -72,8 +78,11 @@
 /* and a won price takes its compact form there ("₩1.86M", not "₩1,86…") */
 .px-compact { display: none; }
 @media (max-width: 359px) { .px-full { display: none; } .px-compact { display: inline; } }
+/* and the session tag ("Wed close") takes its own line under the move: at 320pt the value column held
+   "+1.20% (+₩110.0K) Wed close" on one line and left "SK하이…" / "5 sh · ₩1.8…" for the name side (r4 power-user) */
+@media (max-width: 359px) { .row .right .row-session { display: block; } }
 
-/* Settings at large text (AX5 = 1.4x): the Appearance chips drop under their label instead of clipping
+/* Settings at large text (AX5 = 1.6x): the Appearance chips drop under their label instead of clipping
    "Dark" to "D", and a long email ellipsizes in place */
 .settings-appearance { flex-wrap: wrap; }
 .settings-appearance .chips { padding: 0; margin-left: auto; }

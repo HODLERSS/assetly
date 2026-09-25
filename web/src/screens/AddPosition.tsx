@@ -5,8 +5,8 @@ import { InsightsCard } from "../components/InsightsCard";
 import { Icon } from "../components/Icon";
 import { AmountField, EntryPreview } from "../components/AmountField";
 import { ACCOUNTS, accountLabel, defaultAccount } from "../lib/accounts";
-import { entryPreview, readAmount } from "../lib/numbers";
-import { ccySymbol, companyName, displayName, qtyUnit } from "../lib/format";
+import { entryPreview, formatAmountInput, readAmount } from "../lib/numbers";
+import { ccySymbol, companyName, displayName, moneyExact, qtyUnit } from "../lib/format";
 import { useInFlight } from "../lib/inflight";
 import { useSymbolSearch } from "../lib/search";
 
@@ -36,6 +36,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
+  const [quote, setQuote] = useState<{ symbol: string; price: number } | null>(null);   // today's price, for "Use today's price"
   const [, once] = useInFlight();   // the save's re-entry guard; `busy` above is what the screen shows
 
   // Everything about the form is derived from what was picked, never inherited from the previous add:
@@ -45,6 +46,13 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
     if (!r) return;
     setAccount(defaultAccount(r.kind));
     setCcy(r.currency || "USD");
+    // someone buying today, or who does not remember the price, can take the current quote as the cost
+    // (asked for since r2: the cost hint was text only)
+    setQuote(null);
+    if (r.kind !== "cash" && r.kind !== "debt") {
+      void Promise.resolve().then(() => api.getQuote(r.symbol))
+        .then((p) => { if (p) setQuote((q) => q ?? { symbol: r.symbol, price: p }); }).catch(() => {});
+    }
   };
 
   const search = (text: string) => {
@@ -149,6 +157,12 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
             onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} autoFocus />
           <AmountField id="add-cost" label={`Cost per ${picked.kind === "crypto" ? "coin" : "share"} (${ccySymbol(picked.currency).trim()})`} value={cost}
             onChange={(v) => { setCost(v); setFieldErr((f) => ({ ...f, cost: undefined })); }} error={fieldErr.cost} placeholder="What you paid" />
+          {quote && quote.symbol === picked.symbol && (
+            <button type="button" className="chip use-quote" data-testid="use-quote"
+              onClick={() => { setCost(formatAmountInput(quote.price)); setFieldErr((f) => ({ ...f, cost: undefined })); }}>
+              Use today's price ({moneyExact(quote.price, picked.currency)})
+            </button>
+          )}
           <div className="field"><label htmlFor="add-date">Purchase date (optional)</label>
             <input id="add-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           </>)}

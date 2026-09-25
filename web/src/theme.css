@@ -171,10 +171,10 @@ input, select { font: inherit; }
 .chips > * { flex: 0 0 auto; }
 .chip::before { content: ""; position: absolute; left: 0; right: 0; top: 4px; bottom: 4px; z-index: -1; border-radius: 999px;
   border: 1px solid var(--as-rule); background: var(--as-surface); }
-.chip[aria-pressed="true"] { color: var(--as-on-primary); }
-.chip[aria-pressed="true"]::before { background: var(--as-primary); border-color: var(--as-primary); }
+.chip[aria-pressed="true"], .chip[role="radio"][aria-checked="true"] { color: var(--as-on-primary); }
+.chip[aria-pressed="true"]::before, .chip[role="radio"][aria-checked="true"]::before { background: var(--as-primary); border-color: var(--as-primary); }
 .chip:active::before { background: var(--as-hover); }
-.chip[aria-pressed="true"]:active::before { background: var(--as-primary); opacity: .85; }
+.chip[aria-pressed="true"]:active::before, .chip[role="radio"][aria-checked="true"]:active::before { background: var(--as-primary); opacity: .85; }
 
 .sheet-back { position: fixed; inset: 0; background: rgba(22,24,29,.4); display: flex; align-items: flex-end; z-index: 30; }
 .sheet { background: var(--as-surface); border-radius: 14px 14px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom));

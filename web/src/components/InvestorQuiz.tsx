@@ -80,7 +80,10 @@ export function InvestorQuiz({ initial, draft, startAt = 0, onDone, onSkip, onPr
         {q.opts.map(([key, label]) => {
           const on = v[q.key].includes(key);
           return (
-            <button key={key} className="chip" aria-pressed={on} style={on ? { fontWeight: 700 } : undefined}
+            // a single-choice question is a radio group to VoiceOver ("radio button, 1 of 4, checked"), not a
+            // set of toggle buttons (r3 + r4 newcomer)
+            <button key={key} className="chip" style={on ? { fontWeight: 700 } : undefined}
+              {...(q.single ? { role: "radio", "aria-checked": on } : { "aria-pressed": on })}
               onClick={() => set(q.key, key, q.single)}>{label}</button>
           );
         })}

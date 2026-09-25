@@ -98,17 +98,29 @@ export function installKeyboard(): () => void {
 // the page scales its text by it. Clamped: text-size-adjust grows text but not the boxes around it,
 // and past ~1.4x the fixed-height rows start to clip. The tab bar and mini player opt out in theme.css,
 // as iOS's own bars do, so the chrome keeps its measured height.
+// 1.4x read as barely larger at accessibility-XXXL (r4 native m5); 1.6x is where the rows, chips and the
+// composer were re-checked at AX5 on the iPhone 17 Pro and 16e.
 export const TEXT_SCALE_MIN = 0.9;
-export const TEXT_SCALE_MAX = 1.4;
+export const TEXT_SCALE_MAX = 1.6;
 export const clampTextScale = (s: number) => (Number.isFinite(s) ? Math.min(TEXT_SCALE_MAX, Math.max(TEXT_SCALE_MIN, s)) : 1);
 
+// The applied scale, for the few strings that must get shorter at large sizes (the Ask placeholder was cut to
+// "Ask about your portfoli" at AX5).
+let textScale = 1;
+const scaleSubs = new Set<() => void>();
+export const getTextScale = () => textScale;
+export const subscribeTextScale = (cb: () => void) => { scaleSubs.add(cb); return () => { scaleSubs.delete(cb); }; };
+export function setTextScale(s: number) {
+  textScale = clampTextScale(s);
+  const pct = `${Math.round(textScale * 100)}%`;
+  const style = document.documentElement.style as CSSStyleDeclaration & { webkitTextSizeAdjust?: string };
+  style.webkitTextSizeAdjust = pct;
+  style.setProperty("text-size-adjust", pct);
+  scaleSubs.forEach((cb) => cb());
+}
+
 export function installTextSize(): () => void {
-  return onTextScale((s) => {
-    const pct = `${Math.round(clampTextScale(s) * 100)}%`;
-    const style = document.documentElement.style as CSSStyleDeclaration & { webkitTextSizeAdjust?: string };
-    style.webkitTextSizeAdjust = pct;
-    style.setProperty("text-size-adjust", pct);
-  });
+  return onTextScale(setTextScale);
 }
 
 export function installShell(): () => void {

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { getTextScale, subscribeTextScale } from "../lib/shell";
 import type { Api } from "../lib/api";
 
 // ASK: grounded Q&A about the user's own portfolio, presented as a chat.
@@ -62,6 +63,7 @@ function loadTurns(): Turn[] {
 
 export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAnswered?: () => void; autoAsk?: { question: string; key: string } | null }) {
   const [q, setQ] = useState("");
+  const largeText = useSyncExternalStore(subscribeTextScale, getTextScale) >= 1.3;
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [busy, setBusy] = useState(false);
   const [wait, setWait] = useState<0 | 1 | 2>(0);   // how long the current answer has taken: see WAIT_COPY
@@ -171,7 +173,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
       </div>
       <form className="ask-composer" onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
         <input ref={inputRef} aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
-               placeholder="Ask about your portfolio…" enterKeyHint="send" autoComplete="off" />
+               placeholder={largeText ? "Ask a question…" : "Ask about your portfolio…"} enterKeyHint="send" autoComplete="off" />
         <button className="btn" disabled={busy || !q.trim()}>{busy ? "…" : "Send"}</button>
       </form>
     </>

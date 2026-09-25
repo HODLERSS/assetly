@@ -3,6 +3,7 @@ import { convertCcy, dayChangeAmount, type FxRates } from "./lib/format";
 import { isHeld, sortByBaseValue } from "./lib/portfolio";
 import { useAssessmentWatch } from "./lib/assessment";
 import { noteRemoval } from "./lib/heldIntel";
+import { foreignBrief } from "./lib/briefBasis";
 import { clearUserLocalState } from "./lib/localState";
 import type { Session } from "@supabase/supabase-js";
 import { completeNativeAuth, supabase } from "./lib/supabase";
@@ -13,7 +14,7 @@ import { Home, NEXT_KEY } from "./screens/Home";
 import { TabIcon } from "./components/TabIcon";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { applyTheme, getTheme, watchSystemTheme } from "./lib/theme";
-import { onAuthReturn, onForeground, onOAuthReturn } from "./lib/native";
+import { onAuthReturn, onForeground, onOAuthReturn, PORTAL_CLOSED } from "./lib/native";
 import { snapshotUnder, useEdgeSwipeBack, type Underlay } from "./lib/swipeBack";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { clearBadge, pushEnabled, registerPush } from "./lib/push";
@@ -84,13 +85,18 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const assess = useAssessmentWatch(api, session?.user.id ?? null);
   const connectPendingRef = useRef<string | null>(null);   // set at the connect moment; consumed when fresh intelligence lands
   const seenBriefRef = useRef<string | null>(null);   // latest brief generated_at the user has seen
+  // the book the brief watcher judges against (null until the first load): a brief about other holdings is
+  // never announced as "Your brief is ready" (r4 newcomer)
+  const briefBookRef = useRef<PortfolioRow[] | null>(null);
   // brief watcher: a new brief (first brief, or the next edition) lights Home when the user is elsewhere
   useEffect(() => {
     if (!session) return;
     let live = true;
     const tick = async () => {
       try {
-        const bs = await api.getDailyBriefs();
+        const book = briefBookRef.current;
+        if (!book) return;   // judged against the book: the first look waits for it (the effect reruns at boot)
+        const bs = (await api.getDailyBriefs()).filter((b) => !foreignBrief(b, book));
         if (!live) return;
         // baseline on the very first look: "no brief yet" is itself a state, so a fresh account's
         // first brief counts as NEW when it lands instead of being swallowed as the baseline
@@ -109,7 +115,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
     tick();
     const t = setInterval(tick, 20000);   // a fresh account's first brief lands in 1-3 min; catch it promptly
     return () => { live = false; clearInterval(t); };
-  }, [session, api]);
+  }, [session, api, booted]);
   const seenInsightRef = useRef<string | null>(null);   // generated_at the user has already seen
   const [pinsRefreshing, setPinsRefreshing] = useState(false);
   // per-stock refreshes: keyed by symbol so several can run and each survives tab changes
@@ -238,7 +244,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [noticeKind, setNoticeKind] = useState<"busy" | "ok" | "warn">("ok");
   const [obSnap, setObSnap] = useState<string | null>(null);
   const [snapReturn, setSnapReturn] = useState<string | null>(null);
-  useEffect(() => onOAuthReturn((status) => setSnapReturn(status)), []);
+  // a web portal window closed without connecting: nothing to announce, but pick up anything that did land
+  useEffect(() => onOAuthReturn((status) => { if (status === PORTAL_CLOSED) void load(); else setSnapReturn(status); }), [load]);
   useEffect(() => {
     if (!session) return;
     const q = new URLSearchParams(window.location.search);
@@ -322,6 +329,17 @@ export function App({ api = defaultApi }: { api?: Api }) {
     if (!session) return;
     return onForeground(() => { if (Date.now() - lastLoadRef.current > STALE_ON_RETURN_MS) void load(); });
   }, [session, load]);
+  // Losing the connection says so at once: Home kept its live dots for up to a minute, until the next price
+  // poll failed (r4 power-user). Coming back refreshes right away instead of waiting for that poll.
+  useEffect(() => {
+    if (!session) return;
+    const down = () => setError(PRICES_FAILED);
+    const up = () => { void load(); };
+    if (typeof navigator !== "undefined" && navigator.onLine === false) down();
+    window.addEventListener("offline", down);
+    window.addEventListener("online", up);
+    return () => { window.removeEventListener("offline", down); window.removeEventListener("online", up); };
+  }, [session, load]);
 
   // Edge swipe back on the pushed screens (Add position, Position detail): the same exit as their back button.
   const mainRef = useRef<HTMLElement>(null);
@@ -398,6 +416,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const base = profile?.base_currency ?? "USD";
   // The book every screen sees: only rows that hold something, biggest first in the base currency.
   const rows = useMemo(() => sortByBaseValue(rawRows.filter(isHeld), base, fx), [rawRows, base, fx]);
+  briefBookRef.current = booted ? rows : null;
   heldCountRef.current = rows.length;
   const totals = useMemo(() => {
     let assets = 0, debt = 0, cost = 0, day = 0, unconverted = 0, mixed = false;

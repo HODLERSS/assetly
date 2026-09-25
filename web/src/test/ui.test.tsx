@@ -339,7 +339,7 @@ describe("U44 intelligence refresh light", () => {
 describe("U45 brief arrival light", () => {
   it("a brief landing while the user is on News lights the Home tab and shows the banner on return", async () => {
     const sec = { lede: "First brief lede.", overnight: "S&P500 index 6,470 (+0.4%), VIX 14.1, KOSPI 3,120 (+0.8%).",
-      positions: [{ name: "MARA", note: "Up 2.1%.", watch: "Q3 call" }], desk_view: "Structural.", calendar: [] };
+      held: ["RDDT"], positions: [{ name: "MARA", note: "Up 2.1%.", watch: "Q3 call" }], desk_view: "Structural.", calendar: [] };
     const briefs = vi.fn().mockResolvedValue([]);
     const api = stubApi({ getDailyBriefs: briefs });
     render(<App api={api} />);
@@ -401,7 +401,7 @@ describe("U39 morning brief", () => {
       sections: {
         lede: "MARA reports after the close; 37% of your book is on the line.",
         overnight: "S&P futures +0.3%, VIX 14.2, KOSPI +0.8% lifted your Korea sleeve.",
-        positions: [
+        held: ["RDDT"], positions: [
           { name: "MARA", note: "Q3 print tonight; street at -$0.20 EPS.", watch: "hashrate guidance" },
           { name: "SK hynix", note: "\u20a940T buyback continues to support the 20% position.", watch: "HBM pricing commentary" },
         ],
@@ -430,7 +430,7 @@ describe("U39 morning brief", () => {
   it("U40: multiple editions default to the latest with chips to switch back", async () => {
     const sec = (lede: string) => ({
       lede, overnight: "S&P500 index 6,470 (+0.4%), VIX 14.1, KOSPI 3,120 (+0.8%).",
-      positions: [{ name: "MARA", note: "Up 2.1% into the print.", watch: "Q3 call tonight" }],
+      held: ["RDDT"], positions: [{ name: "MARA", note: "Up 2.1% into the print.", watch: "Q3 call tonight" }],
       desk_view: "Concentration unchanged.", calendar: [],
     });
     const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([
@@ -1329,10 +1329,10 @@ describe("U47 series of manual adds", () => {
 describe("U48 portfolio assessment card", () => {
   it("the newest edition leads; the assessment shows quality read, structure, horizons and gaps", async () => {
     const daily = { lede: "Morning lede here.", overnight: "S&P500 index 6,470 (+0.4%), VIX 14.1, KOSPI 3,120 (+0.8%).",
-      positions: [{ name: "MARA", note: "Up 2.1% into the print.", watch: "Q3 call tonight" }], desk_view: "Concentration unchanged.", calendar: [] };
+      held: ["RDDT"], positions: [{ name: "MARA", note: "Up 2.1% into the print.", watch: "Q3 call tonight" }], desk_view: "Concentration unchanged.", calendar: [] };
     const assess = { lede: "A two-bet book: AI semiconductors and crypto beta are 83% of your assets.",
       overnight: "Total $48,200. NVDA 41.5%, MARA 22.3%, AMD 19.1%; top three 82.9%. All US, no cash.",
-      positions: [{ name: "NVDA", note: "Sells the accelerators every AI data center is built on; pricing power intact, customer concentration is the risk.", watch: "Hyperscaler capex guidance cut" }],
+      held: ["RDDT"], positions: [{ name: "NVDA", note: "Sells the accelerators every AI data center is built on; pricing power intact, customer concentration is the risk.", watch: "Hyperscaler capex guidance cut" }],
       desk_view: "Three names, one factor: AI capex. 82.9% of assets move on the same news.",
       horizon: "Next 3 months: NVDA's print decides the quarter. Next 3 years: AI capex must keep compounding.",
       ideas: ["A non-tech ballast sleeve: healthcare or staples", "Short-duration bonds as dry powder"], calendar: [] };
@@ -1374,9 +1374,9 @@ describe("U49 investor quiz at sign-up", () => {
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     await userEvent.click(await screen.findByRole("button", { name: /Aggressive 12/ }));
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Buy more" }));
+    await userEvent.click(await screen.findByRole("radio", { name: "Buy more" }));
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Intermediate" }));
+    await userEvent.click(await screen.findByRole("radio", { name: "Intermediate" }));
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     // quiz done -> the holdings step; add one manual position to finish onboarding
     await screen.findByTestId("ob-connect");
@@ -1421,9 +1421,9 @@ describe("U50 investor profile in settings", () => {
     await userEvent.click(await screen.findByRole("button", { name: "1–3 years" }));
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));   // target keeps its saved value
-    await userEvent.click(await screen.findByRole("button", { name: "Trim a bit" }));
+    await userEvent.click(await screen.findByRole("radio", { name: "Trim a bit" }));
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Advanced" }));
+    await userEvent.click(await screen.findByRole("radio", { name: "Advanced" }));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.updateInvestor).toHaveBeenCalledWith(
       { styles: ["value", "growth"], purpose: ["watch"], horizon: ["3-10y", "1-3y"], target: ["8-12%"], risk: ["trim"], level: ["advanced"], defaulted: [] }));   // one answer each: a tap replaces
@@ -1440,7 +1440,7 @@ describe("U51 mini player", () => {
     sections: {
       lede: "Your book is carrying one big bet and it is paying you today.",
       overnight: "S&P500 futures 6,470 (+0.4%), VIX 14.1, KOSPI 3,120 (+0.8%).",
-      positions: [{ name: "MARA", note: "Up 2% into the print.", watch: "Q3 call tonight" }],
+      held: ["RDDT"], positions: [{ name: "MARA", note: "Up 2% into the print.", watch: "Q3 call tonight" }],
       desk_view: "Concentration is the book's defining feature.", calendar: [],
     },
     audio_path: "u/2026-08-31-morning.mp3",
@@ -1584,7 +1584,7 @@ describe("U52 appearance", () => {
 
 describe("U47 device voice when there is no MP3", () => {
   const sec = { lede: "Cash drags the book while QQQM carries the day.", overnight: "S&P500 index 6,470 (+0.4%), VIX 14.1.",
-    positions: [{ name: "QQQM", note: "Up 0.9%, the steady core.", watch: "Fed decision Wednesday" }], desk_view: "Concentration unchanged.", calendar: [] };
+    held: ["RDDT"], positions: [{ name: "QQQM", note: "Up 0.9%, the steady core.", watch: "Fed decision Wednesday" }], desk_view: "Concentration unchanged.", calendar: [] };
   const SCRIPT = `Good evening. Here's your closing note. <break time="0.7s" /> Cash drags the book while Invesco Nasdaq 100 carries the day. <break time="0.6s" /> That's your brief. Talk soon.`;
   class FakeUtterance { text: string; voice: unknown = null; lang = ""; rate = 1; onend: unknown = null; onerror: unknown = null; constructor(t: string) { this.text = t; } }
   let spoken: { text: string }[];
@@ -1631,7 +1631,7 @@ describe("U47 device voice when there is no MP3", () => {
 
 describe("U48 weekend read", () => {
   const sec = { lede: "The book ended the week higher, with QQQM doing the lifting.", overnight: "Week that was: QQQM +1.8%, MARA +6.2%.",
-    positions: [{ name: "MARA", note: "The AI joint venture changes the revenue mix; the stock rose 6.2% on the week.", watch: "Long Ridge close" }],
+    held: ["RDDT"], positions: [{ name: "MARA", note: "The AI joint venture changes the revenue mix; the stock rose 6.2% on the week.", watch: "Long Ridge close" }],
     desk_view: "Direction: concentration in one tech index decides the next five sessions.", calendar: ["Next US session Mon Sep 14", "Next KRX session Mon Sep 14"] };
   it("renders the Weekend Read with its own labels", async () => {
     const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([{ brief_date: "2026-09-13", edition: "weekend", generated_at: new Date().toISOString(), sections: sec, audio_path: null, script: null }]) });
@@ -1656,7 +1656,7 @@ describe("U48 weekend read", () => {
 
 
 describe("U49 Korea editions", () => {
-  const sec = { lede: "Korea opened soft for your Korean sleeve, with SK hynix down 5.3%.", overnight: "KOSPI 6,850 (-1.2%), USDKRW 1,342.", positions: [{ name: "SK hynix", note: "The DRAM shortage story met profit-taking; down 5.3% at 51% of the book.", watch: "KRX close 3:30 PM KST" }], desk_view: "The Korean sleeve sets the tone into the US open.", calendar: ["US market opens Mon Sep 14 9:30 AM ET"] };
+  const sec = { lede: "Korea opened soft for your Korean sleeve, with SK hynix down 5.3%.", overnight: "KOSPI 6,850 (-1.2%), USDKRW 1,342.", held: ["RDDT"], positions: [{ name: "SK hynix", note: "The DRAM shortage story met profit-taking; down 5.3% at 51% of the book.", watch: "KRX close 3:30 PM KST" }], desk_view: "The Korean sleeve sets the tone into the US open.", calendar: ["US market opens Mon Sep 14 9:30 AM ET"] };
   it("renders the Korea Open pulse with its own labels and chip", async () => {
     const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([
       { brief_date: "2026-09-14", edition: "kr_open", generated_at: "2026-09-14T00:25:00Z", sections: sec, audio_path: null, script: null },

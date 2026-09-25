@@ -271,6 +271,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
         price: Number(r.price), change_pct: r.change_pct === null ? null : Number(r.change_pct),
       })).sort((a, b) => a.symbol.localeCompare(b.symbol));
     },
+    /** The latest tracked price of one symbol, or null when the pipeline has none yet (a symbol not yet tracked). */
+    async getQuote(symbol: string): Promise<number | null> {
+      const { data } = await sb.from("prices").select("price").eq("symbol", symbol).maybeSingle();
+      const v = data ? Number(data.price) : NaN;
+      return Number.isFinite(v) && v > 0 ? v : null;
+    },
     /** Rate + freshness for the Settings surface. */
     async getFxInfo(): Promise<{ rate: number; asOf: string } | null> {
       const { data } = await sb.from("prices").select("price,updated_at").eq("symbol", "USDKRW").maybeSingle();

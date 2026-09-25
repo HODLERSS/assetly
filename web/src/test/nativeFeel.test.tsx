@@ -219,7 +219,7 @@ describe("Dynamic Type clamp", () => {
   it("follows the iOS text size within the range the layout holds", () => {
     expect(clampTextScale(1)).toBe(1);
     expect(clampTextScale(1.24)).toBe(1.24);
-    expect(clampTextScale(3.1)).toBe(1.4);                               // largest accessibility size
+    expect(clampTextScale(3.1)).toBe(1.6);                               // largest accessibility size
     expect(clampTextScale(0.82)).toBe(0.9);                              // extra small
     expect(clampTextScale(Number.NaN)).toBe(1);
   });
