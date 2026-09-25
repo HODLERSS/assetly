@@ -2,7 +2,7 @@
 // warmup, news-sync, price-sync). No I/O here, so every rule is unit-tested in intel_test.ts.
 // Each helper exists because a model got a number, a date or a framing wrong in production; the
 // comment on each names the failure it closes.
-import { CLOSE_MIN, HOL, TZ, type Mkt, zonedEpoch, zonedParts } from "./calendar.ts";
+import { CLOSE_MIN, HOL, OPEN_MIN, TZ, type Mkt, zonedEpoch, zonedParts } from "./calendar.ts";
 export { aliasesFor, centrality, decodeEntities, isJunkNews, newsRelevant, type NewsRow, publisherFor, staleRedated, titleKey, urlDate, usableNews } from "./news_rules.ts";
 
 // ---------------------------------------------------------------------------------------------
@@ -33,13 +33,22 @@ export function closesBetween(mkt: Mkt, fromMs: number, toMs: number, limit = In
  *  in insights) that many days back. A day that does not exist (Mar 31 minus a month) falls to the month's end. */
 export function windowTargetYmd(days: number, now = Date.now(), mkt?: Mkt | null): string {
   const market = mkt === undefined ? "US" : mkt;
-  const ymd = market ? zonedParts(new Date(now), TZ[market]).ymd : new Date(now).toISOString().slice(0, 10);
+  const ymd = market ? marketToday(market, now) : new Date(now).toISOString().slice(0, 10);
   const months = ({ 30: 1, 60: 2, 90: 3, 180: 6, 365: 12, 730: 24 } as Record<number, number>)[days];
   const [y, m, d] = ymd.split("-").map(Number);
   if (!months) { const t = new Date(Date.UTC(y, m - 1, d - days)); return t.toISOString().slice(0, 10); }
   const first = new Date(Date.UTC(y, m - 1 - months, 1));
   const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
   return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, lastDay))).toISOString().slice(0, 10);
+}
+/** The market's current day, the rule web/src/lib/chartRange.ts uses: its zone's date, or the day before while
+ *  that market has not opened yet. A US afternoon is already the next morning in Seoul; counting Samsung's 1Y
+ *  from that Seoul date based it on a close one day later than Yahoo does (+242.7% instead of +231.6%). */
+export function marketToday(mkt: Mkt, now = Date.now()): string {
+  const z = zonedParts(new Date(now), TZ[mkt]);
+  if (z.minutes >= OPEN_MIN[mkt]) return z.ymd;
+  const [y, m, d] = z.ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
 }
 /** The last instant that still belongs to the window's target date (its end, in the market's zone). */
 export function windowCutoff(days: number, now = Date.now(), mkt?: Mkt | null): number {
