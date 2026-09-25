@@ -317,11 +317,15 @@ export function App({ api = defaultApi }: { api?: Api }) {
     api.brokerageConnected().catch((e) => assess.fail(e instanceof Error ? e.message : "We couldn't start your assessment."));
   }, [api, assess.start, assess.fail]);
   const retryAssessment = useCallback(() => { bookChangeRef.current.pending = true; runBookPipeline(); }, [runBookPipeline]);
+  // a brand-new book (nothing held before this add) starts its first assessment almost at once: the
+  // first minutes decide whether a new user stays, and there is no earlier run to coalesce with
+  const heldCountRef = useRef(0);
   const scheduleBookChange = useCallback(() => {
     const b = bookChangeRef.current;
+    const firstBook = heldCountRef.current === 0 && !b.pending;
     b.pending = true;
     if (b.timer) clearTimeout(b.timer);
-    b.timer = window.setTimeout(runBookPipeline, 25000);
+    b.timer = window.setTimeout(runBookPipeline, firstBook ? 5000 : 25000);
   }, [runBookPipeline]);
   useEffect(() => { if (view.kind !== "add") runBookPipeline(); }, [view.kind, runBookPipeline]);   // leaving Add = the run is over
   useEffect(() => {
@@ -333,6 +337,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const base = profile?.base_currency ?? "USD";
   // The book every screen sees: only rows that hold something, biggest first in the base currency.
   const rows = useMemo(() => sortByBaseValue(rawRows.filter(isHeld), base, fx), [rawRows, base, fx]);
+  heldCountRef.current = rows.length;
   const totals = useMemo(() => {
     let assets = 0, debt = 0, cost = 0, day = 0, unconverted = 0, mixed = false;
     for (const r of rows) {

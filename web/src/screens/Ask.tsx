@@ -6,7 +6,7 @@ const SUGGESTIONS = [
   "Assess my portfolio and provide insights",
   "What was my 1W and 1M movement in $ and %?",
   "What should I watch this week?",
-  "Which of my holdings would I add to today, and what would have to be true?",
+  "What's my biggest risk right now?",
 ];
 
 type Turn = { q: string; a: string | null; followups?: string[]; error?: string };
@@ -73,9 +73,11 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
     if (!text || busy) return;
     setQ("");
     setBusy(true);
+    // the conversation so far, so a follow-up ("why did that happen?") is answered about the last answer
+    const history = turns.filter((t) => t.a && !t.error).map((t) => ({ q: t.q, a: t.a as string }));
     setTurns((t) => [...t, { q: text, a: null }]);
     try {
-      const { answer, followups } = await api.ask(text);
+      const { answer, followups } = await api.ask(text, history);
       setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: answer, followups } : x)));
     } catch (e) {
       setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: "", error: e instanceof Error ? e.message : "Something broke — try again." } : x)));

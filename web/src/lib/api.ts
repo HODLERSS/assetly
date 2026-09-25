@@ -387,14 +387,21 @@ export function makeApi(sb: SupabaseClient = supabase) {
      *  `since`, and the portfolio intelligence that the chain writes first. A server-side status (queued /
      *  failed) plugs in here without the UI changing: map it onto `status`. */
     async getAssessmentStatus(since: string): Promise<{ status: "pending" | "ready" | "failed"; generatedAt: string | null; intelligenceAt: string | null; hadEarlier: boolean }> {
-      const [{ data: a }, { data: pi }] = await Promise.all([
+      const [{ data: a }, { data: pi }, { data: st }] = await Promise.all([
         sb.from("daily_briefs").select("generated_at").eq("edition", "assessment").order("generated_at", { ascending: false }).limit(1).maybeSingle(),
         sb.from("portfolio_insights").select("generated_at").order("generated_at", { ascending: false }).limit(1).maybeSingle(),
+        // the server's own run record (queued -> running -> ready | failed); absent before migration 34,
+        // in which case the rows above are the whole story
+        sb.from("assessment_status").select("state,updated_at").maybeSingle().then((r) => r, () => ({ data: null })),
       ]);
       const at = a?.generated_at ? String(a.generated_at) : null;
       const pit = pi?.generated_at ? String(pi.generated_at) : null;
       const fresh = (t: string | null) => !!t && +new Date(t) > +new Date(since);
-      return { status: fresh(at) ? "ready" : "pending", generatedAt: fresh(at) ? at : null,
+      // a run the server marked failed, or one that stopped reporting 15 min ago, is not coming
+      const run = st as { state?: string; updated_at?: string } | null;
+      const dead = !!run && fresh(run.updated_at ?? null) && (run.state === "failed"
+        || ((run.state === "queued" || run.state === "running") && Date.now() - +new Date(run.updated_at!) > 15 * 60_000));
+      return { status: fresh(at) ? "ready" : dead ? "failed" : "pending", generatedAt: fresh(at) ? at : null,
                intelligenceAt: fresh(pit) ? pit : null, hadEarlier: !!at && !fresh(at) };
     },
     /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions.

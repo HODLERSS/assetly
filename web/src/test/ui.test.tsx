@@ -753,7 +753,7 @@ describe("U24 ASK", () => {
     const card = await screen.findByTestId("ask-answer");
     expect(card.textContent).toContain("+$824");
     expect(card.textContent).toContain("Not financial advice");
-    expect(api.ask).toHaveBeenCalledWith("my 1W move?");
+    expect(api.ask).toHaveBeenCalledWith("my 1W move?", []);
   });
   it("the first suggestion is the portfolio assessment", async () => {
     const api = stubApi();
@@ -764,7 +764,7 @@ describe("U24 ASK", () => {
     expect(chips[0].textContent).toBe("Assess my portfolio and provide insights");
     await userEvent.click(chips[0]);
     await screen.findByTestId("ask-answer");
-    expect(api.ask).toHaveBeenCalledWith("Assess my portfolio and provide insights");
+    expect(api.ask).toHaveBeenCalledWith("Assess my portfolio and provide insights", []);
   });
   it("suggestion chips fire a question directly", async () => {
     const api = stubApi();
@@ -773,7 +773,7 @@ describe("U24 ASK", () => {
     await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
     await userEvent.click(screen.getByRole("button", { name: /1W and 1M movement/i }));
     await screen.findByTestId("ask-answer");
-    expect(api.ask).toHaveBeenCalledWith("What was my 1W and 1M movement in $ and %?");
+    expect(api.ask).toHaveBeenCalledWith("What was my 1W and 1M movement in $ and %?", []);
   });
 });
 
@@ -789,7 +789,9 @@ describe("U31 ASK follow-ups", () => {
     const fu = await screen.findByRole("button", { name: "What drove MARA this week?" });
     expect(screen.getByRole("button", { name: "How is my 1M trend?" })).toBeTruthy();
     await userEvent.click(fu);
-    await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith("What drove MARA this week?"));
+    // the follow-up carries the conversation so far, so "what drove it" is about the answer above
+    await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith("What drove MARA this week?",
+      [{ q: "my week?", a: "1W movement: +$824 (+14.2%). MARA led." }]));
     // chips belong to the LATEST turn only; after the follow-up answered, new chips render
     const chips = screen.getAllByRole("button", { name: "What drove MARA this week?" });
     expect(chips.length).toBe(1);

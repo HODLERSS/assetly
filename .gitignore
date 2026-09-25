@@ -14,3 +14,4 @@ web/ios/App/AssetlyDemo.xctestplan
 # generated for the first-run simulator walkthrough; carries fixture credentials
 web/ios/App/FirstRun.xctestplan
 web/ios/App/Hero.xctestplan
+.claude/
