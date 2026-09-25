@@ -199,12 +199,22 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error) throw error;
     },
     async getHistory(symbol: string, sinceHours: number): Promise<HistoryPoint[]> {
+      // PostgREST caps a response at 1000 rows. Ascending + a bigger limit silently returned the OLDEST
+      // 1000, so every range ended days early (1D showed "market closed" mid-session). Page newest-first
+      // until a short page, then put the points back in time order. A symbol holds ~3.3k rows even over
+      // 5Y (minute prints are pruned), so this is at most a handful of requests.
       const since = new Date(Date.now() - sinceHours * 3600 * 1000).toISOString();
-      const { data, error } = await sb.from("price_history")
-        .select("ts,price").eq("symbol", symbol).gte("ts", since)
-        .order("ts", { ascending: true }).limit(2000);
-      if (error) throw error;
-      return (data ?? []).map((r: Record<string, unknown>) => ({ ts: String(r.ts), price: Number(r.price) }));
+      const PAGE = 1000, MAX_PAGES = 8;
+      const rows: Record<string, unknown>[] = [];
+      for (let p = 0; p < MAX_PAGES; p++) {
+        const { data, error } = await sb.from("price_history")
+          .select("ts,price").eq("symbol", symbol).gte("ts", since)
+          .order("ts", { ascending: false }).range(p * PAGE, p * PAGE + PAGE - 1);
+        if (error) throw error;
+        rows.push(...(data ?? []));
+        if (!data || data.length < PAGE) break;
+      }
+      return rows.reverse().map((r) => ({ ts: String(r.ts), price: Number(r.price) }));
     },
     async updateBaseCurrency(base_currency: "USD" | "KRW") {
       const uid = await currentUserId(sb);
