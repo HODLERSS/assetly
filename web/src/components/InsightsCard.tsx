@@ -80,7 +80,7 @@ export function InsightsCard({ api, symbol, pollMs = 2000, onRefresh, refreshing
         {ins.bullets.map((b, i) => <li key={i}>{b}</li>)}
       </ul>
       {ins.windows && (ins.windows.trend || HORIZONS.some(([k]) => ins.windows![k])) && (
-        <p className="sub" data-testid="insights-trend" style={{ marginTop: 8, borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>
+        <p className="sub prose" data-testid="insights-trend" style={{ marginTop: 8, borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>
           {ins.windows.trend ?? [ins.windows.d7, ins.windows.y1].filter(Boolean).join(" ")}
         </p>
       )}

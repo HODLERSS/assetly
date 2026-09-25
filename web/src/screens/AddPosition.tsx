@@ -42,7 +42,8 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded }: {
         <>
           <div className="field">
             <label htmlFor="add-q">Ticker or name</label>
-            <input id="add-q" value={q} onChange={(e) => search(e.target.value)} placeholder="FIG, Reddit, Samsung…" autoFocus />
+            <input id="add-q" value={q} onChange={(e) => search(e.target.value)} placeholder="FIG, Reddit, Samsung…" autoFocus
+                   autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="off" enterKeyHint="search" />
           </div>
           <div className="card">
             {!q.trim() && (<>
@@ -121,7 +122,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded }: {
             <div className="field"><label htmlFor="add-qty">{picked.kind === "debt" ? `Amount owed (${ccy === "KRW" ? "₩" : "$"})` : `Amount (${ccy === "KRW" ? "₩" : "$"})`}</label>
               <input id="add-qty" className="num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus /></div>
             <div className="field"><label htmlFor="add-label">Label (optional)</label>
-              <input id="add-label" value={label} onChange={(e) => setLabel(e.target.value)}
+              <input id="add-label" value={label} onChange={(e) => setLabel(e.target.value)} enterKeyHint="next"
                      placeholder={picked.kind === "debt" ? "e.g. Car loan" : "e.g. Cash (Yeonhwa)"} /></div>
           </>) : (<>
           <div className="field"><label htmlFor="add-qty">Shares</label>
@@ -132,7 +133,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded }: {
             <input id="add-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           </>)}
           <div className="field"><label htmlFor="add-note">Note (optional)</label>
-            <input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Earnings dip buy" /></div>
+            <input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Earnings dip buy" enterKeyHint="done" /></div>
           {err && <div className="error-note" role="alert">{err}</div>}
           <button className="btn" disabled={busy} onClick={async () => {
             const isCash = picked.kind === "cash" || picked.kind === "debt";

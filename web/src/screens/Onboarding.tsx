@@ -202,7 +202,8 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
           </p>
           <div className="field">
             <label htmlFor="ob-q">Find your first position</label>
-            <input id="ob-q" value={q} onChange={(e) => search(e.target.value)} placeholder="Ticker or name — try FIG or Samsung" />
+            <input id="ob-q" value={q} onChange={(e) => search(e.target.value)} placeholder="Ticker or name — try FIG or Samsung"
+                   autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="off" enterKeyHint="search" />
           </div>
           <div className="card">
             {results.map((r) => (

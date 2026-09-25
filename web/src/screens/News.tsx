@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
 import { labelParts, timeAgo } from "../lib/format";
 import { InsightsCard } from "../components/InsightsCard";
 import { Icon } from "../components/Icon";
+import { PullToRefresh } from "../components/PullToRefresh";
+// headlines open in the in-app browser sheet (like Privacy and Terms), not by leaving for Safari
+import { openExternal } from "../lib/native";
 
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
 export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen, onRefreshSymbol, symbolRefreshing = {}, symbolFresh = {} }: {
@@ -16,6 +19,10 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
   const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
   const [cache] = useState(() => new Map<string, NewsItem[]>());   // instant chip flips
   const [top5, setTop5] = useState<Insight | null>(null);          // Assetly Intelligence, portfolio-wide
+  // pull to refresh: bumping the nonce re-runs the news load; the promise settles when it has landed
+  const [nonce, setNonce] = useState(0);
+  const settled = useRef<(() => void) | null>(null);
+  const refresh = () => new Promise<void>((resolve) => { settled.current = resolve; setNonce((n) => n + 1); });
   // cash and debt have no news; one chip per symbol even when held in several accounts
   const newsRows = rows.filter((r, i) => r.kind !== "cash" && r.kind !== "debt"
     && rows.findIndex((x) => x.symbol === r.symbol) === i);
@@ -28,7 +35,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
       setTop5(best); if (best) onInsightsSeen?.(best.generated_at);
     }).catch(() => {});
     return () => { live = false; };
-  }, [api, rows.length]);
+  }, [api, rows.length, nonce]);
   // an app-level refresh that finished while this screen was away (or open) lands here
   useEffect(() => {
     if (freshInsights && freshInsights.generated_at !== top5?.generated_at) { setTop5(freshInsights); onInsightsSeen?.(freshInsights.generated_at); }
@@ -61,12 +68,13 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
         setItems(n);
         setState("ok");
       })
-      .catch(() => { if (live) setState("error"); });
+      .catch(() => { if (live) setState("error"); })
+      .finally(() => { settled.current?.(); settled.current = null; });
     return () => { live = false; };
-  }, [api, filter, rows]);
+  }, [api, filter, rows, nonce]);
 
   return (
-    <>
+    <PullToRefresh onRefresh={refresh}>
       <h2 className="h1">News</h2>
       <div className="chips" role="group" aria-label="Filter news by holding">
         <button className="chip" aria-pressed={filter === null} onClick={() => setFilter(null)}>All holdings</button>
@@ -111,7 +119,8 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
       )}
       <div className="card">
         {items.map((n) => (
-          <a key={n.id} className="row" href={n.url} target="_blank" rel="noreferrer noopener" style={{ textDecoration: "none", display: "flex" }}>
+          <a key={n.id} className="row" href={n.url} target="_blank" rel="noreferrer noopener" style={{ textDecoration: "none", display: "flex" }}
+             onClick={(e) => { e.preventDefault(); void openExternal(n.url); }}>
             <span>
               <span style={{ fontWeight: 500 }}>{n.title}</span><br />
               <span className="sub">{(() => { const rr = rows.find((x) => x.symbol === n.symbol); return rr ? labelParts(rr, dispKr === "KRW").main : n.symbol; })()} · {n.source} · {timeAgo(n.published_at)}</span>
@@ -119,6 +128,6 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
           </a>
         ))}
       </div>
-    </>
+    </PullToRefresh>
   );
 }
