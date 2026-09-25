@@ -150,7 +150,7 @@ describe("G3 a long Ask wait says what it is doing, and a failure offers Retry",
     expect(screen.getByTestId("ask-wait").textContent).toBe("Taking longer than usual, pulling fresh data…");
     await act(async () => { fail(new Error("The analyst lost the thread mid-answer. Ask again.")); });
     const err = screen.getByTestId("ask-error");
-    expect(err.textContent).toMatch(/^That didn't go through\. Try again\./);
+    expect(err.textContent).toBe("That didn't go through.Retry");   // the line no longer repeats its button (r5 designer m-f)
     expect(err.textContent).not.toMatch(/analyst/);
     await act(async () => { fireEvent.click(within(err).getByRole("button", { name: "Retry" })); });
     await act(async () => { await Promise.resolve(); });

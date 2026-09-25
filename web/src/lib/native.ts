@@ -92,9 +92,12 @@ const portalWatchers = new Set<(status: string) => void>();
  * which hands the status to this tab (handOffPortalReturn) and closes; a window closed without it is polled.
  * A blocked popup falls back to navigating this tab, as before.
  */
-export async function openConnectPortal(url: string): Promise<void> {
+const PORTAL_WINDOW = "assetly-connect", PORTAL_FEATURES = "popup=yes,width=520,height=780";
+export async function openConnectPortal(url: string, opened: Window | null = null): Promise<void> {
   if (!isNative()) {
-    const w = window.open(url, "assetly-connect", "popup=yes,width=520,height=780");
+    let w = opened && !opened.closed ? opened : null;
+    if (w) { try { w.location.href = url; } catch { w = null; } }
+    if (!w) w = window.open(url, PORTAL_WINDOW, PORTAL_FEATURES);
     if (!w) { window.location.assign(url); return; }
     const poll = window.setInterval(() => {
       if (!w.closed) return;
@@ -105,6 +108,25 @@ export async function openConnectPortal(url: string): Promise<void> {
     return;
   }
   await Browser.open({ url, presentationStyle: "fullscreen" });
+}
+
+/**
+ * Start a brokerage connect from a tap: `getUrl` asks the server for the portal link. On the web the window
+ * opens inside the tap itself, blank, and is pointed at the portal once the link is back. A window opened after
+ * that await has lost the tap, and iOS Safari blocks it (r5 power-user). A failure closes the blank window and
+ * rethrows, so the caller can say what happened.
+ */
+export async function startConnect(getUrl: () => Promise<string | null | undefined>): Promise<void> {
+  let blank: Window | null = null;
+  if (!isNative()) { try { blank = window.open("about:blank", PORTAL_WINDOW, PORTAL_FEATURES) ?? null; } catch { blank = null; } }
+  try {
+    const url = await getUrl();
+    if (!url) throw new Error("The brokerage link didn't come back. Try again.");
+    await openConnectPortal(url, blank);
+  } catch (e) {
+    try { blank?.close(); } catch { /* already gone */ }
+    throw e;
+  }
 }
 
 /**

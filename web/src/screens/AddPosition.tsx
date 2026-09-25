@@ -3,9 +3,9 @@ import { useState } from "react";
 import type { Account, Api, SymbolRow } from "../lib/api";
 import { InsightsCard } from "../components/InsightsCard";
 import { Icon } from "../components/Icon";
-import { AmountField, EntryPreview } from "../components/AmountField";
+import { AmountField, DateField, EntryPreview } from "../components/AmountField";
 import { ACCOUNTS, accountLabel, defaultAccount } from "../lib/accounts";
-import { entryPreview, formatAmountInput, readAmount } from "../lib/numbers";
+import { entryPreview, quoteInput, readAmount, todayYmd } from "../lib/numbers";
 import { ccySymbol, companyName, displayName, moneyExact, qtyUnit } from "../lib/format";
 import { useInFlight } from "../lib/inflight";
 import { useSymbolSearch } from "../lib/search";
@@ -158,13 +158,14 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
           <AmountField id="add-cost" label={`Cost per ${picked.kind === "crypto" ? "coin" : "share"} (${ccySymbol(picked.currency).trim()})`} value={cost}
             onChange={(v) => { setCost(v); setFieldErr((f) => ({ ...f, cost: undefined })); }} error={fieldErr.cost} placeholder="What you paid" />
           {quote && quote.symbol === picked.symbol && (
+            // today's price is a purchase today: the date comes with it unless one was already set (the lot was
+            // saved "no date" beside a price that said today; r5 power-user)
             <button type="button" className="chip use-quote" data-testid="use-quote"
-              onClick={() => { setCost(formatAmountInput(quote.price)); setFieldErr((f) => ({ ...f, cost: undefined })); }}>
+              onClick={() => { setCost(quoteInput(quote.price, picked.currency)); setDate((d) => d || todayYmd()); setFieldErr((f) => ({ ...f, cost: undefined })); }}>
               Use today's price ({moneyExact(quote.price, picked.currency)})
             </button>
           )}
-          <div className="field"><label htmlFor="add-date">Purchase date (optional)</label>
-            <input id="add-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          <DateField id="add-date" label="Purchase date (optional)" value={date} onChange={setDate} />
           </>)}
           {!fieldErr.qty && !fieldErr.cost && <EntryPreview text={entryPreview({ kind: picked.kind, qty, cost, currency: picked.kind === "cash" || picked.kind === "debt" ? ccy : picked.currency,
             unit: picked.kind === "crypto" ? qtyUnit(picked) : undefined })} />}

@@ -902,7 +902,7 @@ describe("U18 labels + bank accounts", () => {
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await screen.findByText("Emergency fund");
     await screen.findByText("Travel fund");
-    expect(screen.getByTestId("positions-card").textContent!.match(/cash balance · Bank/g)!.length).toBe(2);
+    expect(screen.getByTestId("positions-card").textContent!.match(/Cash balance · Bank/g)!.length).toBe(2);
   });
 });
 
@@ -977,7 +977,7 @@ describe("U15 debt", () => {
     const net = await screen.findByTestId("net-worth");
     await waitFor(() => expect(net.textContent).toBe("$3,000"));      // 4,800 - 1,800
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
-    await screen.findByText(/debt balance/);
+    await screen.findByText(/Debt balance/);
     expect(screen.getByText("−$1,800")).toBeTruthy();
   });
   it("debt quick add: amount-owed field, cost pinned at 1", async () => {
@@ -1035,7 +1035,7 @@ describe("U14 accounts + cash", () => {
     expect(subs.some((t) => /^24 sh · (\$|₩|avg)/.test(t))).toBe(true);     // brokerage row untagged; the figure is the live price, or avg cost when no quote
     expect(subs.some((t) => /24 sh · (401k|IRA)/.test(t))).toBe(false);
     expect(subs.some((t) => /40 sh · 401k/.test(t))).toBe(true);          // 401k row tagged
-    expect(subs).toContain("cash balance");                               // no noisy avg on cash
+    expect(subs).toContain("Cash balance");                               // no noisy avg on cash
   });
 });
 
@@ -1151,12 +1151,12 @@ describe("U11 price chart on position", () => {
     expect(sym).toBe("RDDT");
     expect(hours).toBeGreaterThanOrEqual(24 * 28);
     expect(hours).toBeLessThanOrEqual(24 * 45);
-    expect(daily).toEqual({ tz: "America/New_York" });
+    expect(daily).toEqual({ tz: "America/New_York", recentHours: 0 });   // every day folded: no raw window (r5 power-user)
     for (const k of ["1D", "1W", "3M", "6M", "YTD", "1Y", "2Y", "5Y"]) {
       expect(screen.getByRole("tab", { name: k })).toBeTruthy();
     }
     await userEvent.click(screen.getByRole("tab", { name: "1D" }));
-    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 96));   // four days: a holiday still has a last session
+    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 96, undefined, expect.anything()));   // four days: a holiday still has a last session
     await userEvent.click(screen.getByRole("tab", { name: "YTD" }));
     await waitFor(() => {
       const hours = (apiRef.getHistory as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1] as number;

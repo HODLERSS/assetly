@@ -93,7 +93,7 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
     <>
       <h2 className="h1">Settings</h2>
       <div className="card" style={{ marginBottom: 14 }}>
-        <div className="row"><span>Signed in as</span><span className="sub settings-email" data-testid="signed-in-as">{email ?? profile?.display_name ?? "—"}</span></div>
+        <div className="row settings-signedin"><span>Signed in as</span><span className="sub settings-email" data-testid="signed-in-as">{email ?? profile?.display_name ?? "—"}</span></div>
         {hasKrw ? (
           <>
             {ccyRow("View totals in", base, (c) => api.updateBaseCurrency(c))}
@@ -101,7 +101,8 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
             {ccyRow("KR assets in", dispKr, (c) => api.updateDisplayCcy({ display_kr: c }))}
           </>
         ) : (
-          <div className="row"><span>Base currency</span><span className="num">{base}</span></div>
+          // the same quiet value as every other row's ("USD" was 15px ink beside 12.5px muted; r3-r5 design m7)
+          <div className="row"><span>Base currency</span><span className="sub" data-testid="base-currency">{base}</span></div>
         )}
         {hasKrw && fx && (
           <div className="row"><span>Exchange rate</span>

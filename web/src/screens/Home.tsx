@@ -1,4 +1,5 @@
-import { openConnectPortal, platformTag } from "../lib/native";
+import { platformTag, startConnect } from "../lib/native";
+import { useInFlight } from "../lib/inflight";
 import { useEffect, useState } from "react";
 import type { Api, PortfolioRow } from "../lib/api";
 import { BriefCard } from "../components/BriefCard";
@@ -49,6 +50,18 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   const [nextArmed, setNextArmed] = useState(() => { try { return localStorage.getItem(NEXT_KEY) === "armed"; } catch { return false; } });
   useEffect(() => { try { if (localStorage.getItem(NEXT_KEY) === "armed") setNextArmed(true); } catch { /* private mode */ } }, [assessment?.startedAt]);
   const setNextDone = () => { setNextArmed(false); try { localStorage.setItem(NEXT_KEY, "done"); } catch { /* private mode */ } };
+  // Import / Connect: one at a time (a double tap sent two connect calls), busy while the link is fetched, and a
+  // failure said instead of swallowed (r5 power-user). startConnect opens the web portal window inside the tap.
+  const [connecting, runConnect] = useInFlight();
+  const [connectErr, setConnectErr] = useState<string | null>(null);
+  const connect = () => {
+    setConnectErr(null);
+    void runConnect(async () => {
+      try { await startConnect(async () => (await api.snaptrade("connect", { platform: platformTag() })).url); }
+      catch (e) { setConnectErr(e instanceof Error && e.message ? e.message : "Could not start the brokerage link."); }
+    });
+  };
+  const connectNote = connectErr && <div className="error-note" role="alert" data-testid="connect-error">{connectErr}</div>;
   useEffect(() => {
     let live = true;
     if (mode.kind === "pulse") api.getPulse().then((p) => { if (live) setPulse(p); }).catch(() => {});
@@ -86,16 +99,16 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
     return (
       <div className="empty">
         <p style={{ marginBottom: 14 }}>Nothing here yet. Connect a brokerage or add what you own, and your brief starts today.</p>
-        <button className="btn" style={{ marginBottom: 10 }} onClick={async () => {
-          try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } catch { /* button stays */ }
-        }}><Icon name="bolt" /> Connect your brokerage</button>
+        <button className="btn" style={{ marginBottom: 10 }} disabled={connecting} aria-busy={connecting || undefined} onClick={connect}>
+          <Icon name="bolt" /> {connecting ? "Opening…" : "Connect your brokerage"}</button>
+        {connectNote}
         <button className="btn secondary" onClick={onAdd}>Add positions manually</button>
       </div>
     );
   }
   // Holdings folded in: market / retirement filters with their own totals line
   // The filters name what they hold: "US" totals had BTC and ETH in them (r3 power-user). Crypto is its own
-  // chip; the headline and the breakdown still fold a dollar coin into the US line, and say so ("Crypto + US").
+  // chip; the headline and the breakdown still fold a dollar coin into the US line, and say so ("US + Crypto").
   const order: Market[] = ["US", "KR", "CRYPTO"];
   const marketsHeld = order.filter((m) => rows.some((r) => marketOf(r) === m));
   const hasRet = rows.some((r) => isRetirement(r.account));
@@ -208,9 +221,8 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           <p className="sub" style={{ margin: "4px 0 0" }}>Your brief covers everything you own, so each holding you add makes it sharper.</p>
           <div className="next-steps-actions">
             <button className="chip" onClick={onAdd}>+ Add another</button>
-            <button className="chip" onClick={async () => {
-              try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } catch { /* the chip stays */ }
-            }}><Icon name="bolt" size={12} /> Import from a brokerage</button>
+            <button className="chip" disabled={connecting} aria-busy={connecting || undefined} onClick={connect}>
+              <Icon name="bolt" size={12} /> {connecting ? "Opening…" : "Import from a brokerage"}</button>
             {/* only once there is something to read: before the first intelligence lands, News is empty */}
             {onOpenNews && !(assessPending && !assessment?.intelligenceReady) && <button className="chip" onClick={onOpenNews}>See today's news</button>}
           </div>
@@ -246,12 +258,12 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2 className="h1" style={{ fontSize: 16 }}>Positions</h2>
         <span style={{ display: "flex", gap: 8 }}>
-          <button className="chip" aria-label="Import from brokerage" onClick={async () => {
-            try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } catch { /* connect button stays */ }
-          }}><Icon name="bolt" size={12} /> Import</button>
+          <button className="chip" aria-label="Import from brokerage" disabled={connecting} aria-busy={connecting || undefined} onClick={connect}>
+            <Icon name="bolt" size={12} /> {connecting ? "Opening…" : "Import"}</button>
           <button className="chip" onClick={onAdd} aria-label="Add position">+ Add</button>
         </span>
       </div>
+      {connectNote}
       {filterChips.length > 0 && (
         <div className="chips" role="group" aria-label="Filter by type">
           <button className="chip" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>All</button>
@@ -290,7 +302,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
             <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
               <span>
                 <span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span><br />
-                <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${formatQty(r.qty ?? 0)} ${qtyUnit(r)}`}{accountTag(r.account) ? <span className="row-acct"> · {accountTag(r.account)}</span> : ""}{r.source === "snaptrade" ? <span className="row-acct"> · <Icon name="bolt" size={10} /></span> : ""}{r.kind === "cash" || r.kind === "debt" ? "" : r.price !== null
+                <span className="sub num">{r.kind === "cash" ? "Cash balance" : r.kind === "debt" ? "Debt balance" : `${formatQty(r.qty ?? 0)} ${qtyUnit(r)}`}{accountTag(r.account) ? <span className="row-acct"> · {accountTag(r.account)}</span> : ""}{r.source === "snaptrade" ? <span className="row-acct"> · <Icon name="bolt" size={10} /></span> : ""}{r.kind === "cash" || r.kind === "debt" ? "" : r.price !== null
                   // under 360pt a won price was cut to "\u20a91,86\u2026": the compact form (\u20a91.86M) fits (r3 power-user)
                   ? <> · {priceCompact(r.price, r.currency) === moneyExact(r.price, r.currency) ? moneyExact(r.price, r.currency)
                     : <><span className="px-full">{moneyExact(r.price, r.currency)}</span><span className="px-compact">{priceCompact(r.price, r.currency)}</span></>}</>
