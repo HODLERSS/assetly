@@ -283,15 +283,23 @@ export function dividendLine(name: string, d: DivRow | undefined, shares: number
   const last = Number(d.div_last), ttm = Number(d.div_ttm ?? 0), freq = Number(d.div_freq_days ?? 0);
   const perYear = freq ? last * Math.max(1, Math.round(365 / freq)) : ttm;
   const rhythm = freq ? (freq < 45 ? "monthly" : freq < 120 ? "quarterly" : freq < 250 ? "twice a year" : "yearly") : "irregular";
-  const annualNative = shares * (ttm || perYear);
+  // Round 6: after a raise (NVDA $0.01 -> $0.25 a quarter) the trailing 12 months ($0.52) understates the income
+  // the holding pays NOW ($1.00 a year). When the latest payment annualised differs from the trailing total by
+  // more than 10%, income is the current rate, and the line says so.
+  // only a RAISE: a smaller latest payment is usually the regular one before a larger year-end payment (Samsung)
+  const current = !!freq && ttm > 0 && perYear > ttm * 1.1;
+  const annualNative = shares * (current ? perYear : (ttm || perYear));
+  // an ex-date estimated for today or earlier is not "next" (round 6: VOO "~Sep 25" on Sep 25)
+  const todayYmd = new Date().toISOString().slice(0, 10);
+  const nextEx = d.div_next_ex && d.div_next_ex > todayYmd ? d.div_next_ex : null;
   const rate = perUsd > 0 ? perUsd : 1;
   const annual = annualNative / rate;
   const usdF = (v: number) => "$" + (v >= 100 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v < 1 ? 4 : 2));
   const f = ccy === "USD" ? usdF : ccy === "KRW" ? (v: number) => "₩" + Math.round(v).toLocaleString("en-US") : (v: number) => `${v.toFixed(2)} ${ccy}`;
   return {
     line: `${name}: last dividend ${f(last)} per share (ex-date ${d.div_last_ex}), paid ${rhythm}; last 12 months ${f(ttm)} per share${d.div_yield ? ` (yield ${d.div_yield}%)` : ""}; `
-      + `your ${shares} shares ≈ ${f(annualNative)} a year${ccy === "USD" ? "" : ` (≈ ${usdF(annual)})`}, ≈ ${f(shares * last)} per payment${d.div_next_ex ? `; next ex-date expected around ${d.div_next_ex} (est)` : ""}`,
-    amounts: [last, ttm, perYear, annualNative, shares * last, ...(ccy === "USD" ? [] : [annual])].filter((x) => x > 0),
+      + `your ${shares} shares ≈ ${f(annualNative)} a year${current ? ` at the current rate (${f(last)} ${rhythm === "quarterly" ? "a quarter" : "per payment"}; the last 12 months paid ${f(shares * ttm)})` : ""}${ccy === "USD" ? "" : ` (≈ ${usdF(annual)})`}, ≈ ${f(shares * last)} per payment${nextEx ? `; next ex-date expected around ${nextEx} (est)` : ""}`,
+    amounts: [last, ttm, perYear, annualNative, shares * last, shares * ttm, shares * perYear, ...(ccy === "USD" ? [] : [annual])].filter((x) => x > 0),
     annual,
   };
 }
