@@ -14,6 +14,7 @@ import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekday
 import {
   aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
+  capNoteKeepRisk, mergeChecked, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
 } from "../_shared/intel.ts";
 import { dividendLine, dividendRows, windowReturns } from "../_shared/history.ts";
@@ -71,6 +72,27 @@ const GEN_VERSION = 7;   // 4: calendar lines from the estimates, the round-4 gu
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
+// TRANSFORM TRACE (local diagnosis only, BRIEF_TRACE=1): every stage that changes a field is recorded with the
+// text before and after, so a garbled sentence can be traced to the transform that produced it (round 6).
+type TraceRow = { stage: string; field: string; before: string; after: string };
+let TRACE: TraceRow[] | null = null;
+let TRACE_LAST = new Map<string, string>();
+function flatSections(o: unknown): Map<string, string> {
+  const m = new Map<string, string>();
+  const s = (o ?? {}) as { lede?: string; overnight?: string; desk_view?: string; horizon?: string; ideas?: string[]; calendar?: string[]; positions?: { name: string; note: string; watch: string }[] };
+  for (const k of ["lede", "overnight", "desk_view", "horizon"] as const) if (typeof s[k] === "string") m.set(k, s[k]!);
+  (s.ideas ?? []).forEach((x, i) => m.set(`idea${i}`, String(x)));
+  (s.calendar ?? []).forEach((x, i) => m.set(`cal${i}`, String(x)));
+  (s.positions ?? []).forEach((p) => { m.set(`${p.name}.note`, String(p.note)); m.set(`${p.name}.watch`, String(p.watch)); });
+  return m;
+}
+function snap(stage: string, o: unknown) {
+  if (!TRACE) return;
+  const cur = flatSections(o);
+  for (const [k, v] of cur) { const b = TRACE_LAST.get(k); if (b !== v) TRACE.push({ stage, field: k, before: b ?? "", after: v }); }
+  for (const [k, b] of TRACE_LAST) if (!cur.has(k)) TRACE.push({ stage, field: k, before: b, after: "(removed)" });
+  TRACE_LAST = cur;
+}
 async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs = 30000, model?: string): Promise<Record<string, unknown> | null> {
   if (!/^(Draft (brief|assessment):|This assessment is too thin)/.test(prompt)) SOURCES.push(prompt);
   const ac = new AbortController();
@@ -208,7 +230,7 @@ const noviceScrub = (t: string): string => {
   x = x.replace(/\b([Aa]n?|[Tt]he)\s+(its|their|his|her)\b/g, (_m, art, poss) => (/^[A-Z]/.test(art) ? poss.charAt(0).toUpperCase() + poss.slice(1) : poss));
   // a lowercase replacement can land at a sentence start; the guard on the preceding character keeps
   // abbreviations ("U.S. stocks") from being re-capitalised
-  return x.replace(/(^|(?<=[a-z0-9%)])[.!?]\s+)([a-z])/g, (_m, a, b) => a + b.toUpperCase());
+  return capSentenceStarts(x);
 };
 
 // word-cap enforcement, boundary aware; hoisted so it can also run LAST, after the vocabulary
@@ -454,7 +476,7 @@ Deno.serve(async (req) => {
   // code (deletion and relabelling only, a few hundred milliseconds each). Round 4 poweruser: a midday row with
   // gen_version null still carried "Copilot earnings preview Sep 27" hours after the fix, because the
   // regenerate-once path reaches only the one or two users a run has wall-clock time to rewrite.
-  // Round 5: a LIVE edition (the one this run writes, the one before it, and the clock's own pair) is never
+  // Round 5/6: a LIVE edition (the one this run writes, and the one the clock is on; never a past-window edition) is never
   // patched: a patched morning kept "...Nasdaq futures (+0.7%), and one smaller position." and called live
   // moves "yesterday". It is REGENERATED from current data by a forced self-invocation (so a morning rewritten
   // after 9:30 ET takes the opening-read path); only older editions are patched, and those are re-narrated
@@ -502,6 +524,7 @@ Deno.serve(async (req) => {
   const errors: string[] = [];
   for (const uid of userIds) {
     SOURCES = [];
+    TRACE = Deno.env.get("BRIEF_TRACE") === "1" ? [] : null; TRACE_LAST = new Map();
     const tStart = Date.now();
     const elapsed = () => (Date.now() - tStart) / 1000;
     try {
@@ -623,6 +646,32 @@ Deno.serve(async (req) => {
       let sections: Sections | null = null;
       let usedCompact = false;
       let memosOut: Record<string, unknown>[] = [];
+      // a watch with no usable date falls back to that holding's own tripwire, never a placeholder (round 6: "What
+      // would change it: No confirmed date yet")
+      // A risk sentence for a note, from that holding's memo (round 6 trace: the old clause came out as "valuation is
+      // extreme and ... story. Profitable." (a sentence end inside the segment) and "s&P 500 tech weight above 40% or
+      // VOO expense ratio above." (lower-cased, then a hard 8-word slice)). Whole clauses only, each inside its own
+      // sentence, 3-14 words, case kept, and never one that repeats the watch printed under the note.
+      const RISKY = /\b(risk|below|declin|slow|cut|weak|loss|debt|leverage|competit|dependen|concentrat|regulat|cyclical|volatil|stretched|expensive|valuation|uncertain|pressure|margin (compression|squeeze)|dilut|custody|export|top-heavy|extreme|overstat|undercut|no cash flows?|selling)\w*/i;
+      const memoRisk = (name: string, watch: string, note = ""): string => {
+        const m = memosOut.find((x) => String(x.name).toLowerCase() === name.toLowerCase() || String(x.symbol).toLowerCase() === name.toLowerCase());
+        const clauses = splitSentences(String(m?.quality ?? "")).flatMap((sen) => sen.split(/;\s*|,?\s+\bbut\b\s+|,?\s+\byet\b\s+|,?\s+\bthough\b\s+|,?\s+\bwhile\b\s+/i))
+          .flatMap((c) => RISKY.test(c) && c.split(/\s+/).length > 14 ? c.split(/,\s*|\s+and\s+/) : [c])
+          .map((c) => c.trim().replace(/[.\s]+$/, "")).filter((c) => { const n = c.split(/\s+/).length; return n >= 3 && n <= 14 && RISKY.test(c); });
+        const trip = String(m?.tripwire ?? "").trim().replace(/[.\s]+$/, "");
+        const phrase = [...clauses.reverse(), ...(trip && trip.split(/\s+/).length <= 16 ? [trip] : [])].find((c) => c && overlap(c, watch) < 0.7 && !note.toLowerCase().includes(c.toLowerCase().slice(0, 24))) ?? "";   // nor one the note already says
+        if (!phrase) return "";
+        // a lead word is lowered only when it is an ordinary word: never an acronym, a name, "S&P" or "Nasdaq-100"
+        const PROPER = /^(?:[A-Z][A-Z0-9&.-]+|[A-Z][a-z]+-\d+|Nasdaq|Treasury|Fed|US|U\.S\.|AI|S&P|Nvidia|Palantir|Apple|Microsoft|Google|Alphabet|Amazon|Meta|Tesla|Vanguard|Invesco|Bitcoin|Ethereum|Ether)\b/;
+        const names = [name, String(m?.name ?? ""), String(m?.symbol ?? "")].filter(Boolean);
+        const lead = PROPER.test(phrase) || names.some((n) => phrase.startsWith(n)) ? phrase : phrase[0].toLowerCase() + phrase.slice(1);
+        return `The risk: ${lead}.`;
+      };
+      const watchFallback = (name: string): string => {
+        const m = memosOut.find((x) => String(x.name).toLowerCase() === name.toLowerCase() || String(x.symbol).toLowerCase() === name.toLowerCase());
+        const trip = String(m?.tripwire ?? "").trim().replace(/[.\s]+$/, "");
+        return trip && trip.split(/\s+/).length <= 14 && !datesIn(trip, briefDate).length ? trip : "No confirmed date yet";
+      };
       if (backfillOnly) {
         sections = backfillOnly;
       } else if (fixture) {
@@ -755,38 +804,27 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           if (draft && validAssessment(draft)) usedCompact = true;
         }
         if (!draft || !validAssessment(draft)) { errors.push(uid.slice(0, 8) + ": assessment editor failed [" + meta1 + " | " + lastMeta + "]"); continue; }
+        snap("editor draft (MODEL)", draft);
         // BALANCE LAW guaranteed in code: a note with no risk clause gets the memo's own risk (from its quality verdict, else its tripwire)
         const RISK = /\b(but|though|although|yet|risk|risks|however|unless|could|downside|threat|pressure|stretched|uncertain|concern|exposed|depends|if)\b/i;
         const NEG = /\b(risk|below|declin|slow|cut|weak|loss|debt|leverage|competit|dependen|concentrat|regulat|cyclical|volatil|stretched|expensive|valuation|uncertain|pressure|margin (compression|squeeze)|dilut|custody|export)\w*/i;
         const ensureRisk = (o: Sections): Sections => ({ ...o, positions: o.positions.map((p) => {
           if (RISK.test(p.note)) return p;
-          const m = memosOut.find((x) => String(x.name).toLowerCase() === p.name.toLowerCase() || String(x.symbol).toLowerCase() === p.name.toLowerCase());
-          const q = String(m?.quality ?? ""); const parts = q.split(/;|\bbut\b|\byet\b|\bthough\b|\bwhile\b/i).map((x) => x.trim()).filter((x) => x.split(/\s+/).length >= 3);
-          const riskSeg = [...parts].reverse().find((x) => NEG.test(x));
-          // keep the clause that actually carries the risk (a comma list can open with praise and end with the caveat)
-          const negClause = riskSeg ? riskSeg.split(/,\s*/).find((c) => NEG.test(c)) : undefined;
-          let phrase = (negClause ?? riskSeg ?? String(m?.tripwire ?? "")).replace(/[.\s]+$/, "");
-          if (!NEG.test(phrase) && m?.tripwire) phrase = String(m.tripwire).replace(/[.\s]+$/, "");
-          // the card prints the tripwire right under the note: a risk clause that only repeats it is dropped
-          // (round 2: "The risk: top-ten holdings exceed 35%" above "Tripwire: Top-ten holdings exceed 35%")
-          if (overlap(phrase, p.watch) >= 0.7) return p;
-          // keep the note near its cap: a long note gets a short risk clause
-          phrase = phrase.split(/\s+/).slice(0, p.note.split(/\s+/).length > 24 ? 8 : 11).join(" ");   // the memo segment can be long
-          // lowercasing the lead-in word turns an ACRONYM into nonsense ("CET1" -> "cET1"), so only a
-          // normally-capitalised word is lowered
-          const lead = (x: string) => (/^[A-Z][A-Z0-9]/.test(x) ? x : x[0].toLowerCase() + x.slice(1));
-          return phrase ? { ...p, note: p.note.replace(/[.\s]+$/, "") + `. The risk: ${lead(phrase)}.` } : p;
+          const risk = memoRisk(p.name, p.watch, p.note);
+          return risk ? { ...p, note: p.note.replace(/[.\s]+$/, "") + ` ${risk}` } : p;
         }) });
         draft = ensureRisk(draft as Sections);   // before the fact-check, so a lengthened note gets tightened to its cap
+        snap("ensureRisk (draft)", draft);
         const checked = elapsed() > 112 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims. Think briefly.",
-          `Draft assessment:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\n${bookLine}\n${structLines}\nTHEME EXPOSURE: ${themeLine}\nGEOGRAPHY: ${geoLine}\nPERFORMANCE: ${perfLine}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape (keep horizon and ideas). Fix any number that contradicts the data; delete any claim you cannot trace to it; if a position note has no risk or condition, append one short clause taken from that memo's quality or tripwire; enforce the word caps (lede 30, overnight 60, note ${holdings.length <= 2 ? 56 : 34}, watch 12, desk_view 50, horizon 50, each idea 14) by tightening, not by losing substance, and never shorten a section that is already within its cap. Also: in desk_view delete any hypothetical loss or drawdown percentage (only weights and performance figures from the data may appear); rewrite any "Strength:" / "Risk:" labels into prose; replace any vague watch ("drops significantly", "weakens") with a measurable threshold or dated event from the memos, or the memo's own tripwire; delete any sentence containing today, tonight, overnight, yesterday, this morning, premarket, after-hours, after market close, at the bell, futures, session, or intraday; delete any instruction to buy, sell, trim, add, or take profits, and rewrite any idea that starts with Add/Buy/Consider adding as a research gap; horizon must keep the literal labels "${HZ1}:" and "${HZ2}:"; replace any numeric KRX code with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains. Finally enforce the reader profile below, especially its vocabulary rules (for a beginner, replace every banned acronym with its plain phrase everywhere, watch items included).\n${READER}`, 8000, 30000, FAST_MODEL);
-        sections = (checked && validAssessment(checked)) ? checked as Sections : draft as Sections;
+          `Draft assessment:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\n${bookLine}\n${structLines}\n${divBlock}\nTHEME EXPOSURE: ${themeLine}\nGEOGRAPHY: ${geoLine}\nPERFORMANCE: ${perfLine}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape (keep horizon and ideas). FIGURES STAY DIGITS exactly as the draft writes them ("40%", never "forty percent"; "0.03%", never "zero point three"). DIVIDENDS: never add a dividend statement the draft does not make; a dividend statement that contradicts DIVIDENDS above is corrected from it (a holding listed there DOES pay one). Fix any number that contradicts the data; delete any claim you cannot trace to it; if a position note has no risk or condition, append one short clause taken from that memo's quality or tripwire; enforce the word caps (lede 30, overnight 60, note ${holdings.length <= 2 ? 56 : 34}, watch 12, desk_view 50, horizon 50, each idea 14) by tightening, not by losing substance, and never shorten a section that is already within its cap. Also: in desk_view delete any hypothetical loss or drawdown percentage (only weights and performance figures from the data may appear); rewrite any "Strength:" / "Risk:" labels into prose; replace any vague watch ("drops significantly", "weakens") with a measurable threshold or dated event from the memos, or the memo's own tripwire; delete any sentence containing today, tonight, overnight, yesterday, this morning, premarket, after-hours, after market close, at the bell, futures, session, or intraday; delete any instruction to buy, sell, trim, add, or take profits, and rewrite any idea that starts with Add/Buy/Consider adding as a research gap; horizon must keep the literal labels "${HZ1}:" and "${HZ2}:"; replace any numeric KRX code with the company name; write won as ₩ never "KRW"; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains. Finally enforce the reader profile below, especially its vocabulary rules (for a beginner, replace every banned acronym with its plain phrase everywhere, watch items included).\n${READER}`, 8000, 30000, FAST_MODEL);
+        sections = (checked && validAssessment(checked)) ? mergeChecked(draft as Sections, checked as Sections, [bookLine, structLines, divBlock, themeLine, geoLine, perfLine].join("\n")) : draft as Sections;
+        snap("fact-checker (MODEL, merged field by field)", sections);
         // LENGTH floor guaranteed by a pass AFTER the fact-check (so the checker cannot shrink it back): elaborate, never add numbers or claims
         const wcA = (o: Sections) => [o.lede, o.overnight, o.desk_view, o.horizon ?? "", ...(o.ideas ?? []), ...o.positions.flatMap((p) => [p.name, p.note, p.watch])].join(" ").split(/\s+/).filter(Boolean).length;
         const floor = holdings.length <= 2 ? 200 : 250;
         for (let ga = 0; ga < 2 && wcA(sections) < floor && elapsed() < 118; ga++) {
           const grown = await askModel(key, "You are the editor. Keep every fact and number exactly as given; add depth, not new claims.",
-            `This assessment is too thin at ${wcA(sections)} words; it must reach ${floor + 25}-360 words. Expand it toward these floors WITHOUT adding any number, number-word, or new factual claim that is not already in it: keep every existing number verbatim, never describe a hypothetical loss or drawdown; elaborate on what the existing facts mean for the owner (shared drivers, what must hold, what the tripwires signal): each position note ${holdings.length <= 2 ? "38-46" : "26-30"} words (business, quality verdict, role, ending with the risk sentence), desk_view 34-42 words, horizon 34-40 words ("${HZ1}: ... ${HZ2}: ..."), overnight 48-58 words. Keep lede, watch items and ideas as they are. Sentences of at most 22 words. Never use the words today, overnight, yesterday, session, futures. Never em dashes.\n${READER}\n\n${JSON.stringify(sections)}\n\nReturn the SAME JSON shape.`, 8000, 25000, FAST_MODEL);
+            `This assessment is too thin at ${wcA(sections)} words; it must reach ${floor + 25}-360 words. Expand it toward these floors WITHOUT adding any number, number-word, or new factual claim that is not already in it: keep every existing number verbatim, never describe a hypothetical loss or drawdown; elaborate on what the existing facts mean for the owner (shared drivers, what must hold, what the tripwires signal): each position note ${holdings.length <= 2 ? "38-46" : "26-30"} words (business, quality verdict, role, ending with the risk sentence), desk_view 34-42 words, horizon 34-40 words ("${HZ1}: ... ${HZ2}: ..."), overnight 48-58 words. Keep lede, watch items and ideas as they are. Keep every figure in digits ("40%", never "forty percent"), and add no dividend statement. Sentences of at most 22 words. Never use the words today, overnight, yesterday, session, futures. Never em dashes.\n${READER}\n\n${JSON.stringify(sections)}\n\nReturn the SAME JSON shape.`, 8000, 25000, FAST_MODEL);
           // the expansion may only elaborate: every original number survives, nothing numeric is added, no loss talk
           // numbers compared by VALUE (so "$9,900" vs "9,900 dollars" or "60.2%" vs "60.2 percent" still match), plus number-words
           const nums = (o: Sections) => new Set((JSON.stringify(o).match(/\d[\d,.]*|\b(half|third|thirds|quarter|quarters|double|triple|majority)\b/gi) ?? []).map((x) => /^\d/.test(x) ? String(Number(x.replace(/,/g, "").replace(/\.$/, ""))) : x.toLowerCase()));
@@ -803,6 +841,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
             if (kept && noNew && !lossy && withinCaps) sections = ensureRisk(g);
           }
         }
+        snap("expansion (MODEL)", sections);
         // STRUCTURE must say what the fact MEANS (guaranteed in code): a bare data dump gets the deterministic consequence sentence
         const MEANS = /\b(means|meaning|implies|leaves|makes|exposes|depends|lockstep|same driver|shared driver|single point|one bet|at once|together|amplif\w*|so the book|which is why)\b/i;
         if (!MEANS.test(sections.desk_view) && topTheme) {
@@ -820,6 +859,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           if (wcS2(skStructure) + wcS2(rest) > 50) rest = rest.split(/\s+/).slice(0, Math.max(0, 50 - wcS2(skStructure))).join(" ").replace(/[,;:]?$/, ".");   // last resort: a hard cut
           sections.desk_view = `${skStructure} ${rest}`.trim();
         }
+        snap("structure guarantees", sections);
         // section caps guaranteed in code: trailing sentences go first, a hard cut only as the last resort
         sections.lede = fitCap(sections.lede, 30);
         sections.overnight = fitCap(sections.overnight, 52);
@@ -827,8 +867,10 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         sections.horizon = fitCap(sections.horizon ?? "", 46, /next [^:]{1,14}:[\s\S]*next [^:]{1,14}:/i);   // the spec the battery enforces
         // notes were the one field with no deterministic cap, so the beginner two-sentence rule could push
         // them past the length the brief is specified for
-        const noteWordCap = holdings.length <= 2 ? 56 : 33;
-        sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(p.note, noteWordCap) }));
+        // the writers are told "note <= 34 words": a 33-word cap cut every compliant note (round 6 trace)
+        const noteWordCap = holdings.length <= 2 ? 56 : 40;
+        sections.positions = sections.positions.map((p) => ({ ...p, note: capNoteKeepRisk(p.note, noteWordCap, fitCap) }));
+        snap("fitCap (first)", sections);
         sections.calendar = [];
         sections.ideas = (sections.ideas ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
         // filler phrases guaranteed out in code (the fast model still slips one in occasionally)
@@ -844,11 +886,13 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         sections.lede = deFill(sections.lede); sections.overnight = deFill(sections.overnight); sections.desk_view = deFill(sections.desk_view);
         sections.horizon = deFill(sections.horizon ?? ""); sections.positions = sections.positions.map((p) => ({ ...p, note: deFill(p.note), watch: deFill(p.watch) }));
         sections.ideas = (sections.ideas ?? []).map(deFill);
+        snap("deFill", sections);
         // horizon law, guaranteed in code for the two words the fast model still slips in
         const deTape = (t: string) => t.replace(/\btoday's\b/gi, "current").replace(/\btoday\b/gi, "now").replace(/\btonight\b/gi, "soon");
         sections.lede = deTape(sections.lede); sections.overnight = deTape(sections.overnight); sections.desk_view = deTape(sections.desk_view);
         sections.horizon = deTape(sections.horizon ?? ""); sections.positions = sections.positions.map((p) => ({ ...p, note: deTape(p.note), watch: deTape(p.watch) }));
         sections.ideas = (sections.ideas ?? []).map(deTape);   // ideas were the one field the tape scrub missed
+        snap("deTape", sections);
         // ideas are research gaps, never instructions (guaranteed in code): strip a leading Add/Buy/Consider/Allocate
         const VERB = /(add|buy|consider|allocate|explore|introduce|include|hold|own|put|use|pair|layer)(ing)?\s+(adding\s+|an?\s+|some\s+|the\s+)?/i;
         sections.ideas = sections.ideas.map((x) => {
@@ -856,9 +900,11 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           y = y.replace(new RegExp("(:\\s*)" + VERB.source, "i"), "$1");   // "...: add a global index fund" -> "...: global index fund"
           return y ? y[0].toUpperCase() + y.slice(1) : x;
         });
+        snap("ideas verb strip", sections);
         sections = ensureRisk(sections);
+        snap("ensureRisk", sections);
         // note cap guaranteed in code: an over-long note loses its second sentence if a risk clause survives
-        const noteCapF = holdings.length <= 2 ? 56 : 35;
+        const noteCapF = holdings.length <= 2 ? 56 : 40;
         sections.positions = sections.positions.map((p) => {
           const wcN = (t: string) => t.split(/\s+/).filter(Boolean).length;
           if (wcN(p.note) <= noteCapF) return p;
@@ -872,7 +918,9 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           const cutN = p.note.split(/\s+/).slice(0, noteCapF - 11).join(" ").replace(/[,;:]?$/, ".");   // room for the re-attached risk clause
           return { ...p, note: cutN };
         });
+        snap("note cap", sections);
         sections = ensureRisk(sections);   // re-attach a short risk clause where the trim removed it
+        snap("ensureRisk (after note cap)", sections);
         // the card already labels the tripwire; a model-written "Tripwire:" / "Watch:" prefix would double it
         sections.positions = sections.positions.map((p) => ({ ...p, watch: p.watch
           .replace(/^\s*(tripwire|watch|trigger)\s*[:\-]\s*/i, "")
@@ -884,6 +932,7 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           .trim() }));
         // cash and debt are book facts, never positions (guaranteed in code)
         sections.positions = sections.positions.filter((p) => !/^\$?(cash|debt)\b/i.test(p.name.trim()));
+        snap("watch cleanup / cash filter", sections);
         if (!sections.positions.length) { errors.push(uid.slice(0, 8) + ": assessment had no equity positions"); continue; }
       } else if (edition === "weekend") {
         // ---- WEEKEND / HOLIDAY READ: no US session today. Direction and developments, never a tape. ----
@@ -1183,7 +1232,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections.calendar = (sections.calendar ?? []).filter((c) => futureDated(String(c), briefDate)).slice(0, 3);
       sections.positions = sections.positions.slice(0, 4)
         .map((p) => ({ ...p, watch: p.watch.replace(/[,;\s]*\b(watch(ing)?|monitor(ing)?|track(ing)?)\b[.\s]*$/i, "").trim() }));
+      snap("(start of shared chain)", sections);
       sections = deepDeDash(sections);
+      snap("deepDeDash", sections);
       // Session wording and causal links, guaranteed in code (relabel or delete only, never a new figure):
       // an opening read's live US moves are "so far today", and "hits your X directly" loses the "directly"
       // no headline supports. Both shipped in the 2026-09-25 morning brief.
@@ -1193,6 +1244,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections = { ...sections, lede: guardWords(sections.lede), overnight: guardWords(sections.overnight), desk_view: guardWords(sections.desk_view),
         positions: sections.positions.map((p) => ({ ...p, note: guardWords(p.note), watch: guardWords(p.watch) })),
         ...(sections.horizon !== undefined ? { horizon: guardWords(sections.horizon) } : {}) };
+      snap("guardWords (deDirect)", sections);
       // deterministic style guarantees: KRX codes -> names, KRW-prefix -> ₩
       const codeToName = new Map(holdings.map((r) => [r.symbol, krName(r.symbol, r.nickname, r.name)] as [string, string]));
       const scrub = (t: string) => {
@@ -1200,7 +1252,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         for (const [code, nm] of codeToName) if (code.endsWith(".KS") || code.endsWith(".KQ")) x = x.split(code).join(nm);
         x = x.replace(/KRW\s?(?=[0-9₩])/g, "₩").replace(/₩\s+(?=[0-9])/g, "₩").replace(/\u2011/g, "-");   // non-breaking hyphens read badly in TTS
         // NUMBER STYLE is guaranteed in code: dollar amounts >= 1,000 rounded to the nearest hundred, comma-grouped
-        return x.replace(/\$([\d,]+)(\.\d+)?/g, (m, d, dec) => {
+        // round 6 trace: "[\d,]+" swallowed the comma AFTER a figure ("Cash sits at $8,000, about 15%" lost its comma)
+        return x.replace(/\$(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?/g, (m, d, dec) => {
           const v = Number(String(d).replace(/,/g, "") + (dec ?? ""));
           return v >= 1000 ? "$" + (Math.round(v / 100) * 100).toLocaleString("en-US") : m;
         });
@@ -1209,6 +1262,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         : Array.isArray(v) ? v.map(scrubDeep)
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, scrubDeep(x)])) : v;
       sections = scrubDeep(sections) as Sections;
+      snap("scrubDeep", sections);
       // The diet runs AFTER the expansion loop that enforces the length floor, so an aggressive trim can
       // starve a brief back below it. Snapshot first and keep the trim only if the brief stays long enough.
       // A daily edition written on a day the US market did not trade (operator-forced, or a holiday tick): the
@@ -1394,11 +1448,11 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       };
       // The style rules already ban semicolons and the model keeps using them to weld two clauses into one
       // 26-word sentence. Splitting them enforces the rule that exists and halves sentence length.
-      const deSemi = (t: string) => String(t ?? "").replace(/;\s+/g, ". ")
-        .replace(/(^|(?<=[a-z0-9%)])[.!?]\s+)([a-z])/g, (_m, a, b) => a + b.toUpperCase());
+      const deSemi = (t: string) => capSentenceStarts(String(t ?? "").replace(/;\s+/g, ". "));
       const tidy = (t: string) => undangle((t ?? "").replace(/\s+([,.;])/g, "$1").replace(/\s{2,}/g, " ").trim());
       // the close/morning tape line is instructed to carry three market quotes plus the day P&L, so it gets 8
       const bookCap = 7;   // the diet spec caps the book section at 7 figures on assessment and 8 on close; 7 satisfies both
+      snap("(before number diet)", sections);
       sections.overnight = safeField(sections.overnight, tidy(deSemi(deAdvice(trimStats(collapseList(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.overnight, 1))))), bookCap, 16)))));
       // the model sometimes writes the section label into the field itself
       sections.desk_view = String(sections.desk_view ?? "").replace(/^\s*(desk\s*view|structure\s*(?:&|and)\s*risk|the\s*desk\s*view)\s*[:\u2014-]\s*/i, "");
@@ -1411,13 +1465,15 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections.positions = sections.positions.map((p) => ({ ...p, note: safeField(p.note, tidy(deSemi(deAdvice(trimStats(dropDollarEcho(deWeightClause(collapseRun(deWeightParens(p.note, 1))), 3), 3, 18))))) }));
       // a diet that starves the brief is worse than the redundancy it removed
       if (wcAll(sections) < dietFloor && wcAll(preDiet) >= wcAll(sections)) sections = preDiet;
+      snap("number diet (deWeightParens/collapse/trimStats/deAdvice/deSemi/tidy)", sections);
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
       if (["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])))) {
         sections = JSON.parse(noviceScrub(JSON.stringify(sections))) as Sections;
       }
+      snap("noviceScrub (glosses)", sections);
       // CAPS LAST: the beginner vocabulary map lengthens text ("moat" -> "lasting edge over competitors"),
       // so a cap applied before it can be exceeded by the substitution itself
-      const capNote = holdings.length <= 2 ? 56 : 33;
+      const capNote = holdings.length <= 2 ? 56 : edition === "assessment" ? 40 : 33;
       sections.lede = fitCap(sections.lede, edition === "assessment" ? 30 : 34);
       sections.overnight = fitCap(sections.overnight, 52);
       sections.desk_view = fitCap(sections.desk_view, 48);
@@ -1433,11 +1489,12 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const second = t.indexOf(". The risk:", first + 5);
         return second < 0 ? t : t.slice(0, second) + ".";
       };
-      sections.positions = sections.positions.map((p) => ({ ...p, note: fitCap(oneRisk(p.note), capNote), watch: fitCap(fixWatch(p.watch), 14) }));
+      sections.positions = sections.positions.map((p) => ({ ...p, note: capNoteKeepRisk(oneRisk(p.note), capNote, fitCap), watch: fitCap(fixWatch(p.watch), 14) }));
       sections.ideas = (sections.ideas ?? []).map((x) => fitCap(String(x), 16));
       // The per-field integrity net replaced the global revert, and the LENGTH floor went with it: a brief
       // trimmed to 100 words is worse than a slightly redundant one. Restore it alongside.
       if (wcAll(sections) < dietFloor && wcAll(preDiet) > wcAll(sections)) sections = preDiet;
+      snap("caps last (fitCap/oneRisk/fixWatch)", sections);
 
       if (!backfillOnly) {
         // earnings dates only from the computed estimates (round 2: "Microsoft earnings call Sep 28")
@@ -1457,12 +1514,20 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections.positions = sections.positions.map((p) => {
           const canon = canonicalCalendar([p.watch], labelled, srcText, briefDate);
           const earningsWatch = /\b(earnings|results|reports?|call|print|preview)\b/i.test(p.watch) && labelled.some((e) => e.names.some((n) => n && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(p.watch)));
-          if (earningsWatch) return { ...p, watch: canon[0] ?? "No confirmed date yet" };
-          return wrongDates.has(p.watch) ? { ...p, watch: "No confirmed date yet" } : p;
+          if (earningsWatch) return { ...p, watch: canon[0] ?? watchFallback(p.name) };
+          return wrongDates.has(p.watch) ? { ...p, watch: watchFallback(p.name) } : p;
         });
         // a valuation call ("looks cheap", "a bargain") is a verdict: the sentence goes, the rest of the note stays
         const deValue = (t: string) => { const bad = valuationHits(t); if (!bad.length) return t; const kept = splitSentences(t).filter((x) => !bad.some((b) => b.includes(x.trim()) || x.includes(b))); return kept.length ? kept.join(" ") : t; };
-        sections.positions = sections.positions.map((p) => ({ ...p, note: dropEcho(deValue(p.note), p.watch) }));
+        sections.positions = sections.positions.map((p) => {
+          const note = dropEcho(deValue(p.note), p.watch);
+          // round 6: NVDA's "The risk:" repeated its watch, dropEcho took it, and the note shipped with no risk
+          if (edition === "assessment" && note !== p.note && !/\bthe risk:|\bbut\b/i.test(note)) {
+            const r = memoRisk(p.name, p.watch, note);
+            return { ...p, note: r ? `${note.replace(/[.\s]+$/, "")}. ${r}` : note };
+          }
+          return { ...p, note };
+        });
         if (edition === "assessment") {
           const styles = toArr((invBy.get(uid) as Investor | null | undefined)?.styles, ["value"]);
           // round 5: a stability / income reader was told to "improve the modest Bitcoin position"
@@ -1477,6 +1542,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections.positions = sections.positions.map((p) => ({ ...p, note: art(p.note), watch: art(p.watch) }));
         sections.ideas = (sections.ideas ?? []).map(art); sections.calendar = (sections.calendar ?? []).map(art);
       }
+      snap("dates/calendar/deValue/articles", sections);
       // THE BASIS: what the brief was written against, so a client can tell when its premise has gone stale
       // (round 2: a Midday Pulse said Microsoft's jump "limits today's loss" under a +$5,842 day, because it
       // was written at 11:31 when the book was red). Contract (all optional for readers):
@@ -1511,8 +1577,16 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const weightFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / total * 100 }));
         const weightGroups = [{ label: /\bcrypto\b/i, value: exposure.crypto }, { label: /\bbonds?\b/i, value: exposure.bonds }, { label: /\bKorea(?:n)?\b/i, value: exposure.krEquity },
           { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity }, { label: /\bcash\b/i, value: exposure.cash }, { label: /\b(?:top (?:three|3|five|5)|together|combined)\b/i, value: -1 }];
+        const payerNames = divData.filter((x) => x.d.amounts.length).map((x) => ({ names: [krName(x.r.symbol, x.r.nickname, x.r.name), ...aliasesFor(x.r.symbol, x.r.name)] }));
+        const paysOf = (name: string): boolean | null => {
+          const h = holdings.find((r) => [r.symbol, krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)].some((n) => n && n.toLowerCase() === name.toLowerCase()));
+          if (!h) return null;
+          const d = divRows.get(h.symbol);
+          if (h.kind === "crypto") return false;
+          return !d?.div_as_of ? null : Number(d.div_last) > 0;
+        };
         const clean = (t: string) => {
-          const x = fixWeights(fixAgreement(fixExposure(tidyNumbers(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN)), exposure)), weightFacts, weightGroups);
+          const x = fixWeights(fixAgreement(fixExposure(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN)))), exposure)), weightFacts, weightGroups);
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
@@ -1521,6 +1595,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             ...wrongEarningsDates(parts, earnEsts, briefDate), ...wrongDividendAmounts(x, divFacts), ...wrongDeliveriesDates(x, dlvFacts, briefDate),
             // round 5: "captures the full S&P 500 upside while avoiding individual stock fees", "support a 4-8% annual return"
             ...promoClaims(x), ...returnForecasts(x),
+            // round 6: "NVDA and QQQ pay no dividend" (both do), "SoFi fell after an article noted its drop"
+            ...dividendContradictions(x, payerNames), ...circularCauses(x),
             // a two-word fragment left by an earlier deletion ("It adds.", round 5) goes without a model call
             ...brokenSentences(x).filter((b) => b.split(/\s+/).length <= 2)];
           if (!bad.length) return x;
@@ -1538,14 +1614,22 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           const trip = m?.tripwire ? ` The risk: ${String(m.tripwire).replace(/[.\s]+$/, "")}.` : "";
           return (kept.join(" ") + trip).trim() || note;
         };
-        sections.positions = sections.positions.map((p) => ({ ...p, note: noStrengthRisk(clean(p.note), p.name), watch: tidyNumbers(plainScrub(p.watch, PORTFOLIO_PLAIN)) }));
+        // a note's dividend sentence must match that holding's record ("It does not pay a dividend" under NVDA)
+        const deDiv = (note: string, name: string) => {
+          const bad = noteDividendClaims(note, paysOf(name));
+          if (!bad.length) return note;
+          const kept = splitSentences(note).filter((x) => !bad.includes(x));
+          return kept.length ? kept.join(" ") : note;
+        };
+        sections.positions = sections.positions.map((p) => ({ ...p, note: noStrengthRisk(deDiv(clean(p.note), p.name), p.name), watch: tidyNumbers(digitsForWritten(plainScrub(p.watch, PORTFOLIO_PLAIN))) }));
         sections.ideas = (sections.ideas ?? []).map(clean);
         // a weekend-dated item is no event (round 4: "Copilot earnings preview Sep 27", a Sunday), nor is a
         // deliveries date that is not the estimate ("Tesla delivery numbers Sep 28"; the report is Oct 2)
         const offCal = new Set([...weekendDated(sections.calendar ?? [], briefDate), ...wrongDeliveriesDates((sections.calendar ?? []).join("\n"), dlvFacts, briefDate)]);
         sections.calendar = (sections.calendar ?? []).filter((c) => !offCal.has(c)).map((c) => tidyNumbers(plainScrub(c, PORTFOLIO_PLAIN)));
-        sections.positions = sections.positions.map((p) => weekendDated([p.watch], briefDate).length || wrongDeliveriesDates(p.watch, dlvFacts, briefDate).length ? { ...p, watch: "No confirmed date yet" } : p);
+        sections.positions = sections.positions.map((p) => weekendDated([p.watch], briefDate).length || wrongDeliveriesDates(p.watch, dlvFacts, briefDate).length ? { ...p, watch: watchFallback(p.name) } : p);
       }
+      snap("clean (plain words/exposure/weights/claims)", sections);
       // GRAMMAR PASS (round 3 newcomer: "Watch QQQ on sustained a shrinking price tag relative.", "Total assets
       // $26,600 cash $2,500"): broken sentences get one rewrite on the fast model; a sentence still broken
       // after it is dropped, unless it is all its field holds.
@@ -1579,10 +1663,13 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // cash, the smaller holdings counted, and the exposure by type, then at most two of the model's qualitative
       // sentences. Round 5: the r4b rebuild ran BEFORE the grammar pass, which deleted it as a verbless list, and
       // the model's "80.6% United States, 7.2% crypto, and one smaller position" went out again.
+      snap("grammar pass (MODEL)", sections);
       if (edition === "assessment" && !backfillOnly) {
         sections.overnight = yourPortfolio(holdings.map((r) => ({ name: krName(r.symbol, r.nickname, r.name), usd: usd(Number(r.value ?? 0), r.currency) })),
           assets.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0), total, exposure, sections.overnight);
       }
+      snap("YOUR PORTFOLIO (code)", sections);
+      if (TRACE) { const tf = Deno.env.get("BRIEF_TRACE_FILE"); if (tf) Deno.writeTextFileSync(tf, JSON.stringify(TRACE)); else console.log("TRACE_JSON " + JSON.stringify(TRACE)); }
       const briefRow = {
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
         audio_path: null,   // new text => stale audio; narrate re-runs for this row
