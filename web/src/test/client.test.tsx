@@ -178,6 +178,11 @@ describe("C2 accounts", () => {
     await userEvent.click((await within(card).findAllByRole("button", { name: /Reddit/i }))[0]);
     await userEvent.click(await screen.findByRole("button", { name: /^change$/i }));
     await userEvent.click(within(screen.getByRole("group", { name: /move to account/i })).getByRole("button", { name: "IRA" }));
+    // it asks before folding one position into another (r3 power-user)
+    const sheet = await screen.findByRole("dialog", { name: /confirm merge/i });
+    expect(sheet.textContent).toMatch(/Merge into your IRA RDDT position\?/);
+    expect(api.setHoldingAccount).not.toHaveBeenCalled();
+    await userEvent.click(within(sheet).getByRole("button", { name: /^merge$/i }));
     await waitFor(() => expect(api.setHoldingAccount).toHaveBeenCalledWith("h1", "ira"));
     await waitFor(() => expect(screen.getByTestId("position-account").textContent).toMatch(/^IRA account/));
   });
@@ -380,7 +385,7 @@ describe("C7 first run: the assessment wait is visible and honest", () => {
     const api = stubApi({ brokerageConnected });
     await addRun(api);
     const card = await screen.findByTestId("assessment-card");
-    await within(card).findByText(/couldn't start your assessment/i);
+    await within(card).findByText(/only the write-up is missing\. Try again\./i);   // the raw cause is never shown
     await userEvent.click(within(card).getByRole("button", { name: /try again/i }));
     await waitFor(() => expect(brokerageConnected).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByTestId("assessment-card").textContent).toMatch(/Usually takes 2 to 4 minutes/));
@@ -495,7 +500,7 @@ describe("C9 search and news", () => {
     await userEvent.type(input, "tes");
     await new Promise((r) => setTimeout(r, 250));      // "tes" fires (slow answer in flight)...
     await userEvent.type(input, "la");                 // ...then "tesla" answers first
-    await screen.findByRole("button", { name: /Tesla, Inc\./ });
+    await screen.findByRole("button", { name: /TSLA Tesla/ });   // "Tesla, Inc." as people say it
     await new Promise((r) => setTimeout(r, 500));      // the "tes" answer arrives late
     expect(screen.queryByRole("button", { name: /Aehr/ })).toBeNull();
     expect(searchSymbols.mock.calls.map((c) => c[0])).toEqual(["tes", "tesla"]);   // one call per pause, not per key

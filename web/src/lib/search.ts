@@ -56,7 +56,12 @@ const MEANT: Record<string, string> = {
 };
 /** A listing abroad (VUSA.L, SHOP.TO): below the home listing at the same match level. Korean lines are home. */
 const foreignLine = (sym: string) => /\.[A-Z]{1,3}$/i.test(sym) && !/\.(KS|KQ)$/i.test(sym) && !sym.startsWith("$");
-const LEVERED = /\b(\d(\.\d)?x|ultra(pro)?|bull|bear|leveraged|inverse|short)\b/i;
+// Leveraged, inverse and single-stock derivative products ("Direxion Daily NVDA Bull 2X", "ProShares
+// UltraShort QQQ", "T-Rex 2X Long NVIDIA Daily Target ETF", "YieldMax NVDA Option Income").
+// A short-term bond fund ("Vanguard Short-Term Bond") is not a short product.
+const LEVERED = /\b(-?\d(\.\d+)?x|ultra\w*|bull|bear|leveraged|inverse|short(?![- ](term|duration|treasury|maturity))|daily target|option income|yieldmax|covered call)\b/i;
+/** The query itself names such a product ("tqqq", "nvda 2x", "bear", "ultrapro"): then it ranks normally. */
+const asksForLevered = (q: string) => LEVERED.test(q);
 
 /** Order and filter a merged result list for a query. Exact ticker, then exact name, then ticker prefix,
  *  then a name word starting with the query, then contains; leveraged/inverse products sink below
@@ -65,6 +70,7 @@ export function rankSymbols(q: string, rows: SymbolRow[], preferCcy = "USD"): Sy
   const t = searchQuery(q).toLowerCase();
   const explicit = asksForMarketData(t);
   const krwAsked = /krw|won|₩|원/i.test(q);
+  const levered = asksForLevered(q);
   const score = (r: SymbolRow): number => {
     const sym = r.symbol.toLowerCase(), name = (r.name ?? "").toLowerCase();
     const bare = sym.replace(/^\$/, "").split(".")[0];
@@ -76,7 +82,9 @@ export function rankSymbols(q: string, rows: SymbolRow[], preferCcy = "USD"): Sy
     else if (sym.includes(t)) s = 4;
     else if (name.includes(t)) s = 5;
     else s = 6;   // the remote search matched it on something we can't see (e.g. a former name)
-    if (LEVERED.test(r.name ?? "")) s += 0.5;
+    // below every plain listing, not only the ones at the same match level: "sofi" or "nvidia" filled rows
+    // 2-5 with SOFA, NVDL, NVD (r3 newcomer)
+    if (!levered && LEVERED.test(r.name ?? "") && s > 0) s += 10;
     if (foreignLine(r.symbol)) s += 0.3;
     if (MEANT[t] && r.symbol.toUpperCase() === MEANT[t]) s = Math.min(s, 0.5);
     if (r.kind === "cash" || r.kind === "debt") {

@@ -14,9 +14,19 @@ const PHASES = [
   "Scanning SEC filings and price history…",
   "Writing the first take…",
 ];
+// a coin has no earnings calls or filings to read
+const COIN_PHASES = ["Reading this month's news on {sym}…", "Scanning price history…", "Writing the first take…"];
 
-export function InsightsCard({ api, symbol, pollMs = 2000, onRefresh, refreshing = false, fresh = null }: {
+/** A company-only line (SEC filings, earnings calls, 10-Q/10-K/8-K) never belongs on a coin's card: ETH's
+ *  card carried "most recent SEC filing is 10-Q dated 2026-08-07" right after a SOFI add (r3 newcomer). */
+// (the SEC itself stays: "SEC approves ether staking ETFs" is coin news; a company's SEC FILING is not)
+export const STOCK_ONLY = /\b(10-?Q|10-?K|8-?K|20-?F|earnings calls?|quarterly (report|filing)|annual report|SEC filings?)\b/i;
+export const forCoin = (bullets: string[]) => bullets.filter((b) => !STOCK_ONLY.test(b));
+
+export function InsightsCard({ api, symbol, pollMs = 2000, onRefresh, refreshing = false, fresh = null, crypto = false }: {
   api: Api; symbol: string; pollMs?: number; onRefresh?: () => void; refreshing?: boolean; fresh?: Insight | null;
+  /** a coin: company-only lines are dropped and the wait never mentions filings */
+  crypto?: boolean;
 }) {
   const [ins, setIns] = useState<Insight | null | undefined>(undefined);   // undefined = loading
   // an app-level refresh that finished (even while this card was unmounted) lands here: newest wins
@@ -61,7 +71,7 @@ export function InsightsCard({ api, symbol, pollMs = 2000, onRefresh, refreshing
         <div className="skel-line" style={{ width: "92%" }} />
         <div className="skel-line" style={{ width: "76%" }} />
         <div className="skel-line" style={{ width: "58%" }} />
-        <p className="sub" style={{ margin: "10px 0 0" }}>{PHASES[phase].replace("{sym}", symbol)}</p>
+        <p className="sub" style={{ margin: "10px 0 0" }}>{(crypto ? COIN_PHASES : PHASES)[phase].replace("{sym}", symbol)}</p>
       </section>
     );
   }
@@ -77,7 +87,7 @@ export function InsightsCard({ api, symbol, pollMs = 2000, onRefresh, refreshing
         ) : <span className="sub num">{timeAgo(ins.generated_at)}</span>}
       </div>
       <ul className="insights-list">
-        {ins.bullets.map((b, i) => <li key={i}>{b}</li>)}
+        {(crypto ? forCoin(ins.bullets) : ins.bullets).map((b, i) => <li key={i}>{b}</li>)}
       </ul>
       {ins.windows && (ins.windows.trend || HORIZONS.some(([k]) => ins.windows![k])) && (
         <p className="sub prose" data-testid="insights-trend" style={{ marginTop: 8, borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>

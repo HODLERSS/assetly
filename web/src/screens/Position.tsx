@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Account, Api, Lot, PortfolioRow } from "../lib/api";
-import { ccySymbol, displayName, formatDate, glClass, labelParts, money, moneyExact, priceAsOf, signedMoney, signedPct } from "../lib/format";
-import { ACCOUNTS, accountLabel } from "../lib/accounts";
+import { ccySymbol, displayName, formatDate, glClass, labelParts, money, moneyExact, priceAsOf, qtyUnit, signedMoney, signedPct } from "../lib/format";
+import { ACCOUNTS, accountHeading, accountLabel, shownAccount } from "../lib/accounts";
 import { moveSession } from "../lib/markets";
 import { entryPreview, formatAmountInput, formatQty, readAmount } from "../lib/numbers";
 import { useInFlight } from "../lib/inflight";
@@ -13,8 +13,10 @@ import { AmountField, EntryPreview } from "../components/AmountField";
 // Canvas 2c + 3i + the remove flow (gap screen g1): detail, every lot editable, delete with confirm.
 // Every write here (save, delete, remove, change account) runs through one in-flight guard: a second tap
 // while the first is out is ignored, and the button says what it is doing.
-export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved, dispKr = "KRW" }: {
+export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved, dispKr = "KRW", others = [] }: {
   api: Api; row: PortfolioRow | null; dispKr?: "USD" | "KRW";
+  /** the same symbol held in other accounts: moving into one of them merges, and asks first */
+  others?: PortfolioRow[];
   onChanged: () => Promise<void> | void; onRemoved: () => Promise<void> | void; onBack: () => void;
   /** The position now lives under another holding id (moved into an account that already held it). */
   onMoved?: (holdingId: string) => Promise<void> | void;
@@ -28,6 +30,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   const [err, setErr] = useState<string | null>(null);
   const [busy, run] = useInFlight();
   const [busyWhat, setBusyWhat] = useState<"remove" | "import" | "move" | null>(null);
+  const [mergeInto, setMergeInto] = useState<PortfolioRow | null>(null);   // the move waiting on "Merge?"
 
   useEffect(() => {
     let live = true;
@@ -48,6 +51,14 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   const name = displayName(row);
   // A synced row's account comes from the brokerage; moving it here would be undone by the next sync.
   const canMove = row.source !== "snaptrade";
+  // Moving into an account that already holds this symbol folds the lots into that position. It used to
+  // happen without a word (r2 + r3 power-user): now it asks first.
+  const requestMove = async (a: Account) => {
+    if (a === row.account) return;
+    const target = others.find((o) => o.account === a && o.source !== "snaptrade");
+    if (target) { setMergeInto(target); return; }
+    await moveTo(a);
+  };
   const moveTo = async (a: Account) => {
     if (a === row.account) return;
     setErr(null);
@@ -66,7 +77,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not remove."); setConfirming(false); }
     finally { setBusyWhat(null); }
   });
-  const qtyUnit = row.kind === "crypto" ? "Quantity" : "Shares";
+  const qtyLabel = row.kind === "crypto" ? "Quantity" : "Shares";
   const session = moveSession(row);
 
   return (
@@ -85,46 +96,44 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
       </div>
 
       <p className="sub" style={{ margin: "2px 0 0", display: "flex", alignItems: "center", gap: 8 }} data-testid="position-account">
-        <span>{row.source === "snaptrade" && row.account_label ? row.account_label : `${accountLabel(row.account)} account`}</span>
+        <span>{row.source === "snaptrade" && row.account_label ? row.account_label : accountHeading(row)}</span>
         {canMove && <button className="chip" onClick={() => setMovingAcct((v) => !v)} aria-expanded={movingAcct} disabled={busy}>
           {busyWhat === "move" ? "Moving…" : "Change"}</button>}
       </p>
       {movingAcct && canMove && (
         <div className="chips" style={{ padding: 0 }} role="group" aria-label="Move to account" aria-busy={busyWhat === "move"}>
           {ACCOUNTS.map((a) => (
-            <button key={a} className="chip" aria-pressed={row.account === a} disabled={busy} onClick={() => run(async () => {
+            <button key={a} className="chip" aria-pressed={shownAccount(row) === a} disabled={busy} onClick={() => run(async () => {
               setBusyWhat("move");
-              try { await moveTo(a); setMovingAcct(false); } finally { setBusyWhat(null); }
+              try { await requestMove(a); setMovingAcct(false); } finally { setBusyWhat(null); }
             })}>{accountLabel(a)}</button>
           ))}
         </div>
       )}
       {!cashish && <PriceChart api={api} symbol={row.symbol} currency={row.currency} livePrice={row.price} liveAsOf={row.as_of} avgCost={row.avg_cost} dayPct={row.change_pct} crypto={row.kind === "crypto"} />}
 
-      {!cashish && <InsightsCard api={api} symbol={row.symbol} />}
+      {!cashish && <InsightsCard api={api} symbol={row.symbol} crypto={row.kind === "crypto"} />}
 
-      {cashish ? (
+      {/* a balance says its amount once (the headline) and has one Edit: the tile, the Balance list and a second
+          edit button repeated it four times (r3 newcomer) */}
+      {cashish ? null : (
         <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <div><span className="sub">{row.kind === "debt" ? "Owed" : "Balance"}</span><br /><span className="num">{money(row.value, row.currency)}</span></div>
-          <div><span className="sub">Account</span><br /><span>{accountLabel(row.account)}</span></div>
-        </div>
-      ) : (
-        <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <div><span className="sub">{qtyUnit}</span><br /><span className="num">{formatQty(row.qty ?? 0)}</span></div>
+          <div><span className="sub">{qtyLabel}</span><br /><span className="num">{formatQty(row.qty ?? 0)}</span></div>
           <div><span className="sub">Value</span><br /><span className="num">{money(row.value, row.currency)}</span></div>
           <div><span className="sub">Avg cost</span><br /><span className="num">{moneyExact(row.avg_cost, row.currency)}</span></div>
           <div><span className="sub">Total gain/loss</span><br /><span className={`num ${glClass(row.total_gl)}`}>{signedMoney(row.total_gl, row.currency)}</span></div>
         </div>
       )}
 
+      {!(cashish && lots.length <= 1) && (<>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h3 className="h1" style={{ fontSize: 15 }}>{cashish ? "Balance" : "Lots"}</h3>
         {!cashish && <button className="chip" onClick={() => setAdding(true)}>+ Lot</button>}
       </div>
       <div className="card">
         {lots.map((l) => (
-          <button key={l.id} className="row" onClick={() => setEditing(l)} aria-label={`Edit lot ${l.qty} shares`}>
-            <span><span className="num">{cashish ? money(l.qty, row.currency) : `${formatQty(l.qty)} sh @ ${moneyExact(l.cost_per_share, row.currency)}`}</span>{l.note ? <><br /><span className="sub">{l.note}</span></> : null}</span>
+          <button key={l.id} className="row" onClick={() => setEditing(l)} aria-label={cashish ? `Edit ${money(l.qty, row.currency)}` : `Edit lot ${l.qty} ${row.kind === "crypto" ? qtyUnit(row) : "shares"}`}>
+            <span><span className="num">{cashish ? money(l.qty, row.currency) : `${formatQty(l.qty)} ${qtyUnit(row)} @ ${moneyExact(l.cost_per_share, row.currency)}`}</span>{l.note ? <><br /><span className="sub">{l.note}</span></> : null}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {!cashish && <span className="sub" data-testid="lot-date">{l.acquired_on ? formatDate(l.acquired_on) : "no date"}</span>}
               <span className="edit-pill">Edit</span>
@@ -134,6 +143,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
         {lotsLoaded && lots.length === 0 && <p className="empty">No lots yet.</p>}
         {!lotsLoaded && <div className="row" aria-busy="true" aria-label="Loading lots" style={{ minHeight: 76 }}><span className="sub">Loading lots…</span></div>}
       </div>
+      </>)}
       {!cashish && <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 0 16px" }}>{row.source === "snaptrade" ? <><Icon name="bolt" size={12} /> Synced from {row.account_label ?? "your brokerage"}. Shares and cost update automatically.</> : row.account_label ? `Imported from ${row.account_label} (no longer syncing). Average cost comes from your lots.` : "Average cost comes from your lots."}</p>}
 
       {err && <div className="error-note" role="alert">{err}</div>}
@@ -142,7 +152,24 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
           {cashish ? "Edit amount" : "Edit position"}
         </button>
       )}
-      <button className="btn danger-quiet" style={{ marginBottom: 20 }} onClick={() => setConfirming(true)}>Remove position</button>
+      <button className="btn danger-quiet" style={{ marginBottom: 20 }} onClick={() => setConfirming(true)}>
+        {row.kind === "cash" ? "Remove cash balance" : row.kind === "debt" ? "Remove debt" : "Remove position"}</button>
+
+      {mergeInto && (
+        <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Confirm merge">
+          <div className="sheet" aria-busy={busy}>
+            <h2>Merge into your {accountLabel(mergeInto.account)} {name} position?</h2>
+            <p className="mutedc sheet-confirm">
+              {`You already hold ${formatQty(mergeInto.qty ?? 0)} ${qtyUnit(row)} of ${name} in ${accountLabel(mergeInto.account)}. Moving these ${formatQty(row.qty ?? 0)} combines them into one position, with every lot kept.`}
+            </p>
+            <button className="btn" disabled={busy} data-testid="merge-confirm" onClick={() => run(async () => {
+              setBusyWhat("move");
+              try { await moveTo(mergeInto.account); setMergeInto(null); } finally { setBusyWhat(null); }
+            })}>{busyWhat === "move" ? "Merging…" : "Merge"}</button>
+            <button className="btn secondary" style={{ marginTop: 8 }} disabled={busy} onClick={() => setMergeInto(null)}>Keep separate</button>
+          </div>
+        </div>
+      )}
 
       {confirming && (
         <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Confirm removal">
@@ -160,7 +187,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
                 {busyWhat === "import" ? "Removing…" : "Remove and stop importing it"}</button>
             )}
             <button className="btn danger" style={row.source === "snaptrade" ? { marginTop: 8 } : undefined} disabled={busy} onClick={() => remove(false)}>
-              {busyWhat === "remove" ? "Removing…" : row.source === "snaptrade" ? "Remove (returns on next sync)" : "Remove position"}</button>
+              {busyWhat === "remove" ? "Removing…" : row.source === "snaptrade" ? "Remove (returns on next sync)" : cashish ? "Remove" : "Remove position"}</button>
             <button className="btn secondary" style={{ marginTop: 8 }} disabled={busy} onClick={() => setConfirming(false)}>Keep it</button>
           </div>
         </div>
@@ -171,6 +198,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
           currency={row.currency}
           cashish={cashish}
           crypto={row.kind === "crypto"}
+          unit={qtyUnit(row)}
           name={name}
           lot={editing}
           lastLot={!!editing && lots.length === 1}
@@ -181,7 +209,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
               if (editing) await api.updateLot(editing.id, { qty, cost_per_share: cost, acquired_on: date || null, note: note || null });
               else await api.addLot(row.holding_id, qty, cost, date || undefined, note);
               setEditing(null); setAdding(false);
-              if (account && account !== row.account) await moveTo(account);
+              if (account && account !== row.account) { await reload(); await requestMove(account); }
               else await reload();
             } catch (e) { setErr(e instanceof Error ? e.message : "Could not save lot."); }
           }}
@@ -198,8 +226,10 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   );
 }
 
-function LotSheet({ currency, cashish = false, crypto = false, name, lot, lastLot = false, account, onClose, onSave, onDelete }: {
+function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", name, lot, lastLot = false, account, onClose, onSave, onDelete }: {
   currency: string; cashish?: boolean; crypto?: boolean; name: string; lot: Lot | null; lastLot?: boolean;
+  /** a coin's own unit ("ETH") for the echo */
+  unit?: string;
   /** Present when this sheet edits the whole (single-lot) position: the account is editable here too. */
   account?: Account;
   onClose: () => void;
@@ -250,7 +280,8 @@ function LotSheet({ currency, cashish = false, crypto = false, name, lot, lastLo
         {!cashish && (<>
         <AmountField id="lot-cost" label={`Cost per ${crypto ? "coin" : "share"} (${sym})`} value={cost}
           onChange={(v) => { setCost(v); setFieldErr((f) => ({ ...f, cost: undefined })); }} error={fieldErr.cost} />
-        <EntryPreview text={entryPreview({ kind: cashish ? "cash" : "stock", qty, cost, currency })} />
+        {/* never beside an error it contradicts */}
+        {!fieldErr.qty && !fieldErr.cost && <EntryPreview text={entryPreview({ kind: cashish ? "cash" : "stock", qty, cost, currency, unit: crypto ? unit : undefined })} />}
         <div className="field"><label htmlFor="lot-date">Acquired (optional)</label>
           <input id="lot-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
         </>)}

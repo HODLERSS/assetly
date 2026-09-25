@@ -4,8 +4,8 @@ import type { Api, PortfolioRow } from "../lib/api";
 import { BriefCard } from "../components/BriefCard";
 import { AssessmentCard } from "../components/AssessmentCard";
 import type { AssessState } from "../lib/assessment";
-import { isMarketOpen, marketOf, moveSession, moverEligible, moverMode, sessionLabel } from "../lib/markets";
-import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyClass, moneyExact, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
+import { isMarketOpen, type Market, marketOf, moveSession, moverEligible, moverMode, sessionLabel } from "../lib/markets";
+import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyClass, moneyExact, priceCompact, qtyUnit, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
 import { Icon } from "../components/Icon";
 import { accountTag, isRetirement } from "../lib/accounts";
 import { formatQty } from "../lib/numbers";
@@ -13,6 +13,7 @@ import { dayGroups, isHeld } from "../lib/portfolio";
 
 // Canvas 2a: net worth, movers, market pulse.
 const DETAIL_KEY = "assetly-nw-detail";
+const asOfClock = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 // The one-time "what next" hint: armed by the first run of adds (App), "done" once dismissed.
 export const NEXT_KEY = "assetly-next-steps";
 // crypto files under a market by its denomination, exactly as the old Holdings filter did:
@@ -41,7 +42,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   const hasCrypto = rows.some((r) => marketOf(r) === "CRYPTO");
   const mode = moverMode(new Date(), heldMkts);
   const [pulse, setPulse] = useState<{ symbol: string; name: string; price: number; change_pct: number | null }[]>([]);
-  const [filter, setFilter] = useState<"all" | "US" | "KR" | "ret">("all");
+  const [filter, setFilter] = useState<"all" | Market | "ret">("all");
   // collapsed by default; whoever wants the split gets it back on every visit
   const [detail, setDetailState] = useState(() => { try { return localStorage.getItem(DETAIL_KEY) === "1"; } catch { return false; } });
   const setDetail = (v: boolean) => { setDetailState(v); try { localStorage.setItem(DETAIL_KEY, v ? "1" : "0"); } catch { /* private mode */ } };
@@ -93,10 +94,13 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
     );
   }
   // Holdings folded in: market / retirement filters with their own totals line
-  const marketsHeld = [...new Set(rows.map(mktFor).filter((m): m is "US" | "KR" => m === "US" || m === "KR"))];
+  // The filters name what they hold: "US" totals had BTC and ETH in them (r3 power-user). Crypto is its own
+  // chip; the headline and the breakdown still fold a dollar coin into the US line, and say so ("Crypto + US").
+  const order: Market[] = ["US", "KR", "CRYPTO"];
+  const marketsHeld = order.filter((m) => rows.some((r) => marketOf(r) === m));
   const hasRet = rows.some((r) => isRetirement(r.account));
-  const filterChips: ("US" | "KR" | "ret")[] = [...(marketsHeld.length > 1 ? marketsHeld : []), ...(hasRet ? ["ret" as const] : [])];
-  const shown = rows.filter((r) => (filter === "all" ? true : filter === "ret" ? isRetirement(r.account) : mktFor(r) === filter));
+  const filterChips: (Market | "ret")[] = [...(marketsHeld.length > 1 ? marketsHeld : []), ...(hasRet ? ["ret" as const] : [])];
+  const shown = rows.filter((r) => (filter === "all" ? true : filter === "ret" ? isRetirement(r.account) : marketOf(r) === filter));
   const movers = [...rows].filter((r) => r.change_pct !== null && moverEligible(r, new Date(), heldMkts))
     .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0)).slice(0, 3);
   const quietMovers = [...rows].filter((r) => r.change_pct !== null && marketOf(r) !== null)
@@ -178,7 +182,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           <div className="status-line" role="note">{totals.unconverted} position{totals.unconverted > 1 ? "s aren't" : " isn't"} in the total yet (waiting for an exchange rate).</div>
         )}
         {pricesAsOf && (
-          <div className="status-line" role="note" data-testid="prices-as-of">Prices as of {new Date(pricesAsOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</div>
+          <div className="status-line" role="note" data-testid="prices-as-of">Prices as of {asOfClock(pricesAsOf)}</div>
         )}
         <div className="nw-rule" aria-hidden="true" />
       </section>
@@ -191,8 +195,9 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
       )}
       {assessment && <AssessmentCard state={assessment} onRetry={() => onAssessRetry?.()} onDismiss={() => onAssessDismiss?.()} onOpenNews={onOpenNews} />}
       {/* a fresh assessment remounts the brief card so it shows at once (its own look-up gave up after 4 min) */}
-      <BriefCard api={api} key={assessment?.readyAt ?? "brief"} liveDayPct={liveDayPct} held={heldSymbols}
-        pendingSince={assessPending ? assessment!.startedAt : null} />
+      <BriefCard api={api} key={assessment?.readyAt ?? "brief"} liveDayPct={liveDayPct} held={heldSymbols} book={rows}
+        totalUsd={convertCcy(totals.assets, baseCurrency, "USD", totals.fx)}
+        pendingSince={assessPending ? assessment!.startedAt : null} onRefreshAssessment={onAssessRetry} />
       {nextArmed && rows.filter((r) => r.kind !== "cash" && r.kind !== "debt").length < 3 && (
         // after the first adds: the obvious next moves, until the book looks like a portfolio or it is dismissed
         <section className="card next-steps" data-testid="next-steps" aria-label="Next steps">
@@ -211,7 +216,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           </div>
         </section>
       )}
-      {(showMovers || showPulse) && <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {sessionLabel(new Date(), heldMkts, hasCrypto)}</span></h2>}
+      {(showMovers || showPulse) && <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {pricesAsOf ? `as of ${asOfClock(pricesAsOf)}` : sessionLabel(new Date(), heldMkts, hasCrypto)}</span></h2>}
       {showPulse && (
         <div className="card" style={{ marginBottom: 16 }} data-testid="pulse-card">
           {pulse.map((p) => (
@@ -252,7 +257,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           <button className="chip" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>All</button>
           {filterChips.map((k) => (
             <button key={k} className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>
-              {k === "US" ? "US" : k === "KR" ? "Korea" : "Retirement"}
+              {k === "US" ? "US" : k === "KR" ? "Korea" : k === "CRYPTO" ? "Crypto" : "Retirement"}
             </button>
           ))}
         </div>
@@ -285,7 +290,11 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
             <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
               <span>
                 <span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span><br />
-                <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${formatQty(r.qty ?? 0)} ${r.kind === "crypto" ? r.symbol : "sh"}`}{accountTag(r.account) ? <span className="row-acct"> · {accountTag(r.account)}</span> : ""}{r.source === "snaptrade" ? <span className="row-acct"> · <Icon name="bolt" size={10} /></span> : ""}{r.kind === "cash" || r.kind === "debt" ? "" : r.price !== null ? ` · ${moneyExact(r.price, r.currency)}` : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
+                <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${formatQty(r.qty ?? 0)} ${qtyUnit(r)}`}{accountTag(r.account) ? <span className="row-acct"> · {accountTag(r.account)}</span> : ""}{r.source === "snaptrade" ? <span className="row-acct"> · <Icon name="bolt" size={10} /></span> : ""}{r.kind === "cash" || r.kind === "debt" ? "" : r.price !== null
+                  // under 360pt a won price was cut to "\u20a91,86\u2026": the compact form (\u20a91.86M) fits (r3 power-user)
+                  ? <> · {priceCompact(r.price, r.currency) === moneyExact(r.price, r.currency) ? moneyExact(r.price, r.currency)
+                    : <><span className="px-full">{moneyExact(r.price, r.currency)}</span><span className="px-compact">{priceCompact(r.price, r.currency)}</span></>}</>
+                  : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
               </span>
               <span className="right">
                 <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span>

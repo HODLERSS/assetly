@@ -6,9 +6,12 @@ import { Icon } from "../components/Icon";
 import { AmountField, EntryPreview } from "../components/AmountField";
 import { ACCOUNTS, accountLabel, defaultAccount } from "../lib/accounts";
 import { entryPreview, readAmount } from "../lib/numbers";
-import { ccySymbol, displayName } from "../lib/format";
+import { ccySymbol, companyName, displayName, qtyUnit } from "../lib/format";
 import { useInFlight } from "../lib/inflight";
 import { useSymbolSearch } from "../lib/search";
+
+/** The company as people say it, unless that only repeats the ticker ("MARA Holdings, Inc." -> "MARA"). */
+const shortName = (r: SymbolRow) => { const n = companyName(r.name); return n && n.toUpperCase() !== r.symbol.toUpperCase() ? n : r.name; };
 
 // Canvas 3c/3d applied post-onboarding: search, then the two required fields.
 // Serial adds: after each save the form resets for the next ticker while the
@@ -20,6 +23,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
   baseCurrency?: string;
 }) {
   const [added, setAdded] = useState<string[]>([]);          // newest first, this session
+  const [cryptoAdded, setCryptoAdded] = useState<Set<string>>(() => new Set());   // which of them are coins
   const { q, setQ, results, error: searchErr, searching, reset: resetSearch } = useSymbolSearch(api, { preferCcy: baseCurrency });
   const [picked, setPicked] = useState<SymbolRow | null>(null);
   const [qty, setQty] = useState("");
@@ -67,15 +71,16 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
                 try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); }
                 catch (e) { setErr(e instanceof Error ? e.message : "Could not start the brokerage link."); setBusy(false); }
               }}>
-                <span><span className="sym"><Icon name="bolt" size={13} /> Import</span> <span className="sub">Connect a brokerage, positions land in seconds</span></span>
+                {/* short enough for one line at 375 ("positions land i\u2026" was cut; r3 design m6) */}
+                <span><span className="sym"><Icon name="bolt" size={13} /> Import</span> <span className="sub">Connect a brokerage, read-only</span></span>
                 <span className="sub">→</span>
               </button>
               <button className="row" disabled={busy} onClick={() => pick({ symbol: "$CASH", name: "Cash (USD)", exchange: "CASH", currency: "USD", kind: "cash" })}>
-                <span><span className="sym">CASH</span> <span className="sub">Add a cash balance</span></span>
+                <span><span className="sym">Cash</span> <span className="sub">Add a cash balance</span></span>
                 <span className="sub">$</span>
               </button>
               <button className="row" disabled={busy} onClick={() => pick({ symbol: "$DEBT", name: "Debt (USD)", exchange: "DEBT", currency: "USD", kind: "debt" })}>
-                <span><span className="sym">DEBT</span> <span className="sub">Add a loan or debt balance</span></span>
+                <span><span className="sym">Debt</span> <span className="sub">Add a loan or debt balance</span></span>
                 <span className="sub">−$</span>
               </button>
             </>)}
@@ -91,7 +96,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
                 catch (e) { setErr(e instanceof Error ? e.message : "Could not add that ticker."); }
                 finally { setBusy(false); }
               }}>
-                <span><span className="sym">{r.symbol}</span> <span className="sub">{r.name}</span></span>
+                <span><span className="sym">{r.symbol}</span> <span className="sub">{shortName(r)}</span></span>
                 <span className="sub">{r.exchange}</span>
               </button>
             ))}
@@ -106,14 +111,14 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
               <p className="sub" style={{ margin: "0 2px 6px" }}>
                 Added {added.map((sy) => displayName({ symbol: sy })).join(" · ")}. Add another, or tap <strong>Done</strong>.
               </p>
-              {(() => { const latest = added.find((sy) => !sy.startsWith("$")); return latest ? <InsightsCard api={api} symbol={latest} /> : null; })()}
+              {(() => { const latest = added.find((sy) => !sy.startsWith("$")); return latest ? <InsightsCard api={api} symbol={latest} crypto={cryptoAdded.has(latest)} /> : null; })()}
             </div>
           )}
         </>
       )}
       {picked && (
         <>
-          <p style={{ marginBottom: 12 }}><span className="sym">{picked.symbol}</span> · {picked.name}
+          <p style={{ marginBottom: 12 }}><span className="sym">{displayName(picked)}</span>{picked.kind === "cash" || picked.kind === "debt" ? "" : ` · ${shortName(picked)}`}
             <button className="chip" style={{ marginLeft: 10 }} onClick={() => pick(null)}>Change</button></p>
           <div className="field">
             <label>Account</label>
@@ -147,8 +152,8 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
           <div className="field"><label htmlFor="add-date">Purchase date (optional)</label>
             <input id="add-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           </>)}
-          <EntryPreview text={entryPreview({ kind: picked.kind, qty, cost, currency: picked.kind === "cash" || picked.kind === "debt" ? ccy : picked.currency,
-            unit: picked.kind === "crypto" ? picked.symbol : undefined })} />
+          {!fieldErr.qty && !fieldErr.cost && <EntryPreview text={entryPreview({ kind: picked.kind, qty, cost, currency: picked.kind === "cash" || picked.kind === "debt" ? ccy : picked.currency,
+            unit: picked.kind === "crypto" ? qtyUnit(picked) : undefined })} />}
           <div className="field"><label htmlFor="add-note">Note (optional)</label>
             <input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Earnings dip buy" enterKeyHint="done" /></div>
           {err && <div className="error-note" role="alert">{err}</div>}
@@ -171,6 +176,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
               await onRefresh();
               // stay here for the next add; the fresh card renders below the search
               setAdded((a) => [sym, ...a]);
+              if (picked.kind === "crypto") setCryptoAdded((s) => new Set(s).add(sym));
               pick(null); setQty(""); setCost(""); setDate(""); setLabel(""); setNote(""); resetSearch();
               setAccount("brokerage"); setCcy("USD");
             }

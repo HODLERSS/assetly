@@ -23,6 +23,12 @@
 .next-steps { padding: 12px 14px; margin-bottom: 16px; }
 .next-steps .next-steps-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 
+/* A sheet never rides under the status bar: with the keypad up the Add lot sheet grew to full height and
+   its title sat under the clock (r3 native m1). It stops below the safe area and scrolls inside. */
+.sheet { max-height: calc(100% - env(safe-area-inset-top, 0px) - 12px);
+  overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.kb-open .sheet-back { bottom: var(--as-kb-inset, 0px); }
+
 /* in-sheet confirmation (lot delete) */
 .sheet-confirm { margin: 0 0 12px; }
 
@@ -33,23 +39,48 @@
 .auth-provider { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
 .auth-provider svg { flex: none; }
 .auth-legal { font-size: 12px; text-align: center; color: var(--as-muted); margin: 4px 0 0; }
-.auth-legal a { color: inherit; text-decoration: underline; padding: 12px 2px; margin: -12px -2px; }   /* 44px tap height, same line box */
+/* 44px tap height on the same line box: an inline link's box is its font's content area (about 15px at
+   12px), so 12px padding each side made 39px (r3 design). A 14px inline-block line plus 15px each side is 44. */
+.auth-legal a { color: inherit; text-decoration: underline; display: inline-block; line-height: 14px;
+  padding: 15px 2px; margin: -15px -2px; }
 .auth-github { font-size: 13px; }
 
 /* per-market "today" lines under the headline */
 .day-split { margin-top: 2px; }
 
+/* an error with its one action at the end of the line (offline prices, a failed Ask) */
+.inline-note { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.inline-note .chip { flex: none; }
+/* News by day: a quiet heading over each day's card */
+.news-day { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; color: var(--as-muted); margin: 14px 2px 6px; }
+
+/* Ask: what a long wait is doing */
+.ask-wait { margin: -4px 4px 0; font-size: 12.5px; }
+
 /* a brief whose premise has moved on: dated, and quieter than the numbers above it */
 .brief-asof { margin: 0 0 4px; font-size: 12px; }
 .brief-stale .prose { opacity: .72; }
 .brief-lede { cursor: pointer; }
+/* written for another book (holdings since added or removed): the label leads in ink, the text recedes */
+.brief-asof { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.brief-other-book .brief-asof { color: var(--as-ink); font-weight: 600; font-size: 12.5px; }
+.brief-other-book .prose { opacity: .5; }
 
 /* 320pt: the price on a position's second line was cut to "$1…". The account is on the detail screen;
    the price is what the line is for. */
 @media (max-width: 359px) { .row .row-acct { display: none; } }
+/* and a won price takes its compact form there ("₩1.86M", not "₩1,86…") */
+.px-compact { display: none; }
+@media (max-width: 359px) { .px-full { display: none; } .px-compact { display: inline; } }
 
 /* Settings at large text (AX5 = 1.4x): the Appearance chips drop under their label instead of clipping
    "Dark" to "D", and a long email ellipsizes in place */
 .settings-appearance { flex-wrap: wrap; }
 .settings-appearance .chips { padding: 0; margin-left: auto; }
 .settings-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Edge swipe back (lib/swipeBack.ts): Home as it was left, under the sliding page, never empty ground.
+   Below the sticky top bar (15) and the tab bar; the page being popped rides above it on its own ground. */
+.swipe-under { position: fixed; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; background: var(--as-bg); }
+.swipe-under-page { position: absolute; left: 0; right: 0; max-width: var(--as-col); margin: 0 auto; }
+main.screen.swiping { position: relative; z-index: 2; background: var(--as-bg); }

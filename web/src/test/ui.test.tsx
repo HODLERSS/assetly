@@ -593,7 +593,7 @@ describe("U27 holdings filters", () => {
     row({ holding_id: "hk", symbol: "005930.KS", name: "Samsung Electronics",
       currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 }),
   ];
-  it("USD crypto files under the US filter", async () => {
+  it("crypto has its own filter: US totals never include a coin (r3 power-user)", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
       ...three(),
       row({ holding_id: "hb", symbol: "BTC-USD", name: "Bitcoin", kind: "crypto", account: "crypto", price: 80000, value: 160000, cost_basis: 100000, total_gl: 60000, change_pct: 1.2 }),
@@ -603,9 +603,12 @@ describe("U27 holdings filters", () => {
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await waitFor(() => expect(document.body.textContent).toContain("BTC-USD"));
     await userEvent.click(screen.getByRole("button", { name: /^US$/ }));
-    // the US filter keeps the USD-denominated crypto and drops the KRW listing
+    // the US filter is US listings only: no KRW listing, and no coin
     await waitFor(() => expect(screen.getByTestId("positions-card").textContent).not.toContain("005930.KS"));
-    expect(screen.getByTestId("positions-card").textContent).toContain("BTC-USD");
+    expect(screen.getByTestId("positions-card").textContent).not.toContain("BTC-USD");
+    await userEvent.click(screen.getByRole("button", { name: /^Crypto$/ }));
+    await waitFor(() => expect(screen.getByTestId("positions-card").textContent).toContain("BTC-USD"));
+    expect(screen.getByTestId("positions-card").textContent).not.toContain("QQQM");
   });
   it("chips are All, Korea, US, Retirement only and single-select", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(three()) });
@@ -756,25 +759,26 @@ describe("U24 ASK", () => {
     expect(card.textContent).toContain("Not financial advice");
     expect(api.ask).toHaveBeenCalledWith("my 1W move?", []);
   });
-  it("the first suggestion is the portfolio assessment", async () => {
+  it("the first suggestion is the portfolio health question, in plain words", async () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
-    const chips = screen.getAllByRole("button", { name: /assess my portfolio|1W movement|watch this week|concentrated/i });
-    expect(chips[0].textContent).toBe("Assess my portfolio and provide insights");
+    const chips = screen.getAllByRole("button", { name: /how healthy|this week and this month|watch this week|biggest risk/i });
+    expect(chips[0].textContent).toBe("How healthy is my portfolio?");
+    expect(screen.getByText("Answers about your holdings, from your own numbers.")).toBeTruthy();
     await userEvent.click(chips[0]);
     await screen.findByTestId("ask-answer");
-    expect(api.ask).toHaveBeenCalledWith("Assess my portfolio and provide insights", []);
+    expect(api.ask).toHaveBeenCalledWith("How healthy is my portfolio?", []);
   });
   it("suggestion chips fire a question directly", async () => {
     const api = stubApi();
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^ask$/i }));
-    await userEvent.click(screen.getByRole("button", { name: /1W and 1M movement/i }));
+    await userEvent.click(screen.getByRole("button", { name: /this week and this month/i }));
     await screen.findByTestId("ask-answer");
-    expect(api.ask).toHaveBeenCalledWith("What was my 1W and 1M movement in $ and %?", []);
+    expect(api.ask).toHaveBeenCalledWith("How did I do this week and this month?", []);
   });
 });
 
@@ -1257,7 +1261,7 @@ describe("U8 error + retry", () => {
       .mockResolvedValue([row({})]);
     render(<App api={api} />);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toMatch(/couldn't refresh your prices/i);
+    expect(alert.textContent).toMatch(/^Couldn't refresh prices\. ?Retry$/);   // one message, one action (r3 design m2)
     expect(alert.textContent).not.toMatch(/pull/i);                  // the copy matches the real control
     expect(alert.textContent).not.toMatch(/failed to fetch/i);       // no raw transport errors
     await userEvent.click(within(alert).getByRole("button", { name: /retry/i }));
