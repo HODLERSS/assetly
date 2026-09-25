@@ -7,7 +7,7 @@
 // slice stopped days short of today and the "latest" price was stale. Windows are now read point by point:
 // the latest price, and for each window the last price at or before its start.
 import { CLOSE_MIN, isTradingDay, type Mkt, marketOf, TZ, zonedEpoch, zonedParts } from "./calendar.ts";
-import { pctOver, type Pt, windowCutoff } from "./intel.ts";
+import { parseDividends, pctOver, type Pt, windowCutoff } from "./intel.ts";
 
 // deno-lint-ignore no-explicit-any
 type Db = any;   // the supabase-js client (typed loosely: the functions use the untyped builder)
@@ -199,4 +199,65 @@ export async function repairNames(admin: Db, symbols: string[], cap = 5): Promis
     if (!error) fixed.push(r.symbol);
   }
   return fixed;
+}
+
+/** Dividend data for held symbols from Yahoo's chart events, stored on `symbols` (migration 40). A few per call;
+ *  a symbol refreshed in the last three days is skipped, and one that pays nothing is stamped so it is not
+ *  asked again every lap. Never throws. */
+export async function refreshDividends(admin: Db, symbols: string[], cap = 6): Promise<string[]> {
+  const want = [...new Set(symbols.filter((s) => s && !s.startsWith("$")))];
+  if (!want.length) return [];
+  const r = await admin.from("symbols").select("symbol, yahoo, kind, div_as_of").in("symbol", want).not("kind", "in", "(cash,debt,crypto)");
+  if (r.error) return [];   // before migration 40
+  const due = ((r.data ?? []) as { symbol: string; yahoo: string | null; div_as_of: string | null }[])
+    .filter((x) => !x.div_as_of || Date.now() - +new Date(x.div_as_of) > 3 * 86400000).slice(0, cap);
+  if (!due.length) return [];
+  const { data: px } = await admin.from("prices").select("symbol, price").in("symbol", due.map((d) => d.symbol));
+  const priceOf = new Map(((px ?? []) as { symbol: string; price: number }[]).map((p) => [p.symbol, Number(p.price)]));
+  const today = new Date().toISOString().slice(0, 10);
+  const done: string[] = [];
+  await Promise.all(due.map(async (d) => {
+    const body = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(d.yahoo ?? d.symbol)}?range=2y&interval=1mo&events=div`,
+      { headers: { "User-Agent": UA, Accept: "application/json" } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+    if (!body) return;
+    const info = parseDividends(body, priceOf.get(d.symbol) ?? null, today);
+    const { error } = await admin.from("symbols").update({
+      div_last: info?.last ?? null, div_last_ex: info?.lastEx ?? null, div_ttm: info?.ttm ?? null, div_freq_days: info?.freqDays ?? null,
+      div_next_ex: info?.nextEx ?? null, div_yield: info?.yieldPct ?? null, div_as_of: new Date().toISOString(),
+    }).eq("symbol", d.symbol);
+    if (!error) done.push(d.symbol);
+  }));
+  return done;
+}
+
+export type DivRow = { symbol: string; div_as_of?: string | null; div_last: number | null; div_last_ex: string | null; div_ttm: number | null; div_freq_days: number | null; div_next_ex: string | null; div_yield: number | null };
+/** The stored dividend rows for some symbols (empty before migration 40). */
+export async function dividendRows(admin: Db, symbols: string[]): Promise<Map<string, DivRow>> {
+  if (!symbols.length) return new Map();
+  const r = await admin.from("symbols").select("symbol, div_as_of, div_last, div_last_ex, div_ttm, div_freq_days, div_next_ex, div_yield").in("symbol", symbols);
+  if (r.error) return new Map();
+  return new Map(((r.data ?? []) as DivRow[]).map((x) => [x.symbol, x]));
+}
+/** One labelled, symbol-keyed line of dividend facts for a prompt, and the amounts a stated figure may use. */
+/** `ccy` is the holding's currency and `perUsd` how many units of it buy one dollar (1 for USD). Per-share and
+ *  per-holding figures stay in the holding's currency; `annual` is always US dollars, so a portfolio total can sum
+ *  it (Samsung's ₩50,460 a year was summed as $50,460 into a "$65,824 income, 56% of assets" answer, 2026-09-25). */
+export function dividendLine(name: string, d: DivRow | undefined, shares: number, ccy = "USD", perUsd = 1): { line: string; amounts: number[]; annual: number } {
+  // never checked yet (div_as_of null) is "unknown", not "pays nothing": a $0.00 income answer was shown live
+  if (!d || !d.div_as_of) return { line: `${name}: dividend data not loaded yet (unknown, do not state an amount or $0)`, amounts: [], annual: 0 };
+  if (!(Number(d.div_last) > 0)) return { line: `${name}: pays no dividend`, amounts: [], annual: 0 };
+  const last = Number(d.div_last), ttm = Number(d.div_ttm ?? 0), freq = Number(d.div_freq_days ?? 0);
+  const perYear = freq ? last * Math.max(1, Math.round(365 / freq)) : ttm;
+  const rhythm = freq ? (freq < 45 ? "monthly" : freq < 120 ? "quarterly" : freq < 250 ? "twice a year" : "yearly") : "irregular";
+  const annualNative = shares * (ttm || perYear);
+  const rate = perUsd > 0 ? perUsd : 1;
+  const annual = annualNative / rate;
+  const usdF = (v: number) => "$" + (v >= 100 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v < 1 ? 4 : 2));
+  const f = ccy === "USD" ? usdF : ccy === "KRW" ? (v: number) => "₩" + Math.round(v).toLocaleString("en-US") : (v: number) => `${v.toFixed(2)} ${ccy}`;
+  return {
+    line: `${name}: last dividend ${f(last)} per share (ex-date ${d.div_last_ex}), paid ${rhythm}; last 12 months ${f(ttm)} per share${d.div_yield ? ` (yield ${d.div_yield}%)` : ""}; `
+      + `your ${shares} shares ≈ ${f(annualNative)} a year${ccy === "USD" ? "" : ` (≈ ${usdF(annual)})`}, ≈ ${f(shares * last)} per payment${d.div_next_ex ? `; next ex-date expected around ${d.div_next_ex} (est)` : ""}`,
+    amounts: [last, ttm, perYear, annualNative, shares * last, ...(ccy === "USD" ? [] : [annual])].filter((x) => x > 0),
+    annual,
+  };
 }

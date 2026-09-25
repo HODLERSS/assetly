@@ -13,9 +13,10 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
   aliasesFor, booksKorean, brokenSentences, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
-  canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
+  canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
+  weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
 } from "../_shared/intel.ts";
-import { windowReturns } from "../_shared/history.ts";
+import { dividendLine, dividendRows, windowReturns } from "../_shared/history.ts";
 import { userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
 
@@ -64,7 +65,7 @@ const FAST_MODEL = "gpt-oss-120b";
 // ---- trading calendar: ../_shared/calendar.ts (shared with insights-sync and ask) ----
 
 // Bumped whenever the brief's guards change enough that today's earlier rows should be rewritten (see "outdated").
-const GEN_VERSION = 4;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+const GEN_VERSION = 5;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -210,47 +211,13 @@ const themeOf = (sym: string, kind: string | null) => THEMES[sym] ?? (kind === "
 const geoOf = (sym: string, kind: string | null) => kind === "crypto" || sym.endsWith("-USD") ? "crypto" : (sym.endsWith(".KS") || sym.endsWith(".KQ")) ? "Korea" : "US";
 
 // deterministic plain-language pass for BEGINNER readers: the recurring terms the model keeps leaking, mapped in code
-const NOVICE_MAP: [RegExp, string][] = [
-  [/\bshort interest\b/gi, "bets against the stock"], [/\bof float\b/gi, "of its tradable shares"],
-  [/\bleverage(d)?\b/gi, "borrowed money"], [/\bhigh[- ]beta\b/gi, "sharper-moving-than-the-market"],
-  [/\bbeta\b/gi, "sensitivity to market swings"], [/\bvaluation multiple(s)?\b/gi, "price tag relative to earnings"],
-  [/\bmultiple compression\b/gi, "a shrinking price tag relative to earnings"], [/\b(net interest margin|lending profit margin|net interest income)\b/gi, "profit on lending"],
-  [/\b(NII|NIM)\b/g, "profit on lending"], [/\bCET\s?1\b/gi, "its safety cushion of capital"],
-  [/\bmegacaps?\b/gi, "the biggest companies"], [/\bdry powder\b/gi, "cash ready to invest"],
-  // caught by the B4 tier check: a 55-year-old first-time investor was handed "net new money negative for two
-  // consecutive quarters" and "core capital ratio drops below twelve percent" as things to WATCH
-  [/\b(?:negative\s+)?(?:net new money|net new assets|net (?:out)?flows?)\s+(?:is\s+|turning\s+|going\s+)?negative\b/gi, "customers pulling money out"],
-  [/\b(net new money|net new assets|net flows?)\b/gi, "money coming in from customers"],
-  [/\b(common equity tier (?:one|1)(?: ratio)?|core capital ratio|capital ratio|CET1(?: ratio)?|tier (?:1|one)(?: capital)?(?: ratio)?)\b/gi, "its safety cushion of capital"],
-  // the spelled-out forms slip past an acronym-only map: a novice was handed "Common equity tier one
-  // ratio drops below twelve percent" as a thing to WATCH
-  [/\b(price[- ]to[- ]book|book value per share|P\/B)\b/gi, "what the company is worth on paper"],
-  [/\b(price[- ]to[- ]earnings|P\/E)(?: ratio)?\b/gi, "its price tag against profits"],
-  [/\b(loan cost gap|net interest spread)\b/gi, "the gap between what a bank earns and pays"],
-  [/\bassets? under management\b/gi, "the money it manages for clients"],
-  [/\b(deposit betas?|funding costs?)\b/gi, "what it pays for deposits"],
-  [/\bAUM\b/g, "assets under management"], [/\bROE\b/g, "return on the owners' money"], [/\bROIC\b/g, "return on invested money"],
-  [/\bEBITDA\b/g, "operating profit"], [/\bFCF\b/g, "spare cash flow"], [/\bP\/E\b/g, "price-to-earnings ratio"],
-  [/\bEPS\b/g, "earnings per share"], [/\bcapex\b/gi, "spending on equipment and buildout"], [/\bbasis points\b/gi, "hundredths of a percent"],
-  [/\bshort-duration\b/gi, "shorter-term"], [/\blong-duration\b/gi, "longer-term"], [/\bnet inflows\b/gi, "net new money"], [/\binflows\b/gi, "new money"], [/\bnet outflows\b/gi, "net withdrawals"], [/\boutflows\b/gi, "withdrawals"],
-  [/\brotce\b/gi, "bank profitability"], [/\broa\b/gi, "profit on assets"], [/\breturn on (tangible )?(common )?equity\b/gi, "bank profitability"],
-  [/\bmoat\b/gi, "lasting edge over competitors"], [/\bdrawdown(s)?\b/gi, "drop from the top"], [/\bDAU\b/g, "daily users"],
-  // replacements must be drop-in NOUN PHRASES: swapping in a verb phrase ("hurts lean toward fast-growing
-  // companies") reads worse than the jargon it replaced
-  [/\bvalue tilt\b/gi, "value focus"], [/\bgrowth tilt\b/gi, "growth focus"], [/\btilt\b/gi, "focus"],
-  [/\bday P&L\b/gi, "day's gain or loss"], [/\bP&L\b/g, "gain or loss"], [/\bVIX\b/g, "the market's fear gauge"],
-  [/\bYoY\b/g, "year over year"], [/\bQoQ\b/g, "quarter over quarter"], [/\bY\/Y\b/g, "year over year"],
-  [/\b(the |a )?quiet tape\b/gi, "$1quiet market"], [/\btape\b/gi, "market"], [/\bhash ?power\b/gi, "mining power"], [/\bhash ?rate\b/gi, "mining speed"], [/\bcash drag\b/gi, "idle cash"], [/\brebalancing\b/gi, "reshuffle"], [/\brebalance\b/gi, "reshuffle"],
-  [/\bgrowth premium\b/gi, "high price tag"], [/\bvaluation(s)?\b/gi, "price tag$1"],
-  [/\b(value|growth|momentum|defensive)[- ]play\b/gi, "$1 holding"], [/\b(value|income)[- ]hold\b/gi, "$1 holding"],
-  [/\b(inflation|CPI|PCE|jobs|payrolls|GDP|retail sales)\s+print\b/gi, "$1 report"], [/\bdata print\b/gi, "data report"],
-  [/\bhigh[- ]beta\b/gi, "fast-moving"], [/\bcrypto[- ]beta\b/gi, "crypto exposure"],
-];
 const noviceScrub = (t: string): string => {
   // plainScrub never doubles a gloss the model already wrote: "VIX, the market's fear gauge, fell" used to
   // come out "The market's fear gauge, the market's fear gauge, fell" (2026-09-25)
   // a gloss dropped after a modifier keeps no stray article ("on sustained a shrinking price tag", round 3)
-  let x = fixGlossArticles(plainScrub(t, NOVICE_MAP));
+  // one shared map, glossed in context: "AI capex scrutiny" became "AI spending on equipment and buildout scrutiny"
+  // (round 4); a term used as a modifier now reads "scrutiny of the spending on equipment and buildout"
+  let x = noviceGloss(t);
   // A replacement that begins with a possessive collides with any article in front of the term it
   // replaced: "a CET1 ratio below 12%" became "A its safety cushion of capital below twelve percent".
   // Drop the stranded article - deletion only, and it cannot touch text the map did not rewrite.
@@ -311,17 +278,46 @@ NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst no
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
 RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as \u20a9 (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.
 ${EVIDENCE_LAW}`;
+/** Repair every row of `briefDate` for one user written by an older GEN_VERSION (except `skipEdition`). */
+// deno-lint-ignore no-explicit-any
+async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, skipEdition: string | null): Promise<number> {
+  let q = admin.from("daily_briefs").select("id, edition, sections, gen_version").eq("user_id", uid).eq("brief_date", briefDate);
+  if (skipEdition) q = q.neq("edition", skipEdition);
+  const r = await q;
+  if (r.error) return 0;   // before migration 39
+  const stale = ((r.data ?? []) as { id: number; edition: string; sections: unknown; gen_version: number | null }[])
+    .filter((o) => Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
+  if (!stale.length) return 0;
+  const syms = rows.filter((x) => !x.symbol.startsWith("$") && x.kind !== "cash" && x.kind !== "debt").map((x) => x.symbol).slice(0, 12);
+  const [fl, { data: tr }] = await Promise.all([
+    earningsFilings(admin, syms),
+    admin.from("transcripts").select("symbol, title, published_at").in("symbol", syms).order("published_at", { ascending: false }).limit(60),
+  ]);
+  const ests = syms.map((sy) => {
+    const h = rows.find((x) => x.symbol === sy)!;
+    const e = earningsEstimate(fl.filter((f) => f.symbol === sy), ((tr ?? []) as { symbol: string; title: string; published_at: string | null }[]).filter((t) => t.symbol === sy), briefDate);
+    const names = [krName(sy, h.nickname, h.name), ...aliasesFor(sy, h.name)];
+    return { names, label: names[0], est: e?.est ?? null, ...(e?.range ? { range: e.range } : {}), dlv: deliveriesEstimate(sy, briefDate)?.est ?? null };
+  });
+  for (const o of stale) {
+    const fixed = repairSections(o.sections as Sections, ests, briefDate);
+    await admin.from("daily_briefs").update({ sections: fixed, gen_version: GEN_VERSION, audio_path: null, script: null }).eq("id", o.id).then(() => {}, () => {});
+  }
+  return stale.length;
+}
+
 /** Code-only repair of a stored brief (no model, no new facts): doubled phrases and glosses collapse, "directly"
  *  loses its unsupported intensity, articles and plain words are fixed, a sentence dating a holding's report
  *  away from its estimate is deleted, and calendar / watch lines are rebuilt from the estimates. */
-function repairSections(src: Sections, ests: { names: string[]; label: string; est: string | null; range?: [string, string] }[], today: string): Sections {
+function repairSections(src: Sections, ests: { names: string[]; label: string; est: string | null; range?: [string, string]; dlv?: string | null }[], today: string): Sections {
   // a collapsed appositive can leave a comma between a subject and its verb ("The market's fear gauge, fell 3.3%")
   const unComma = (t: string) => t.replace(/(^|[.!?]\s+)([A-Z][^,.!?]{2,50}),\s+(fell|rose|jumped|slipped|climbed|dropped|gained|lost|added|edged|dipped|sank|rallied)\b/g, "$1$2 $3");
-  const text = (t: string) => fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(String(t ?? ""))))), PORTFOLIO_PLAIN));
+  const text = (t: string) => tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(String(t ?? ""))))), PORTFOLIO_PLAIN)));
+  const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x = text(t);
     const parts = x.split(/(?<=[.!?])\s+/);
-    const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests)]);
+    const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests), ...wrongDeliveriesDates(x, dlvFacts, today), ...parts.filter((p) => strengthAsRisk(p))]);
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
     return kept.length ? kept.join(" ") : x;
   };
@@ -330,10 +326,10 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   s.positions = (src.positions ?? []).map((p) => {
     const canon = canonicalCalendar([p.watch], ests, "", today);
     const earn = /\b(earnings|results|reports?|call|print|preview)\b/i.test(p.watch) && ests.some((e) => e.names.some((n) => n && String(p.watch).toLowerCase().includes(n.toLowerCase())));
-    const dated = datesIn(p.watch, today).length > 0;
+    const dated = datesIn(p.watch, today).length > 0 || weekendDated([p.watch], today).length > 0;
     return { ...p, note: dropWrong(p.note), watch: earn ? canon[0] ?? "No confirmed date yet" : dated ? "No confirmed date yet" : text(p.watch) };
   });
-  s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today);
+  s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today).filter((c) => !weekendDated([c], today).length);
   if (src.ideas) s.ideas = src.ideas.map(text);
   return s;
 }
@@ -460,6 +456,15 @@ Deno.serve(async (req) => {
     const target = au?.users?.find((u) => u.email === onlyEmail)?.id;
     userIds = target ? [target].filter((t) => byUser.has(t)) : [];
   }
+  // REPAIR PASS, every user, before any generation: today's rows written by an older daily-brief are fixed in
+  // code (deletion and relabelling only, a few hundred milliseconds each). Round 4 poweruser: a midday row with
+  // gen_version null still carried "Copilot earnings preview Sep 27" hours after the fix, because the
+  // regenerate-once path reaches only the one or two users a run has wall-clock time to rewrite.
+  const repairStart = Date.now();
+  for (const uid of userIds) {
+    if (Date.now() - repairStart > 30000) break;
+    await repairToday(admin, uid, byUser.get(uid) ?? [], briefDate, null).catch(() => null);
+  }
   userIds = userIds.slice(0, 10);
 
   let wrote = 0;
@@ -475,32 +480,8 @@ Deno.serve(async (req) => {
       const assets = rows.filter((r) => r.kind !== "debt");
       const total = assets.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
       if (total < 100) continue;
-      // Today's OTHER clock editions written by an older version are REPAIRED in code (never regenerated: a
-      // morning brief rewritten at 3 PM from afternoon data would be a different brief). Round 4: the morning
-      // still said "The market's fear gauge, the market's fear gauge" and "Nvidia around December 10" hours
-      // after the fix. Deletion and relabelling only; the row is marked current so this runs once.
-      {
-        const olds = await admin.from("daily_briefs").select("id, edition, sections, gen_version").eq("user_id", uid).eq("brief_date", briefDate)
-          .neq("edition", edition).neq("edition", "assessment").then((r) => (r.error ? [] : (r.data ?? [])), () => []) as { id: number; edition: string; sections: unknown; gen_version: number | null }[];
-        const stale = olds.filter((o) => Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
-        if (stale.length) {
-          const syms = rows.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash" && r.kind !== "debt").map((r) => r.symbol).slice(0, 12);
-          const [fl, { data: tr }] = await Promise.all([
-            earningsFilings(admin, syms),
-            admin.from("transcripts").select("symbol, title, published_at").in("symbol", syms).order("published_at", { ascending: false }).limit(60),
-          ]);
-          const ests = syms.map((sy) => {
-            const h = rows.find((r) => r.symbol === sy)!;
-            const e = earningsEstimate(fl.filter((f) => f.symbol === sy), (tr ?? []).filter((t) => t.symbol === sy), briefDate);
-            const names = [krName(sy, h.nickname, h.name), ...aliasesFor(sy, h.name)];
-            return { names, label: names[0], est: e?.est ?? null, ...(e?.range ? { range: e.range } : {}) };
-          });
-          for (const o of stale) {
-            const fixed = repairSections(o.sections as Sections, ests, briefDate);
-            await admin.from("daily_briefs").update({ sections: fixed, gen_version: GEN_VERSION, audio_path: null, script: null }).eq("id", o.id).then(() => {}, () => {});
-          }
-        }
-      }
+      // Today's OTHER editions written by an older version are repaired in code (the pass above normally got them)
+      await repairToday(admin, uid, rows, briefDate, edition).catch(() => null);
       let backfillOnly: Sections | null = null;
       if (!force) {
         const haveQ = (cols: string) => admin.from("daily_briefs").select(cols).eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
@@ -537,7 +518,15 @@ Deno.serve(async (req) => {
       // and every day move stamped with the session it belongs to, in every edition. A morning brief written
       // 31 minutes after the open called Microsoft's live +3.7% "yesterday" (2026-09-25); on a Korea edition the
       // same tag keeps "AMD rose 2.5%" from reading as live.
-      const statsLines = rows.map((r) => {
+      // DIVIDENDS, keyed by symbol (round 4 newcomer, an income investor, was told nothing about SCHD's payouts)
+      const divRows = await dividendRows(admin, holdings.map((r) => r.symbol));
+      const divData = holdings.map((r) => ({ r, d: dividendLine(krName(r.symbol, r.nickname, r.name), divRows.get(r.symbol), Number(r.qty ?? 0), r.currency ?? "USD", fxMap.get(r.currency ?? "USD") ?? 1) }));
+      const divIncome = divData.reduce((a, x) => a + x.d.annual, 0);
+      const divBlock = divData.some((x) => x.d.amounts.length)
+        ? `DIVIDENDS (per holding; the ONLY dividend figures you may state):\n${divData.filter((x) => x.d.amounts.length).map((x) => "- " + x.d.line).join("\n")}\nPortfolio dividend income ≈ $${Math.round(divIncome).toLocaleString("en-US")} a year (${(divIncome / total * 100).toFixed(2)}% of assets).`
+        : "DIVIDENDS: none of the holdings pays a dividend on record.";
+      const divFacts = divData.map((x) => ({ names: [krName(x.r.symbol, x.r.nickname, x.r.name), ...aliasesFor(x.r.symbol, x.r.name)], amounts: x.d.amounts }));
+      const statsLines0 = rows.map((r) => {
         const v = usd(Number(r.value ?? 0), r.currency);
         const nm = krName(r.symbol, r.nickname, r.name);
         if (r.kind === "debt") return `${nm}: debt owed $${Math.round(v)}`;
@@ -547,6 +536,7 @@ Deno.serve(async (req) => {
         const chg = r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%";
         return `${nm}: position value $${Math.round(v)} (${(v / total * 100).toFixed(1)}% of assets), share price ${pxT}, day ${chg} [${dayTag(marketOf(r.symbol, r.kind, r.currency))}], total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
       }).join("\n");
+      const statsLines = `${statsLines0}\n${divBlock}`;
       const marketLines = marketLinesFor(korean), mktLive = mktLiveFor(korean);
       // A morning edition that starts after the bell (a late cron, a retry through an API wave) is an OPENING
       // READ: its US day figures are today's early moves, and it says so, never "yesterday".
@@ -672,6 +662,7 @@ Candid, specific, no filler. Never em dashes.`;
         const dataBlock = `PORTFOLIO (deterministic; the ONLY source of portfolio numbers; every percentage below is a share of TOTAL ASSETS, so write "of assets", never "of equity" or "of holdings"):
 ${bookLine}
 ${structLines}
+${divBlock}
 THEME EXPOSURE (deterministic): ${themeLine}
 GEOGRAPHY (share of total assets; cash and debt excluded, so it sums to the invested share): ${geoLine}
 PERFORMANCE (30d = trailing 30 days, 1y = trailing 12 months; never call either "YTD"): ${perfLine}
@@ -1470,18 +1461,53 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // record level the writers were never given ("Tech concentration at 1965 highs") is dropped.
       if (!backfillOnly) {
         const hsrc = [...SOURCES, JSON.stringify(memosOut)].join("\n");
+        const dlvFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], est: deliveriesEstimate(r.symbol, briefDate)?.est ?? null }));
         const clean = (t: string) => {
-          const x = plainScrub(String(t ?? ""), PORTFOLIO_PLAIN);
-          // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too
-          const bad = [...historicalClaims(x, hsrc, briefDate), ...unsupportedCauses(x, hsrc)];
+          const x = tidyNumbers(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN));
+          // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
+          // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
+          // assessment), another holding's dividend, and a deliveries date that is not the known one
+          const parts = x.split(/(?<=[.!?])\s+/);
+          const bad = [...historicalClaims(x, hsrc, briefDate), ...unsupportedCauses(x, hsrc), ...wrongEarningsMonths(x, earnEsts),
+            ...wrongEarningsDates(parts, earnEsts, briefDate), ...wrongDividendAmounts(x, divFacts), ...wrongDeliveriesDates(x, dlvFacts, briefDate)];
           if (!bad.length) return x;
           const kept = x.split(/(?<=[.!?])\s+/).filter((s) => !bad.some((b) => b.includes(s.trim()) || s.includes(b)));
           return kept.length ? kept.join(" ") : x;
         };
         sections.lede = clean(sections.lede); sections.overnight = clean(sections.overnight); sections.desk_view = clean(sections.desk_view);
         if (sections.horizon) sections.horizon = clean(sections.horizon);
-        sections.positions = sections.positions.map((p) => ({ ...p, note: clean(p.note), watch: plainScrub(p.watch, PORTFOLIO_PLAIN) }));
-        sections.ideas = (sections.ideas ?? []).map(clean); sections.calendar = (sections.calendar ?? []).map((c) => plainScrub(c, PORTFOLIO_PLAIN));
+        // "The risk: net cash balance sheet." labels a strength as the risk (round 4): that clause goes, and the
+        // memo's tripwire (or nothing) stands in
+        const noStrengthRisk = (note: string, name: string) => {
+          if (!strengthAsRisk(note)) return note;
+          const kept = note.split(/(?<=[.!?])\s+/).filter((x) => !strengthAsRisk(x));
+          const m = memosOut.find((x) => String(x.name).toLowerCase() === name.toLowerCase());
+          const trip = m?.tripwire ? ` The risk: ${String(m.tripwire).replace(/[.\s]+$/, "")}.` : "";
+          return (kept.join(" ") + trip).trim() || note;
+        };
+        sections.positions = sections.positions.map((p) => ({ ...p, note: noStrengthRisk(clean(p.note), p.name), watch: tidyNumbers(plainScrub(p.watch, PORTFOLIO_PLAIN)) }));
+        sections.ideas = (sections.ideas ?? []).map(clean);
+        // a weekend-dated item is no event (round 4: "Copilot earnings preview Sep 27", a Sunday), nor is a
+        // deliveries date that is not the estimate ("Tesla delivery numbers Sep 28"; the report is Oct 2)
+        const offCal = new Set([...weekendDated(sections.calendar ?? [], briefDate), ...wrongDeliveriesDates((sections.calendar ?? []).join("\n"), dlvFacts, briefDate)]);
+        sections.calendar = (sections.calendar ?? []).filter((c) => !offCal.has(c)).map((c) => tidyNumbers(plainScrub(c, PORTFOLIO_PLAIN)));
+        sections.positions = sections.positions.map((p) => weekendDated([p.watch], briefDate).length || wrongDeliveriesDates(p.watch, dlvFacts, briefDate).length ? { ...p, watch: "No confirmed date yet" } : p);
+        // YOUR PORTFOLIO names every holding of 2% or more, in code (round 4: the first assessment listed $70K of a
+        // $468.7K book and left out VTI, 85% of it)
+        if (edition === "assessment") {
+          const big = holdings.filter((r) => usd(Number(r.value ?? 0), r.currency) / total >= 0.02);
+          const namesOf = (r: (typeof holdings)[number]) => [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)];
+          const missing = big.filter((r) => !namesOf(r).some((n) => n && new RegExp(`(^|[^A-Za-z0-9])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9])`, "i").test(sections.overnight)));
+          if (missing.length) {
+            const cashUsd = assets.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
+            const parts = [...big.map((r) => `${krName(r.symbol, r.nickname, r.name)} $${Math.round(usd(Number(r.value ?? 0), r.currency)).toLocaleString("en-US")} (${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}%)`),
+              ...(cashUsd > 0 ? [`cash $${Math.round(cashUsd).toLocaleString("en-US")} (${(cashUsd / total * 100).toFixed(1)}%)`] : [])];
+            const rest = holdings.filter((r) => !big.includes(r));
+            const composition = `Your portfolio totals $${Math.round(total).toLocaleString("en-US")}: ${parts.join(", ")}${rest.length ? `, plus ${rest.length} smaller holding${rest.length > 1 ? "s" : ""}` : ""}.`;
+            const sents = sections.overnight.split(/(?<=[.!?])\s+/).filter((x) => !/\btotals?\b/i.test(x) && !/\$[\d,]+.*\$[\d,]+/.test(x));
+            sections.overnight = [composition, ...sents].join(" ");
+          }
+        }
       }
       // GRAMMAR PASS (round 3 newcomer: "Watch QQQ on sustained a shrinking price tag relative.", "Total assets
       // $26,600 cash $2,500"): broken sentences get one rewrite on the fast model; a sentence still broken

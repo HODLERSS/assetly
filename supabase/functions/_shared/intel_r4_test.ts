@@ -95,3 +95,17 @@ Deno.test("r4 news: 13F 'Stock Bought by', report spam, exchange suffixes, re-da
   assert(staleRedated({ url: "https://www.fool.com/investing/2026/07/21/tsla-stock-jumps-3-ahead-of-q2-report/", published_at: "2026-09-25T15:00:00Z" }));
   assertFalse(staleRedated({ url: "https://www.fool.com/investing/2026/09/25/x/", published_at: "2026-09-25T15:00:00Z" }));
 });
+
+import { dividendLine as _divLine } from "./history.ts";
+Deno.test("dividend income converts a won payer to dollars before a portfolio total sums it", () => {
+  const d = { symbol: "005930.KS", div_as_of: "2026-09-25T00:00:00Z", div_last: 374, div_last_ex: "2026-06-27", div_ttm: 1682, div_freq_days: 91, div_next_ex: "2026-12-27", div_yield: 0.59 };
+  const r = _divLine("Samsung", d, 30, "KRW", 1357);
+  if (Math.abs(r.annual - 30 * 1682 / 1357) > 0.01) throw new Error(`annual ${r.annual}`);
+  if (!r.line.includes("₩50,460") || !r.line.includes("≈ $37")) throw new Error(r.line);
+  const u = _divLine("SCHD", { ...d, symbol: "SCHD", div_last: 0.267, div_ttm: 1.055 }, 120);
+  if (Math.abs(u.annual - 126.6) > 0.01) throw new Error(`usd ${u.annual}`);
+});
+Deno.test("never-checked dividend data is unknown, not zero", () => {
+  const r = _divLine("SCHD", { symbol: "SCHD", div_as_of: null, div_last: null, div_last_ex: null, div_ttm: null, div_freq_days: null, div_next_ex: null, div_yield: null }, 120);
+  if (r.annual !== 0 || !/not loaded yet/.test(r.line)) throw new Error(r.line);
+});
