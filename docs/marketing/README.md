@@ -334,3 +334,10 @@ take, same scroll position, which is cleaner than the in-app flip would have bee
 **Measured, not heard:** exact frame counts (600 / 900), −14.0 LUFS, peaks ≤ −1.2 dBFS, faststart,
 speech-band lift at all four cues. Whether the arrangement and the voice sit well together is the
 one thing measurement cannot say — play them before posting.
+
+### Cuts-only variant (2026-09-25)
+
+`assetly-dark-4x5-cuts.mp4` is the 09-24 09:47 dark 4:5 with plan-level `"transition": "cut"`: every
+screen-to-screen slide becomes a hard cut on the same grid, and nothing else changes (zooms, captions,
+subtitles, voices, music, 60 fps CRF 15). Plan: `web/ios/App/marketing/spots/dark-4x5-linkedin-cuts.json`.
+Archived as `~/Desktop/assetly-linkedin/versions/assetly-dark-4x5-cuts_20260925_0828.mp4`.
