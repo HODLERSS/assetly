@@ -6,14 +6,15 @@
 // market trades, 1,440 a day for crypto) and PostgREST caps a response at 1,000 rows, so the ascending
 // slice stopped days short of today and the "latest" price was stale. Windows are now read point by point:
 // the latest price, and for each window the last price at or before its start.
-import { CLOSE_MIN, zonedEpoch, zonedParts } from "./calendar.ts";
+import { CLOSE_MIN, type Mkt, zonedEpoch, zonedParts } from "./calendar.ts";
 import { pctOver, type Pt } from "./intel.ts";
 
 // deno-lint-ignore no-explicit-any
 type Db = any;   // the supabase-js client (typed loosely: the functions use the untyped builder)
 
-/** Latest price plus the percent change over each window (null = the history does not reach back). */
-export async function windowReturns(admin: Db, symbol: string, days: number[], now = Date.now()): Promise<{ last: Pt | null; pct: Record<number, number | null> }> {
+/** Latest price plus the percent change over each window (null = the history does not reach back, or its
+ *  base is not on the window's start in `mkt`'s sessions: see pctOver). `mkt` null = crypto, undefined = US. */
+export async function windowReturns(admin: Db, symbol: string, days: number[], now = Date.now(), mkt?: Mkt | null): Promise<{ last: Pt | null; pct: Record<number, number | null> }> {
   const one = (q: Db) => q.limit(1).then((r: { data: { ts: string; price: number }[] | null }) => r.data?.[0] ? { ts: String(r.data[0].ts), price: Number(r.data[0].price) } : null, () => null);
   const tbl = () => admin.from("price_history").select("ts,price").eq("symbol", symbol);
   const [last, ...bases] = await Promise.all([
@@ -26,14 +27,16 @@ export async function windowReturns(admin: Db, symbol: string, days: number[], n
     }),
   ]);
   const pct: Record<number, number | null> = {};
-  days.forEach((d, i) => { const b = bases[i]; pct[d] = b && last ? pctOver([b, last], d, now) : null; });
+  days.forEach((d, i) => { const b = bases[i]; pct[d] = b && last ? pctOver([b, last], d, now, mkt) : null; });
   return { last, pct };
 }
 
-/** Does this symbol lack a year of daily history (no point older than ~11 months)? */
+/** Does this symbol lack ~13 months of daily history (no point older than 400 days)? 400, not 365: the 1Y
+ *  window needs a base AT its start, and a year-ago close must exist on a day the market traded. */
+export const SHORT_DAYS = 400;
 export async function historyIsShort(admin: Db, symbol: string, now = Date.now()): Promise<boolean> {
   const { data } = await admin.from("price_history").select("ts").eq("symbol", symbol)
-    .lte("ts", new Date(now - 330 * 86400000).toISOString()).limit(1);
+    .lte("ts", new Date(now - SHORT_DAYS * 86400000).toISOString()).limit(1);
   return !(data ?? []).length;
 }
 
@@ -85,21 +88,72 @@ export async function backfillDaily(admin: Db, symbol: string, yahoo: string, ra
   return wrote;
 }
 
+// Symbols this worker already tried recently: a young listing (an IPO under 400 days old) is short forever,
+// so without a memo every insights lap would refetch it. The DB stamp (symbols.history_backfilled_at,
+// migration 37) carries the same memo across workers; this map covers the time before that migration.
+const tried = new Map<string, number>();
+const RETRY_MS = 7 * 86400000;
+
 /** Backfill every symbol in the list whose history is short (or all of them with force); at most `cap`
- *  per call, four at a time. Returns days written per symbol and how many were left for a re-run. */
+ *  per call, four at a time. A symbol backfilled in the last 7 days is skipped unless forced (it is as long
+ *  as Yahoo has it). Returns days written per symbol and how many were left for a re-run. */
 export async function backfillShort(admin: Db, symbols: string[], opts: { force?: boolean; cap?: number } = {}): Promise<{ backfilled: Record<string, number>; remaining: number }> {
-  const want = [...new Set(symbols.filter((s) => s && !s.startsWith("$")))];
+  const want = [...new Set(symbols.filter((s) => s && !s.startsWith("$")))]
+    .filter((s) => opts.force || Date.now() - (tried.get(s) ?? 0) > RETRY_MS);
   if (!want.length) return { backfilled: {}, remaining: 0 };
-  const { data: syms } = await admin.from("symbols").select("symbol, yahoo, kind").in("symbol", want).not("kind", "in", "(cash,debt)");
+  // the stamp column arrives with migration 37; until then the read falls back to the old shape
+  const withStamp = await admin.from("symbols").select("symbol, yahoo, kind, history_backfilled_at").in("symbol", want).not("kind", "in", "(cash,debt)");
+  const { data: syms } = withStamp.error
+    ? await admin.from("symbols").select("symbol, yahoo, kind").in("symbol", want).not("kind", "in", "(cash,debt)")
+    : withStamp;
   const todo: { symbol: string; yahoo: string }[] = [];
-  for (const sy of (syms ?? []) as { symbol: string; yahoo: string | null }[]) {
-    if (opts.force || await historyIsShort(admin, sy.symbol)) todo.push({ symbol: sy.symbol, yahoo: sy.yahoo ?? sy.symbol });
+  for (const sy of (syms ?? []) as { symbol: string; yahoo: string | null; history_backfilled_at?: string | null }[]) {
+    const stamped = sy.history_backfilled_at ? Date.now() - +new Date(sy.history_backfilled_at) < RETRY_MS : false;
+    if (opts.force || (!stamped && await historyIsShort(admin, sy.symbol))) todo.push({ symbol: sy.symbol, yahoo: sy.yahoo ?? sy.symbol });
+    else tried.set(sy.symbol, Date.now());   // long enough (or recently done): no need to look again this week
   }
   const batch = todo.slice(0, opts.cap ?? 60);
   const backfilled: Record<string, number> = {};
   for (let i = 0; i < batch.length; i += 4) {
     const part = await Promise.all(batch.slice(i, i + 4).map(async (t) => [t.symbol, await backfillDaily(admin, t.symbol, t.yahoo, "2y")] as const));
-    for (const [sy, n] of part) backfilled[sy] = n;
+    for (const [sy, n] of part) {
+      backfilled[sy] = n;
+      if (n > 0) {
+        tried.set(sy, Date.now());
+        await admin.from("symbols").update({ history_backfilled_at: new Date().toISOString() }).eq("symbol", sy).then(() => {}, () => {});
+      }
+    }
   }
   return { backfilled, remaining: Math.max(0, todo.length - batch.length) };
+}
+
+/** Self-healing history: any function that is about to read windows for held symbols calls this, so a
+ *  symbol whose history does not reach back 400 days gets its two years of daily closes without anyone
+ *  running the manual sweep (round 2: AMZN, held since Aug 28, was never backfilled and its 1M was wrong).
+ *  Bounded (cap symbols, budget ms), idempotent (upserts keyed on symbol+ts), and never throws. */
+export async function ensureHistory(admin: Db, symbols: string[], opts: { cap?: number; budgetMs?: number } = {}): Promise<Record<string, number> | "timeout"> {
+  const run = backfillShort(admin, symbols, { cap: opts.cap ?? 4 }).then((r) => r.backfilled, () => ({}));
+  return await Promise.race([run, new Promise<"timeout">((res) => setTimeout(() => res("timeout"), opts.budgetMs ?? 20000))]);
+}
+
+/** Held symbols whose catalog name is just the ticker ("AVGO", round 2: the Home list read "AVGO AVGO" and
+ *  every prompt called Broadcom "AVGO") get Yahoo's long name. A few per call; a no-op once names are real. */
+export async function repairNames(admin: Db, symbols: string[], cap = 5): Promise<string[]> {
+  const want = [...new Set(symbols.filter((s) => s && !s.startsWith("$")))];
+  if (!want.length) return [];
+  const { data } = await admin.from("symbols").select("symbol, yahoo, name, kind").in("symbol", want).not("kind", "in", "(cash,debt)");
+  const bad = ((data ?? []) as { symbol: string; yahoo: string | null; name: string | null }[])
+    .filter((r) => !r.name || !r.name.trim() || r.name.trim().toUpperCase() === r.symbol.toUpperCase() || r.name.trim().toUpperCase() === String(r.yahoo ?? "").toUpperCase())
+    .slice(0, cap);
+  const fixed: string[] = [];
+  for (const r of bad) {
+    const res = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(r.yahoo ?? r.symbol)}?range=1d&interval=1d`,
+      { headers: { "User-Agent": UA, Accept: "application/json" } }).then((x) => x.ok ? x.json() : null).catch(() => null) as YahooChart | null;
+    const meta = (res?.chart?.result?.[0]?.meta ?? {}) as { longName?: string; shortName?: string };
+    const name = String(meta.longName || meta.shortName || "").trim();
+    if (!name || name.toUpperCase() === r.symbol.toUpperCase()) continue;
+    const { error } = await admin.from("symbols").update({ name: name.slice(0, 200) }).eq("symbol", r.symbol);
+    if (!error) fixed.push(r.symbol);
+  }
+  return fixed;
 }

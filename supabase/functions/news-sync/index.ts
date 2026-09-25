@@ -8,13 +8,16 @@
 //    ("Is Ford Stock a Buy for Its Dividend?" was tagged NVDA);
 //  - one story, one row: the same headline syndicated under different URLs or tickers is stored once, under
 //    the holding it is most about, and never again once it is in the table;
-//  - the byline is the real publisher (a Yahoo feed item linking to thestreet.com is TheStreet).
+//  - the byline is the real publisher (a Yahoo feed item linking to thestreet.com is TheStreet);
+//  - a symbol-keyed feed item keeps its lead in `summary`, so the SAME gate can run again at read time
+//    (_shared/news_rules.ts usableNews: every function that feeds headlines to a model, and the News tab)
+//    and admit it on its lead exactly as ingest did.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { aliasesFor, centrality, decodeEntities, isJunkNews, newsRelevant, publisherFor, titleKey } from "../_shared/intel.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
-type Item = { symbol: string; title: string; url: string; source: string; published_at: string | null };
+type Item = { symbol: string; title: string; url: string; source: string; published_at: string | null; summary?: string | null };
 type Parsed = Item & { lead: string; symbolFeed: boolean };
 
 function parseRss(xml: string, symbol: string, source: string, symbolFeed = false): Parsed[] {
@@ -103,7 +106,7 @@ function gate(items: Parsed[], aliasBy: Map<string, string[]>, knownKeys: Set<st
     const k = titleKey(i.title);
     if (best.get(k) !== i || knownKeys.has(k) || seenUrl.has(`${i.symbol}\u0000${i.url}`)) { dropped.duplicate++; continue; }
     seenUrl.add(`${i.symbol}\u0000${i.url}`);
-    rows.push({ symbol: i.symbol, title: i.title, url: i.url, source: i.source, published_at: i.published_at });
+    rows.push({ symbol: i.symbol, title: i.title, url: i.url, source: i.source, published_at: i.published_at, summary: i.symbolFeed && i.lead ? i.lead.slice(0, 300) : null });
   }
   return { rows, dropped };
 }
