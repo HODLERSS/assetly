@@ -18,7 +18,9 @@ Deno.test("glosses: every beginner-map entry reads correctly in three contexts",
       if (g.plain.split(" ").length >= 3) assertFalse(new RegExp(`${g.plain.replace(/^(?:a|an|the)\s+/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} scrutiny`, "i").test(out), `gloss as modifier: ${c} -> ${out}`);
     }
   }
-  assertEquals(noviceGloss("AI capex scrutiny is the emerging risk."), "AI scrutiny of the spending on equipment and buildout is the emerging risk.");
+  assertEquals(noviceGloss("AI capex scrutiny is the emerging risk."), "AI equipment spending scrutiny is the emerging risk.");
+  // round 5 GOOGL card: a possessive noun phrase keeps its shape
+  assertEquals(noviceGloss("Burry's fresh Big Tech capex warning and EU pressure are the two near-term overhangs."), "Burry's fresh Big Tech equipment spending warning and EU pressure are the two near-term overhangs.");
   assertEquals(noviceGloss("Watch QQQ on sustained multiple compression."), "Watch QQQ on sustained shrinking price tag relative to earnings.");
 });
 

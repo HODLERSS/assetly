@@ -14,8 +14,9 @@ Deno.test("r4 opener: the model's 'is yours' / '정하실 몫' counts; a trade q
   assertEquals(withNoCallLine(k, "테슬라 팔까요?"), k);
   // the previous turn said "your call" but was about something else: this trade question still gets one
   assert(withNoCallLine("• MSFT is up 46% over 3 months.", "Is it time to take profits on MSFT?", "That's your call; here's the data.", "what is my biggest holding?").startsWith("I can't tell you"));
-  // right after another trade question that got one: no repeat
-  assertEquals(withNoCallLine("• MSFT is up 46%.", "Is it time to take profits on MSFT?", "That's your call; here's the data.", "should I sell NVDA?"), "• MSFT is up 46%.");
+  // right after another trade question that got one: still there (round 5), unless this answer declines itself
+  assert(withNoCallLine("• MSFT is up 46%.", "Is it time to take profits on MSFT?", "That's your call; here's the data.", "should I sell NVDA?").startsWith("I can't tell you"));
+  assertEquals(withNoCallLine("The call is yours. • MSFT is up 46%.", "Is it time to take profits on MSFT?"), "The call is yours. • MSFT is up 46%.");
 });
 
 Deno.test("r4 questions: 'on sale', 'a bargain', 'cheap now', 'buy the dip' are trade questions", () => {

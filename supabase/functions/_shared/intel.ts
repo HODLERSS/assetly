@@ -278,16 +278,26 @@ export function valuationHits(text: string): string[] {
     const namedSource = [...s.matchAll(/\b(?:according to ([A-Z][\w&.'-]+)|([A-Z][\w&.'-]+)(?: [A-Z][\w&.'-]+){0,3}(?:'s)? (?:says|said|calls|called|sees|rates|estimates|puts|pegs|argues|argued|analysts?|fair value|price target|target))\b/g)]
       .some((m) => !GENERIC.test(m[1] ?? m[2] ?? ""));
     const debate = /\bbulls?\b[\s\S]*\bbears?\b|\bbears?\b[\s\S]*\bbulls?\b/i.test(s);   // both sides of an argument is information
+    // "could double on a $2T IPO" (round 5 GOOGL card): "could" reads as hedged, but a doubling or tripling of
+    // value in the app's voice is a price call unless a named source says it
+    if (s && /\bcould (?:double|triple|quadruple)\b|\b(?:doubles?|triples?) (?:from here|in value)\b/i.test(s) && !namedSource) { hits.push(raw); continue; }
     if (!s || (ATTRIBUTED.test(s) && (!valuationWord || namedSource || debate))) continue;
     // round 4: "a hidden asset the market isn't fully pricing", "17x versus the S&P's 25x leaves cushion", "the
     // long-term story still looks solid" (to "is it on sale?"): verdicts in the app's voice
     // round 4 newcomer/poweruser: "SCHD dip viewed as buying chance", "leaves little margin", "stretched"
     const ownVoice = /\b(?:buying|buy) (?:chance|opportunit(?:y|ies)|window)\b|\bchance to (?:buy|add|scoop)\b|\bleaves? (?:little|no|thin|limited) (?:margin|room|cushion)\b|\b(?:valuation|multiple|price tag|price|shares?|stock)\s+(?:looks? |is |seems |remains |now )?(?:stretched|frothy|rich|full|demanding)\b|\b(?:stretched|frothy|demanding) (?:valuation|multiple|price tag)\b|\b(?:isn'?t|is not|aren'?t|are not|not) (?:yet )?(?:fully |really )?pric(?:ing|ed)(?: in)?\b|\bnot fully priced\b|\bhidden (?:asset|value|gem)\b|\bleaves? (?:a |some |plenty of |more )?(?:cushion|room(?: to run| for upside)?|upside)\b|\b(?:valuation|margin of safety) cushion\b|\bat a discount\b|\b(?:cheap(?:er)?|discounted) (?:versus|vs\.?|relative to|compared (?:to|with)) the (?:market|index|S&P)|\b(?:story|thesis|case) (?:still |remains |is still )?(?:looks |look )?(?:solid|intact|strong|compelling)\b|\bstill intact\b|\bthe run is real\b|\bsupports? the upside view\b|\bahead of most targets\b/i.test(s)
+      // round 5: "an asset the 17x multiple ignores", "could double on a $2T IPO": the market missing something is a
+      // valuation call in the app's voice; so is advice to time cash ("Keeping cash lets you wait for a clearer price")
+      || /\b(?:multiple|market|price|valuation|shares?|stock|investors?|the street)\s+(?:still\s+|largely\s+|mostly\s+)?(?:ignores?|overlooks?|misses|underrates?|underprices?|leaves? out|doesn'?t (?:reflect|price|count|credit)|isn'?t (?:reflecting|crediting|counting))\b|\b(?:ignored|overlooked|underappreciated|underrated|unpriced|not priced) by (?:the )?(?:market|multiple|investors|street)\b|\bcould (?:double|triple)\b/i.test(s)
+      || /\b(?:keep(?:ing)?|hold(?:ing)?|park(?:ing)?|sit(?:ting)? on|leave|leaving)\s+(?:your\s+|some\s+|more\s+|the\s+|extra\s+)?cash\b[^.]{0,50}\b(?:lets? you|so you can|allows? you|gives? you|until|wait|clearer|better (?:price|entry|moment)|lower prices?|pullback|dip|opportunit)/i.test(s)
+      || /\b(?:deploy|put|invest)(?:ing)?\s+(?:your\s+|the\s+|that\s+)?cash\b[^.]{0,30}\b(?:gradually|over time|in stages|in tranches|slowly|now|later)\b/i.test(s)
       // a buy-the-dip nudge about the user's cash ("Holding cash lets you buy during a pullback", r3/r4)
       || /\b(?:lets? you|allows? you to|so you can|ready to|leaves? you room to|gives? you room to)\s+(?:buy|add|pounce|act|scoop|step in)\b[^.]{0,50}\b(?:dips?|pullbacks?|drops?|sell-?offs?|lower prices?|weakness|falls?|declines?)\b/i.test(s);
     const call = ownVoice || /\b(?:looks?|looking|seems?|appears?|is|are|remains?|stays?|trad(?:es|ing)|priced|now)\s+(?:\w+\s+){0,2}?(?:cheap|inexpensive|expensive|pricey|undervalued|overvalued|under-valued|over-valued|a bargain|a steal|attractive(?:ly priced)?|good value|great value|compelling value|a no-brainer)\b/i.test(s)
       || /\b(?:undervalued|overvalued|under-?valuation|over-?valuation|bargain|downside protection|(?:gives?|hands?|offers?|has) \w+(?:'s)? (?:a )?(?:clear|strong|obvious|real) (?:near-term )?catalyst|catalyst for (?:upside|gains|a rally|a re-?rating)|top pick|good entry|attractive entry|entry point|buying opportunity|attractive (?:price|valuation|level|levels)|on sale|cheap (?:entry|shares|stock)|sets? up well|screams? (?:buy|value))\b/i.test(s)
-      || /(저평가|고평가|싸\s?보|싼 편|비싸\s?보|매수\s?기회|저가\s?매수|하방\s?경직|하방\s?보호)/.test(s);
+      || /(저평가|고평가|싸\s?보|싼 편|비싸\s?보|매수\s?기회|저가\s?매수|하방\s?경직|하방\s?보호)/.test(s)
+      // round 5: "싸다고 보긴 어려워요" is still a verdict on the price
+      || /(싸다|비싸다|저렴하다|싸|비싸|저렴)(?:고|다고|다거나)?\s?(?:보|판단|말하|평가|느껴|생각)/.test(s);
     if (ownVoice || call && !(OBJECTIVE.test(s) && !/\b(cheap|undervalued|overvalued|under-?valuation|over-?valuation|bargain|buying opportunity|downside protection)\b/i.test(s))) hits.push(raw);
   }
   return hits;
@@ -329,7 +339,10 @@ export function adviceHits(text: string, opts: { verdictQuestion?: boolean } = {
     const second = new RegExp(`\\byou (?:should|must|need to|ought to|might want to|may want to|could consider|'d be wise to)\\s+(?:consider\\s+)?(?:${TRADE}|buying|selling|adding|trimming|swapping|taking)\\b`, "i").test(s);
     const first = new RegExp(`\\b(?:i(?:'d| would)|i recommend|i suggest|we recommend|i'm a)\\s+(?:be\\s+)?(?:${TRADE}|buying|selling|adding|trimming|a buyer|a seller)\\b`, "i").test(s);
     const rating = /\b(?:is|as|looks like|rate it)\s+an?\s+(?:strong\s+|clear\s+)?(buy|sell)\b(?!\s+(?:case|signal|side|rating|-side))|\b(?:top|best)\s+(?:pick|buy|add)\b|\bnow is (?:a|the) (?:good|great|right) (?:time|moment|entry) to\b/i.test(s);
-    const korean = /(매수하세요|매도하세요|사세요|파세요|정리하세요|사는 게 좋|파는 게 좋|팔아야 합니다|사야 합니다|추천합니다|추천드립니다)/.test(s);
+    // round 5: "MSFT, AAPL, QQQM을 나눠 사는 게 안전해요" answered "현금으로 뭘 사야 할까?"
+    const korean = /(매수하세요|매도하세요|사세요|파세요|정리하세요|사는 게 좋|파는 게 좋|팔아야 합니다|사야 합니다|추천합니다|추천드립니다)/.test(s)
+      || /(나눠 사|분할 매수|사는 게|사는 것이|매수하는 게|추가하는 게|늘리는 게|담는 게|사 두는|사두는|편입하는 게|넣는 게|투자하는 게)[^.]{0,20}(좋|안전|낫|괜찮|방법|유리|현명)/.test(s)
+      || /(을|를)\s?(추가로 |더 |조금 더 |조금씩 )?(사세요|담으세요|늘리세요|추가하세요|고려해 보세요|고려해보세요)/.test(s);
     if (verdict || imperative || second || first || rating || korean) hits.add(raw);
   }
   for (const v of valuationHits(text)) hits.add(v);
@@ -395,11 +408,12 @@ const NO_CALL = /\b(can'?t|cannot|won'?t|don'?t|isn'?t (?:mine|my place))\b[^.]{
 /** A "should I sell X" answer opens with ONE short, natural line that the decision is theirs, then gives
  *  the considerations. Added in code when the model left it out, and never twice in a row: round 2 found the
  *  same canned opener on six answers in one conversation, which read robotic. */
-export function withNoCallLine(answer: string, question: string, previousAnswer = "", previousQuestion = ""): string {
-  // skipped only when the turn just before was ALSO a trade question and already said it (round 4: a trade
-  // question after an unrelated one lost its opener because an earlier answer had said "your call")
-  const saidJustNow = NO_CALL.test(previousAnswer) && (!previousQuestion || isTradeQuestion(previousQuestion));
-  if (!isTradeQuestion(question) || NO_CALL.test(answer) || saidJustNow) return answer;
+export function withNoCallLine(answer: string, question: string, _previousAnswer = "", _previousQuestion = ""): string {
+  // Every trade or pick answer carries it, unless THIS answer's first sentence already declines (round 5: it was
+  // dropped whenever the previous turn had said "your call", and a trade question after a trade question went
+  // out bare). The previous turn no longer matters: one short line per answer is the price of never advising.
+  const first = splitSentences(answer)[0] ?? "";
+  if (!(isTradeQuestion(question) || isPickQuestion(question)) || NO_CALL.test(first)) return answer;
   // the opener speaks the BODY's language, so the two can never mix (the body has already been held to the
   // question's language; this only matters when that failed)
   const ko = String(answer ?? "").trim() ? isKoreanText(answer) : questionIsKorean(question);
@@ -828,7 +842,7 @@ export const CARD_PLAIN: [RegExp, string][] = [
   [/\btape (?:is |was )?bid\b/gi, "the stock is trading"], [/\bthe tape\b/gi, "trading"], [/\btape\b/gi, "trading"],
   [/\bbulls lean on\b/gi, "supporters point to"], [/\bbears lean on\b/gi, "skeptics point to"], [/\bbulls\b/gi, "optimists"], [/\bbears\b/gi, "skeptics"],
   [/\bpinned (?:near|at|around)\b/gi, "holding near"], [/\bTAM\b/g, "market size"], [/\bY1\b/g, "year one"], [/\bMorningstars\b/g, "Morningstar's"],
-  [/\bthe street keeps underweighting\b/gi, "analysts keep underrating"], [/\bdouble-edged catalyst\b/gi, "event that could cut either way"], [/\boverhangs?\b/gi, "risk hanging over it"], [/\bthe street\b/gi, "analysts"], [/\bcapitulat(?:ing|ion)\b/gi, "giving up"],
+  [/\bthe street keeps underweighting\b/gi, "analysts keep underrating"], [/\bdouble-edged catalyst\b/gi, "event that could cut either way"], [/\boverhangs\b/gi, "risks hanging over it"], [/\boverhang\b/gi, "risk hanging over it"], [/\bthe street\b/gi, "analysts"], [/\bcapitulat(?:ing|ion)\b/gi, "giving up"],
 ];
 
 /** Lines a shared card must never carry: pipeline internals ("Two-year price history is unavailable", round 3
@@ -901,15 +915,19 @@ export function wrongEarningsMonths(text: string, ests: { names: string[]; est: 
   const bad: string[] = [];
   for (const raw of sentencesOf(text)) {
     if (!/\b(earnings|results|reports?|reporting|quarterly|print|call)\b|실적|어닝/i.test(raw)) continue;
-    const who = ests.find((e) => e.est && e.names.some((n) => n && nameIn(raw, n)));
-    if (!who || !who.est) continue;
-    const [lo, hi] = who.range ?? [who.est, who.est];
-    const allowed = new Set([Number(lo.slice(5, 7)), Number(hi.slice(5, 7))]);
+    // every holding the sentence names (round 5: "MSFT, AAPL and NVDA report in late October" passed on MSFT)
+    const named = ests.filter((e) => e.est && e.names.some((n) => n && nameIn(raw, n)));
+    if (!named.length) continue;
     const months = [
       ...[...raw.toLowerCase().matchAll(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/g)].map((m) => MONTH_NAMES.indexOf(m[1]) + 1),
       ...[...raw.matchAll(/(\d{1,2})월/g)].map((m) => Number(m[1])),
     ].filter((m) => m >= 1 && m <= 12);
-    if (months.length && months.every((m) => !allowed.has(m))) bad.push(raw);
+    if (!months.length) continue;
+    if (named.some((who) => {
+      const [lo, hi] = who.range ?? [who.est!, who.est!];
+      const allowed = new Set([Number(lo.slice(5, 7)), Number(hi.slice(5, 7))]);
+      return months.every((m) => !allowed.has(m));
+    })) bad.push(raw);
   }
   return bad;
 }
@@ -1015,7 +1033,9 @@ export const NOVICE_PLAIN: Gloss[] = [
   { re: /\bEBITDA\b/g, plain: "operating profit", sample: "EBITDA" },
   { re: /\bFCF\b/g, plain: "spare cash flow", sample: "FCF" },
   { re: /\bEPS\b/g, plain: "earnings per share", sample: "EPS" },
-  { re: /\bcapex\b/gi, plain: "spending on equipment and buildout", sample: "capex" },
+  // round 5: "Burry's Big Tech capex warning" became "warning of the spending on equipment and buildout"; a
+  // two-word gloss reads right as a noun AND as a modifier
+  { re: /\bcapex\b/gi, plain: "equipment spending", sample: "capex" },
   { re: /\b(?:basis points|bps)\b/gi, plain: "hundredths of a percent", sample: "basis points" },
   { re: /\bshort-duration\b/gi, plain: "shorter-term", sample: "short-duration" },
   { re: /\blong-duration\b/gi, plain: "longer-term", sample: "long-duration" },
@@ -1066,6 +1086,11 @@ export function noviceGloss(text: string): string {
     }
   }
   x = plainScrub(x, NOVICE_PLAIN.map((g) => [g.re, g.plain] as [RegExp, string]));
+  // a gloss that opens a sentence is capitalised ("Capex rose 40%" -> "Equipment spending rose 40%", round 5)
+  for (const g of NOVICE_PLAIN) {
+    const esc = g.plain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    x = x.replace(new RegExp(`(^|(?<![A-Z]\\.[A-Z])[.!?]\\s+|\\n)(${esc})`, "g"), (_m, p: string, w: string) => p + w.charAt(0).toUpperCase() + w.slice(1));
+  }
   return fixGlossArticles(x).replace(/\b([Aa]n?|[Tt]he)\s+(its|their|his|her)\b/g, (_m, art: string, poss: string) => (/^[A-Z]/.test(art) ? poss.charAt(0).toUpperCase() + poss.slice(1) : poss))
     .replace(/\bof the (its|their)\b/g, "of $1");
 }
@@ -1281,4 +1306,28 @@ export function fixWeights(text: string, holdings: { names: string[]; weight: nu
       return `${who.weight.toFixed(1)}%`;
     });
   }).join(" ");
+}
+
+/** Every sentence a stored brief must lose on repair: the grammar pass (broken, verbless) and the advice pass
+ *  (trade, valuation, promo, forecast). Round 5: repairSections ran only the calendar checks and stamped the
+ *  version, so "...Nasdaq futures (+0.7%), and one smaller position." survived the repair. */
+export function repairDrops(text: string): string[] {
+  const t = String(text ?? "");
+  return [...new Set([...brokenSentences(t), ...verblessList(t), ...adviceHits(t), ...valuationHits(t), ...promoClaims(t), ...returnForecasts(t)])];
+}
+
+type ClockEdition = "morning" | "midday" | "close" | "assessment" | "weekend" | "kr_open" | "kr_close";
+/** The editions a run for `edition` treats as LIVE: the edition itself and the one before it on the same day.
+ *  A live row written by an older daily-brief is REGENERATED from current data; only older ones are patched in
+ *  code (round 5: a patched morning kept a fragment, and "yesterday" for moves that were live). */
+export function liveEditions(edition: ClockEdition): ClockEdition[] {
+  switch (edition) {
+    case "morning": return ["morning"];
+    case "midday": return ["midday", "morning"];
+    case "close": return ["close", "midday"];
+    case "kr_open": return ["kr_open"];
+    case "kr_close": return ["kr_close", "kr_open"];
+    case "weekend": return ["weekend"];
+    default: return [];
+  }
 }

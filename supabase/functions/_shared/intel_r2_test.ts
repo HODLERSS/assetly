@@ -103,10 +103,11 @@ Deno.test("advice: valuation calls are verdicts; metrics, attributed views and c
   assertEquals(stripAdvice("SK hynix earnings rose 20%. The price looks cheap here."), "SK hynix earnings rose 20%.");
 });
 
-Deno.test("advice: no-call line is Korean for a Korean question and never repeated turn after turn", () => {
+Deno.test("advice: no-call line is Korean for a Korean question, on every trade answer that does not already decline", () => {
   assert(withNoCallLine("판단 근거는...", "테슬라 팔까요?").startsWith("매매 여부는"));
   const prev = "I can't tell you whether to add, but here's what it hinges on.\n• ...";
-  assertEquals(withNoCallLine("• drivers", "should I buy more NVDA?", prev), "• drivers");
+  // round 5: the previous turn no longer suppresses it (a trade answer after a trade answer went out bare)
+  assert(withNoCallLine("• drivers", "should I buy more NVDA?", prev).startsWith("I can't tell you"));
   assert(withNoCallLine("• drivers", "should I buy more NVDA?", "• an earlier answer").startsWith("I can't tell you"));
   // a model-written Korean opener counts
   assertEquals(withNoCallLine("매수 여부는 말씀드릴 수 없지만 근거는 이렇습니다.", "살까요?"), "매수 여부는 말씀드릴 수 없지만 근거는 이렇습니다.");
