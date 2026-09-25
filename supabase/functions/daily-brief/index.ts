@@ -14,7 +14,7 @@ import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekday
 import {
   aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
-  assessmentReader, capNoteKeepRisk, fixFractions, mergeChecked, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
+  perLine, assessmentReader, capNoteKeepRisk, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
 } from "../_shared/intel.ts";
 import { dividendLine, dividendRows, windowReturns } from "../_shared/history.ts";
@@ -68,7 +68,9 @@ const FAST_MODEL = "gpt-oss-120b";
 // Bumped whenever the brief's guards change enough that today's earlier rows should be rewritten (see "outdated").
 // 7 (round 5): a live edition (today's current or previous clock edition) from an older version is REGENERATED
 // from current data; older editions are patched with the full sentence chain (repairDrops) and re-narrated.
-const GEN_VERSION = 7;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+// 8 (round 7): today's rows carried a weight read as a move ("META dropped 12.8%"), a live move called "yesterday"
+// and a 0.5% yield; they are patched (past-window) or regenerated (the current edition).
+const GEN_VERSION = 8;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -296,7 +298,8 @@ function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: numbe
  *  (`live`: those are regenerated from current data, never patched). Returns the editions it patched, whose
  *  script and audio were cleared, so the caller can have them re-narrated. */
 // deno-lint-ignore no-explicit-any
-async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[]): Promise<string[]> {
+type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null }[]; yields: number[] };
+async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctx?: RepairCtx): Promise<string[]> {
   const r = await admin.from("daily_briefs").select("id, edition, sections, gen_version").eq("user_id", uid).eq("brief_date", briefDate);
   if (r.error) return [];   // before migration 39
   const stale = ((r.data ?? []) as { id: number; edition: string; sections: unknown; gen_version: number | null }[])
@@ -314,7 +317,7 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
     return { names, label: names[0], est: e?.est ?? null, ...(e?.range ? { range: e.range } : {}), dlv: deliveriesEstimate(sy, briefDate)?.est ?? null };
   });
   for (const o of stale) {
-    const fixed = repairSections(o.sections as Sections, ests, briefDate);
+    const fixed = repairSections(o.sections as Sections, ests, briefDate, ctx, o.edition);
     await admin.from("daily_briefs").update({ sections: fixed, gen_version: GEN_VERSION, audio_path: null, script: null }).eq("id", o.id).then(() => {}, () => {});
   }
   return stale.map((o) => o.edition);
@@ -323,17 +326,25 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
 /** Code-only repair of a stored brief (no model, no new facts): doubled phrases and glosses collapse, "directly"
  *  loses its unsupported intensity, articles and plain words are fixed, a sentence dating a holding's report
  *  away from its estimate is deleted, and calendar / watch lines are rebuilt from the estimates. */
-function repairSections(src: Sections, ests: { names: string[]; label: string; est: string | null; range?: [string, string]; dlv?: string | null }[], today: string): Sections {
+function repairSections(src: Sections, ests: { names: string[]; label: string; est: string | null; range?: [string, string]; dlv?: string | null }[], today: string, ctx?: RepairCtx, edition = ""): Sections {
+  // round 7: a morning written after the open called live moves "yesterday": with the row's own basis (its as_of and
+  // the day moves it was written against), a figure that IS that day's move is relabelled "so far today"
+  const basis = src as unknown as { as_of?: string; day_by_symbol?: Record<string, number> };
+  const asOf = basis.as_of ? new Date(basis.as_of) : null;
+  const wasLive = edition === "morning" && !!asOf && (() => { const z = zonedParts(asOf, TZ.US); return z.ymd === today && z.minutes >= 9 * 60 + 30 && z.minutes < 16 * 60; })();
+  const liveFacts = wasLive && ctx ? ctx.facts.filter((f) => typeof basis.day_by_symbol?.[f.symbol] === "number").map((f) => ({ names: f.names, pct: basis.day_by_symbol![f.symbol] })) : [];
   // a collapsed appositive can leave a comma between a subject and its verb ("The market's fear gauge, fell 3.3%")
   const unComma = (t: string) => t.replace(/(^|[.!?]\s+)([A-Z][^,.!?]{2,50}),\s+(fell|rose|jumped|slipped|climbed|dropped|gained|lost|added|edged|dipped|sank|rallied)\b/g, "$1$2 $3");
   const text = (t: string) => tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(String(t ?? ""))))), PORTFOLIO_PLAIN)));
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
-    const x = text(t);
+    const x = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
     const parts = splitSentences(x);
     // round 5: the full sentence chain too (broken and verbless fragments, advice, valuation, promo, forecasts):
     // "...Nasdaq futures (+0.7%), and one smaller position." survived a repair that ran only the calendar checks
-    const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests), ...wrongDeliveriesDates(x, dlvFacts, today), ...parts.filter((p) => strengthAsRisk(p)), ...repairDrops(x)]);
+    const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests), ...wrongDeliveriesDates(x, dlvFacts, today), ...parts.filter((p) => strengthAsRisk(p)), ...repairDrops(x),
+      // round 7: a weight printed as a move ("META dropped 12.8%"), a yield we never computed ("near 0.5%")
+      ...(ctx ? [...weightAsMoveHits(x, ctx.facts), ...(ctx.yields.length ? wrongYieldClaims(x, ctx.yields) : [])] : [])]);
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
     return kept.length ? kept.join(" ") : x;
   };
@@ -494,13 +505,34 @@ Deno.serve(async (req) => {
     }).then((r) => r.text().catch(() => "")).catch(() => null);
     try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(p); } catch { /* ignore */ }
   };
+  // the book's facts a stored brief is checked against: each holding's weight and day move, and the yields we computed
+  const repairCtxOf = async (uid: string): Promise<RepairCtx> => {
+    const rows = byUser.get(uid) ?? [];
+    const toUsd = (v: number, c: string) => v / (fxMap.get(c) ?? 1);
+    const tot = rows.filter((r) => r.kind !== "debt").reduce((a, r) => a + toUsd(Number(r.value ?? 0), r.currency), 0) || 1;
+    const hs = rows.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash" && r.kind !== "debt");
+    const dv = await dividendRows(admin, hs.map((r) => r.symbol)).catch(() => new Map());
+    let cur = 0, ttm = 0;
+    const each: number[] = [];
+    for (const r of hs) {
+      const d = dv.get(r.symbol);
+      if (!d || !(Number(d.div_last) > 0)) continue;
+      const line = dividendLine(r.symbol, d, Number(r.qty ?? 0), r.currency ?? "USD", fxMap.get(r.currency ?? "USD") ?? 1);
+      cur += line.annual; ttm += Number(r.qty ?? 0) * Number(d.div_ttm ?? 0) / (fxMap.get(r.currency ?? "USD") ?? 1);
+      if (d.div_yield) each.push(Number(d.div_yield));
+    }
+    return {
+      facts: hs.map((r) => ({ symbol: r.symbol, names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: toUsd(Number(r.value ?? 0), r.currency) / tot * 100, pct: r.change_pct === null ? null : Number(r.change_pct) })),
+      yields: cur > 0 ? [cur / tot * 100, ttm / tot * 100, ...each].map((v) => Number(v.toFixed(2))) : [],
+    };
+  };
   const loopIds = new Set(userIds.slice(0, 10));
   let dispatched = 0, renarrated = 0;
   if (!isRegen) {
     const repairStart = Date.now();
     for (const uid of userIds) {
       if (Date.now() - repairStart > 30000) break;
-      const patched = await repairToday(admin, uid, byUser.get(uid) ?? [], briefDate, live).catch(() => [] as string[]);
+      const patched = await repairToday(admin, uid, byUser.get(uid) ?? [], briefDate, live, await repairCtxOf(uid).catch(() => undefined)).catch(() => [] as string[]);
       // the patch cleared the script: re-script and re-voice it now (narrate's sweep catches any beyond 8)
       for (const ed of patched) if (!fixture && !noAudio && renarrated < 8) { renarrated++; await handOff("narrate", { user_id: uid, brief_date: briefDate, edition: ed }); }
     }
@@ -516,6 +548,23 @@ Deno.serve(async (req) => {
         await handOff("daily-brief", { force: true, regen: true, user_id: o.user_id, edition: o.edition, ...(noAudio ? { noAudio: true } : {}) });
       }
     }
+  }
+  // Round 7: one run wrote about ONE user's brief before its wall clock ran out, so the close edition reached 6 of 10
+  // users by 23:00 UTC (the showcase not at all). A clock run (no user target) now fans out: every user who still
+  // needs this edition gets their own invocation, with its own wall clock.
+  if (!onlyUserId && !onlyEmail && !fixture && !isRegen && edition !== "assessment" && userIds.length > 1 && body.fanout !== false) {
+    const have = await admin.from("daily_briefs").select("user_id, gen_version, generated_at, model").eq("brief_date", briefDate).eq("edition", edition).in("user_id", userIds);
+    const byU = new Map(((have.error ? [] : have.data ?? []) as { user_id: string; gen_version: number | null; generated_at: string | null; model: string | null }[]).map((r) => [r.user_id, r]));
+    let fanned = 0;
+    for (const uid of userIds) {
+      const h = byU.get(uid);
+      const fresh = !!h && Number(h.gen_version ?? 0) >= GEN_VERSION && !String(h.model ?? "").includes("compact");
+      const young = !!h && Date.now() - +new Date(String(h.generated_at ?? 0)) < 15 * 60000;
+      if (fresh || young || fanned >= 12) continue;
+      fanned++;
+      await handOff("daily-brief", { user_id: uid, edition, ...(noAudio ? { noAudio: true } : {}), ...(force ? { force: true } : {}) });
+    }
+    return json({ ok: true, users: userIds.length, fannedOut: fanned, briefDate, edition, ...(dispatched ? { regenerating: dispatched } : {}), ...(renarrated ? { renarrated } : {}) });
   }
   userIds = userIds.slice(0, 10);
 
@@ -534,7 +583,7 @@ Deno.serve(async (req) => {
       const total = assets.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
       if (total < 100) continue;
       // Today's OTHER editions written by an older version are repaired in code (the pass above normally got them)
-      if (!isRegen) await repairToday(admin, uid, rows, briefDate, live).catch(() => null);
+      if (!isRegen) await repairToday(admin, uid, rows, briefDate, live, await repairCtxOf(uid).catch(() => undefined)).catch(() => null);
       let backfillOnly: Sections | null = null;
       if (!force) {
         const haveQ = (cols: string) => admin.from("daily_briefs").select(cols).eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
@@ -1581,6 +1630,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const weightFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / total * 100 }));
         const weightGroups = [{ label: /\bcrypto\b/i, value: exposure.crypto }, { label: /\bbonds?\b/i, value: exposure.bonds }, { label: /\bKorea(?:n)?\b/i, value: exposure.krEquity },
           { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity }, { label: /\bcash\b/i, value: exposure.cash }, { label: /\b(?:top (?:three|3|five|5)|together|combined)\b/i, value: -1 }];
+        const moveWeightFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / total * 100, pct: r.change_pct === null ? null : Number(r.change_pct) }));
+        const ttmIncome = divData.reduce((a, x) => a + Number(x.r.qty ?? 0) * Number(divRows.get(x.r.symbol)?.div_ttm ?? 0) / (fxMap.get(x.r.currency ?? "USD") ?? 1), 0);
+        const allowedYields = divIncome > 0 ? [divIncome / total * 100, ttmIncome / total * 100, ...divData.map((x) => Number(divRows.get(x.r.symbol)?.div_yield ?? 0)).filter((v) => v > 0)].map((v) => Number(v.toFixed(2))) : [];
         const payerNames = divData.filter((x) => x.d.amounts.length).map((x) => ({ names: [krName(x.r.symbol, x.r.nickname, x.r.name), ...aliasesFor(x.r.symbol, x.r.name)] }));
         const paysOf = (name: string): boolean | null => {
           const h = holdings.find((r) => [r.symbol, krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)].some((n) => n && n.toLowerCase() === name.toLowerCase()));
@@ -1613,14 +1665,24 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             ...promoClaims(x), ...returnForecasts(x),
             // round 6: "NVDA and QQQ pay no dividend" (both do), "SoFi fell after an article noted its drop"
             ...dividendContradictions(x, payerNames), ...circularCauses(x),
+            // round 7: "META dropped 12.8%" (its weight), "a yield near 0.5%" (the book yields 0.30% / 0.34%)
+            ...weightAsMoveHits(x, moveWeightFacts), ...(allowedYields.length ? wrongYieldClaims(x, allowedYields) : []),
             // a two-word fragment left by an earlier deletion ("It adds.", round 5) goes without a model call
             ...brokenSentences(x).filter((b) => b.split(/\s+/).length <= 2)];
           if (!bad.length) return x;
-          const kept = splitSentences(x).filter((s) => !bad.some((b) => b.includes(s.trim()) || s.includes(b)));
-          return kept.length ? kept.join(" ") : x;
+          // line by line, so a multi-line field keeps its newlines (round 7: the join(" ") flattened bullets)
+          const kept = perLine(x, (line) => splitSentences(line).filter((s) => !bad.some((b) => b.includes(s.trim()) || s.includes(b))).join(" "));
+          return kept.trim() ? kept : x;
         };
         sections.lede = clean(sections.lede); sections.overnight = clean(sections.overnight); sections.desk_view = clean(sections.desk_view);
         if (sections.horizon) sections.horizon = clean(sections.horizon);
+        // round 7: the book's live day gain and total, stated in a daily note, carry the time they were read (the header
+        // above the note moves on: "$211 gain … $116,500" under +$319 / $116,620)
+        if (edition !== "assessment" && edition !== "weekend") {
+          const at = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
+          const lbl = `as of ${at} ET`, figsLive = [Math.round(dayUsd), Math.round(total)];
+          sections.lede = labelLiveFigures(sections.lede, figsLive, lbl); sections.overnight = labelLiveFigures(sections.overnight, figsLive, lbl); sections.desk_view = labelLiveFigures(sections.desk_view, figsLive, lbl);
+        }
         // "The risk: net cash balance sheet." labels a strength as the risk (round 4): that clause goes, and the
         // memo's tripwire (or nothing) stands in
         const noStrengthRisk = (note: string, name: string) => {
