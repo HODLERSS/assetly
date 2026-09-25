@@ -103,6 +103,23 @@ export function moverMode(now: Date = new Date(), held: ("US" | "KR")[] = ["US",
   return { kind: "quiet" };
 }
 
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Which session a row's day move belongs to, judged in ITS market's time zone.
+ *  today  -> the market is trading now, or its latest print carries today's date there
+ *  else   -> label names the session it came from, e.g. "Wed close" for a KRX print dated Wednesday
+ *            in Seoul, even when the viewer's own clock (Pacific) would call it Tuesday.
+ *  Crypto trades around the clock and cash has no session: both always count as today. */
+export function moveSession(row: Pick<PortfolioRow, "symbol" | "kind" | "as_of">, now: Date = new Date()): { today: boolean; label: string } {
+  const m = marketOf(row);
+  if (m === null || m === "CRYPTO" || !row.as_of) return { today: true, label: "today" };
+  if (isMarketOpen(m, now)) return { today: true, label: "today" };
+  const tz = SESS[m].tz;
+  const printed = zoned(new Date(row.as_of), tz).ymd;
+  if (printed === zoned(now, tz).ymd) return { today: true, label: "today" };
+  return { today: false, label: `${WEEKDAY[new Date(`${printed}T12:00:00Z`).getUTCDay()]} close` };
+}
+
 /** Movers should reflect what is actually trading right now. Crypto always qualifies. */
 export function moverEligible(row: Pick<PortfolioRow, "symbol" | "kind">, now: Date = new Date(), held: ("US" | "KR")[] = ["US", "KR"]): boolean {
   const m = marketOf(row);

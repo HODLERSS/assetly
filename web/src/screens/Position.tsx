@@ -1,20 +1,27 @@
 import { useEffect, useState } from "react";
-import type { Api, Lot, PortfolioRow } from "../lib/api";
-import { glClass, labelParts, money, moneyExact, priceAsOf, signedMoney, signedPct } from "../lib/format";
+import type { Account, Api, Lot, PortfolioRow } from "../lib/api";
+import { ccySymbol, glClass, labelParts, money, moneyExact, priceAsOf, signedMoney, signedPct } from "../lib/format";
+import { ACCOUNTS, accountLabel } from "../lib/accounts";
+import { moveSession } from "../lib/markets";
+import { formatQty, readAmount } from "../lib/numbers";
 import { PriceChart } from "../components/PriceChart";
 import { InsightsCard } from "../components/InsightsCard";
 import { Icon } from "../components/Icon";
+import { AmountField } from "../components/AmountField";
 
 // Canvas 2c + 3i + the remove flow (gap screen g1): detail, every lot editable, delete with confirm.
-export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr = "KRW" }: {
+export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved, dispKr = "KRW" }: {
   api: Api; row: PortfolioRow | null; dispKr?: "USD" | "KRW";
   onChanged: () => Promise<void> | void; onRemoved: () => Promise<void> | void; onBack: () => void;
+  /** The position now lives under another holding id (moved into an account that already held it). */
+  onMoved?: (holdingId: string) => Promise<void> | void;
 }) {
   const [lots, setLots] = useState<Lot[]>([]);
   const [lotsLoaded, setLotsLoaded] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState<Lot | null>(null);
   const [adding, setAdding] = useState(false);
+  const [movingAcct, setMovingAcct] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,29 +40,63 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr 
     await onChanged();
   };
   const cashish = row.kind === "cash" || row.kind === "debt";
+  // A synced row's account comes from the brokerage; moving it here would be undone by the next sync.
+  const canMove = row.source !== "snaptrade";
+  const moveTo = async (a: Account) => {
+    if (a === row.account) return;
+    setErr(null);
+    try {
+      const id = await api.setHoldingAccount(row.holding_id, a);
+      if (id !== row.holding_id) await onMoved?.(id);
+      else await reload();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not change the account."); }
+  };
+  const qtyUnit = row.kind === "crypto" ? "Quantity" : "Shares";
+  const session = moveSession(row);
 
   return (
     <>
       <button className="chip" onClick={onBack}>&larr; Holdings</button>
       <div style={{ margin: "12px 0 6px" }}>
         <h2 className="h1">{labelParts(row, dispKr === "KRW").main} <span className="mutedc" style={{ fontWeight: 400, fontSize: 15 }}>{labelParts(row, dispKr === "KRW").sub}</span></h2>
-        <div className="net num" style={{ fontSize: 30 }}>{moneyExact(row.price, row.currency)}</div>
-        <div className={`num ${glClass(row.change_pct)}`}>
-          {signedPct(row.change_pct)} {row.as_of && Date.now() - +new Date(row.as_of) > 20 * 3600 * 1000 ? "since last close" : "today"} · {priceAsOf(row.as_of)}
+        {/* cash and debt lead with the balance: a "$1.00 price" and a 0.00% day move mean nothing for them */}
+        <div className="net num" style={{ fontSize: 30 }} data-testid="position-headline">{cashish ? money(row.value, row.currency) : moneyExact(row.price, row.currency)}</div>
+        {!cashish && (
+          <div className={`num ${glClass(row.change_pct)}`}>
+            {/* the session is dated in the market's own zone: a KRX close is "Wed close" in Seoul, not Pacific's Tuesday */}
+            {signedPct(row.change_pct)} {session.today ? `today · ${priceAsOf(row.as_of)}` : `since last close · ${session.label}`}
+          </div>
+        )}
+      </div>
+
+      <p className="sub" style={{ margin: "2px 0 0", display: "flex", alignItems: "center", gap: 8 }} data-testid="position-account">
+        <span>{row.source === "snaptrade" && row.account_label ? row.account_label : `${accountLabel(row.account)} account`}</span>
+        {canMove && <button className="chip" onClick={() => setMovingAcct((v) => !v)} aria-expanded={movingAcct}>Change</button>}
+      </p>
+      {movingAcct && canMove && (
+        <div className="chips" style={{ padding: 0 }} role="group" aria-label="Move to account">
+          {ACCOUNTS.map((a) => (
+            <button key={a} className="chip" aria-pressed={row.account === a} onClick={async () => { await moveTo(a); setMovingAcct(false); }}>{accountLabel(a)}</button>
+          ))}
         </div>
-      </div>
+      )}
+      {!cashish && <PriceChart api={api} symbol={row.symbol} currency={row.currency} livePrice={row.price} liveAsOf={row.as_of} avgCost={row.avg_cost} />}
 
-      {row.account !== "brokerage" && <p className="sub" style={{ margin: "2px 0 0" }}>{row.account === "bank" ? "Bank" : row.account === "401k" ? "401k" : "IRA"} account</p>}
-      {row.kind !== "cash" && row.kind !== "debt" && <PriceChart api={api} symbol={row.symbol} currency={row.currency} livePrice={row.price} liveAsOf={row.as_of} avgCost={row.avg_cost} />}
+      {!cashish && <InsightsCard api={api} symbol={row.symbol} />}
 
-      {row.kind !== "cash" && row.kind !== "debt" && <InsightsCard api={api} symbol={row.symbol} />}
-
-      <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <div><span className="sub">{row.kind === "crypto" ? "Quantity" : "Shares"}</span><br /><span className="num">{row.qty ?? 0}</span></div>
-        <div><span className="sub">Value</span><br /><span className="num">{money(row.value, row.currency)}</span></div>
-        <div><span className="sub">Avg cost</span><br /><span className="num">{moneyExact(row.avg_cost, row.currency)}</span></div>
-        <div><span className="sub">Total G/L</span><br /><span className={`num ${glClass(row.total_gl)}`}>{signedMoney(row.total_gl, row.currency)}</span></div>
-      </div>
+      {cashish ? (
+        <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div><span className="sub">{row.kind === "debt" ? "Owed" : "Balance"}</span><br /><span className="num">{money(row.value, row.currency)}</span></div>
+          <div><span className="sub">Account</span><br /><span>{accountLabel(row.account)}</span></div>
+        </div>
+      ) : (
+        <div className="card" style={{ padding: "12px 14px", margin: "12px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div><span className="sub">{qtyUnit}</span><br /><span className="num">{formatQty(row.qty ?? 0)}</span></div>
+          <div><span className="sub">Value</span><br /><span className="num">{money(row.value, row.currency)}</span></div>
+          <div><span className="sub">Avg cost</span><br /><span className="num">{moneyExact(row.avg_cost, row.currency)}</span></div>
+          <div><span className="sub">Total G/L</span><br /><span className={`num ${glClass(row.total_gl)}`}>{signedMoney(row.total_gl, row.currency)}</span></div>
+        </div>
+      )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h3 className="h1" style={{ fontSize: 15 }}>{cashish ? "Balance" : "Lots"}</h3>
@@ -64,7 +105,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr 
       <div className="card">
         {lots.map((l) => (
           <button key={l.id} className="row" onClick={() => setEditing(l)} aria-label={`Edit lot ${l.qty} shares`}>
-            <span><span className="num">{cashish ? money(l.qty, row.currency) : `${l.qty} sh @ ${moneyExact(l.cost_per_share, row.currency)}`}</span>{l.note ? <><br /><span className="sub">{l.note}</span></> : null}</span>
+            <span><span className="num">{cashish ? money(l.qty, row.currency) : `${formatQty(l.qty)} sh @ ${moneyExact(l.cost_per_share, row.currency)}`}</span>{l.note ? <><br /><span className="sub">{l.note}</span></> : null}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {!cashish && <span className="sub">{l.acquired_on ?? "no date"}</span>}
               <span className="edit-pill">Edit</span>
@@ -82,7 +123,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr 
           {cashish ? "Edit amount" : "Edit position"}
         </button>
       )}
-      <button className="btn danger" style={{ marginBottom: 20 }} onClick={() => setConfirming(true)}>Remove position</button>
+      <button className="btn danger-quiet" style={{ marginBottom: 20 }} onClick={() => setConfirming(true)}>Remove position</button>
 
       {confirming && (
         <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Confirm removal">
@@ -112,18 +153,27 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr 
         <LotSheet
           currency={row.currency}
           cashish={cashish}
+          crypto={row.kind === "crypto"}
+          symbol={row.symbol}
           lot={editing}
+          lastLot={!!editing && lots.length === 1}
+          account={editing && lots.length === 1 && canMove ? row.account : undefined}
           onClose={() => { setEditing(null); setAdding(false); }}
-          onSave={async (qty, cost, date, note) => {
+          onSave={async (qty, cost, date, note, account) => {
             try {
               if (editing) await api.updateLot(editing.id, { qty, cost_per_share: cost, acquired_on: date || null, note: note || null });
               else await api.addLot(row.holding_id, qty, cost, date || undefined, note);
-              setEditing(null); setAdding(false); await reload();
+              setEditing(null); setAdding(false);
+              if (account && account !== row.account) await moveTo(account);
+              else await reload();
             } catch (e) { setErr(e instanceof Error ? e.message : "Could not save lot."); }
           }}
           onDelete={editing ? async () => {
-            try { await api.deleteLot(editing.id); setEditing(null); await reload(); }
-            catch (e) { setErr(e instanceof Error ? e.message : "Could not delete lot."); }
+            try {
+              // The last lot IS the position: deleting it removes the holding, never a 0-share row.
+              if (lots.length === 1) { await api.removeHolding(row.holding_id); setEditing(null); await onRemoved(); return; }
+              await api.deleteLot(editing.id); setEditing(null); await reload();
+            } catch (e) { setErr(e instanceof Error ? e.message : "Could not delete lot."); }
           } : undefined}
         />
       )}
@@ -131,37 +181,70 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, dispKr 
   );
 }
 
-function LotSheet({ currency, cashish = false, lot, onClose, onSave, onDelete }: {
-  currency: string; cashish?: boolean; lot: Lot | null; onClose: () => void;
-  onSave: (qty: number, cost: number, date: string, note: string) => void; onDelete?: () => void;
+function LotSheet({ currency, cashish = false, crypto = false, symbol, lot, lastLot = false, account, onClose, onSave, onDelete }: {
+  currency: string; cashish?: boolean; crypto?: boolean; symbol: string; lot: Lot | null; lastLot?: boolean;
+  /** Present when this sheet edits the whole (single-lot) position: the account is editable here too. */
+  account?: Account;
+  onClose: () => void;
+  onSave: (qty: number, cost: number, date: string, note: string, account?: Account) => void; onDelete?: () => void;
 }) {
   const [qty, setQty] = useState(lot ? String(lot.qty) : "");
   const [cost, setCost] = useState(lot ? String(lot.cost_per_share) : "");
   const [date, setDate] = useState(lot?.acquired_on ?? "");
   const [note, setNote] = useState(lot?.note ?? "");
-  const [msg, setMsg] = useState<string | null>(null);
+  const [acct, setAcct] = useState<Account | undefined>(account);
+  const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const sym = ccySymbol(currency).trim();
+
+  if (confirmDelete && onDelete) {
+    return (
+      <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Confirm delete">
+        <div className="sheet">
+          <h2>{lastLot ? `Remove ${symbol}?` : "Delete this lot?"}</h2>
+          <p className="mutedc sheet-confirm">
+            {lastLot
+              ? `This is the only ${cashish ? "balance" : "lot"}, so deleting it removes ${symbol} from your portfolio.`
+              : "The position's shares and average cost update without it. This can't be undone."}
+          </p>
+          <button className="btn danger" onClick={onDelete}>{lastLot ? "Remove position" : "Delete lot"}</button>
+          <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => setConfirmDelete(false)}>Keep it</button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="sheet-back" role="dialog" aria-modal="true" aria-label={lot ? "Edit lot" : "Add lot"}>
       <div className="sheet">
         <h2>{cashish ? (lot ? "Edit balance" : "Add balance") : lot ? "Edit lot" : "Add lot"}</h2>
-        <div className="field"><label htmlFor="lot-qty">{cashish ? `Amount (${currency === "KRW" ? "₩" : "$"})` : "Shares"}</label>
-          <input id="lot-qty" className="num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} /></div>
+        <AmountField id="lot-qty" label={cashish ? `Amount (${sym})` : crypto ? "Quantity" : "Shares"} value={qty}
+          onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} />
         {!cashish && (<>
-        <div className="field"><label htmlFor="lot-cost">Cost per share ({currency === "KRW" ? "₩" : "$"})</label>
-          <input id="lot-cost" className="num" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} /></div>
+        <AmountField id="lot-cost" label={`Cost per ${crypto ? "coin" : "share"} (${sym})`} value={cost}
+          onChange={(v) => { setCost(v); setFieldErr((f) => ({ ...f, cost: undefined })); }} error={fieldErr.cost} />
         <div className="field"><label htmlFor="lot-date">Acquired (optional)</label>
           <input id="lot-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
         </>)}
+        {acct && (
+          <div className="field">
+            <label>Account</label>
+            <div className="chips" style={{ padding: 0 }} role="group" aria-label="Account">
+              {ACCOUNTS.map((a) => (
+                <button key={a} type="button" className="chip" aria-pressed={acct === a} onClick={() => setAcct(a)}>{accountLabel(a)}</button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="field"><label htmlFor="lot-note">Note (optional)</label>
           <input id="lot-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. DCA week 3" /></div>
-        {msg && <div className="error-note" role="alert">{msg}</div>}
         <button className="btn" onClick={() => {
-          const nq = parseFloat(qty), nc = cashish ? 1 : parseFloat(cost);
-          if (!(nq > 0)) { setMsg(cashish ? "Amount must be positive." : "Shares must be positive."); return; }
-          if (!(nc >= 0)) { setMsg("Cost can't be negative."); return; }
-          onSave(nq, nc, date, note);
+          const q = readAmount(qty, cashish ? "cash" : crypto ? "units" : "shares");
+          const c = cashish ? { value: 1, error: null } : readAmount(cost, "cost");
+          setFieldErr({ qty: q.error ?? undefined, cost: c.error ?? undefined });
+          if (q.value === null || c.value === null) return;
+          onSave(q.value, c.value, date, note, acct);
         }}>{lot ? "Save changes" : "Add lot"}</button>
-        {onDelete && <button className="btn danger" style={{ marginTop: 8 }} onClick={onDelete}>Delete this lot</button>}
+        {onDelete && <button className="btn danger-quiet" style={{ marginTop: 8 }} onClick={() => setConfirmDelete(true)}>{lastLot ? "Delete (removes the position)" : "Delete this lot"}</button>}
         <button className="btn secondary" style={{ marginTop: 8 }} onClick={onClose}>Cancel</button>
       </div>
     </div>

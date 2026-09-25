@@ -194,7 +194,7 @@ describe("U3 add position", () => {
     await userEvent.type(screen.getByLabelText(/^shares$/i), "-3");
     await userEvent.type(screen.getByLabelText(/cost per share/i), "10");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    expect((await screen.findByRole("alert")).textContent).toMatch(/positive/i);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/more than zero/i);
     expect(api.addPosition).not.toHaveBeenCalled();
   });
 });
@@ -879,20 +879,20 @@ describe("U18 labels + bank accounts", () => {
     await userEvent.click(await screen.findByRole("button", { name: /add a cash balance/i }));
     expect(screen.getByRole("button", { name: "Bank" }).getAttribute("aria-pressed")).toBe("true");
     await userEvent.type(screen.getByLabelText(/amount \(\$\)/i), "2500");
-    await userEvent.type(screen.getByLabelText(/label \(optional\)/i), "Cash (Yeonhwa)");
+    await userEvent.type(screen.getByLabelText(/label \(optional\)/i), "Emergency fund");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 2500, 1, undefined, "bank", "Cash (Yeonhwa)", ""));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 2500, 1, undefined, "bank", "Emergency fund", ""));
   });
   it("rows show the label instead of the generic name, with a Bank tag", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
-      row({ holding_id: "c1", symbol: "$CASH", name: "Cash (USD)", nickname: "Cash (Yeonhwa)", kind: "cash", account: "bank", qty: 2500, price: 1, value: 2500, cost_basis: 2500, total_gl: 0, change_pct: 0 }),
-      row({ holding_id: "c2", symbol: "$CASH", name: "Cash (USD)", nickname: "Cash (Minjae)", kind: "cash", account: "bank", qty: 4000, price: 1, value: 4000, cost_basis: 4000, total_gl: 0, change_pct: 0 }),
+      row({ holding_id: "c1", symbol: "$CASH", name: "Cash (USD)", nickname: "Emergency fund", kind: "cash", account: "bank", qty: 2500, price: 1, value: 2500, cost_basis: 2500, total_gl: 0, change_pct: 0 }),
+      row({ holding_id: "c2", symbol: "$CASH", name: "Cash (USD)", nickname: "Travel fund", kind: "cash", account: "bank", qty: 4000, price: 1, value: 4000, cost_basis: 4000, total_gl: 0, change_pct: 0 }),
     ]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
-    await screen.findByText("Cash (Yeonhwa)");
-    await screen.findByText("Cash (Minjae)");
+    await screen.findByText("Emergency fund");
+    await screen.findByText("Travel fund");
     expect(screen.getAllByText(/cash balance · Bank/).length).toBe(2);
   });
 });
@@ -1245,14 +1245,16 @@ describe("U7 news", () => {
 });
 
 describe("U8 error + retry", () => {
-  it("failed load shows the Relay-voice error with a working retry", async () => {
+  it("failed load says what failed, promises no gesture, and Retry works", async () => {
     const api = stubApi();
     (api.getPortfolio as ReturnType<typeof vi.fn>)
-      .mockRejectedValueOnce(new Error("The feed missed a handoff. Pull to retry."))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
       .mockResolvedValue([row({})]);
     render(<App api={api} />);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toMatch(/missed a handoff/i);
+    expect(alert.textContent).toMatch(/couldn't refresh your prices/i);
+    expect(alert.textContent).not.toMatch(/pull/i);                  // the copy matches the real control
+    expect(alert.textContent).not.toMatch(/failed to fetch/i);       // no raw transport errors
     await userEvent.click(within(alert).getByRole("button", { name: /retry/i }));
     await screen.findByTestId("net-worth");
   });
@@ -1300,7 +1302,7 @@ describe("U47 series of manual adds", () => {
     await userEvent.click(screen.getByRole("button", { name: /done/i }));
     await waitFor(() => expect(api.brokerageConnected).toHaveBeenCalledTimes(1));
     expect(sessionStorage.getItem("assetly-connect-at")).toBeTruthy();   // lights + auto-ask arm exactly like a connect
-    expect((await screen.findByTestId("brokerage-notice")).textContent).toMatch(/assessment/i);
+    expect((await screen.findByTestId("assessment-card")).textContent).toMatch(/assessment/i);   // a card that stays, not a toast
   });
 });
 

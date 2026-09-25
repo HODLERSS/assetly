@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
 import { labelParts, timeAgo } from "../lib/format";
+import { decodeEntities, dedupeNews } from "../lib/news";
 import { InsightsCard } from "../components/InsightsCard";
 import { Icon } from "../components/Icon";
 
@@ -16,6 +17,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
   const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
   const [cache] = useState(() => new Map<string, NewsItem[]>());   // instant chip flips
   const [top5, setTop5] = useState<Insight | null>(null);          // Assetly Intelligence, portfolio-wide
+  const [retryN, setRetryN] = useState(0);                         // Retry after a failed load
   // cash and debt have no news; one chip per symbol even when held in several accounts
   const newsRows = rows.filter((r, i) => r.kind !== "cash" && r.kind !== "debt"
     && rows.findIndex((x) => x.symbol === r.symbol) === i);
@@ -42,10 +44,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
     else setState("loading");
     const held = newsRows.map((r) => r.symbol);
     const scope = filter ?? held;
-    const load = () => api.getNews(scope).then((n) => {
-      const seen = new Set<string>();
-      return n.filter((x) => (seen.has(x.url) ? false : (seen.add(x.url), true)));
-    });
+    const load = () => api.getNews(scope).then(dedupeNews);   // one copy per story (URL or headline), entities decoded
     load()
       .then(async (n) => {
         if (!live) return;
@@ -63,7 +62,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
       })
       .catch(() => { if (live) setState("error"); });
     return () => { live = false; };
-  }, [api, filter, rows]);
+  }, [api, filter, rows, retryN]);
 
   return (
     <>
@@ -88,21 +87,25 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
           {/* the portfolio read that used to live on the Holdings tab */}
           {(top5?.bullets?.length ?? 0) > 0 && (
             <ul className="insights-list" data-testid="portfolio-insights-card">
-              {top5!.bullets.map((b, i) => <li key={i}>{b}</li>)}
+              {top5!.bullets.map((b, i) => <li key={i}>{decodeEntities(b)}</li>)}
             </ul>
           )}
           {(top5?.news5?.length ?? 0) > 0 && (
             <>
               {(top5?.bullets?.length ?? 0) > 0 && <p className="sub" style={{ margin: "10px 2px 4px", borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>This week across your holdings</p>}
               <ul className="insights-list" data-testid="news-top5-list">
-                {top5!.news5!.map((b, i) => <li key={i}>{b}</li>)}
+                {top5!.news5!.map((b, i) => <li key={i}>{decodeEntities(b)}</li>)}
               </ul>
             </>
           )}
           <p className="insights-foot">Not financial advice</p>
         </section>
       )}
-      {state === "error" && <div className="error-note" role="alert">News missed the handoff — pull to retry.</div>}
+      {state === "error" && (
+        <div className="error-note" role="alert">
+          Couldn't load news. <button className="chip" onClick={() => setRetryN((n) => n + 1)} style={{ marginLeft: 8 }}>Retry</button>
+        </div>
+      )}
       {state === "pulling" && (
         <p className="empty" aria-busy="true">Pulling the latest stories{filter ? ` for ${filter}` : ""}…</p>
       )}
