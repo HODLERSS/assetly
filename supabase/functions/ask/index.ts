@@ -19,7 +19,8 @@ import {
   isTradeQuestion, NO_HISTORY, pctText, priceConfusions, stripAdvice, usableNews, withNoCallLine, wrongLanguage, type PosFact,
   curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, plainScrub, PORTFOLIO_PLAIN, wrongDeliveriesDates,
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
-  buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions, digitsForWritten, diversifiedClaims, dropInstructionEcho,
+  buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
+  spanOfMonth, holdingRankClaims, holdingRankPremise, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -85,7 +86,16 @@ function trimAnswer(a: string, cap = 100): string {
   let n = 0;
   for (const ln of lines) {
     const w = words(ln);
-    if (out.length && n + w > cap - 5) break;
+    if (out.length && n + w > cap - 5) {
+      // round 7: an opener line followed by ONE long paragraph shipped as the opener alone. The next line is cut
+      // at its last whole sentence inside the budget instead of being dropped whole
+      if (out.length === 1) {
+        let part = "";
+        for (const sen of ln.split(/(?<=[.!?])[ \t]+/)) { if (words(part + " " + sen) > cap - 5 - n) break; part = (part + " " + sen).trim(); }
+        if (part) out.push(part);
+      }
+      break;
+    }
     out.push(ln); n += w;
   }
   let joined = out.join("\n");
@@ -381,17 +391,50 @@ Deno.serve(async (req) => {
     { names: ["portfolio", "your holdings", "your book", "포트폴리오", "전체 자산", "총자산", "자산"], pct: bookDayPct },
   ];
   const causeSource = `${digest}\n${context}`;
+  const rankFacts = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100 }));
   /** The informational answer built from the stats when the model's is a husk: what the decision rests on. */
   // Round 6: the code-built answer was 2-3 thin bullets. It is now 4-5, specific to this book: concentration,
   // theme mix with crypto and cash, reports in the next 45 days, dividend payers with income and ex-dates in the
   // next 45 days (div_next_ex), and what a buyer would weigh.
+  // Round 7: the husk fits the question: a seller's frame for sell/trim/dump, a ranking by stated metrics for "rank my
+  // holdings", and an answer built around the one holding a trade question names
+  const tradeSyms = mentioned.filter((s) => held.some((h) => h.symbol === s));
+  const focusRow = tradeQ && tradeSyms.length === 1 ? held.find((h) => h.symbol === tradeSyms[0])! : null;
+  const estOf = (sym: string) => { const r = held.find((h) => h.symbol === sym); const e = r ? askEsts.find((x) => x.names[0] === nameOf(r)) : undefined; return e ? (e.range ? spanOfMonth(e.range) : e.est ? "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : null) : null; };
   const defaultInfo = (): string => buildHusk({
     holdings: held.map((r) => ({ name: nameOf(r), symbol: r.symbol, kind: r.kind, usd: usd(Number(r.value ?? 0), r.currency) })),
     cashUsd: book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0),
     assetsUsd, today,
     reports: askEsts.map((e) => ({ name: e.names[0], est: e.est, ...(e.range ? { range: e.range } : {}) })),
-    dividends: divLines.map((x) => ({ name: nameOf(x.r), annualUsd: x.d.annual, nextEx: divRows.get(x.r.symbol)?.div_next_ex ?? null })),
+    dividends: divLines.map((x) => ({ name: nameOf(x.r), annualUsd: x.d.annual, nextEx: divRows.get(x.r.symbol)?.div_next_ex ?? null, current: x.d.current })),
+    mode: isRankQuestion(question) ? "rank" : isSellQuestion(question) ? "sell" : "buy",
+    returns1m: Object.fromEntries(held.map((r) => [r.symbol, perf.get(r.symbol)?.pct[30] ?? null])),
+    ...(focusRow ? { focus: {
+      name: nameOf(focusRow), weight: usd(Number(focusRow.value ?? 0), focusRow.currency) / (assetsUsd || 1) * 100, usd: usd(Number(focusRow.value ?? 0), focusRow.currency),
+      gainUsd: focusRow.total_gl === null || focusRow.total_gl === undefined ? null : usd(Number(focusRow.total_gl), focusRow.currency),
+      dayPct: focusRow.change_pct === null || !tradesToday(focusRow) ? null : Number(focusRow.change_pct),
+      r1m: perf.get(focusRow.symbol)?.pct[30] ?? null, r3m: perf.get(focusRow.symbol)?.pct[90] ?? null, report: estOf(focusRow.symbol),
+      divAnnual: divLines.find((x) => x.r.symbol === focusRow.symbol)?.d.annual ?? 0, divCurrent: divLines.find((x) => x.r.symbol === focusRow.symbol)?.d.current ?? false,
+    } } : {}),
   }, ko);
+  // Round 7: three 502s ("lost the thread") on plain data questions. A non-decision question whose model lanes both
+  // failed now gets the figures built in code (today, the windows, the reports ahead, the largest holdings)
+  const dataFallback = (): string => {
+    const reps = [...askEsts].filter((e) => e.est && e.est > today).sort((a, b) => String(a.est).localeCompare(String(b.est))).slice(0, 8)
+      .map((e) => `${e.names[0]} ${e.range ? spanOfMonth(e.range) : "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`);
+    const tops = [...held].sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency)).slice(0, 3).map((r) => `${nameOf(r)} ${weight(usd(Number(r.value ?? 0), r.currency))}`);
+    return ko ? [
+      `• 오늘 포트폴리오: ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%(${signedUsd(bookDayUsd)}).`,
+      `• 기간별: ${totalLines}.`,
+      reps.length ? `• 다가오는 실적 발표(추정): ${reps.join(", ")}.` : "",
+      tops.length ? `• 비중 상위: ${tops.join(", ")}.` : "",
+    ].filter(Boolean).join("\n") : [
+      `• Today your portfolio is ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}% (${signedUsd(bookDayUsd)}).`,
+      `• Longer windows: ${totalLines}.`,
+      reps.length ? `• Reports expected (estimates): ${reps.join(", ")}.` : "",
+      tops.length ? `• Largest holdings: ${tops.join(", ")}.` : "",
+    ].filter(Boolean).join("\n");
+  };
   // a day move of a market closed today carries its session ("SK hynix up 1.2% (Wed)" during a KRX holiday)
   const KO_DAY = ["일", "월", "화", "수", "목", "금", "토"];
   const closedFacts = held.filter((r) => !tradesToday(r)).map((r) => {
@@ -400,8 +443,17 @@ Deno.serve(async (req) => {
     return { names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], label: ko ? `${KO_DAY[new Date(last + "T12:00:00Z").getUTCDay()]}요일` : weekdayOf(last).slice(0, 3) };
   });
   const divTiming = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], nextEx: divRows.get(r.symbol)?.div_next_ex ?? null }));
-  const pickQ = isPickQuestion(question);
-  const bookNames = held.map((r) => ({ symbol: r.symbol, names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] }));
+  // Round 7: a FOLLOW-UP turn to a decision question is a decision question too ("If you had my $120K cash, where
+  // would it go?" after "What should I buy with $10K?" got a named buy list), and so is a cash question in Korean
+  const prevQ = turns.length ? turns[turns.length - 1].q : "";
+  const prevA = turns.length ? turns[turns.length - 1].a : "";
+  const prevWasHusk = /usually weighs here|보통 따지는 것/.test(prevA);
+  const followDecision = turns.length > 0 && (isTradeQuestion(prevQ) || isPickQuestion(prevQ) || prevWasHusk)
+    && /\b(?:cash|money|\$\s?\d|what about|how about|and if|instead|where would|what would|if you had|the rest|with that)\b|현금|돈|그럼|대신|나머지/i.test(question);
+  const pickQ = isPickQuestion(question) || followDecision
+    || /(현금|돈)[^?]{0,12}(뭘|무엇을|어디에|어떤)[^?]{0,8}(사|넣|투자)/.test(question);
+  // Korean names too, so a Korean shortlist ("애플은… 마이크로소프트는…") is recognised (round 7)
+  const bookNames = held.map((r) => ({ symbol: r.symbol, names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)] }));
   const dlvFacts = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], est: deliveriesEstimate(r.symbol, today)?.est ?? null }));
   const lastA = turns.length ? turns[turns.length - 1].a : "";
   const saidNoCall = tradeQ && /can'?t tell you|not my call|your call|정해드릴 수 없|말씀드릴 수 없/i.test(lastA);
@@ -452,6 +504,10 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // Round 6: a trade or pick question ends in the code-built answer whenever the models are slow, so it stops
   // waiting on them at 10s (fast lane from 3s) and its whole budget is 15s.
   const decisionQ = tradeQ || pickQ;
+  if (decisionQ && prevWasHusk && !fixture) {
+    const again = withNoCallLine(defaultInfo(), question, "", "", true);
+    return json({ ok: true, answer: plainDataWords(tidyNumbers(again)), followups: cleanFollowups([], ko ? ["내 포트폴리오는 얼마나 집중돼 있나요?", "내 포트폴리오의 가장 큰 위험은 뭔가요?"] : ["How concentrated is my portfolio?", "What are the biggest risks in my portfolio?"]), mentioned });
+  }
   const FAST = "gpt-oss-120b", BUDGET = decisionQ ? 15000 : 29000;
   const left = () => BUDGET - (Date.now() - t0);
   const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3") => {
@@ -496,6 +552,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...priceConfusions(a, posFacts).map((h) => `It quotes ${h.match} as a share price, but that is the user's POSITION VALUE; the share price is in the stats.`),
     ...(wrongLanguage(question, a) ? [ko ? "It is written in English but the question is in Korean: write the whole answer and the followups in Korean."
       : "It is written in Korean but the question is in English: write the whole answer and the followups in English."] : []),
+    ...(decisionQ ? suggestionHits(a, bookNames) : []).slice(0, 2).map((s) => `"${s.slice(0, 120)}" suggests adding to or buying a named holding. Never name what to buy or add to: explain what the decision rests on for the portfolio as a whole.`),
     ...(pickQ ? curatedListHits(a, bookNames) : []).slice(0, 1).map(() => `It answers a pick question with a shortlist of some holdings. Do not single out names: explain what such a decision rests on (concentration, drivers, risks) for the book as a whole, or give one neutral fact per holding for ALL holdings in order of weight.`),
     ...wrongDeliveriesDates(a, dlvFacts, today).map((s) => `"${s.slice(0, 120)}" dates a deliveries report that is not in the data (a deliveries report is not earnings).`),
     ...dayMoveMismatches(a, moveFacts, 0.15).map((s) => `"${s.slice(0, 120)}" states a move for TODAY that is not today's figure in the stats (check the period and the sign; longer windows are never "today").`),
@@ -512,22 +569,27 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // ...and whatever survives the rewrite is removed or corrected in code
   // both lanes out of time: a trade or pick question still gets the answer built in code from the stats (below)
   // inside the budget, rather than a 502 after ~27s; any other question has nothing honest to fall back on
-  if (!answer && !(tradeQ || pickQ)) return json({ ok: false, error: "The analyst lost the thread mid-answer. Ask again." }, 502);
+  // Round 7: no 502 any more. A decision question falls through to the code-built husk; any other question gets the
+  // code-built figures (the three 502s were plain data questions that worked on a re-ask)
+  let softFallback = false;
+  if (!answer && !(tradeQ || pickQ)) { answer = dataFallback(); softFallback = true; }
   // code-side guards, on EVERY answer (whether or not an opener is added): verdicts and valuation calls, a
   // shortlist answering a pick question, a deliveries date that is not in the data
-  const dropLines = new Set([...(pickQ ? curatedListHits(answer, bookNames) : []), ...wrongDeliveriesDates(answer, dlvFacts, today),
+  const dropLines = new Set([...(pickQ ? curatedListHits(answer, bookNames) : []), ...(decisionQ ? suggestionHits(answer, bookNames) : []),
+    ...holdingRankClaims(answer, rankFacts), ...wrongDeliveriesDates(answer, dlvFacts, today),
     ...dayMoveMismatches(answer, moveFacts, 0.15), ...wrongEarningsMonths(answer, askEsts), ...unsupportedCauses(answer, causeSource), ...wrongDividendAmounts(answer, divFacts),
     ...wrongDividendTiming(answer, divTiming, today),
     // round 6: "QQQ·VOO·NVDA는 여러 종목을 담고 있어" (NVDA is one company); "SoFi fell after an article noted its drop"
     ...diversifiedClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], fund: r.kind === "etf" || r.kind === "fund" }))), ...circularCauses(answer)]);
-  const pruned = answer.split("\n").map((l) => (dropLines.has(l.trim()) ? "" : [...dropLines].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
+  const pruned0 = answer;
+  const pruned = pruned0.split("\n").map((l) => (dropLines.has(l.trim()) ? "" : [...dropLines].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
 
   let guarded = fixPriceConfusions(stripAdvice(normalizeBullets(pruned), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
   // Round 4: after the guards, "What should I buy with $10K?" was left with one unrelated line and "top pick"
   // with a ten-holding dump. When the guards took most of an answer to a trade or pick question, the model
   // gets ONE informational re-ask, and if that is thin too, the answer is built in code from the stats.
   const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
-  const moveNames = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] }));
+  const moveNames = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)] }));
   // round 6: "top pick?" was answered with 11 day moves joined by semicolons: not an answer to the question
   const husk = (g: string) => (tradeQ || pickQ) && (words(g) < 25 || words(g) < words(answer) * 0.45 || dayMoveDump(g, moveNames));
   // Round 6: no model re-ask for a husk any more. husk() applies only to trade and pick questions, and the
@@ -542,6 +604,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   }
   // a closed market's day move is labelled with its session, or dropped when it is called today's (round 6)
   guarded = labelClosedMoves(guarded, closedFacts) || guarded;
+  // round 7: "Apple is my biggest holding" (NVDA is) was repeated as fact: the premise is corrected in the first line
+  { const fix = holdingRankPremise(question, rankFacts, ko); if (fix && !guarded.includes(fix)) guarded = `${fix}\n${guarded}`; }
   // the husk text is held to the same report dates as everything else (round 5: "NVDA … late October")
   { const bad = new Set(wrongEarningsMonths(guarded, askEsts)); if (bad.size) guarded = guarded.split("\n").filter((l) => ![...bad].some((b) => l.includes(b))).join("\n") || defaultInfo(); }
   // "on file" is pipeline language (round 5: "BTC: no dividend data on file")
@@ -550,7 +614,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const cashShare = book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
   const cryptoShareA = held.filter((r) => r.kind === "crypto").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
   const fracGroupsA = [{ label: /\bcash\b/i, value: cashShare }, { label: /\bcrypto\b/i, value: cryptoShareA }];
-  answer = plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(fixFractions(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), fracHold, fracGroupsA)), question, lastA, turns.length ? turns[turns.length - 1].q : ""))));
+  answer = plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(fixFractions(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), fracHold, fracGroupsA)), question, lastA, prevQ, decisionQ))));
+  void softFallback;
   // the code-built answer is 4-5 checked bullets (~100 words with the opener): the phone cap must not cut its
   // last bullet, which is the one about what a buyer weighs
   answer = trimAnswer(answer, builtInCode ? 150 : cap + 10);
