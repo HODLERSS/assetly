@@ -1,5 +1,10 @@
 import { vi } from "vitest";
-import "@testing-library/react";
+import { configure } from "@testing-library/react";
+
+// The suite runs ~400 App-level renders in parallel workers; under that load a findBy's default 1s wait
+// occasionally expired before an async effect settled (a different test flaked each full run). 4s keeps every
+// assertion real while removing the load-dependent flake.
+configure({ asyncUtilTimeout: 4000 });
 
 // This jsdom build ships no localStorage (Node prints "localStorage is not available"),
 // so anything that remembers a preference — the appearance choice, the player's speed —
