@@ -525,3 +525,17 @@ describe("F12 onboarding Back", () => {
     expect((screen.getByLabelText(/cost per share/i) as HTMLInputElement).value).toBe("");
   });
 });
+
+describe("F13 skipped quiz answers are marked as defaults", () => {
+  it("Skip at Q3 records which answers are defaults, so no brief calls them the reader's goal", async () => {
+    const api = stubApi({ getProfile: vi.fn().mockResolvedValue({ ...profile, onboarded_at: null }) });
+    render(<App api={api} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Growth" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await userEvent.click(screen.getByTestId("quiz-skip"));
+    await userEvent.click(await screen.findByTestId("ob-skip"));
+    await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD",
+      expect.objectContaining({ styles: ["growth"], defaulted: ["purpose", "horizon", "target", "risk", "level"] })));
+  });
+});

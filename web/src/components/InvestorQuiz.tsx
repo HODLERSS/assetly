@@ -7,7 +7,8 @@ import { INVESTOR_DEFAULT } from "../lib/api";
 // Most questions are multi-select ("pick all that fit"); experience and the drawdown reaction are one
 // answer each (a person is not both "Just starting" and "Professional"; r1 + r2 design audits). Answers
 // are stored as arrays either way. Every question advances with its own Continue button.
-export const QUIZ: { key: keyof Investor; q: string; opts: [string, string][]; single?: boolean }[] = [
+export type QuizKey = Exclude<keyof Investor, "defaulted">;
+export const QUIZ: { key: QuizKey; q: string; opts: [string, string][]; single?: boolean }[] = [
   { key: "styles", q: "What kind of investor are you? Pick all that fit.", opts: [
     ["value", "Value"], ["growth", "Growth"], ["income", "Dividends & income"], ["index", "Index & passive"],
     ["ai_tech", "AI & tech"], ["trader", "Opportunistic trader"], ["crypto", "Crypto"]] },
@@ -49,7 +50,9 @@ export function InvestorQuiz({ initial, draft, startAt = 0, onDone, onSkip, onPr
     horizon: arr(x.horizon, INVESTOR_DEFAULT.horizon), target: arr(x.target, INVESTOR_DEFAULT.target),
     risk: arr(x.risk, INVESTOR_DEFAULT.risk), level: arr(x.level, INVESTOR_DEFAULT.level),
   } : { styles: [], purpose: [], horizon: [], target: [], risk: [], level: [] };
+  const KEYS = ["styles", "purpose", "horizon", "target", "risk", "level"] as const;
   const complete = (x: Investor): Investor => ({
+    defaulted: KEYS.filter((k) => !x[k].length),
     styles: x.styles.length ? x.styles : [...INVESTOR_DEFAULT.styles], purpose: x.purpose.length ? x.purpose : [...INVESTOR_DEFAULT.purpose],
     horizon: x.horizon.length ? x.horizon : [...INVESTOR_DEFAULT.horizon], target: x.target.length ? x.target : [...INVESTOR_DEFAULT.target],
     risk: x.risk.length ? x.risk : [...INVESTOR_DEFAULT.risk], level: x.level.length ? x.level : [...INVESTOR_DEFAULT.level],
@@ -60,7 +63,7 @@ export function InvestorQuiz({ initial, draft, startAt = 0, onDone, onSkip, onPr
   const q = QUIZ[i];
   const last = i === QUIZ.length - 1;
   const next = () => (last ? onDone(complete(v)) : setI(i + 1));
-  const set = (key: keyof Investor, val: string, single = false) => {
+  const set = (key: QuizKey, val: string, single = false) => {
     setV((p) => {
       const cur = p[key];
       if (single) return { ...p, [key]: cur.length === 1 && cur[0] === val ? [] : [val] };   // radio, tap again to clear

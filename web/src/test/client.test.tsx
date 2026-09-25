@@ -435,7 +435,8 @@ describe("C8 onboarding keeps what you gave it", () => {
     await userEvent.click(screen.getByTestId("quiz-skip"));
     await userEvent.click(await screen.findByTestId("ob-skip"));
     await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD",
-      { styles: ["ai_tech", "crypto"], purpose: ["watch"], horizon: ["3-10y"], target: ["8-12%"], risk: ["hold"], level: ["novice"] }));
+      { styles: ["ai_tech", "crypto"], purpose: ["watch"], horizon: ["3-10y"], target: ["8-12%"], risk: ["hold"], level: ["novice"],
+        defaulted: ["horizon", "target", "risk", "level"] }));
   });
   it("every step after the first has Back, and the quiz comes back where it was left", async () => {
     render(<App api={fresh()} />);

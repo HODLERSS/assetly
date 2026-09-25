@@ -1371,7 +1371,7 @@ describe("U49 investor quiz at sign-up", () => {
     await userEvent.type(screen.getByLabelText(/cost per share/i), "15");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD",
-      { styles: ["value", "ai_tech", "crypto"], purpose: ["ideas"], horizon: ["10y+"], target: ["12-25%"], risk: ["buy_more"], level: ["intermediate"] }));
+      { styles: ["value", "ai_tech", "crypto"], purpose: ["ideas"], horizon: ["10y+"], target: ["12-25%"], risk: ["buy_more"], level: ["intermediate"], defaulted: [] }));
   });
   it("skip = novice value investor defaults", async () => {
     const api = stubApi({ getProfile: vi.fn().mockResolvedValue(freshProfile), getPortfolio: vi.fn().mockResolvedValue([]) });
@@ -1385,7 +1385,8 @@ describe("U49 investor quiz at sign-up", () => {
     await userEvent.type(screen.getByLabelText(/cost per share/i), "10");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
     await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD",
-      { styles: ["value"], purpose: ["watch"], horizon: ["3-10y"], target: ["8-12%"], risk: ["hold"], level: ["novice"] }));
+      { styles: ["value"], purpose: ["watch"], horizon: ["3-10y"], target: ["8-12%"], risk: ["hold"], level: ["novice"],
+        defaulted: ["styles", "purpose", "horizon", "target", "risk", "level"] }));
   });
 });
 
@@ -1410,7 +1411,7 @@ describe("U50 investor profile in settings", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Advanced" }));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.updateInvestor).toHaveBeenCalledWith(
-      { styles: ["value", "growth"], purpose: ["watch"], horizon: ["3-10y", "1-3y"], target: ["8-12%"], risk: ["trim"], level: ["advanced"] }));   // one answer each: a tap replaces
+      { styles: ["value", "growth"], purpose: ["watch"], horizon: ["3-10y", "1-3y"], target: ["8-12%"], risk: ["trim"], level: ["advanced"], defaulted: [] }));   // one answer each: a tap replaces
   });
 });
 
