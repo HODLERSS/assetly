@@ -1,3 +1,4 @@
+@font-face{font-family:"Schibsted Grotesk";font-style:normal;font-weight:400 700;font-display:swap;src:url("fonts/schibsted-grotesk-latin.woff2") format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 :root{--as-bg:#F4F5F7;--as-surface:#FFF;--as-ink:#16181D;--as-muted:#5D636E;--as-primary:#2A3F92;--as-rule:#E2E4E9;--as-radius:6px}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--as-bg:#0F1216;--as-surface:#161A21;--as-ink:#E9ECF1;--as-muted:#9BA3B0;--as-primary:#8AA0F2;--as-rule:#262B34}}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -15,3 +16,6 @@ table{width:100%;border-collapse:collapse;margin-top:6px}
 td,th{text-align:left;padding:9px 10px;border-bottom:1px solid var(--as-rule);font-size:14.5px;vertical-align:top}
 th{color:var(--as-muted);font-weight:600;white-space:nowrap}
 footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--as-rule);font-size:13px;color:var(--as-muted)}
+/* phones: a question/answer row stacks instead of squeezing the answer into a sliver beside a nowrap label */
+@media (max-width:560px){table,tbody,tr,th,td{display:block;width:100%}tr{border-bottom:1px solid var(--as-rule);padding:8px 0}td,th{border:0;padding:2px 0}th{white-space:normal}}
+footer a{display:inline-block;padding:12px 4px;min-height:44px}
