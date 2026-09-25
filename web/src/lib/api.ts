@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { rankSymbols, searchQuery } from "./search";
 import { cleanNews } from "./news";
+import { FAIL_FAST_MS, failFast, OfflineError, offlineNow } from "./net";
 
 export type SymbolRow = {
   symbol: string; name: string; exchange: string; currency: string; kind: string;
@@ -75,19 +76,55 @@ async function currentUserId(sb: SupabaseClient): Promise<string | null> {
   return remote?.data?.user?.id ?? null;
 }
 
+/** Aborts when any of the signals does (AbortSignal.any is Safari 17.4+). */
+function anySignal(signals: (AbortSignal | undefined)[]): AbortSignal | undefined {
+  const live = signals.filter((s): s is AbortSignal => !!s);
+  if (live.length <= 1) return live[0];
+  const c = new AbortController();
+  for (const s of live) {
+    if (s.aborted) { c.abort(s.reason); break; }
+    s.addEventListener("abort", () => c.abort(s.reason), { once: true });
+  }
+  return c.signal;
+}
+/** A read tuned to what the app knows about the connection (lib/net). After a failed price refresh it is sent
+ *  once, without postgrest-js's three retries (1s, 2s, 4s: "Loading lots…" held ~7s; r5 designer m-3), and a
+ *  request that hangs gives up after FAIL_FAST_MS (`limit`; the book's own load has its time limit).
+ *  `signal` cancels it: a chart range the reader has already left. A builder without these knobs (a test
+ *  double) passes through unchanged. */
+function tuned<Q>(q: Q, signal?: AbortSignal, limit = true): Q {
+  const b = q as unknown as { retry?: (on: boolean) => unknown; abortSignal?: (s: AbortSignal) => unknown };
+  const fast = failFast();
+  if (fast && typeof b.retry === "function") b.retry(false);
+  if (typeof b.abortSignal === "function") {
+    let timer: AbortSignal | undefined;
+    if (fast && limit) { const c = new AbortController(); setTimeout(() => c.abort(new Error("timed out")), FAIL_FAST_MS); timer = c.signal; }
+    const s = anySignal([signal, timer]);
+    if (s) b.abortSignal(s);
+  }
+  return q;
+}
+/** Offline, a read is refused before it is sent: the screen says so at once, with what it kept. */
+function online() { if (offlineNow()) throw new OfflineError(); }
+
 type HistoryPage = PromiseLike<{ data: unknown[] | null; error: { code?: string; message?: string } | null }>;
 const HISTORY_PAGE = 1000;
 const HISTORY_RAW_PAGES = 8, HISTORY_RAW_DAILY_PAGES = 16, HISTORY_RPC_PAGES = 6;
 /** Page a newest-first query until a short page, then return the points oldest first. Reaching the cap is
- *  said out loud (console) instead of silently drawing a shorter range. */
-async function pageNewestFirst(page: (from: number, to: number) => HistoryPage, maxPages: number, symbol: string): Promise<HistoryPoint[]> {
+ *  said out loud (console) instead of silently drawing a shorter range. After the first page, `wave` pages go
+ *  out together: a coin's hourly week is ~10 pages, and ten round trips one after another took seconds. */
+async function pageNewestFirst(page: (from: number, to: number) => HistoryPage, maxPages: number, symbol: string, wave = 1): Promise<HistoryPoint[]> {
   const rows: Record<string, unknown>[] = [];
   const done = () => rows.reverse().map((r) => ({ ts: String(r.ts), price: Number(r.price) }));
-  for (let p = 0; p < maxPages; p++) {
-    const { data, error } = await page(p * HISTORY_PAGE, p * HISTORY_PAGE + HISTORY_PAGE - 1);
-    if (error) throw error;
-    rows.push(...((data ?? []) as Record<string, unknown>[]));
-    if (!data || data.length < HISTORY_PAGE) return done();
+  for (let p = 0; p < maxPages;) {
+    const n = p === 0 ? 1 : Math.max(1, Math.min(wave, maxPages - p));
+    const got = await Promise.all(Array.from({ length: n }, (_, k) => page((p + k) * HISTORY_PAGE, (p + k) * HISTORY_PAGE + HISTORY_PAGE - 1)));
+    for (const { error } of got) if (error) throw error;
+    for (const { data } of got) {
+      rows.push(...((data ?? []) as Record<string, unknown>[]));
+      if (!data || data.length < HISTORY_PAGE) return done();   // a short page is the end; any after it are empty
+    }
+    p += n;
   }
   console.warn(`price history for ${symbol} hit the ${maxPages}-page cap; its oldest points are missing`);
   return done();
@@ -157,7 +194,8 @@ export function makeApi(sb: SupabaseClient = supabase) {
       }
     },
     async getPortfolio(): Promise<PortfolioRow[]> {
-      const { data, error } = await sb.from("portfolio").select("*").order("value", { ascending: false, nullsFirst: false });
+      online();   // offline, a pull to refresh says so at once instead of spinning out the load's time limit
+      const { data, error } = await tuned(sb.from("portfolio").select("*").order("value", { ascending: false, nullsFirst: false }), undefined, false);
       if (error) throw error;
       return (data ?? []).map((r: Record<string, unknown>) => ({
         ...r,
@@ -183,11 +221,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
       return h.id as string;
     },
     async getLots(holding_id: string): Promise<Lot[]> {
-      const { data, error } = await sb.from("lots").select("*")
+      online();
+      const { data, error } = await tuned(sb.from("lots").select("*")
         .eq("holding_id", holding_id).order("acquired_on", { ascending: true, nullsFirst: true })
         // undated lots (and lots bought the same day) tie on acquired_on: entry order keeps them from swapping
         // places on every reload (r4 native m2)
-        .order("created_at", { ascending: true }).order("id", { ascending: true });
+        .order("created_at", { ascending: true }).order("id", { ascending: true }));
       if (error) throw error;
       return (data ?? []).map((l: Record<string, unknown>) => ({ ...l, qty: Number(l.qty), cost_per_share: Number(l.cost_per_share) })) as Lot[];
     },
@@ -204,16 +243,24 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error) throw error;
     },
     /** Move a position to another account. When that account already holds the same symbol (and label),
-     *  the two are one position: this one's lots fold into it and its id is returned instead. */
+     *  the two are one position: this one's lots fold into it and its id is returned instead. That case is
+     *  looked up first: the plain move used to go out regardless, 409 on the unique key, and only then fold
+     *  (r5 power-user). The unique key still catches a position added there in between. */
     async setHoldingAccount(holding_id: string, account: Account): Promise<string> {
-      const { error } = await sb.from("holdings").update({ account }).eq("id", holding_id);
-      if (!error) return holding_id;
-      if (error.code !== "23505") throw error;   // anything but the (user, symbol, account, nickname) unique key
       const { data: cur, error: e1 } = await sb.from("holdings").select("user_id,symbol,nickname").eq("id", holding_id).single();
       if (e1) throw e1;
-      const { data: target, error: e2 } = await sb.from("holdings").select("id,source")
-        .eq("user_id", cur.user_id).eq("symbol", cur.symbol).eq("account", account).eq("nickname", cur.nickname).single();
+      const findTarget = () => sb.from("holdings").select("id,source")
+        .eq("user_id", cur.user_id).eq("symbol", cur.symbol).eq("account", account).eq("nickname", cur.nickname).maybeSingle();
+      let { data: target, error: e2 } = await findTarget();
       if (e2) throw e2;
+      if (!target) {
+        const { error } = await sb.from("holdings").update({ account }).eq("id", holding_id);
+        if (!error) return holding_id;
+        if (error.code !== "23505") throw error;   // anything but the (user, symbol, account, nickname) unique key
+        ({ data: target, error: e2 } = await findTarget());
+        if (e2) throw e2;
+        if (!target) throw error;
+      }
       // a synced holding's lots are rewritten by every sync: manual lots folded into it would vanish
       if (target.source === "snaptrade") throw new Error(`${cur.symbol} is already synced from your brokerage in that account.`);
       const { error: e3 } = await sb.from("lots").update({ holding_id: target.id }).eq("holding_id", holding_id);
@@ -228,14 +275,18 @@ export function makeApi(sb: SupabaseClient = supabase) {
     },
     /** A symbol's price history from `sinceHours` ago, oldest first, ending at the newest print.
      *  `daily`: the long ranges (1W and up). The server folds everything older than `recentHours` into one
-     *  close per trading day in `tz` (price_history_series, migration 41); without it, raw prints are paged. */
-    async getHistory(symbol: string, sinceHours: number, daily?: { tz: string; recentHours?: number }): Promise<HistoryPoint[]> {
+     *  close per trading day in `tz` (price_history_series, migration 41); without it, raw prints are paged.
+     *  `maxPages`/`wave` let a deep recent window (a coin's hourly week) page further, several pages at a time.
+     *  `signal` cancels the read (the reader switched range). */
+    async getHistory(symbol: string, sinceHours: number, daily?: { tz: string; recentHours?: number; maxPages?: number; wave?: number },
+      opts: { signal?: AbortSignal } = {}): Promise<HistoryPoint[]> {
+      online();
       const since = new Date(Date.now() - sinceHours * 3600 * 1000).toISOString();
       if (daily && !seriesRpcMissing) {
         const dailyBefore = new Date(Date.now() - (daily.recentHours ?? 48) * 3600 * 1000).toISOString();
         try {
-          return await pageNewestFirst((from, to) => sb.rpc("price_history_series", { p_symbol: symbol, p_since: since, p_daily_before: dailyBefore, p_tz: daily.tz })
-            .order("ts", { ascending: false }).range(from, to), HISTORY_RPC_PAGES, symbol);
+          return await pageNewestFirst((from, to) => tuned(sb.rpc("price_history_series", { p_symbol: symbol, p_since: since, p_daily_before: dailyBefore, p_tz: daily.tz })
+            .order("ts", { ascending: false }).range(from, to), opts.signal), daily.maxPages ?? HISTORY_RPC_PAGES, symbol, daily.wave);
         } catch (e) {
           if (!rpcMissing(e)) throw e;
           seriesRpcMissing = true;   // not applied on this backend yet: page raw prints for the rest of the session
@@ -245,9 +296,9 @@ export function makeApi(sb: SupabaseClient = supabase) {
       // every range ended days early (r3). Newest-first pages always end at the latest print. A coin keeps ~10k
       // minute prints for its last 7 days (the prune keeps one row a day only past that), so a long range needs
       // a higher cap than 1D: the 8-page cap cut BTC's 1Y to its last 5 days (r4 power-user M1).
-      return pageNewestFirst((from, to) => sb.from("price_history")
+      return pageNewestFirst((from, to) => tuned(sb.from("price_history")
         .select("ts,price").eq("symbol", symbol).gte("ts", since)
-        .order("ts", { ascending: false }).range(from, to), daily ? HISTORY_RAW_DAILY_PAGES : HISTORY_RAW_PAGES, symbol);
+        .order("ts", { ascending: false }).range(from, to), opts.signal), daily ? HISTORY_RAW_DAILY_PAGES : HISTORY_RAW_PAGES, symbol, daily?.wave);
     },
     async updateBaseCurrency(base_currency: "USD" | "KRW") {
       const uid = await currentUserId(sb);
@@ -363,11 +414,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
      *  Portfolio Assessment from the last 14 days, oldest first by generation time. */
     async getDailyBriefs(): Promise<DailyBrief[]> {
       type R = { brief_date: string; edition: string | null; sections: unknown; generated_at: string; audio_path: string | null; script: string | null };
+      online();   // offline, the saved copy shows at once instead of after the retries (r5 native m4)
       const [{ data: d1, error: e1 }, { data: d2, error: e2 }] = await Promise.all([
-        sb.from("daily_briefs").select("brief_date,edition,sections,generated_at,audio_path,script").neq("edition", "assessment")
-          .order("brief_date", { ascending: false }).order("generated_at", { ascending: true }).limit(6),
-        sb.from("daily_briefs").select("brief_date,edition,sections,generated_at,audio_path,script").eq("edition", "assessment")
-          .order("generated_at", { ascending: false }).limit(1),
+        tuned(sb.from("daily_briefs").select("brief_date,edition,sections,generated_at,audio_path,script").neq("edition", "assessment")
+          .order("brief_date", { ascending: false }).order("generated_at", { ascending: true }).limit(6)),
+        tuned(sb.from("daily_briefs").select("brief_date,edition,sections,generated_at,audio_path,script").eq("edition", "assessment")
+          .order("generated_at", { ascending: false }).limit(1)),
       ]);
       // a network failure comes back as { error }, not a rejection: throw it, or the caller saves [] over
       // the copy kept on this device and the offline brief vanishes (r4 designer)

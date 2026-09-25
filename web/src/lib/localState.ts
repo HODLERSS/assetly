@@ -5,7 +5,7 @@
 import { clearRemovals } from "./heldIntel";
 
 export const USER_KEYS = ["assetly-next-steps", "assetly-connect-at", "assetly-onboarding", "assetly-briefs"];
-export const userKeysFor = (uid: string) => [`assetly-assess:${uid}`, `assetly-book:${uid}`];
+export const userKeysFor = (uid: string) => [`assetly-assess:${uid}`, `assetly-book:${uid}`, `assetly-news:${uid}`];
 
 export function clearUserLocalState(uid: string) {
   for (const k of [...USER_KEYS, ...userKeysFor(uid)]) {

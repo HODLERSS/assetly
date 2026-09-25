@@ -67,7 +67,7 @@ function fakeSb(script: Record<string, unknown[]>) {
     const chain: Record<string, unknown> = {};
     let op = "select";
     const log: string[] = [];
-    for (const m of ["select", "update", "delete", "insert", "eq", "single"]) {
+    for (const m of ["select", "update", "delete", "insert", "eq", "single", "maybeSingle"]) {
       chain[m] = (...args: unknown[]) => {
         if (["update", "delete", "insert"].includes(m)) op = m;
         log.push(`${m}(${args.map((a) => JSON.stringify(a)).join(",")})`);
@@ -85,36 +85,43 @@ function fakeSb(script: Record<string, unknown[]>) {
 }
 
 describe("setHoldingAccount", () => {
+  const cur = { data: { user_id: "u", symbol: "MSFT", nickname: "" }, error: null };
   it("a plain move updates the holding and keeps its id", async () => {
-    const { sb, calls } = fakeSb({});
+    const { sb, calls } = fakeSb({ "holdings.select": [cur, { data: null, error: null }] });
     expect(await makeApi(sb).setHoldingAccount("h1", "ira")).toBe("h1");
-    expect(calls).toEqual(['holdings.update({"account":"ira"}).eq("id","h1")']);
+    expect(calls.at(-1)).toBe('holdings.update({"account":"ira"}).eq("id","h1")');
   });
-  it("into an account that already holds it: the lots fold into that position and this one goes", async () => {
+  it("into an account that already holds it: the lots fold into that position and this one goes, with no failing move first", async () => {
     const { sb, calls } = fakeSb({
-      "holdings.update": [{ data: null, error: { code: "23505", message: "duplicate key" } }],
-      "holdings.select": [
-        { data: { user_id: "u", symbol: "MSFT", nickname: "" }, error: null },
-        { data: { id: "h9", source: "manual" }, error: null },
-      ],
+      "holdings.select": [cur, { data: { id: "h9", source: "manual" }, error: null }],
     });
     expect(await makeApi(sb).setHoldingAccount("h1", "ira")).toBe("h9");
-    expect(calls[3]).toBe('lots.update({"holding_id":"h9"}).eq("holding_id","h1")');
-    expect(calls[4]).toBe('holdings.delete().eq("id","h1")');
+    // r5 power-user: the move no longer goes out to 409 on the unique key before the fold
+    expect(calls.some((c) => c.startsWith("holdings.update"))).toBe(false);
+    expect(calls[2]).toBe('lots.update({"holding_id":"h9"}).eq("holding_id","h1")');
+    expect(calls[3]).toBe('holdings.delete().eq("id","h1")');
+  });
+  it("a position added there in between (the unique key catches it) still folds", async () => {
+    const { sb, calls } = fakeSb({
+      "holdings.update": [{ data: null, error: { code: "23505", message: "duplicate key" } }],
+      "holdings.select": [cur, { data: null, error: null }, { data: { id: "h9", source: "manual" }, error: null }],
+    });
+    expect(await makeApi(sb).setHoldingAccount("h1", "ira")).toBe("h9");
+    expect(calls.at(-2)).toBe('lots.update({"holding_id":"h9"}).eq("holding_id","h1")');
+    expect(calls.at(-1)).toBe('holdings.delete().eq("id","h1")');
   });
   it("never folds manual lots into a brokerage-synced position", async () => {
     const { sb, calls } = fakeSb({
-      "holdings.update": [{ data: null, error: { code: "23505", message: "duplicate key" } }],
-      "holdings.select": [
-        { data: { user_id: "u", symbol: "MSFT", nickname: "" }, error: null },
-        { data: { id: "h9", source: "snaptrade" }, error: null },
-      ],
+      "holdings.select": [cur, { data: { id: "h9", source: "snaptrade" }, error: null }],
     });
     await expect(makeApi(sb).setHoldingAccount("h1", "ira")).rejects.toThrow(/already synced/);
     expect(calls.some((c) => c.startsWith("lots.update"))).toBe(false);
   });
   it("other errors surface as they are", async () => {
-    const { sb } = fakeSb({ "holdings.update": [{ data: null, error: { code: "42501", message: "denied" } }] });
+    const { sb } = fakeSb({
+      "holdings.select": [cur, { data: null, error: null }],
+      "holdings.update": [{ data: null, error: { code: "42501", message: "denied" } }],
+    });
     await expect(makeApi(sb).setHoldingAccount("h1", "ira")).rejects.toMatchObject({ code: "42501" });
   });
 });

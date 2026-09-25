@@ -15,6 +15,33 @@ export const NEWS_PAGE = 40;
 const offline = () => typeof navigator !== "undefined" && navigator.onLine === false;
 const clock = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 
+// The last list each scope loaded, kept past the screen: News offline used to show only "You're offline." once
+// the reader had been to Home and back, because the list lived in the screen's own state (r5 designer m-h).
+// "All holdings" is also kept on the device per user (cleared at sign-out, lib/localState), for a cold start
+// offline; the per-holding filters are kept for the session.
+type Kept = { items: NewsItem[]; at: number };
+// per api and per user: the next account signed in on this device never sees the last one's list
+const newsMemo = new WeakMap<Api, { uid: string | null; scopes: Map<string, Kept> }>();
+const memoFor = (api: Api, uid: string | null) => {
+  let m = newsMemo.get(api);
+  if (!m || m.uid !== uid) { m = { uid, scopes: new Map() }; newsMemo.set(api, m); }
+  return m.scopes;
+};
+const ALL = "__all__";
+export const newsKey = (uid: string) => `assetly-news:${uid}`;
+function readKept(uid: string | null): Kept | null {
+  if (!uid) return null;
+  try {
+    const v = JSON.parse(localStorage.getItem(newsKey(uid)) ?? "null") as Kept | null;
+    return v && Array.isArray(v.items) && typeof v.at === "number" ? v : null;
+  } catch { return null; }
+}
+function writeKept(uid: string | null, kept: Kept) {
+  if (!uid) return;
+  // a page's worth is what the screen shows first; the rest reloads
+  try { localStorage.setItem(newsKey(uid), JSON.stringify({ items: kept.items.slice(0, NEWS_PAGE), at: kept.at })); } catch { /* private mode or quota */ }
+}
+
 /** "Today", "Yesterday", else "Wed, Sep 23" (the reader's own calendar); no date: "Earlier". */
 export function newsDay(iso: string | null, now: Date = new Date()): string {
   if (!iso) return "Earlier";
@@ -39,23 +66,29 @@ export function groupByDay(items: NewsItem[], now: Date = new Date()): { day: st
 }
 
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
-export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending = false, onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen, onRefreshSymbol, symbolRefreshing = {}, symbolFresh = {} }: {
+export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown = false, intelPending = false, onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen, onRefreshSymbol, symbolRefreshing = {}, symbolFresh = {} }: {
   api: Api; rows: PortfolioRow[]; dispKr?: "USD" | "KRW";
   /** whose removals to screen the portfolio card against (see lib/heldIntel) */
   uid?: string | null;
+  /** the app's own "Couldn't refresh prices." banner is up: News says its part quietly, not in a second red box */
+  pricesDown?: boolean;
   /** a book-changed run is being written: the card says it is catching up */
   intelPending?: boolean;
   onRefreshInsights?: () => void; insightsRefreshing?: boolean; freshInsights?: Insight | null; onInsightsSeen?: (generatedAt: string) => void;
   onRefreshSymbol?: (symbol: string) => void; symbolRefreshing?: Record<string, boolean>; symbolFresh?: Record<string, Insight>;
 }) {
   const [filter, setFilter] = useState<string | null>(null);
-  const [items, setItems] = useState<NewsItem[]>([]);
-  const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">("loading");
+  // the kept list paints at once (a device copy fills in on a cold start); the refresh runs behind it
+  const [cache] = useState(() => {
+    const m = memoFor(api, uid);
+    if (!m.has(ALL)) { const k = readKept(uid); if (k) m.set(ALL, k); }
+    return m;
+  });
+  const [items, setItems] = useState<NewsItem[]>(() => cache.get(ALL)?.items ?? []);
+  const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">(() => (cache.has(ALL) ? "ok" : "loading"));
   const [limit, setLimit] = useState(NEWS_PAGE);
   const [keptAt, setKeptAt] = useState<number | null>(null);   // a failed refresh over a list loaded earlier: its time
-  const [loadedAt] = useState(() => new Map<string, number>());
   const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
-  const [cache] = useState(() => new Map<string, NewsItem[]>());   // instant chip flips
   const [top5, setTop5] = useState<Insight | null>(null);          // Assetly Intelligence, portfolio-wide
   const [retryN, setRetryN] = useState(0);                         // Retry after a failed load, or a pull to refresh
   // pull to refresh bumps the same counter; its promise settles once the reload has landed
@@ -82,8 +115,8 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending
 
   useEffect(() => {
     let live = true;
-    const key = filter ?? "__all__";
-    if (cache.has(key)) { setItems(cache.get(key)!); setState("ok"); }   // show instantly, refresh behind
+    const key = filter ?? ALL;
+    if (cache.has(key)) { setItems(cache.get(key)!.items); setState("ok"); }   // show instantly, refresh behind
     else setState("loading");
     setKeptAt(null);
     const held = newsRows.map((r) => r.symbol);
@@ -96,7 +129,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending
     load()
       .then(async (n) => {
         if (!live) return;
-        const key = filter ?? "__all__";
+        const key = filter ?? ALL;
         if (n.length === 0 && rows.length > 0 && !pulled.has(key)) {
           pulled.add(key);
           setState("pulling");                          // pull the first stories right now
@@ -104,14 +137,17 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending
           n = await load();
           if (!live) return;
         }
-        cache.set(key, n); loadedAt.set(key, Date.now());
+        const kept = { items: n, at: Date.now() };
+        cache.set(key, kept);
+        if (key === ALL) writeKept(uid, kept);
         setItems(n);
         setState("ok");
       })
       .catch(() => {
         if (!live) return;
         // a list this visit already loaded stays on screen, dated, under the error (r3 design m3)
-        if (cache.has(key)) { setItems(cache.get(key)!); setKeptAt(loadedAt.get(key) ?? Date.now()); }
+        const kept = cache.get(key);
+        if (kept) { setItems(kept.items); setKeptAt(kept.at); }
         setState("error");
       })
       .finally(() => { settled.current?.(); settled.current = null; });
@@ -166,12 +202,18 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending
           <p className="insights-foot">Not financial advice</p>
         </section>
       )}
-      {state === "error" && (
+      {state === "error" && (pricesDown ? (
+        // the app's banner above already says the connection is down, with its Retry (which reloads this list
+        // too): a second red box with a second Retry under it was two alarms for one fact (r5 designer m-1)
+        <p className="sub news-kept" role="status" data-testid="news-kept">
+          {keptAt !== null ? `Showing news from ${clock(keptAt)}.` : "News will load when the connection is back."}
+        </p>
+      ) : (
         <div className="error-note inline-note" role="alert" data-testid="news-error">
           <span>{offline() ? "You're offline." : "Couldn't load news."}{keptAt !== null ? ` Showing news from ${clock(keptAt)}.` : ""}</span>
           <button className="chip" onClick={() => setRetryN((n) => n + 1)}>Retry</button>
         </div>
-      )}
+      ))}
       {state === "pulling" && (
         <p className="empty" aria-busy="true">Pulling the latest stories{filter ? ` for ${filter}` : ""}…</p>
       )}
