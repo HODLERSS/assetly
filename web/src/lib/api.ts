@@ -75,7 +75,31 @@ async function currentUserId(sb: SupabaseClient): Promise<string | null> {
   return remote?.data?.user?.id ?? null;
 }
 
+type HistoryPage = PromiseLike<{ data: unknown[] | null; error: { code?: string; message?: string } | null }>;
+const HISTORY_PAGE = 1000;
+const HISTORY_RAW_PAGES = 8, HISTORY_RAW_DAILY_PAGES = 16, HISTORY_RPC_PAGES = 6;
+/** Page a newest-first query until a short page, then return the points oldest first. Reaching the cap is
+ *  said out loud (console) instead of silently drawing a shorter range. */
+async function pageNewestFirst(page: (from: number, to: number) => HistoryPage, maxPages: number, symbol: string): Promise<HistoryPoint[]> {
+  const rows: Record<string, unknown>[] = [];
+  const done = () => rows.reverse().map((r) => ({ ts: String(r.ts), price: Number(r.price) }));
+  for (let p = 0; p < maxPages; p++) {
+    const { data, error } = await page(p * HISTORY_PAGE, p * HISTORY_PAGE + HISTORY_PAGE - 1);
+    if (error) throw error;
+    rows.push(...((data ?? []) as Record<string, unknown>[]));
+    if (!data || data.length < HISTORY_PAGE) return done();
+  }
+  console.warn(`price history for ${symbol} hit the ${maxPages}-page cap; its oldest points are missing`);
+  return done();
+}
+/** PostgREST's "no such function" (PGRST202) or Postgres' undefined_function (42883). */
+export const rpcMissing = (e: unknown): boolean => {
+  const code = (e as { code?: unknown } | null)?.code;
+  return code === "PGRST202" || code === "42883";
+};
+
 export function makeApi(sb: SupabaseClient = supabase) {
+  let seriesRpcMissing = false;
   return {
     async getProfile(): Promise<Profile | null> {
       const uid = await currentUserId(sb);
@@ -160,7 +184,10 @@ export function makeApi(sb: SupabaseClient = supabase) {
     },
     async getLots(holding_id: string): Promise<Lot[]> {
       const { data, error } = await sb.from("lots").select("*")
-        .eq("holding_id", holding_id).order("acquired_on", { ascending: true, nullsFirst: true });
+        .eq("holding_id", holding_id).order("acquired_on", { ascending: true, nullsFirst: true })
+        // undated lots (and lots bought the same day) tie on acquired_on: entry order keeps them from swapping
+        // places on every reload (r4 native m2)
+        .order("created_at", { ascending: true }).order("id", { ascending: true });
       if (error) throw error;
       return (data ?? []).map((l: Record<string, unknown>) => ({ ...l, qty: Number(l.qty), cost_per_share: Number(l.cost_per_share) })) as Lot[];
     },
@@ -199,23 +226,28 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { error } = await sb.from("holdings").delete().eq("id", holding_id);
       if (error) throw error;
     },
-    async getHistory(symbol: string, sinceHours: number): Promise<HistoryPoint[]> {
-      // PostgREST caps a response at 1000 rows. Ascending + a bigger limit silently returned the OLDEST
-      // 1000, so every range ended days early (1D showed "market closed" mid-session). Page newest-first
-      // until a short page, then put the points back in time order. A symbol holds ~3.3k rows even over
-      // 5Y (minute prints are pruned), so this is at most a handful of requests.
+    /** A symbol's price history from `sinceHours` ago, oldest first, ending at the newest print.
+     *  `daily`: the long ranges (1W and up). The server folds everything older than `recentHours` into one
+     *  close per trading day in `tz` (price_history_series, migration 41); without it, raw prints are paged. */
+    async getHistory(symbol: string, sinceHours: number, daily?: { tz: string; recentHours?: number }): Promise<HistoryPoint[]> {
       const since = new Date(Date.now() - sinceHours * 3600 * 1000).toISOString();
-      const PAGE = 1000, MAX_PAGES = 8;
-      const rows: Record<string, unknown>[] = [];
-      for (let p = 0; p < MAX_PAGES; p++) {
-        const { data, error } = await sb.from("price_history")
-          .select("ts,price").eq("symbol", symbol).gte("ts", since)
-          .order("ts", { ascending: false }).range(p * PAGE, p * PAGE + PAGE - 1);
-        if (error) throw error;
-        rows.push(...(data ?? []));
-        if (!data || data.length < PAGE) break;
+      if (daily && !seriesRpcMissing) {
+        const dailyBefore = new Date(Date.now() - (daily.recentHours ?? 48) * 3600 * 1000).toISOString();
+        try {
+          return await pageNewestFirst((from, to) => sb.rpc("price_history_series", { p_symbol: symbol, p_since: since, p_daily_before: dailyBefore, p_tz: daily.tz })
+            .order("ts", { ascending: false }).range(from, to), HISTORY_RPC_PAGES, symbol);
+        } catch (e) {
+          if (!rpcMissing(e)) throw e;
+          seriesRpcMissing = true;   // not applied on this backend yet: page raw prints for the rest of the session
+        }
       }
-      return rows.reverse().map((r) => ({ ts: String(r.ts), price: Number(r.price) }));
+      // PostgREST caps a response at 1000 rows. Ascending + a bigger limit silently returned the OLDEST 1000, so
+      // every range ended days early (r3). Newest-first pages always end at the latest print. A coin keeps ~10k
+      // minute prints for its last 7 days (the prune keeps one row a day only past that), so a long range needs
+      // a higher cap than 1D: the 8-page cap cut BTC's 1Y to its last 5 days (r4 power-user M1).
+      return pageNewestFirst((from, to) => sb.from("price_history")
+        .select("ts,price").eq("symbol", symbol).gte("ts", since)
+        .order("ts", { ascending: false }).range(from, to), daily ? HISTORY_RAW_DAILY_PAGES : HISTORY_RAW_PAGES, symbol);
     },
     async updateBaseCurrency(base_currency: "USD" | "KRW") {
       const uid = await currentUserId(sb);

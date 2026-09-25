@@ -418,12 +418,18 @@ describe("F9 chart", () => {
     expect(screen.queryByTestId("scrub-readout")).toBeNull();
   });
   it("a full stock week is not 'partial'", async () => {
-    const days = ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25"].map((d, i) => p(`${d}T20:00:00Z`, 100 + i));
-    const api = stubApi({ getHistory: vi.fn().mockResolvedValue(days) });
-    await openRddt(api);
-    await userEvent.click(screen.getByRole("tab", { name: "1W" }));
-    await screen.findByTestId("price-chart");
-    expect(screen.queryByTestId("partial-note")).toBeNull();
+    // 1W on Fri Sep 25 starts Fri Sep 18: its close is the base (r4 power-user M2)
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-25T20:30:00Z"));
+    try {
+      const days = ["2026-09-18", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25"].map((d, i) => p(`${d}T20:00:00Z`, 100 + i));
+      const api = stubApi({ getHistory: vi.fn().mockResolvedValue(days), getPortfolio: vi.fn().mockResolvedValue([row({ as_of: "2026-09-25T20:00:00Z", price: 105 })]) });
+      await openRddt(api);
+      await userEvent.click(screen.getByRole("tab", { name: "1W" }));
+      await screen.findByTestId("price-chart");
+      expect(screen.queryByTestId("partial-note")).toBeNull();
+      expect(screen.getByTestId("range-change").textContent).toBe("+5.00%");
+    } finally { vi.useRealTimers(); }
   });
 });
 

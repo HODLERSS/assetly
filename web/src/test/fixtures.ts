@@ -9,6 +9,14 @@ export const row = (over: Partial<PortfolioRow>): PortfolioRow => ({
   as_of: new Date().toISOString(), value: 4800, total_gl: 779, ...over,
 });
 
+/** `n` days ago at `hourUtc`:00 UTC (16:00 UTC is midday in New York, so the New York date is that day too). */
+export function daysAgoAt(n: number, hourUtc: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - n);
+  d.setUTCHours(hourUtc, 0, 0, 0);
+  return d.toISOString();
+}
+
 export function stubApi(over: Partial<Api> = {}): Api {
   return {
     getProfile: vi.fn().mockResolvedValue(profile),
@@ -40,9 +48,10 @@ export function stubApi(over: Partial<Api> = {}): Api {
     getInsights: vi.fn().mockResolvedValue(null),
     getPortfolioInsights: vi.fn().mockResolvedValue(null),
     ask: vi.fn().mockResolvedValue({ answer: "ok", followups: [] }),
+    // three recent sessions (one with an intraday print), dated from today: fixed dates aged out of the 1M window
     getHistory: vi.fn().mockResolvedValue([
-      { ts: "2026-08-20T20:00:00Z", price: 190 }, { ts: "2026-08-21T14:00:00Z", price: 188 },
-      { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
+      { ts: daysAgoAt(4, 16), price: 190 }, { ts: daysAgoAt(3, 14), price: 188 },
+      { ts: daysAgoAt(3, 16), price: 195 }, { ts: daysAgoAt(2, 16), price: 197 },
     ]),
     getPortfolio: vi.fn().mockResolvedValue([row({})]),
     addPosition: vi.fn().mockResolvedValue(undefined),

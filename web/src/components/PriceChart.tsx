@@ -1,43 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Api, HistoryPoint } from "../lib/api";
 import { glClass, moneyExact, signedPct } from "../lib/format";
+import { anchorRange, dailyCloses, fetchHours, RANGE_KEYS, rangeStartYmd, seriesZone, type RangeKey } from "../lib/chartRange";
+import { onForeground } from "../lib/native";
+export type { RangeKey };
 
-// Minimal price chart: pure SVG, no library. Ranges map to hours of history;
-// 1D/1W ride the 1-min cron + 15m backfill, 1M/3M ride daily closes.
-function ytdHours(): number {
-  const now = new Date();
-  return Math.max(48, (now.getTime() - Date.UTC(now.getUTCFullYear(), 0, 1)) / 3600e3);
-}
-const RANGES = [
-  { key: "1D", hours: 24 },
-  { key: "1W", hours: 24 * 8 },
-  { key: "1M", hours: 24 * 31 },
-  { key: "3M", hours: 24 * 92 },
-  { key: "6M", hours: 24 * 183 },
-  { key: "YTD", hours: 0 },                    // dynamic: see ytdHours()
-  { key: "1Y", hours: 24 * 366 },
-  { key: "2Y", hours: 24 * 366 * 2 },
-  { key: "5Y", hours: 24 * 366 * 5 },
-] as const;
-export type RangeKey = (typeof RANGES)[number]["key"];
-const rangeHours = (key: RangeKey): number => {
-  const r = RANGES.find((x) => x.key === key)!;
-  return r.key === "YTD" ? ytdHours() : r.hours;
-};
+// Minimal price chart: pure SVG, no library. 1D is the latest session's prints; every longer range is one close
+// per trading day, anchored on the last close on or before the range's start date (lib/chartRange.ts).
+
 // 1D asks for four days so a market holiday or a weekend still has a last session to show
 const ONE_D_FETCH_HOURS = 96;
-
-/** One point per calendar day: the last stored print of each past day is its close;
- *  today's point is the LIVE price while the market is trading. */
-function dailyCloses(pts: HistoryPoint[], livePrice: number | null, liveAsOf: string | null): HistoryPoint[] {
-  const byDay = new Map<string, HistoryPoint>();
-  for (const p of pts) byDay.set(p.ts.slice(0, 10), p);        // ascending input: last print wins
-  if (livePrice !== null && liveAsOf) {
-    const day = liveAsOf.slice(0, 10);
-    byDay.set(day, { ts: liveAsOf, price: livePrice });
-  }
-  return [...byDay.values()].sort((a, b) => a.ts.localeCompare(b.ts));
-}
+// The last series each range drew this session, per api: offline (or on a failed refresh) a position shows the
+// chart it last had instead of an endless skeleton (r4 power-user M4).
+const seriesMemo = new WeakMap<Api, Map<string, HistoryPoint[]>>();
+const memoFor = (api: Api) => { let m = seriesMemo.get(api); if (!m) { m = new Map(); seriesMemo.set(api, m); } return m; };
 
 /** Intraday series for 1D: keep every print, append the live price as the newest point. */
 function withLiveTick(pts: HistoryPoint[], livePrice: number | null, liveAsOf: string | null): HistoryPoint[] {
@@ -75,7 +51,6 @@ function thin(pts: HistoryPoint[], n = 180): HistoryPoint[] {
   return out;
 }
 
-const dayKey = (ts: string) => ts.slice(0, 10);
 /** The zone a market's sessions are dated in: a KRX close is Wednesday in Seoul, even when it is still
  *  Tuesday evening in Pacific (the header said "Wed close" over a chart that said "Tue"; r3 power-user). */
 export const chartZone = (symbol: string): string | undefined => (/\.(KS|KQ)$/i.test(symbol) ? "Asia/Seoul" : undefined);
@@ -98,19 +73,46 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
   crypto?: boolean;
 }) {
   const [range, setRange] = useState<RangeKey>("1M");
-  const [pts, setPts] = useState<HistoryPoint[] | null>(null);   // null = loading; full resolution
+  const [raw, setRaw] = useState<HistoryPoint[] | null>(null);   // null = nothing to draw yet; full resolution
+  const [failed, setFailed] = useState(false);                    // the last fetch failed
+  const [attempt, setAttempt] = useState(0);                      // Retry, reconnect and foreground refetch
   const [scrub, setScrub] = useState<number | null>(null);        // index into the drawn points under the finger
   const svgRef = useRef<SVGSVGElement>(null);
+  const intraday = range === "1D";
+  const zone = seriesZone(symbol, crypto);
 
+  useEffect(() => { setScrub(null); }, [symbol, range]);
+  // 1D refetches on every live tick (the session grows); the daily ranges only when the range, a Retry or a
+  // reconnect asks, so a minute's tick is not a new query for five years of closes
+  const tick = intraday ? liveAsOf : null;
   useEffect(() => {
     let live = true;
-    setPts(null); setScrub(null);
-    const intraday = range === "1D";
-    api.getHistory(symbol, intraday ? ONE_D_FETCH_HOURS : rangeHours(range))
-      .then((p) => { if (live) setPts(intraday ? latestSession(withLiveTick(p, livePrice, liveAsOf)) : dailyCloses(p, livePrice, liveAsOf)); })
-      .catch(() => { if (live) setPts([]); });
+    const key = `${symbol}:${range}`;
+    const memo = memoFor(api).get(key) ?? null;
+    setRaw(memo);
+    setFailed(false);
+    const req = range === "1D"
+      ? api.getHistory(symbol, ONE_D_FETCH_HOURS)
+      : api.getHistory(symbol, fetchHours(range, new Date(), zone), { tz: zone });
+    req.then((p) => { if (live) { memoFor(api).set(key, p); setRaw(p); } })
+      .catch(() => { if (live) setFailed(true); });   // keep what is drawn; with nothing drawn, say so with Retry
     return () => { live = false; };
-  }, [api, symbol, range, livePrice, liveAsOf]);
+  }, [api, symbol, range, zone, attempt, tick]);
+  // a chart that failed comes back by itself when the connection or the app does
+  useEffect(() => {
+    if (!failed) return;
+    const again = () => setAttempt((n) => n + 1);
+    window.addEventListener("online", again);
+    const off = onForeground(again);
+    return () => { window.removeEventListener("online", again); off(); };
+  }, [failed]);
+
+  const series = useMemo(() => {
+    if (!raw) return null;
+    if (range === "1D") return { pts: latestSession(withLiveTick(raw, livePrice, liveAsOf)), partial: false };
+    return anchorRange(dailyCloses(raw, zone, livePrice, liveAsOf), rangeStartYmd(range, new Date(), zone), zone);
+  }, [raw, range, zone, livePrice, liveAsOf]);
+  const pts = series?.pts ?? null;
 
   const view = useMemo(() => {
     if (!pts || pts.length < 2) return null;
@@ -127,22 +129,19 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
     const d = drawn.map((p, i) => `${i ? "L" : "M"}${x(p.ts).toFixed(1)} ${y(p.price).toFixed(1)}`).join(" ");
     const chg = ((pts[pts.length - 1].price / pts[0].price) - 1) * 100;
     const spanDays = (t1 - t0) / 86400000;
-    const days = new Set(pts.map((p) => dayKey(p.ts))).size;
     const avgY = avgCost != null && avgCost >= lo && avgCost <= hi ? y(avgCost) : null;
-    return { d, lo, hi, chg, W, H, spanDays, days, avgY, drawn, x, y };
+    return { d, lo, hi, chg, W, H, spanDays, avgY, drawn, x, y };
   }, [pts, avgCost]);
 
-  const intraday = range === "1D";
   // 1D: the page's day move (vs the previous close), not first-print-to-last-print of the session
   const headPct = intraday && dayPct !== null ? dayPct : view?.chg ?? 0;
   // 1D on a holiday or a weekend: the line is the last session, and the header says which day it was
   const last = pts?.length ? new Date(pts[pts.length - 1].ts) : null;
   const tz = chartZone(symbol);
   const notToday = intraday && last !== null && dayIn(last, tz) !== dayIn(new Date(), tz);
-  // partial history: distinct trading days against what the range holds. Five sessions is a full stock
-  // week ("showing 5d of data" on a complete week was wrong); a coin trades all seven days.
-  const expected = (rangeHours(range) / 24) * ((crypto ? 7 : 5) / 7);
-  const partial = !intraday && view !== null && view.days < 0.7 * expected;
+  // partial history: the stored closes do not reach back to the range's base (a symbol tracked for a month has
+  // no 1Y base). A full 5Y of sparse older closes is complete; the day-count guess called it "1825d of data".
+  const partial = !intraday && view !== null && !!series?.partial;
 
   const onScrub = (e: PointerEvent<SVGSVGElement>) => {
     if (!view || !svgRef.current) return;
@@ -160,7 +159,7 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
         {sp ? (
           // the scrub readout replaces the header while a finger is on the line
           <span className="sub num" data-testid="scrub-readout" aria-live="polite">
-            <strong className="num" style={{ color: "var(--as-ink)" }}>{moneyExact(sp.price, currency)}</strong> · {scrubLabel(sp.ts, range, tz)}
+            <strong className="num" style={{ color: "var(--as-ink)" }}>{moneyExact(sp.price, currency)}</strong> · {scrubLabel(sp.ts, range, intraday ? tz : zone)}
           </span>
         ) : (
           <span className="sub">Price · {notToday && last ? `last session, ${last.toLocaleDateString("en-US", { weekday: "short", timeZone: tz })}` : range}</span>
@@ -172,7 +171,13 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
         )}
       </div>
 
-      {pts === null && (
+      {pts === null && failed && (
+        <p className="empty" role="alert" style={{ padding: "22px 8px" }} data-testid="chart-error">
+          Couldn't load the chart.{" "}
+          <button className="chip" onClick={() => setAttempt((n) => n + 1)}>Retry</button>
+        </p>
+      )}
+      {pts === null && !failed && (
         // same footprint as the loaded chart (the 320x96 viewBox scaled to the card, plus the L/H line),
         // so the lots and the Remove button below do not jump when the history lands
         <div aria-busy="true" aria-label="Loading chart">
@@ -219,10 +224,10 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
       )}
 
       <div className="chips" role="tablist" aria-label="Chart range" style={{ paddingBottom: 0, marginTop: 8 }}>
-        {RANGES.map((r) => (
-          <button key={r.key} className="chip" role="tab" aria-selected={range === r.key}
-                  aria-pressed={range === r.key} onClick={() => setRange(r.key)}>
-            {r.key}
+        {RANGE_KEYS.map((k) => (
+          <button key={k} className="chip" role="tab" aria-selected={range === k}
+                  aria-pressed={range === k} onClick={() => setRange(k)}>
+            {k}
           </button>
         ))}
       </div>

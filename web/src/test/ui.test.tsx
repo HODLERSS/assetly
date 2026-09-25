@@ -46,6 +46,7 @@ import { App } from "../App";
 import { AuthScreen } from "../screens/Auth";
 import { SettingsScreen } from "../screens/Settings";
 import type { Api, PortfolioRow, Profile } from "../lib/api";
+import { daysAgoAt } from "./fixtures";
 
 const profile: Profile = { id: "u-test", display_name: "Minjae", base_currency: "USD", display_us: "USD", display_kr: "KRW", markets: ["US", "KR"], onboarded_at: "2026-08-23T00:00:00Z" };
 const row = (over: Partial<PortfolioRow>): PortfolioRow => ({
@@ -88,9 +89,10 @@ function stubApi(over: Partial<Api> = {}): Api {
     getInsights: vi.fn().mockResolvedValue(null),
     getPortfolioInsights: vi.fn().mockResolvedValue(null),
     ask: vi.fn().mockResolvedValue({ answer: "1W movement: +$824 (+14.2%). MARA led.", followups: ["What drove MARA this week?", "How is my 1M trend?"] }),
+    // three recent sessions (one with an intraday print), dated from today: fixed dates aged out of the 1M window
     getHistory: vi.fn().mockResolvedValue([
-      { ts: "2026-08-20T20:00:00Z", price: 190 }, { ts: "2026-08-21T14:00:00Z", price: 188 },
-      { ts: "2026-08-21T20:00:00Z", price: 195 }, { ts: "2026-08-22T20:00:00Z", price: 197 },
+      { ts: daysAgoAt(4, 16), price: 190 }, { ts: daysAgoAt(3, 14), price: 188 },
+      { ts: daysAgoAt(3, 16), price: 195 }, { ts: daysAgoAt(2, 16), price: 197 },
     ]),
     getPortfolio: vi.fn().mockResolvedValue([row({})]),
     addPosition: vi.fn().mockResolvedValue(undefined),   // no id -> legacy back-to-home flow
@@ -1137,14 +1139,19 @@ describe("U11 price chart on position", () => {
     // 3 calendar days in history (intraday print collapsed) + live today = 4 points
     expect(d.split("L").length).toBe(4);
     expect((await screen.findByTestId("range-change")).textContent).toMatch(/[+-]\d/);
-    expect(screen.getByText(/L \$190\.00/)).toBeTruthy();   // 8/21 close 195, not the 188 intraday
+    expect(screen.getByText(/L \$190\.00/)).toBeTruthy();   // the middle day's close is 195, not its 188 intraday print
     expect(screen.getByText(/H \$200\.00/)).toBeTruthy();   // live price today (row.price = 200)
   });
   it("Apple-style ranges: full chip set, 1D intraday hours, YTD dynamic; default 1M", async () => {
     apiRef = stubApi();
     await openPosition();
     await screen.findByTestId("price-chart");
-    expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 31);
+    // 1M reaches back to the same date last month plus a margin that holds the base close; daily closes in New York
+    const [sym, hours, daily] = (apiRef.getHistory as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(sym).toBe("RDDT");
+    expect(hours).toBeGreaterThanOrEqual(24 * 28);
+    expect(hours).toBeLessThanOrEqual(24 * 45);
+    expect(daily).toEqual({ tz: "America/New_York" });
     for (const k of ["1D", "1W", "3M", "6M", "YTD", "1Y", "2Y", "5Y"]) {
       expect(screen.getByRole("tab", { name: k })).toBeTruthy();
     }
@@ -1157,7 +1164,11 @@ describe("U11 price chart on position", () => {
       expect(hours).toBeLessThanOrEqual(24 * 366);
     });
     await userEvent.click(screen.getByRole("tab", { name: "2Y" }));
-    await waitFor(() => expect(apiRef.getHistory).toHaveBeenCalledWith("RDDT", 24 * 366 * 2));
+    await waitFor(() => {
+      const hours = (apiRef.getHistory as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1] as number;
+      expect(hours).toBeGreaterThan(24 * 730);
+      expect(hours).toBeLessThan(24 * 750);
+    });
   });
   it("1D draws the intraday prints, not one collapsed daily point", async () => {
     const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
