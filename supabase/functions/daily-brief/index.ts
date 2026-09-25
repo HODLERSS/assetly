@@ -12,11 +12,12 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  aliasesFor, booksKorean, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, liveNotYesterday, offLensIdea, overlap, pctText, plainScrub,
-  usableNews, valuationHits, wrongEarningsDates, type FilingLite,
+  aliasesFor, booksKorean, brokenSentences, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  overlap, pctText, plainScrub, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
 } from "../_shared/intel.ts";
 import { windowReturns } from "../_shared/history.ts";
 import { userIdFrom } from "../_shared/auth.ts";
+import { earningsFilings } from "../_shared/filings.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -62,7 +63,13 @@ const FAST_MODEL = "gpt-oss-120b";
 
 // ---- trading calendar: ../_shared/calendar.ts (shared with insights-sync and ask) ----
 
+// Bumped whenever the brief's guards change enough that today's earlier rows should be rewritten (see "outdated").
+const GEN_VERSION = 3;
+// What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
+// (drafts handed back to a fact-checker are not sources).
+let SOURCES: string[] = [];
 async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs = 30000, model?: string): Promise<Record<string, unknown> | null> {
+  if (!/^(Draft (brief|assessment):|This assessment is too thin)/.test(prompt)) SOURCES.push(prompt);
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {   // base overridable for local fixture runs
@@ -242,7 +249,8 @@ const NOVICE_MAP: [RegExp, string][] = [
 const noviceScrub = (t: string): string => {
   // plainScrub never doubles a gloss the model already wrote: "VIX, the market's fear gauge, fell" used to
   // come out "The market's fear gauge, the market's fear gauge, fell" (2026-09-25)
-  let x = plainScrub(t, NOVICE_MAP);
+  // a gloss dropped after a modifier keeps no stray article ("on sustained a shrinking price tag", round 3)
+  let x = fixGlossArticles(plainScrub(t, NOVICE_MAP));
   // A replacement that begins with a possessive collides with any article in front of the term it
   // replaced: "a CET1 ratio below 12%" became "A its safety cushion of capital below twelve percent".
   // Drop the stranded article - deletion only, and it cannot touch text the map did not rewrite.
@@ -269,14 +277,16 @@ const fitCap = (t: string, cap: number, mustKeep?: RegExp): string => {
     // "25.6%" was being read as a terminator, which is how "so 25." reached the reader
     const ends = [...cut.matchAll(/[.!?](?=\s|$)/g)].map((m) => m.index ?? -1);
     const stop = ends.length ? ends[ends.length - 1] : -1;
-    if (stop > cut.length * 0.5) cut = cut.slice(0, stop + 1);
+    // any sentence end wins over a mid-sentence cut: a shorter complete sentence beats a fragment ending on
+    // "relative." (round 3 newcomer assessment)
+    if (stop > 0) cut = cut.slice(0, stop + 1);
     else {
       // likewise here: only a comma OUTSIDE a number is a clause boundary
       const commas = [...cut.matchAll(/(?<!\d),(?!\d)/g)].map((m) => m.index ?? -1);
       const comma = commas.length ? commas[commas.length - 1] : -1;
-      if (comma > cut.length * 0.6) cut = cut.slice(0, comma);
+      if (comma > cut.length * 0.4) cut = cut.slice(0, comma);
       let prev = "";
-      while (prev !== cut) { prev = cut; cut = cut.replace(/[\s,;:]+(?:so|and|but|or|which|that|with|for|to|at|in|on|of|as|while|because|if|when|from|by|than|after|before|into|over|under|about|its|their|the|a|an)\.?$/i, ""); }
+      while (prev !== cut) { prev = cut; cut = cut.replace(/[\s,;:]+(?:so|and|but|or|which|that|with|for|to|at|in|on|of|as|while|because|if|when|from|by|than|after|before|into|over|under|about|its|their|the|a|an|relative|sustained|continued|further|ongoing|more|less|very|such|each|every|any|some|no|not|also|still|just|even|only|is|are|was|were|be|been|has|have|had|will|would|could|should|can|may|might|between|against|toward|towards|through|across|amid|per|via|versus|vs|plus|including|this|these|those|our|your|his|her)\.?$/i, ""); }
       cut = cut.replace(/[,;:]+$/, "") + ".";
     }
     if (!mustKeep || mustKeep.test(cut)) out = cut;   // last resort: a hard cut, but never one that loses the required clause
@@ -429,6 +439,7 @@ Deno.serve(async (req) => {
   let superseded = false;
   const errors: string[] = [];
   for (const uid of userIds) {
+    SOURCES = [];
     const tStart = Date.now();
     const elapsed = () => (Date.now() - tStart) / 1000;
     try {
@@ -439,8 +450,18 @@ Deno.serve(async (req) => {
       if (total < 100) continue;
       let backfillOnly: Sections | null = null;
       if (!force) {
-        const { data: have } = await admin.from("daily_briefs").select("id, model, audio_path, sections").eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
-        if (have && !String(have.model ?? "").includes("compact")) {
+        const haveQ = (cols: string) => admin.from("daily_briefs").select(cols).eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
+        let haveR = await haveQ("id, model, audio_path, sections, generated_at, gen_version");
+        if (haveR.error) haveR = await haveQ("id, model, audio_path, sections, generated_at");   // before migration 39
+        const have = haveR.data as { model?: string; audio_path?: string | null; sections?: unknown; generated_at?: string; gen_version?: number | null } | null;
+        // A row written by an older daily-brief is rewritten ONCE by the next sweep for the same edition and date
+        // (round 3: the day's pre-fix midday, "Microsoft earnings call Sep 28", stayed up all afternoon because
+        // a row existed). Only the edition the clock is on, never an assessment, never while its narration may
+        // still be running (written in the last 15 minutes), and only when the column exists to record the rewrite.
+        const outdated = !!have && !haveR.error && Number(have.gen_version ?? 0) < GEN_VERSION && edition !== "assessment"
+          && Date.now() - +new Date(String(have.generated_at ?? 0)) > 15 * 60000;
+        if (have && outdated) { /* fall through: regenerate below */ }
+        else if (have && !String(have.model ?? "").includes("compact")) {
           // self-heal: the text exists but narration is missing -> regenerate audio only
           if (!fixture && !noAudio && !have.audio_path && validSections(have.sections)) backfillOnly = have.sections as Sections;
           else continue;
@@ -487,8 +508,7 @@ Deno.serve(async (req) => {
       const earnSyms = holdings.slice(0, 8).map((r) => r.symbol);
       const [{ data: trDates }, { data: filDates }] = await Promise.all([
         admin.from("transcripts").select("symbol, title, published_at").in("symbol", earnSyms).order("published_at", { ascending: false }).limit(60),
-        admin.from("filings").select("symbol, form, filed_at, items").in("symbol", earnSyms).order("filed_at", { ascending: false }).limit(200)
-          .then((r) => r.error ? admin.from("filings").select("symbol, form, filed_at").in("symbol", earnSyms).order("filed_at", { ascending: false }).limit(200) : r),
+        earningsFilings(admin, earnSyms).then((data) => ({ data })),
       ]);
       const nextEarn = earnSyms.map((sy) => {
         const h = holdings.find((x) => x.symbol === sy)!;
@@ -1333,8 +1353,15 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       if (!backfillOnly) {
         // earnings dates only from the computed estimates (round 2: "Microsoft earnings call Sep 28")
         const wrongDates = new Set(wrongEarningsDates([...(sections.calendar ?? []), ...sections.positions.map((p) => p.watch)], earnEsts, briefDate));
+        // ...and any future date that appears nowhere in what the writers were given ("Meta AI spend guidance Sep 30")
+        const srcText = [...SOURCES, JSON.stringify(memosOut)].join("\n");
+        const estYmds = earnEsts.map((e) => e.est).filter((x): x is string => !!x);
+        for (const d of unsupportedDated([...(sections.calendar ?? []), ...sections.positions.map((p) => p.watch)], srcText, briefDate, estYmds)) wrongDates.add(d);
+        const dropDated = (t: string) => { const bad = unsupportedDated(String(t ?? "").split(/(?<=[.!?])\s+/), srcText, briefDate, estYmds); return bad.length ? String(t).split(/(?<=[.!?])\s+/).filter((x) => !bad.includes(x)).join(" ") || t : t; };
+        sections.lede = dropDated(sections.lede); sections.overnight = dropDated(sections.overnight); sections.desk_view = dropDated(sections.desk_view);
+        sections.positions = sections.positions.map((p) => ({ ...p, note: dropDated(p.note) }));
         sections.calendar = (sections.calendar ?? []).filter((c) => !wrongDates.has(c));
-        sections.positions = sections.positions.map((p) => wrongDates.has(p.watch) ? { ...p, watch: "Next report date not confirmed yet" } : p);
+        sections.positions = sections.positions.map((p) => wrongDates.has(p.watch) ? { ...p, watch: "No confirmed date yet" } : p);
         // a valuation call ("looks cheap", "a bargain") is a verdict: the sentence goes, the rest of the note stays
         const deValue = (t: string) => { const bad = valuationHits(t); if (!bad.length) return t; const kept = t.split(/(?<=[.!?])\s+/).filter((x) => !bad.some((b) => b.includes(x.trim()) || x.includes(b))); return kept.length ? kept.join(" ") : t; };
         sections.positions = sections.positions.map((p) => ({ ...p, note: dropEcho(deValue(p.note), p.watch) }));
@@ -1374,11 +1401,43 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         if (st?.started_at && +new Date(String(st.started_at)) > +new Date(body.run) + 1000) { superseded = true; continue; }
       }
 
-      const { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({
+      // GRAMMAR PASS (round 3 newcomer: "Watch QQQ on sustained a shrinking price tag relative.", "Total assets
+      // $26,600 cash $2,500"): broken sentences get one rewrite on the fast model; a sentence still broken
+      // after it is dropped, unless it is all its field holds.
+      if (!backfillOnly && !fixture) {
+        const fields: [string, () => string, (v: string) => void][] = [
+          ["lede", () => sections!.lede, (v) => { sections!.lede = v; }], ["overnight", () => sections!.overnight, (v) => { sections!.overnight = v; }],
+          ["desk_view", () => sections!.desk_view, (v) => { sections!.desk_view = v; }], ["horizon", () => sections!.horizon ?? "", (v) => { sections!.horizon = v; }],
+          ...sections.positions.map((_, i) => [`note${i}`, () => sections!.positions[i].note, (v: string) => { sections!.positions[i] = { ...sections!.positions[i], note: v }; }] as [string, () => string, (v: string) => void]),
+          ...sections.positions.map((_, i) => [`watch${i}`, () => sections!.positions[i].watch, (v: string) => { sections!.positions[i] = { ...sections!.positions[i], watch: v }; }] as [string, () => string, (v: string) => void]),
+        ];
+        const broken = [...new Set(fields.flatMap(([, get]) => brokenSentences(get())))];
+        if (broken.length) {
+          const fixedMap = new Map<string, string>();
+          if (elapsed() < 125) {
+            const res = await askModel(key, "You fix grammar only. Respond with JSON only.", `Each sentence below is broken (a dangling ending, a stray article, a list with no verb). Rewrite each into one clean, complete sentence, keeping every fact and number exactly and adding nothing new. Return STRICT JSON {"fixed": [str, ...]} in the same order.\n${broken.map((b, i) => `${i + 1}. ${b}`).join("\n")}`, 2000, 12000, FAST_MODEL).catch(() => null);
+            const out = Array.isArray((res as { fixed?: unknown } | null)?.fixed) ? ((res as { fixed: unknown[] }).fixed).map(String) : [];
+            broken.forEach((b, i) => {
+              const f = (out[i] ?? "").trim();
+              const numsKept = (b.match(/\d[\d,.]*/g) ?? []).every((n) => f.includes(n));
+              if (f && !brokenSentences(f).length && numsKept && f.split(/\s+/).length <= b.split(/\s+/).length + 8) fixedMap.set(b, f);
+            });
+          }
+          for (const [, get, set] of fields) {
+            let v = get();
+            for (const b of broken) if (v.includes(b)) v = fixedMap.has(b) ? v.replace(b, fixedMap.get(b)!) : (v.replace(b, "").replace(/\s{2,}/g, " ").trim() || v);
+            set(v);
+          }
+        }
+      }
+      const briefRow = {
         user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
         audio_path: null,   // new text => stale audio; narrate re-runs for this row
         script: null,       // ...and re-composes the spoken script
-      }, { onConflict: "user_id,brief_date,edition" });
+      };
+      let { error: upErr } = backfillOnly ? { error: null } : await admin.from("daily_briefs").upsert({ ...briefRow, gen_version: GEN_VERSION }, { onConflict: "user_id,brief_date,edition" });
+      // before migration 39 the version column is not there: write the row without it
+      if (upErr && /gen_version/.test(String((upErr as { message?: string }).message ?? ""))) ({ error: upErr } = await admin.from("daily_briefs").upsert(briefRow, { onConflict: "user_id,brief_date,edition" }));
       if (upErr) errors.push(uid.slice(0, 8) + ": " + (upErr as { message: string }).message); else wrote++;
       // ---- audio narration: handed to the dedicated `narrate` function (own wall clock, retries, fallback) ----
       if (!fixture && !upErr && !noAudio) {

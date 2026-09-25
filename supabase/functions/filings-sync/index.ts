@@ -18,6 +18,23 @@ const WINDOW_DAYS = 400;        // filings kept (the year-ago quarter anchors th
 const NEWS_WINDOW_DAYS = 270;   // filings surfaced as news rows
 const BUDGET_MS = 100000;       // the lap stops starting new symbols after this (the platform wall clock is 150s)
 
+/** Shares outstanding from XBRL: the cover-page count (dei:EntityCommonStockSharesOutstanding) when the company
+ *  reports one total, else the latest weighted diluted count (multi-class companies such as Alphabet report the
+ *  cover count per class). Round 3: Ask invented "TSLA has more shares than AVGO" with nothing to check it by. */
+async function sharesOutstanding(cik: string): Promise<{ n: number; asOf: string } | null> {
+  const concept = async (tax: string, name: string, unit = "shares") => {
+    const r = await fetch(`https://data.sec.gov/api/xbrl/companyconcept/CIK${cik}/${tax}/${name}.json`, { headers: { "User-Agent": UA } }).catch(() => null);
+    if (!r || !r.ok) return null;
+    const j = await r.json().catch(() => null) as { units?: Record<string, { end: string; val: number; form?: string; fp?: string }[]> } | null;
+    const pts = (j?.units?.[unit] ?? []).filter((x) => x.val > 0 && /^10-[QK]/.test(String(x.form ?? "")));
+    if (!pts.length) return null;
+    const last = pts.reduce((a, b) => (b.end > a.end ? b : a));
+    // (the concept API carries no class dimensions: one undimensioned total per filing, or none)
+    return { n: last.val, asOf: last.end };
+  };
+  return await concept("dei", "EntityCommonStockSharesOutstanding") ?? await concept("us-gaap", "WeightedAverageNumberOfDilutedSharesOutstanding");
+}
+
 Deno.serve(async (req) => {
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const url = new URL(req.url);
@@ -93,6 +110,9 @@ Deno.serve(async (req) => {
           await admin.from("news").upsert({ symbol, title: `${form} filed: ${title}`.slice(0, 500), url: furl.slice(0, 1000), source: "SEC Filing", published_at: filed + "T12:00:00Z" }, { onConflict: "symbol,url", ignoreDuplicates: true });
         }
       }
+      // company size for Ask's premise checks (migration 39; a missing column is ignored)
+      const shares = await sharesOutstanding(cik);
+      if (shares) await admin.from("symbols").update({ shares_outstanding: shares.n, shares_as_of: shares.asOf }).eq("symbol", symbol).then(() => {}, () => {});
     } catch (e) { errors.push(symbol + ": " + (e instanceof Error ? e.message : String(e))); }
   };
   // four at a time (EDGAR allows 10 requests a second), inside the budget; the rest lead the next lap
