@@ -34,7 +34,9 @@ export function decodeEntities(s: string): string {
 export function titleKey(t: string): string {
   // "Nvidia Stock Tests Key Level" and "Nvidia Tests Key Level" are one story (round 3)
   return decodeEntities(t).toLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, " ")
-    .replace(/(^| )(?:stock|stocks|shares|inc|corp)(?= |$)/g, " ").replace(/\s+/g, " ").trim();
+    .replace(/(^| )(?:stock|stocks|shares|inc|corp)(?= |$)/g, " ")
+    // "I'm Riding Meta (NASDAQ:META)" and "I'm Riding Meta" are one story (round 4)
+    .replace(/(^| )(?:nasdaq|nyse|nysearca|amex|otc|tsx|krx|kospi) [\p{L}\p{N}.]{1,6}(?= |$)/gu, " ").replace(/\s+/g, " ").trim();
 }
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -52,6 +54,8 @@ export function isJunkNews(title: string, url: string, source = ""): boolean {
   if (/^\s*\$[^$]{1,60}\([A-Z0-9.]{1,12}\)\$/.test(t)) return true;
   // 13F holding notices and automated signal pages (round 3: MarketBeat "Shares Bought by Envestnet", GuruFocus
   // "... Holding History", Stock Traders Daily quant pages, Kavout "Should I Buy QQQM | AI Analysis", MEXC pages)
+  // round 4: "Meta Platforms, Inc. $META Stock Bought by InTrack ...", market-report spam, options-strategy primers
+  if (/\b(?:stock|shares|position|stake) (?:bought|sold|acquired|purchased|trimmed|increased|decreased|raised|lowered) by\b|\bmarket (?:outlook|report|size|forecast|analysis)\b[^|]{0,40}\b20\d{2}\s?[-–]\s?20\d{2}\b|\bfeaturing profiles\b|\b(?:tent|iron condor|butterfly|straddle|strangle|covered call|collar)[- ]?(?:shape )?options? strategy\b|\boptions strategy\b/i.test(t)) return true;
   if (/\b(shares (?:bought|sold|acquired|purchased) by|(?:stock )?holdings? (?:lifted|lowered|raised|trimmed|cut|boosted|increased|decreased) by|(?:position|stake|holdings?) in\b.{1,80}\b(?:raised|lowered|lifted|trimmed|increased|decreased|boosted|cut|reduced) by|acquires? (?:a )?new (?:stake|position)|(?:buys?|sells?|purchases?|acquires?) [\d,.]+ shares of|holding history|short interest (?:update|report|data)|sees (?:unusually )?(?:high|large) options volume|trading report|ai analysis|stock (?:price )?forecast|price prediction|technical analysis report)\b/i.test(t)) return true;
   if (/\([A-Za-z0-9]{8,}\)\s*$/.test(t) && /[a-z][A-Z]|[A-Z][a-z][A-Z]/.test((t.match(/\(([A-Za-z0-9]{8,})\)\s*$/) ?? ["", ""])[1])) return true;   // "... Raye (InTtzPzqpu)": a scraped page id
   if (/(^|\.)(mexc\.com|kavout\.com|stocktradersdaily\.com|unisbamedia\.com)\b/.test(u) || /^(stock traders daily|kavout|mexc|mexc\.com|unisba media)$/i.test(src.trim())) return true;
@@ -107,10 +111,16 @@ export function newsRelevant(title: string, aliases: string[], lead = "", symbol
 
 type NewsRow = { symbol?: string | null; title: string; url: string; source?: string | null; summary?: string | null };
 /** A stored row judged at read time: never junk, and about its holding (a stored lead admits it as at ingest). */
-export function usableNews(row: NewsRow, aliases: string[] | null | undefined): boolean {
+/** A story re-dated by a feed: its URL's path date is more than a week before the row's date (port). */
+export function staleRedated(row: { url: string; published_at?: string | null }): boolean {
+  const m = String(row.url ?? "").match(/\/(20\d{2})[/-](0[1-9]|1[0-2])[/-](0[1-9]|[12]\d|3[01])(?:\/|-|$)/);
+  if (!m || !row.published_at) return false;
+  return Date.parse(String(row.published_at)) - Date.parse(`${m[1]}-${m[2]}-${m[3]}T23:59:59Z`) > 7 * 86400000;
+}
+export function usableNews(row: NewsRow & { published_at?: string | null }, aliases: string[] | null | undefined): boolean {
   const src = String(row.source ?? "");
   if (src === "SEC Filing" || src === "Earnings Call") return true;
-  if (isJunkNews(row.title, row.url, src)) return false;
+  if (isJunkNews(row.title, row.url, src) || staleRedated(row)) return false;
   if (!aliases || !aliases.length) return true;
   const lead = String(row.summary ?? "");
   return newsRelevant(decodeEntities(row.title).replace(/\s+/g, " ").trim(), aliases, lead, lead.length > 0);

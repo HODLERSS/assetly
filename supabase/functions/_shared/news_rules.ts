@@ -40,6 +40,8 @@ export function isJunkNews(title: string, url: string, source = ""): boolean {
   if (/^\s*\$[^$]{1,60}\([A-Z0-9.]{1,12}\)\$/.test(t)) return true;
   // 13F holding notices and automated signal pages (round 3: MarketBeat "Shares Bought by Envestnet", GuruFocus
   // "... Holding History", Stock Traders Daily quant pages, Kavout "Should I Buy QQQM | AI Analysis", MEXC pages)
+  // round 4: "Meta Platforms, Inc. $META Stock Bought by InTrack ...", market-report spam, options-strategy primers
+  if (/\b(?:stock|shares|position|stake) (?:bought|sold|acquired|purchased|trimmed|increased|decreased|raised|lowered) by\b|\bmarket (?:outlook|report|size|forecast|analysis)\b[^|]{0,40}\b20\d{2}\s?[-–]\s?20\d{2}\b|\bfeaturing profiles\b|\b(?:tent|iron condor|butterfly|straddle|strangle|covered call|collar)[- ]?(?:shape )?options? strategy\b|\boptions strategy\b/i.test(t)) return true;
   if (/\b(shares (?:bought|sold|acquired|purchased) by|(?:stock )?holdings? (?:lifted|lowered|raised|trimmed|cut|boosted|increased|decreased) by|(?:position|stake|holdings?) in\b.{1,80}\b(?:raised|lowered|lifted|trimmed|increased|decreased|boosted|cut|reduced) by|acquires? (?:a )?new (?:stake|position)|(?:buys?|sells?|purchases?|acquires?) [\d,.]+ shares of|holding history|short interest (?:update|report|data)|sees (?:unusually )?(?:high|large) options volume|trading report|ai analysis|stock (?:price )?forecast|price prediction|technical analysis report)\b/i.test(t)) return true;
   if (/\([A-Za-z0-9]{8,}\)\s*$/.test(t) && /[a-z][A-Z]|[A-Z][a-z][A-Z]/.test((t.match(/\(([A-Za-z0-9]{8,})\)\s*$/) ?? ["", ""])[1])) return true;   // "... Raye (InTtzPzqpu)": a scraped page id
   if (/(^|\.)(mexc\.com|kavout\.com|stocktradersdaily\.com|unisbamedia\.com)\b/.test(u) || /^(stock traders daily|kavout|mexc|mexc\.com|unisba media)$/i.test(src.trim())) return true;   // the "$Name (TICKER.US)$" post format
@@ -108,10 +110,22 @@ export function newsRelevant(title: string, aliases: string[], lead = "", symbol
  *  a row from before the gate has no summary and must name the holding in its title. SEC filings and earnings
  *  calls are written by our own jobs and always belong to their symbol. */
 export type NewsRow = { symbol?: string | null; title: string; url: string; source?: string | null; summary?: string | null };
-export function usableNews(row: NewsRow, aliases: string[] | null | undefined): boolean {
+/** The date a URL's path carries ("/2026/07/22/..."), when it has one. */
+export function urlDate(url: string): string | null {
+  const m = String(url ?? "").match(/\/(20\d{2})[/-](0[1-9]|1[0-2])[/-](0[1-9]|[12]\d|3[01])(?:\/|-|$)/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+/** A story re-dated by a feed: its URL says it was published more than a week before the row's date (round 4:
+ *  "TSLA Stock Jumps 3% Ahead Of Q2 Report", a July story, shown as 4 hours old). */
+export function staleRedated(row: { url: string; published_at?: string | null }): boolean {
+  const m = String(row.url ?? "").match(/\/(20\d{2})[/-](0[1-9]|1[0-2])[/-](0[1-9]|[12]\d|3[01])(?:\/|-|$)/);
+  if (!m || !row.published_at) return false;
+  return Date.parse(String(row.published_at)) - Date.parse(`${m[1]}-${m[2]}-${m[3]}T23:59:59Z`) > 7 * 86400000;
+}
+export function usableNews(row: NewsRow & { published_at?: string | null }, aliases: string[] | null | undefined): boolean {
   const src = String(row.source ?? "");
   if (src === "SEC Filing" || src === "Earnings Call") return true;
-  if (isJunkNews(row.title, row.url, src)) return false;
+  if (isJunkNews(row.title, row.url, src) || staleRedated(row)) return false;
   if (!aliases || !aliases.length) return true;   // nothing to judge relevance by: junk rules only
   const lead = String(row.summary ?? "");
   return newsRelevant(decodeEntities(row.title), aliases, lead, lead.length > 0);
@@ -121,7 +135,9 @@ export function usableNews(row: NewsRow, aliases: string[] | null | undefined): 
 export const titleKey = (title: string): string =>
   decodeEntities(title).toLowerCase().replace(/\s+[-|–—]\s+[^-|–—]{2,40}$/, "").replace(/[^a-z0-9가-힣]+/g, " ")
     // "Nvidia Stock Tests Key Level" and "Nvidia Tests Key Level" are one story (round 3)
-    .replace(/\b(?:stock|stocks|shares|inc|corp)\b/g, " ").replace(/\s+/g, " ").trim().slice(0, 90);
+    .replace(/\b(?:stock|stocks|shares|inc|corp)\b/g, " ")
+    // "I'm Riding Meta (NASDAQ:META)" and "I'm Riding Meta" are one story (round 4)
+    .replace(/\b(?:nasdaq|nyse|nysearca|amex|otc|tsx|krx|kospi)\s+[a-z0-9.]{1,6}\b/g, " ").replace(/\s+/g, " ").trim().slice(0, 90);
 /** Which of several held symbols a story is MOST about: the one named earliest in the title. */
 export function centrality(title: string, aliases: string[]): number {
   const lower = title.toLowerCase();
