@@ -117,6 +117,21 @@
 .text-large .row > span:first-child:has(> .sym) { white-space: normal; overflow-wrap: anywhere; }
 .text-large .row .right .row-session { display: block; }
 .text-large .insights-head .insights-brand { white-space: normal; line-height: 1.25; }
+/* Brief header: the date never truncates. The title ellipsizes first on a narrow phone or an iPad window
+   ("PORTFOLIO ASSESSMENT · SE…" lost the part that says whether it is today's; r7 native m3). Large text
+   wraps the whole line as before. */
+.insights-head .brief-title { display: flex; min-width: 0; }
+.brief-title .brief-title-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brief-title .brief-title-date { flex: none; white-space: nowrap; }
+/* AX5 (r7 native m5): the investor label wraps in full and Edit drops under it instead of squeezing the text;
+   an intelligence card's "14m ago" stays on one line and the title wraps instead */
+.investor-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.text-large .investor-row { flex-wrap: wrap; }
+.text-large .investor-row > span:first-child { flex: 1 1 100%; }
+.insights-head > .sub, .insights-head > .insights-toggle { flex: none; white-space: nowrap; }
+.text-large .insights-head .insights-brand { flex: 1 1 auto; }
+.text-large .insights-head .brief-title { display: block; }
+.text-large .brief-title .brief-title-name { white-space: normal; }
 
 /* Edge swipe back (lib/swipeBack.ts): Home as it was left, under the sliding page, never empty ground.
    Below the sticky top bar (15) and the tab bar; the page being popped rides above it on its own ground. */

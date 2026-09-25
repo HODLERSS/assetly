@@ -186,7 +186,10 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
     <section className={"card insights" + (fresh.stale ? " brief-stale" : "") + (fresh.bookChanged ? " brief-other-book" : "")} data-testid="brief-card" data-stale={fresh.stale || undefined}
       aria-label={`Your ${title.toLowerCase()}`}>
       <div className="insights-head">
-        <span className="insights-brand">{title} · {dateLabel}</span>
+        {/* the date says whether this is today's: it never gives way; a long title ellipsizes first (r7 native m3) */}
+        <span className="insights-brand brief-title" data-testid="brief-title">
+          <span className="brief-title-name">{title}</span><span className="brief-title-date" data-testid="brief-date">{" · "}{dateLabel}</span>
+        </span>
         <span className="insights-actions">
           {canListen && (
             <button className="insights-toggle" onClick={toggleAudio} aria-label={playing ? "Pause narration" : voiceOnly ? "Listen to your brief with your device voice" : "Listen to your brief"} data-testid="brief-listen">

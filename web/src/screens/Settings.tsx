@@ -124,8 +124,8 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
         <div className="row"><span>Price updates</span><span className="sub">Every minute, market hours</span></div>
       </div>
       <div className="card" style={{ marginBottom: 14 }} data-testid="investor-card">
-        <div className="row" style={{ alignItems: "center" }}>
-          <span>Investor profile<br /><span className="sub">{investorLabel(profile?.investor ?? INVESTOR_DEFAULT)}</span></span>
+        <div className="row investor-row" style={{ alignItems: "center" }}>
+          <span>Investor profile<br /><span className="sub" data-testid="investor-label">{investorLabel(profile?.investor ?? INVESTOR_DEFAULT)}</span></span>
           <button className="chip" onClick={() => setEditInv(!editInv)}>{editInv ? "Close" : "Edit"}</button>
         </div>
         {editInv && (

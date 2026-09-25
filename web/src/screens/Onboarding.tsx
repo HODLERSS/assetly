@@ -273,7 +273,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
       {step === 2 && picked && (
         <section aria-label="Shares and cost">
           <p style={{ marginBottom: 12 }}><span className="sym">{picked.symbol}</span> · {shortName(picked)}
-            <button className="chip" style={{ marginLeft: 10 }} disabled={busy} onClick={() => { setStep(1); setPicked(null); setFieldErr({}); setErr(null); }}>Change</button></p>
+            <button className="chip" style={{ marginLeft: 10 }} disabled={busy} onClick={() => { setStep(1); setPicked(null); setFieldErr({}); setErr(null); setQ(""); }}>Change</button></p>
           <AmountField id="ob-qty" label={picked.kind === "crypto" ? "Quantity" : "Shares"} value={qty} placeholder="e.g. 10"
             onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} />
           <AmountField id="ob-cost" label={`Cost per ${picked.kind === "crypto" ? "coin" : "share"} (${ccySymbol(picked.currency).trim()})`} value={cost}
