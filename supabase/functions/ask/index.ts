@@ -204,7 +204,15 @@ Deno.serve(async (req) => {
   const weight = (v: number) => { const w = v / (assetsUsd || 1) * 100; return w > 0 && w < 0.05 ? "under 0.1%" : `${w.toFixed(1)}%`; };
   const windows = [7, 30, 90];
   // each window is judged in the holding's own sessions (a Korean share by KRX closes, crypto by the day)
-  const perf = new Map(await Promise.all(held.slice(0, 20).map(async (r) => [r.symbol, await windowReturns(admin, r.symbol, windows, Date.now(), marketOf(r.symbol, r.kind, r.currency))] as const)));
+  // the per-holding reads run together (round 5 latency: they ran one after another before the model call)
+  const heldSyms = held.map((r) => r.symbol);
+  const [perfArr, quotesR, shareR, divRows] = await Promise.all([
+    Promise.all(held.slice(0, 20).map(async (r) => [r.symbol, await windowReturns(admin, r.symbol, windows, Date.now(), marketOf(r.symbol, r.kind, r.currency))] as const)),
+    held.length ? admin.from("prices").select("symbol,prev_close").in("symbol", heldSyms).then((r) => r, () => ({ data: [] })) : Promise.resolve({ data: [] }),
+    held.length ? admin.from("symbols").select("symbol,shares_outstanding,shares_as_of").in("symbol", heldSyms).then((r) => r, () => ({ data: [] })) : Promise.resolve({ data: [] }),
+    dividendRows(admin, heldSyms),
+  ]);
+  const perf = new Map(perfArr);
   // a held symbol whose history is too short to answer these windows is backfilled after the answer ships,
   // so the next question has them (bounded; the insights lap covers the rest)
   const shortSyms = held.filter((r) => windows.some((d) => (perf.get(r.symbol)?.pct[d] ?? null) === null)).map((r) => r.symbol);
@@ -212,21 +220,19 @@ Deno.serve(async (req) => {
     try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(ensureHistory(admin, shortSyms, { cap: 3, budgetMs: 60000 })); } catch { /* the insights lap heals it */ }
   }
   // the previous session's close, so "what did X close at?" has its own labelled number
-  const { data: quotes } = held.length ? await admin.from("prices").select("symbol,prev_close").in("symbol", held.map((r) => r.symbol)) : { data: [] };
+  const quotes = (quotesR as { data: { symbol: string; prev_close: number | null }[] | null }).data;
   const prevClose = new Map((quotes ?? []).map((q) => [String(q.symbol), q.prev_close === null ? null : Number(q.prev_close)]));
   // Company size, so a premise like "TSLA is cheaper per share than AVGO, so it's the better deal" can be checked
   // and a model never infers company value from a share price (round 3 invented "TSLA has more shares, so its
   // company value is larger": both halves false). Shares outstanding come from SEC filings (filings-sync).
-  const { data: shareRows } = held.length
-    ? await admin.from("symbols").select("symbol,shares_outstanding,shares_as_of").in("symbol", held.map((r) => r.symbol)).then((r) => r, () => ({ data: [] }))
-    : { data: [] };
+  const shareRows = (shareR as { data: unknown[] | null }).data;
   const sharesOut = new Map(((shareRows ?? []) as { symbol: string; shares_outstanding: number | null; shares_as_of: string | null }[])
     .filter((x) => Number(x.shares_outstanding) > 0).map((x) => [x.symbol, { n: Number(x.shares_outstanding), asOf: x.shares_as_of }]));
   const bigMoney = (v: number) => v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : `$${Math.round(v / 1e6)}M`;
   const bigCount = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : `${(n / 1e6).toFixed(0)}M`;
   // DIVIDENDS, keyed by symbol (round 4: "SCHD paid $0.96 quarterly" was VTI's figure, and "how much income does
   // my portfolio make" had nothing to answer from). Stale or missing data is refreshed after the answer ships.
-  const divRows = await dividendRows(admin, held.map((r) => r.symbol));
+
   // refresh when a held symbol was never checked or is older than 3 days (every symbol already has a row, so
   // "no row" was never true and the refresh never ran)
   if (held.some((r) => { if (r.kind === "crypto") return false; const d = divRows.get(r.symbol); return !d?.div_as_of || Date.now() - +new Date(d.div_as_of) > 3 * 86400000; })) {
@@ -335,13 +341,15 @@ Deno.serve(async (req) => {
     return tickHit || [r.nickname, ...aliasesFor(r.symbol, r.name).filter((a) => a !== tick)].some((n) => !!n && n.length >= 3 && new RegExp(`(^|[^\\p{L}\\p{N}])${esc(n)}($|[^\\p{L}\\p{N}])`, "iu").test(convo));
   }).map((r) => r.symbol).slice(0, 3);
   let context = "";
-  for (const sym of mentioned) {
-    const [{ data: news }, { data: ins }, { data: fils }, { data: trAll }] = await Promise.all([
+  // the deep-context reads for the holdings this question is about run together, then are written in order
+  const deep = await Promise.all(mentioned.map((sym) => Promise.all([
       admin.from("news").select("title,url,source,summary,published_at").eq("symbol", sym).gte("published_at", new Date(Date.now() - 7 * 86400000).toISOString()).order("published_at", { ascending: false }).limit(24),
       admin.from("insights").select("bullets,generated_at").eq("symbol", sym).order("generated_at", { ascending: false }).limit(1),
       admin.from("filings").select("form,filed_at,title").eq("symbol", sym).order("filed_at", { ascending: false }).limit(6),
       admin.from("transcripts").select("title,published_at,content").eq("symbol", sym).order("published_at", { ascending: false, nullsFirst: false }).limit(4),
-    ]);
+    ])));
+  for (const [k, sym] of mentioned.entries()) {
+    const [{ data: news }, { data: ins }, { data: fils }, { data: trAll }] = deep[k];
     const hr = held.find((h) => h.symbol === sym)!;
     const nm = nameOf(hr);
     const heads = (news ?? []).filter((n) => usableNews(n, aliasesFor(hr.symbol, hr.name))).slice(0, 12);
@@ -435,7 +443,11 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // primary model gets 20s, the fast lane (gpt-oss, same prompt and guards) whatever is left of ~29s, and the
   // corrective rewrite runs only when it can finish inside that budget; otherwise the code-side guards
   // (deletion, language-matched opener) stand alone.
-  const FAST = "gpt-oss-120b", BUDGET = 40000;   // r3 live: a 20s primary miss left the fast lane 9s and the question 502ed
+  // Round 5: 5 of 38 answers took over 30s (max 39.6s): a serial primary-then-fast fallback plus a husk re-ask.
+  // Now the fast lane is HEDGED: it starts at 7s if the primary has not answered (or at once if the primary
+  // failed), and the first valid answer wins; the rewrite and the husk re-ask run only while they fit, so an
+  // answer ships inside ~29s.
+  const FAST = "gpt-oss-120b", BUDGET = 29000;
   const left = () => BUDGET - (Date.now() - t0);
   const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3") => {
     if (timeoutMs < 1500) return null;
@@ -452,9 +464,23 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   };
   const base = [{ role: "system", content: system }, { role: "user", content: prompt }];
   let parsedA: { answer: string; followups: string[] } | null = null;
-  parsedA = await ask(base, 0.2, Math.min(18000, left()));
-  if (!parsedA) parsedA = await ask(base, 0.3, Math.min(20000, left()), FAST);
-  if (!parsedA && left() > 6000) parsedA = await ask(base, 0.4, left(), FAST);
+  type Ans = { answer: string; followups: string[] } | null;
+  parsedA = await new Promise<Ans>((resolve) => {
+    let settled = false, fastStarted = false, open = 1;
+    const finish = (v: Ans) => {
+      if (settled) return;
+      if (v) { settled = true; resolve(v); return; }
+      open--;
+      if (!fastStarted) startFast(); else if (open <= 0) { settled = true; resolve(null); }
+    };
+    const startFast = () => {
+      if (fastStarted || settled) return;
+      fastStarted = true; open++;
+      ask(base, 0.3, Math.min(20000, left() - 1500), FAST).then(finish, () => finish(null));
+    };
+    ask(base, 0.2, Math.min(20000, left() - 1500)).then(finish, () => finish(null));
+    setTimeout(startFast, 7000);
+  });
   const deDash = (v: string) => v.trim().replace(/\s*—\s*/g, ": ").replace(/\s*–\s*/g, ": ");
   // one bullet per line before any check: a shortlist written "• A. • B." on one line reads as one line otherwise
   let answer = normalizeBullets(deDash(parsedA?.answer ?? ""));
@@ -472,13 +498,15 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...wrongDividendAmounts(a, divFacts).map((s) => `"${s.slice(0, 120)}" states a dividend figure that is not that holding's (see DIVIDENDS).`),
   ];
   const found = answer ? problems(answer) : [];
-  if (found.length && left() > 5000) {
+  if (found.length && left() > 8000) {
     const fixed = await ask([...base, { role: "assistant", content: JSON.stringify({ answer, followups: parsedA?.followups ?? [] }) },
-      { role: "user", content: `Your answer broke the rules:\n- ${found.join("\n- ")}\nReturn the corrected JSON in the same shape. Keep everything else that was right.` }], 0.2, Math.min(12000, left()), FAST);
+      { role: "user", content: `Your answer broke the rules:\n- ${found.join("\n- ")}\nReturn the corrected JSON in the same shape. Keep everything else that was right.` }], 0.2, Math.min(9000, left() - 1500), FAST);
     if (fixed && problems(normalizeBullets(deDash(fixed.answer))).length < found.length) { parsedA = fixed; answer = normalizeBullets(deDash(fixed.answer)); }
   }
   // ...and whatever survives the rewrite is removed or corrected in code
-  if (!answer) return json({ ok: false, error: "The analyst lost the thread mid-answer. Ask again." }, 502);
+  // both lanes out of time: a trade or pick question still gets the answer built in code from the stats (below)
+  // inside the budget, rather than a 502 after ~27s; any other question has nothing honest to fall back on
+  if (!answer && !(tradeQ || pickQ)) return json({ ok: false, error: "The analyst lost the thread mid-answer. Ask again." }, 502);
   // code-side guards, on EVERY answer (whether or not an opener is added): verdicts and valuation calls, a
   // shortlist answering a pick question, a deliveries date that is not in the data
   const dropLines = new Set([...(pickQ ? curatedListHits(answer, bookNames) : []), ...wrongDeliveriesDates(answer, dlvFacts, today),
@@ -496,11 +524,12 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // gets ONE informational re-ask, and if that is thin too, the answer is built in code from the stats.
   const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
   const husk = (g: string) => (tradeQ || pickQ) && (words(g) < 25 || words(g) < words(answer) * 0.45);
-  if (husk(guarded) && left() > 6000) {
+  // the answer built in code is ready first; the model's informational re-ask runs only with 12s to spare
+  if (husk(guarded) && left() > 12000) {
     const frame = ko
       ? "이 질문에는 무엇을 사고팔지 말하지 말고, 이 포트폴리오에서 그 결정이 무엇에 달려 있는지 3-5개 불릿으로 답하세요: 집중도(상위 보유 종목과 비중), 현금 비중, 다가오는 실적 일정(추정치로 표시), 위험 구성. 특정 종목을 고르지 마세요."
       : "Answer WITHOUT naming anything to buy, sell or pick: in 3-5 bullets, say what that decision rests on for THIS portfolio: concentration (the top holdings and their weights), the cash share, the reports coming up (as estimates), and the risk mix. One bullet per line.";
-    const re = await ask([...base, { role: "user", content: frame }], 0.2, Math.min(12000, left()), FAST);
+    const re = await ask([...base, { role: "user", content: frame }], 0.2, Math.min(10000, left() - 1500), FAST);
     const g2 = re ? guardAll(normalizeBullets(deDash(re.answer))) : "";
     if (g2 && !husk(g2) && !wrongLanguage(question, g2)) { guarded = g2; parsedA = { answer: re!.answer, followups: re!.followups.length ? re!.followups : parsedA?.followups ?? [] }; }
   }
@@ -510,6 +539,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       : `• Today your portfolio is ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}% (${signedUsd(bookDayUsd)}).`;
     guarded = tradeQ || pickQ ? defaultInfo() : [day, defaultInfo().split("\n")[0]].join("\n");
   }
+  // the husk text is held to the same report dates as everything else (round 5: "NVDA … late October")
+  { const bad = new Set(wrongEarningsMonths(guarded, askEsts)); if (bad.size) guarded = guarded.split("\n").filter((l) => ![...bad].some((b) => l.includes(b))).join("\n") || defaultInfo(); }
   // "on file" is pipeline language (round 5: "BTC: no dividend data on file")
   answer = plainDataWords(tidyNumbers(withNoCallLine(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), question, lastA, turns.length ? turns[turns.length - 1].q : "")));
   answer = trimAnswer(answer, cap + 10);
