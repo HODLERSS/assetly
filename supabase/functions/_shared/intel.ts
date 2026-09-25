@@ -894,6 +894,11 @@ export function brokenSentences(text: string): string[] {
       // round 6: "lags S&P 500 by than ten percent", "is the main portfolio.", "US companies, weighted.", "and keep
       // health", "has sheet"
       || /\bby than\b|\bis the (?:main|biggest|largest|key) (?:portfolio|book)\s*[.!?]?$|,\s*weighted\s*[.!?]?$|\bkeep health\b|\bhas sheet\b|\bprovides exposure and\b/i.test(s)
+      // round 6 replay: the memo's quality list flattened with its adjectives dropped ("It has an edge, profit and
+      // solid balance sheet", "It has an edge, sticky contracts, profit and a balance sheet"), and an object-less
+      // "It offers exposure."
+      || /\bhas (?:a |an )?(?:lasting |dominant |platform |real )*edge(?: (?:in|with) [A-Za-z]+)?,? (?:(?:sticky contracts|profit|cash|margins),? (?:and )?)+(?:a |an |solid |strong |net cash )?balance sheet\b/i.test(s)
+      || /^(?:it|this|the fund)\s+(?:offers|gives|provides|adds)\s+exposure\s*[.!]?$/i.test(s)
       || verblessList(raw).length > 0;
   });
 }
@@ -1099,9 +1104,11 @@ const NOT_NOUN = /^(?:is|are|was|were|be|been|has|have|had|and|or|but|of|in|on|a
  *  equipment and buildout scrutiny", because a multi-word gloss was dropped in front of the noun the term was
  *  modifying. A term used as a MODIFIER ("capex scrutiny") now becomes "scrutiny of <gloss>"; one used as a
  *  noun is swapped in place, and a stray article left by a gloss that brings its own is removed. */
-export function noviceGloss(text: string): string {
+export function noviceGloss(text: string, keep: string[] = []): string {
   let x = String(text ?? "");
-  for (const g of NOVICE_PLAIN) {
+  // `keep`: map samples left as written (the assessment keeps "P/E", explained once by the writer)
+  const MAP = NOVICE_PLAIN.filter((g) => !keep.includes(g.sample));
+  for (const g of MAP) {
     const multi = g.plain.split(" ").length >= 3 || /^(?:a|an|the|its|their)\s/.test(g.plain);
     if (multi) {
       const bareGloss = g.plain.replace(/^(?:a|an|the)\s+/, "");
@@ -1114,9 +1121,9 @@ export function noviceGloss(text: string): string {
       });
     }
   }
-  x = plainScrub(x, NOVICE_PLAIN.map((g) => [g.re, g.plain] as [RegExp, string]));
+  x = plainScrub(x, MAP.map((g) => [g.re, g.plain] as [RegExp, string]));
   // a gloss that opens a sentence is capitalised ("Capex rose 40%" -> "Equipment spending rose 40%", round 5)
-  for (const g of NOVICE_PLAIN) {
+  for (const g of MAP) {
     const esc = g.plain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     x = x.replace(new RegExp(`(^|(?<![A-Z]\\.[A-Z])[.!?]\\s+|\\n)(${esc})`, "g"), (_m, p: string, w: string) => p + w.charAt(0).toUpperCase() + w.slice(1));
   }
@@ -1590,3 +1597,14 @@ export function mergeChecked<T extends Draftish>(draft: T, checked: T, data: str
   return out;
 }
 
+/** The reader block for the ASSESSMENT edition (round 6 decision): a beginner's sentences may run to 20 words, not
+ *  14, and well-known names stay as written (S&P 500, Nasdaq-100, ETF, and P/E when explained once). The trace
+ *  showed gpt-oss dropping words to fit the 14-word cap and the acronym bans ("has sheet", "Standard Poor's 500").
+ *  Daily editions keep the stricter block. */
+export function assessmentReader(reader: string): string {
+  if (!/BEGINNER reader/.test(reader)) return reader;
+  return reader
+    .replace(/Sentences of at most 14 words\./, "Sentences of at most 20 words.")
+    .replace(/, P\/E, /, ", ")
+    .replace(/(Never condescend\.)/, "Well-known names stay exactly as written, never shortened or respelled: S&P 500, Nasdaq-100, ETF (say once what it is: a fund that trades like a stock), and P/E when you explain it once in plain words (its price tag against profits). $1");
+}
