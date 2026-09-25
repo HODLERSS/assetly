@@ -193,6 +193,18 @@ describe("keyboard shell (browser, touch device)", () => {
     off(); input.remove(); list.remove();
   });
 
+  it("clears when the focused field is removed (sign-in giving way to Home fires no focusout)", async () => {
+    matchMediaImpl = (q) => q.includes("coarse");
+    const off = installKeyboard();
+    const input = document.createElement("input");
+    document.body.append(input);
+    input.focus();
+    expect(keyboardOpen()).toBe(true);
+    input.remove();
+    await waitFor(() => expect(keyboardOpen()).toBe(false), { timeout: 1500 });
+    off();
+  });
+
   it("a desktop pointer never marks it", () => {
     const off = installKeyboard();
     const input = document.createElement("input");

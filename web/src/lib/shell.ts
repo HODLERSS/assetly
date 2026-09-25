@@ -47,8 +47,16 @@ export function installKeyboard(): () => void {
   } else if (typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches) {
     const vv = window.visualViewport;
     const covered = () => (vv ? window.innerHeight - vv.height - vv.offsetTop : 0);
-    const sync = () => { if (isTextEntry(document.activeElement)) setKeyboard(true, covered()); else setKeyboard(false); };
-    const onFocusIn = (e: FocusEvent) => { if (isTextEntry(e.target as Element)) setKeyboard(true, covered()); };
+    // A focused field that is REMOVED (the sign-in form giving way to Home) fires no focusout, so while the
+    // class is on, a slow poll confirms there is still a field to type into.
+    let poll: number | null = null;
+    const sync = () => {
+      const open = isTextEntry(document.activeElement) && document.activeElement.isConnected;
+      setKeyboard(open, open ? covered() : 0);
+      if (open && poll === null) poll = window.setInterval(sync, 400);
+      if (!open && poll !== null) { clearInterval(poll); poll = null; }
+    };
+    const onFocusIn = (e: FocusEvent) => { if (isTextEntry(e.target as Element)) sync(); };
     // focus moving field to field fires focusout then focusin: settle on the next frame, not in between
     const onFocusOut = () => { requestAnimationFrame(sync); };
     document.addEventListener("focusin", onFocusIn);
@@ -60,6 +68,7 @@ export function installKeyboard(): () => void {
       document.removeEventListener("focusout", onFocusOut);
       vv?.removeEventListener("resize", sync);
       vv?.removeEventListener("scroll", sync);
+      if (poll !== null) clearInterval(poll);
     });
   }
 
