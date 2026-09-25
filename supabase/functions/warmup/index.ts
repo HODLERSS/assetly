@@ -5,7 +5,7 @@
 //   richer regeneration that silently upgrades the card. The hourly cron owns it after.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { ensureHistory, windowReturns } from "../_shared/history.ts";
-import { adviceHits, aliasesFor, dayMoveMismatches, EVIDENCE_LAW, fixArticles, isEarningsCallTitle, levelMismatches, type LiveFact, pctText, usableNews } from "../_shared/intel.ts";
+import { adviceHits, aliasesFor, cardCopyHits, dayMoveMismatches, EVIDENCE_LAW, fixArticles, isEarningsCallTitle, levelMismatches, type LiveFact, pctText, usableNews } from "../_shared/intel.ts";
 import { dayTag, marketOf } from "../_shared/calendar.ts";
 
 const CORS = {
@@ -132,7 +132,7 @@ Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes.$
   };
 
   // a line that contradicts the live quote ("VOO down 0.6%" at +0.45%) or passes a verdict is not stored
-  const okLine = (l: string, facts: LiveFact[]) => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length;
+  const okLine = (l: string, facts: LiveFact[]) => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length && !cardCopyHits(l).length;
   const writeGlance = async (content: string | null, facts: LiveFact[] = []) => {
     const parsed = content ? parseGlance(content) : null;
     if (!parsed) return false;

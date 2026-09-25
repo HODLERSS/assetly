@@ -32,7 +32,9 @@ export function decodeEntities(s: string): string {
 
 /** Two headlines are the same story when they match ignoring case, punctuation, quotes and spacing. */
 export function titleKey(t: string): string {
-  return decodeEntities(t).toLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  // "Nvidia Stock Tests Key Level" and "Nvidia Tests Key Level" are one story (round 3)
+  return decodeEntities(t).toLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/(^| )(?:stock|stocks|shares|inc|corp)(?= |$)/g, " ").replace(/\s+/g, " ").trim();
 }
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -48,6 +50,11 @@ export function isJunkNews(title: string, url: string, source = ""): boolean {
   if (/(?:moomoo\.com|futunn\.com)|stocktwits\.com\/[^/]+\/message\/|reddit\.com|\/\/(?:www\.)?(?:x|twitter)\.com\/|threads\.net|facebook\.com|tiktok\.com|youtube\.com\/shorts/.test(u)) return true;
   if (/^(moomoo|moomoo\.com|futu|futubull|webull community|reddit|pluang)$|\br\/\w+/i.test(src.trim())) return true;
   if (/^\s*\$[^$]{1,60}\([A-Z0-9.]{1,12}\)\$/.test(t)) return true;
+  // 13F holding notices and automated signal pages (round 3: MarketBeat "Shares Bought by Envestnet", GuruFocus
+  // "... Holding History", Stock Traders Daily quant pages, Kavout "Should I Buy QQQM | AI Analysis", MEXC pages)
+  if (/\b(shares (?:bought|sold|acquired|purchased) by|(?:stock )?holdings? (?:lifted|lowered|raised|trimmed|cut|boosted|increased|decreased) by|(?:position|stake|holdings?) in\b.{1,80}\b(?:raised|lowered|lifted|trimmed|increased|decreased|boosted|cut|reduced) by|acquires? (?:a )?new (?:stake|position)|(?:buys?|sells?|purchases?|acquires?) [\d,.]+ shares of|holding history|short interest (?:update|report|data)|sees (?:unusually )?(?:high|large) options volume|trading report|ai analysis|stock (?:price )?forecast|price prediction|technical analysis report)\b/i.test(t)) return true;
+  if (/\([A-Za-z0-9]{8,}\)\s*$/.test(t) && /[a-z][A-Z]|[A-Z][a-z][A-Z]/.test((t.match(/\(([A-Za-z0-9]{8,})\)\s*$/) ?? ["", ""])[1])) return true;   // "... Raye (InTtzPzqpu)": a scraped page id
+  if (/(^|\.)(mexc\.com|kavout\.com|stocktradersdaily\.com|unisbamedia\.com)\b/.test(u) || /^(stock traders daily|kavout|mexc|mexc\.com|unisba media)$/i.test(src.trim())) return true;
   return false;
 }
 
@@ -126,7 +133,12 @@ const PUBLISHERS: Record<string, string> = {
 export function publisherFor(url: string, source: string): string {
   let host = "";
   try { host = new URL(url).hostname.replace(/^www\./, "").toLowerCase(); } catch { return source; }
-  if (!host || /(^|\.)yahoo\.com$/.test(host) || /news\.google\.com$/.test(host)) return source;
+  if (!host || /(^|\.)yahoo\.com$/.test(host) || /news\.google\.com$/.test(host)) {
+    // an aggregator item whose byline is a bare domain ("fxleaders.com" next to "FXLeaders") gets the name
+    const bare = String(source ?? "").trim().toLowerCase().replace(/^www\./, "");
+    const named = Object.keys(PUBLISHERS).find((d) => bare === d || bare.endsWith("." + d));
+    return named ? PUBLISHERS[named] : source;
+  }
   const hit = Object.keys(PUBLISHERS).find((d) => host === d || host.endsWith("." + d));
   if (hit) return PUBLISHERS[hit];
   return /^(yahoo finance|yahoo|google news)$/i.test(String(source ?? "").trim()) ? host : source;

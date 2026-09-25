@@ -5,11 +5,12 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } from "../_shared/calendar.ts";
 import {
-  adviceHits, aliasesFor, booksKorean, dayMoveMismatches, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, isEarningsCallTitle, levelMismatches,
-  type LiveFact, mentionedSymbols, pctText, plainScrub, type PosFact, usableNews,
+  adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
+  isEarningsCallTitle, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, type PosFact, usableNews, wrongDeliveriesDates,
 } from "../_shared/intel.ts";
 import { ensureHistory, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
+import { earningsFilings } from "../_shared/filings.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -114,17 +115,26 @@ function sessNote(mkt: "US" | "KR", now = new Date()): string { return sessionLi
  *  not the session's move ("VOO down 0.6%" at +0.45%), a price level that is not where it trades ("BTC near
  *  $78K" at $83.7K), a trade instruction or a valuation call ("looks cheap", "sets up well"). Round 2 saw all
  *  three on cards written after the round-1 deploy. */
-function takeProblems(lines: string[], facts: LiveFact[]): string[] {
+// Round 3 added: a deliveries date that is not the known one ("Q3 deliveries due late October"; Tesla's is Oct 2),
+// pipeline wording ("Two-year price history is unavailable"), returns "from the 1Y low" instead of the window.
+type DlvFact = { names: string[]; est: string | null };
+const todayEt = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+function takeProblems(lines: string[], facts: LiveFact[], dlv: DlvFact[] = []): string[] {
   const out: string[] = [];
   for (const l of lines) {
     for (const s of dayMoveMismatches(l, facts)) out.push(`"${s}" states a day move that is not the session move in the data`);
     for (const s of levelMismatches(l, facts)) out.push(`"${s}" puts the price somewhere it is not trading (see the share price in the data)`);
-    for (const s of adviceHits(l)) out.push(`"${s}" is a buy/sell or cheap/expensive call; state the fact or the metric instead`);
+    for (const s of adviceHits(l)) out.push(`"${s}" is a buy/sell, cheap/expensive or catalyst call; state the fact or the metric instead`);
+    for (const s of wrongDeliveriesDates(l, dlv, todayEt())) out.push(`"${s}" dates a deliveries report that is not in the data (deliveries are not earnings)`);
+    for (const s of cardCopyHits(l)) out.push(`"${s}" talks about missing data or measures a return from a high or low; use only the windows given and never mention data availability`);
   }
   return out;
 }
-const lineOk = (l: string, facts: LiveFact[]) => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length;
-const VALUE_LAW = `VERDICT LAW: information, never a verdict. Never call the stock cheap, expensive, undervalued, overvalued, a bargain or a buying opportunity, never say a drop "sets up well" or offers "downside protection", never tell anyone to buy, sell, hold or add. State the metric (a P/E against its own history, a target and who set it) and what would change the picture. Day moves and prices come ONLY from the data above, with its session label.`;
+const lineOk = (l: string, facts: LiveFact[], dlv: DlvFact[] = []) => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length
+  && !wrongDeliveriesDates(l, dlv, todayEt()).length && !cardCopyHits(l).length;
+// the shared cards are read by every tier, so desk slang is translated for everyone ("show-me tape", "ripping")
+const cardScrub = (t: string) => plainScrub(t, [...CARD_PLAIN, ...NOVICE_MAP]);
+const VALUE_LAW = `VERDICT LAW: information, never a verdict. Never call the stock cheap, expensive, undervalued, overvalued, a bargain or a buying opportunity (no "undervaluation framing" either, unless a named source says it), never say a drop "sets up well" or offers "downside protection", never call anything "a clear catalyst" or "a catalyst for upside", never "top pick", never tell anyone to buy, sell, hold or add. State the metric (a P/E against its own history, a target and who set it) and what would change the picture. Day moves and prices come ONLY from the data above, with its session label. Returns come ONLY from the windows given, never measured from a high or a low. Never mention missing data, price history or what is "on file": if a window has no figure, leave it out. A deliveries report is not an earnings report; state a deliveries date only if the data gives one. Plain words: no desk slang ("tape", "ripping", "show-me", "bid", "bulls/bears").`;
 
 
 // ---- reader profile: the 6 sign-up answers steer VOICE, EMPHASIS and PURPOSE, never the facts ----
@@ -257,10 +267,19 @@ Deno.serve(async (req) => {
     (Array.isArray(body.symbols) && body.symbols.length ? body.symbols.map(String) : undefined);
   let targets = held.filter((s) => !only || only.includes(s));
   // Priority: stalest insight first; money invested breaks ties (big positions refresh first).
-  const { data: existing } = await admin.from("insights").select("symbol, generated_at")
+  const { data: existing } = await admin.from("insights").select("symbol, generated_at, bullets, windows")
     .in("symbol", targets).order("generated_at", { ascending: false });
   const age = new Map<string, number>();
-  for (const e of existing ?? []) if (!age.has(e.symbol)) age.set(e.symbol, +new Date(e.generated_at));
+  // A served card that fails today's guards (a valuation call, pipeline wording, a return "from the 1Y low",
+  // written before a guard existed) is rewritten on the next lap, a few per lap, so no card has to wait for
+  // its market's staleness clock (round 3: Samsung "45% undervaluation framing", KO "a clear catalyst").
+  const failing = new Set<string>();
+  for (const e of existing ?? []) {
+    if (age.has(e.symbol)) continue;
+    age.set(e.symbol, +new Date(e.generated_at));
+    const lines = [...((e.bullets as string[] | null) ?? []), String((e.windows as { trend?: string } | null)?.trend ?? "")];
+    if (lines.some((l) => adviceHits(l).length || cardCopyHits(l).length)) failing.add(e.symbol);
+  }
   const { data: pv } = await admin.from("portfolio").select("symbol, value").in("symbol", targets);
   const invested = new Map<string, number>();
   for (const r of pv ?? []) invested.set(r.symbol, (invested.get(r.symbol) ?? 0) + Number(r.value ?? 0));
@@ -277,7 +296,8 @@ Deno.serve(async (req) => {
   const newestNews = new Map<string, number>();
   for (const n of newsRows ?? []) if (!newestNews.has(n.symbol)) newestNews.set(n.symbol, +new Date(String(n.published_at)));
   const worthRegen = (sy: string): boolean => { const mk = mktOf(sy); if (!mk || marketState(mk).tradingToday) return true; return (newestNews.get(sy) ?? 0) > (age.get(sy) ?? 0); };
-  if (!only && !force) targets = targets.filter((sy) => staleInsight(age.get(sy) ?? 0, mktOf(sy)) && worthRegen(sy));
+  const recheck = [...failing].slice(0, 4);
+  if (!only && !force) targets = targets.filter((sy) => (staleInsight(age.get(sy) ?? 0, mktOf(sy)) && worthRegen(sy)) || recheck.includes(sy));
   if (force) targets = [];                                    // force = refresh the portfolio layer only
   // Priority: names whose market is OPEN right now first (their tape is moving), then the stalest, then the biggest.
   const openNow = (sy: string) => { const mk = mktOf(sy); return mk ? (marketState(mk).phase === "open" ? 0 : 1) : 1; };
@@ -321,8 +341,8 @@ Deno.serve(async (req) => {
       const cur = String(quote?.currency ?? "USD");
       const { data: fils } = await admin.from("filings").select("form,title,filed_at")
         .eq("symbol", symbol).order("filed_at", { ascending: false }).limit(10);
-      // `items` (8-K item numbers) arrives with migration 35; until then the 8-K + 10-Q pairing dates the report
-      const { data: filItems } = await admin.from("filings").select("form,filed_at,items").eq("symbol", symbol).order("filed_at", { ascending: false }).limit(20);
+      // the forms that date a report, 13 months deep (the newest 20 of any form lost the year-ago quarter)
+      const filItems = await earningsFilings(admin, [symbol]);
       const { data: tr } = await admin.from("transcripts").select("title,content,published_at")
         .eq("symbol", symbol).order("published_at", { ascending: false, nullsFirst: false }).limit(4);
       // a conference talk is not an earnings call (Nvidia's Sep 10 Goldman Sachs appearance was read as its latest call)
@@ -332,6 +352,8 @@ Deno.serve(async (req) => {
       const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
       const earn = earningsLine(srow?.name ?? symbol, (filItems ?? fils ?? []) as { form: string; filed_at: string; items?: string | null }[], tr ?? [], today);
       const korean = symbol.endsWith(".KS") || symbol.endsWith(".KQ") || cur === "KRW";
+      const dlv = deliveriesEstimate(symbol, today);
+      const dlvFacts = [{ names: [symbol, ...aka], est: dlv?.est ?? null }];
 
       let content: string | null;
       if (fixture) {
@@ -344,7 +366,7 @@ Deno.serve(async (req) => {
 Company: ${srow?.name ?? symbol} (${symbol}). Share price (ONE share) ${px}${quote?.as_of ? ` as of ${String(quote.as_of).slice(0, 16).replace("T", " ")} UTC` : ""}; day change ${chg} [${dayTag(marketOf(symbol, kindOf.get(symbol), cur))}].
 Price change by window (d7 = 1 week, d30 = 1 month, d60 = 2 months, y1 = 1 year, y2 = 2 years; "not enough price history yet" means there is no figure for that window, so never state one): ${JSON.stringify(perf)}.
 Session: ${mkt ? sessNote(mkt) : "Crypto trades 24/7; day changes are rolling."}
-Earnings: ${earn ? earn.replace(/^[^:]+:\s*/, "") : "no earnings date on file; never guess one"}.
+Earnings: ${earn ? earn.replace(/^[^:]+:\s*/, "") : "no earnings date known; never guess one"}.${dlv ? `\nDeliveries: the ${dlv.quarter} deliveries report is expected ~${dlv.est.slice(5).replace("-", "/")} (est), about the 2nd day after the quarter ends; it is NOT the earnings report.` : ""}
 Headlines from the last 7 days (${n30 ?? 0} stories in 30d):
 ${news7.map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- (no fresh headlines)"}
 ${(fils ?? []).length ? `\nSEC filings (last 9 months): ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}${latestTr ? `\nLatest earnings call ("${latestTr.title}", ${latestTr.published_at}):\n${String(latestTr.content).slice(0, 7000)}\n${callAgeNote(latestTr.published_at)}\n${calls.slice(1).length ? "Older calls on file: " + calls.slice(1).map((t) => t.title).join(" | ") : ""}` : "\n(no earnings transcript on file yet)"}${talks.length ? `\nConference talks on file (NOT earnings reports; never call them results): ${talks.map((t) => `${t.title} (${String(t.published_at).slice(0, 10)})`).join(" | ")}` : ""}
@@ -358,11 +380,11 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
         // one corrective rewrite when a line contradicts the live numbers or passes a verdict
         const first = content ? parseInsight(content) : null;
         const facts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price) }];
-        const found = first ? takeProblems([...first.bullets, String(first.windows?.trend ?? "")], facts) : [];
+        const found = first ? takeProblems([...first.bullets, String(first.windows?.trend ?? "")].map(cardScrub), facts, dlvFacts) : [];
         if (found.length) {
           const redo = await askMaraFb(key, model, `${prompt}\n\nYOUR DRAFT:\n${content}\nIt broke these rules:\n- ${found.slice(0, 6).join("\n- ")}\nReturn the corrected JSON in the same shape; keep everything that was right.`).catch(() => null);
           const second = redo ? parseInsight(redo) : null;
-          if (second && takeProblems([...second.bullets, String(second.windows?.trend ?? "")], facts).length < found.length) content = redo;
+          if (second && takeProblems([...second.bullets, String(second.windows?.trend ?? "")].map(cardScrub), facts, dlvFacts).length < found.length) content = redo;
         }
       }
       const parsed = content ? parseInsight(content) : null;
@@ -370,9 +392,10 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const trAge = callAgeDays(latestTr?.published_at);
       // whatever still contradicts the numbers (or passes a verdict) is dropped, never stored
       const liveFacts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price) }];
-      const bullets = parsed.bullets.map((b) => fixArticles(deJust(b, trAge))).filter((b) => lineOk(b, liveFacts));
+      const bullets = parsed.bullets.map((b) => fixArticles(cardScrub(deJust(b, trAge)))).filter((b) => lineOk(b, liveFacts, dlvFacts));
       if (bullets.length < 2) { errors.push(symbol + ": take contradicted the live numbers; kept the previous one"); continue; }
-      const windows = parsed.windows?.trend && !lineOk(String(parsed.windows.trend), liveFacts) ? {} : parsed.windows;
+      const trend = parsed.windows?.trend ? fixArticles(cardScrub(String(parsed.windows.trend))) : null;
+      const windows = trend === null ? parsed.windows : lineOk(trend, liveFacts, dlvFacts) ? { ...parsed.windows, trend } : {};
       const { error: upErr } = await admin.from("insights").insert({
         symbol, bullets, windows, model,
       });
@@ -454,8 +477,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const [{ data: trsAll }, { data: nws }, { data: fls }] = await Promise.all([
         admin.from("transcripts").select("symbol,title,published_at").in("symbol", sigSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(30),
         admin.from("news").select("symbol,title,url,source,summary,published_at").in("symbol", sigSyms).gte("published_at", since7).order("published_at", { ascending: false }).limit(160),
-        admin.from("filings").select("symbol,form,filed_at,items").in("symbol", sigSyms).order("filed_at", { ascending: false }).limit(150)
-          .then((r) => r.error ? admin.from("filings").select("symbol,form,filed_at").in("symbol", sigSyms).order("filed_at", { ascending: false }).limit(150) : r),
+        earningsFilings(admin, sigSyms).then((data) => ({ data })),
       ]);
       // earnings CALLS only: a conference appearance is not a report (and never "just reported")
       const trs = (trsAll ?? []).filter((x) => isEarningsCallTitle(x.title));

@@ -232,9 +232,9 @@ export function valuationHits(text: string): string[] {
     const s = bare(raw);
     if (!s || ATTRIBUTED.test(s)) continue;
     const call = /\b(?:looks?|looking|seems?|appears?|is|are|remains?|stays?|trad(?:es|ing)|priced|now)\s+(?:\w+\s+){0,2}?(?:cheap|inexpensive|expensive|pricey|undervalued|overvalued|under-valued|over-valued|a bargain|a steal|attractive(?:ly priced)?|good value|great value|compelling value|a no-brainer)\b/i.test(s)
-      || /\b(?:undervalued|overvalued|bargain|downside protection|good entry|attractive entry|entry point|buying opportunity|attractive (?:price|valuation|level|levels)|on sale|cheap (?:entry|shares|stock)|sets? up well|screams? (?:buy|value))\b/i.test(s)
+      || /\b(?:undervalued|overvalued|under-?valuation|over-?valuation|bargain|downside protection|(?:gives?|hands?|offers?|has) \w+(?:'s)? (?:a )?(?:clear|strong|obvious|real) (?:near-term )?catalyst|catalyst for (?:upside|gains|a rally|a re-?rating)|top pick|good entry|attractive entry|entry point|buying opportunity|attractive (?:price|valuation|level|levels)|on sale|cheap (?:entry|shares|stock)|sets? up well|screams? (?:buy|value))\b/i.test(s)
       || /(저평가|고평가|싸\s?보|싼 편|비싸\s?보|매수\s?기회|저가\s?매수|하방\s?경직|하방\s?보호)/.test(s);
-    if (call && !(OBJECTIVE.test(s) && !/\b(cheap|undervalued|overvalued|bargain|buying opportunity|downside protection)\b/i.test(s))) hits.push(raw);
+    if (call && !(OBJECTIVE.test(s) && !/\b(cheap|undervalued|overvalued|under-?valuation|over-?valuation|bargain|buying opportunity|downside protection)\b/i.test(s))) hits.push(raw);
   }
   return hits;
 }
@@ -307,25 +307,34 @@ const TRADE_VERB = "keep|dump|sell|buy|add|trim|cut|ditch|drop|own|hold|get rid 
  *  holdings by 1-month return") is a data question and is NOT one of these. */
 export function isTradeQuestion(q: string): boolean {
   const t = String(q ?? "");
-  return /\b(should|shall|do|would|must)\s+(i|we)\s+(?:still\s+|just\s+|really\s+)?(buy|sell|hold|add|trim|keep|dump|exit|get out|get rid of|take profits?|swap|rotate|double down|average down|cut|load up|rebalance|move|invest|put|ditch|unload)\b/i.test(t)
+  return /\b(should|shall|would|must)\s+(i|we)\s+(?:still\s+|just\s+|really\s+)?(buy|sell|hold|add|trim|keep|dump|exit|get out|get rid of|take profits?|swap|rotate|double down|average down|cut|load up|rebalance|move|invest|put|ditch|unload)\b/i.test(t)
+    // "do I sell?" asks for a call; "how much cash do I hold?" asks for a number
+    || /\bdo\s+(i|we)\s+(?:still\s+|just\s+|really\s+)?(buy|sell|add|trim|dump|exit|get out|get rid of|take profits?|swap|rotate|double down|average down|cut|load up|rebalance|ditch|unload)\b/i.test(t)
     || /\b(buy|sell|hold|add|trim|keep|dump)\s*(?:it\s+)?(or|\/)\s*(buy|sell|hold|add|trim|wait|keep|dump)\b/i.test(t)
     || /\b(is|it's)\s+(it|now|this)\s+(a\s+)?(good|right|bad|smart)\s+(time|moment|idea)\s+to\s+(buy|sell|add|trim)\b/i.test(t)
     || /\btime to (buy|sell|take profits?|get out|trim|add|cash out)\b|\bbuy the dip\b/i.test(t)
     || /\bhow much\b[^?]{0,40}\b(buy|sell|add|put|invest|allocate)\b/i.test(t)
     || new RegExp(`\\bwhich\\b[^?]{0,50}\\b(?:should|would|do|to)\\s+(?:i\\s+|you\\s+|we\\s+)?(?:\\w+\\s+)?(${TRADE_VERB})\\b`, "i").test(t)
     || /\bworth (buying|selling|adding|keeping|holding|owning)\b/i.test(t)
-    || new RegExp(`\\byou'?d\\s+(?:\\w+\\s+)?(${TRADE_VERB}|pick|choose)\\b|\\bwould you\\s+(?:\\w+\\s+)?(${TRADE_VERB}|pick|choose|do)\\b`, "i").test(t)
+    || new RegExp(`\\byou(?:'?d| would)\\s+(?:\\w+\\s+)?(${TRADE_VERB}|pick|choose)\\b|\\bwould you\\s+(?:\\w+\\s+)?(${TRADE_VERB}|pick|choose|do)\\b`, "i").test(t)
     || /\bif (?:you were|i were) (?:me|you)\b|\bin my shoes\b|\bwhat would you do\b|\bwhat do you (?:recommend|suggest)\b|\bwhat (?:should|would) (?:i|you) (?:do|buy|sell)\b/i.test(t)
     || /\b(?:top|best) (?:pick|picks|buy|idea)\b|\byour (?:pick|favou?rite)\b/i.test(t)
     || new RegExp(`\\b(?:one|stock|stocks|holding|holdings|position|name|names)\\s+(?:to|i should|i'd)\\s+(${TRADE_VERB})\\b`, "i").test(t)
     || /\b(?:is|are)\s+\S+(?:\s+\S+)?\s+(?:a|still a)\s+(buy|sell|hold)\b/i.test(t)
     || /\bwhere (?:would|should) (?:my|the|this|i|it)\b[^?]{0,40}\b(go|put|invest|deploy)\b/i.test(t)
+    // where the user's own cash should go is an allocation, which is a trade instruction (round 3: "If you had my
+    // $120K cash, where would it go?" got "MSFT first, maybe not more NVDA")
+    || /\bif you had my\b|\bwhere would (?:it|that|the (?:cash|money)|my\s+\S+)\s+go\b|\bwhat (?:would|should|could|can) (?:you|i|we) (?:do|buy|get) with (?:my|the|this|that|our)\b|\bwhat (?:should|would|could|can) i buy\b|\bwhat do you (?:recommend|suggest) i do\b/i.test(t)
+    || /\b(?:put|invest|deploy|allocate|park|spend|use)\s+(?:my|the|this|that|our)\s+(?:\$?[\d,.]+[kKmM]?\s+)?(?:cash|money|savings|funds|dollars|bonus)\b/i.test(t)
+    || /(현금|예수금|여윳돈|목돈|돈)[^?]{0,20}(어디에|뭘|무엇을|어떤 종목)|어디에 (?:넣|투자|써)|뭘 사면|무엇을 사면|투자하면 좋을|사면 좋을/.test(t)
     || /\b(?:best|worst|strongest|weakest)\b[^?]{0,20}\bto (?:own|hold|keep|buy|sell|dump)\b/i.test(t)
     || (/\b(?:rank|order|sort|list|grade|rate)\b[^?]{0,60}\b(?:best|worst|strongest|weakest|keep|dump|sell|own|hold|buy)\b/i.test(t) && !QUESTION_METRIC.test(t))
     || /(사야|팔아야|매수해야|매도해야|살까|팔까|사도 될까|팔아도 될까|추가 매수|정리할까|정리해야|정리하는 게|정리하는 것이|손절|익절|추천해|추천 좀|추천할|추천 종목|종목 추천|뭘 사|뭘 팔|뭐 사|뭐 팔|무엇을 사|무엇을 팔|어떤 (?:종목|주식)을? (?:사|팔|정리|버리)|당신이라면|너라면|제 입장이라면|저라면 어떻게|어떻게 하시겠|어떻게 할래|들고 가야|계속 보유해야|보유해야 할까|보유할까|비중을 (?:늘려|줄여)|늘려야 할까|줄여야 할까|버려야|버릴까)/.test(t);
 }
 
-const NO_CALL = /\b(can'?t|cannot|won'?t|don'?t|isn'?t (?:mine|my place))\b[^.]{0,40}\b(tell you|say|make|pick|decide|call|recommend|rank)\b|\b(not|isn'?t) my call\b|\byour call\b|\bthat's your decision\b|제가 (정해|결정)|(말씀|정해|골라|추천해)\s?드릴 수 없|판단은[^.]{0,20}몫|결정은[^.]{0,20}몫/i;
+// the model's own ways of saying the decision is theirs; round 3 found a second, canned opener stacked on top of
+// "The call is yours; here is what each side rests on." and "정리 여부는 본인 판단이지만"
+const NO_CALL = /\b(can'?t|cannot|won'?t|don'?t|isn'?t (?:mine|my place))\b[^.]{0,40}\b(tell you|say|make|pick|decide|call|recommend|rank)\b|\b(not|isn'?t) my call\b|\byour (?:own )?(?:call|decision|choice)\b|\b(?:call|decision|choice) (?:is|stays|remains) (?:yours|your own|up to you)\b|\bup to you\b|\bthat's your decision\b|제가 (정해|결정)|(말씀|정해|골라|추천해)\s?드릴 수 없|판단은[^.]{0,20}몫|결정은[^.]{0,20}몫|본인(?:의)? (?:판단|선택|결정)|직접 (?:결정|판단)|스스로 (?:결정|판단)/i;
 /** A "should I sell X" answer opens with ONE short, natural line that the decision is theirs, then gives
  *  the considerations. Added in code when the model left it out, and never twice in a row: round 2 found the
  *  same canned opener on six answers in one conversation, which read robotic. */
@@ -645,3 +654,137 @@ export function offLensIdea(idea: string, styles: string[]): boolean {
   if (!/\b(dividend|income|bonds?|treasur(?:y|ies)|fixed[- ]income|annuit(?:y|ies)|money[- ]market|high[- ]yield|CDs?)\b/i.test(t)) return false;
   return !/\b(no|zero|without|lacks?|missing|none|absent|nothing in)\b/i.test(t);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Round 3 (2026-09-25): shortlists, deliveries dates, unsupported dated claims, bullets, card jargon
+// ---------------------------------------------------------------------------------------------
+/** A question that asks for ONE pick or a destination ("the one stock you'd dump", "which would you keep",
+ *  "where would my cash go"). An answer to it that lists some of the holdings IS the pick. */
+export function isPickQuestion(q: string): boolean {
+  const t = String(q ?? "");
+  return /\bthe one\b|\bwhich (?:one|stock|stocks|holding|holdings|name|names|position|positions)?\b|\bwhere (?:would|should|could)\b|\byou(?:'?d| would) (?:dump|sell|buy|keep|pick|choose|add|cut|ditch|drop)\b|\bwould you (?:dump|sell|buy|keep|pick|choose|add|cut|ditch|drop)\b|\b(?:top|best|your) pick\b|\bif you had\b|\bwhat (?:would|should|could|can) (?:you|i) (?:do|buy) with\b|\bwhat should i buy\b/i.test(t)
+    || /(어떤 종목|어느 종목|하나만|어디에|뭘 사|무엇을 사|뭘 팔|무엇을 팔)/.test(t);
+}
+/** Lines of an answer that open on a holding's name, when they cover SOME but not all of the book: a curated
+ *  shortlist. Round 3: "the one stock you'd dump" got "META: ... / AVGO: ... / AMZN: ... / TSLA: ..." (four
+ *  dump candidates, each with its negative) and "$120K cash, where would it go?" got "MSFT: ... / NVDA: ...".
+ *  A line per holding for the whole book (a fact table) is not a shortlist. */
+export function curatedListHits(text: string, book: { symbol: string; names: string[] }[]): string[] {
+  const lines = String(text ?? "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const led = lines.map((l) => {
+    const head = bare(l).replace(/\*\*/g, "").slice(0, 48);
+    const hit = book.find((b) => b.names.some((n) => n && n.length >= 2 && new RegExp(`^(?:the\\s+)?${esc(n)}(?=$|[^\\p{L}\\p{N}])`, "iu").test(head)));
+    return hit ? { line: l, symbol: hit.symbol } : null;
+  }).filter((x): x is { line: string; symbol: string } => !!x);
+  const distinct = new Set(led.map((x) => x.symbol));
+  if (distinct.size < 2 || distinct.size >= book.length) return [];
+  return led.map((x) => x.line);
+}
+
+/** "• A. • B. • C." on one line (the model returned bullets without newlines) becomes one bullet per line. */
+export const normalizeBullets = (t: string): string => String(t ?? "").replace(/[ \t]+•\s+/g, "\n• ").replace(/^\s*•\s*/, "• ").trim();
+
+const DELIVERIES_REPORTERS = new Set(["TSLA", "RIVN", "LCID", "NIO", "XPEV", "LI", "POLE"]);
+/** Companies that publish a quarterly DELIVERIES / production report, separate from earnings: Tesla's comes out
+ *  on about the 2nd day after the quarter ends (Oct 2 for Q3). Round 3: a card and Ask said "Q3 deliveries due
+ *  late October", confusing deliveries with the earnings release. Null for everyone else. */
+export function deliveriesEstimate(symbol: string, todayYmd: string): { quarter: string; est: string } | null {
+  if (!DELIVERIES_REPORTERS.has(symbol.replace(/-USD$/, ""))) return null;
+  const [y, m] = todayYmd.split("-").map(Number);
+  // the quarter that just ended (its report may still be ahead: Oct 1 -> Oct 2) or the one that ends next
+  const qEnd = Math.ceil(m / 3) * 3;
+  for (const end of [qEnd - 3, qEnd]) {
+    const est = new Date(Date.UTC(y, end, 2)).toISOString().slice(0, 10);   // the 2nd of the month after the quarter ends
+    if (est >= todayYmd) { const qy = end <= 0 ? y - 1 : y; const qn = ((end + 11) % 12 + 1) / 3; return { quarter: `Q${qn} ${qy}`, est }; }
+  }
+  return null;
+}
+const MONTH_RE = "(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)[a-z]*\\.?";
+/** Every "Mon D", "D Mon" and "early / mid / late Month" in a text, as YYYY-MM-DD relative to today (a date more
+ *  than two months in the past rolls into next year); a part of a month maps to its 5th / 15th / 25th. */
+export function datesIn(text: string, todayYmd: string): { raw: string; ymd: string; approx: boolean; at: number }[] {
+  const out: { raw: string; ymd: string; approx: boolean; at: number }[] = [];
+  const y0 = Number(todayYmd.slice(0, 4)), m0 = Number(todayYmd.slice(5, 7));
+  const mk = (mon: string, d: number, raw: string, approx: boolean, at = 0) => {
+    const mo = MON_IDX[mon.toLowerCase().replace(/[^a-z]/g, "").slice(0, 3)];
+    if (!mo || d < 1 || d > 31) return;
+    const y = y0 + (mo < m0 - 2 ? 1 : 0);
+    out.push({ raw, ymd: `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`, approx, at });
+  };
+  const s = String(text ?? "");
+  for (const m of s.matchAll(new RegExp(`\\b${MONTH_RE}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`, "gi"))) mk(m[1], Number(m[2]), m[0], false, m.index ?? 0);
+  for (const m of s.matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_RE}\\b`, "gi"))) mk(m[2], Number(m[1]), m[0], false, m.index ?? 0);
+  for (const m of s.matchAll(new RegExp(`\\b(early|mid|late)[- ]${MONTH_RE}`, "gi"))) mk(m[2], m[1].toLowerCase() === "early" ? 5 : m[1].toLowerCase() === "mid" ? 15 : 25, m[0], true, m.index ?? 0);
+  for (const m of s.matchAll(/(\d{1,2})월\s*(\d{1,2})일/g)) mk(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"][Number(m[1]) - 1] ?? "", Number(m[2]), m[0], false);
+  for (const m of s.matchAll(/(\d{1,2})월\s*(초|중순|말)/g)) mk(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"][Number(m[1]) - 1] ?? "", m[2] === "초" ? 5 : m[2] === "중순" ? 15 : 25, m[0], true);
+  return out;
+}
+/** Sentences that date a DELIVERIES / production report away from the known estimate (more than 5 days, or
+ *  10 for "early / mid / late Month"), or date one for a company that publishes none on our list. */
+export function wrongDeliveriesDates(text: string, facts: { names: string[]; est: string | null }[], todayYmd: string): string[] {
+  const bad: string[] = [];
+  for (const raw of sentencesOf(text)) {
+    const kw = raw.search(/\b(deliver(?:y|ies)|production (?:report|numbers|figures)|units? (?:report|numbers))\b|인도량|판매량 발표/i);
+    if (kw < 0) continue;
+    // the date that belongs to the deliveries claim is the one nearest the word ("deliveries ~Oct 2, weeks
+    // before earnings around Oct 21" dates deliveries Oct 2)
+    const all = datesIn(raw, todayYmd).sort((a, b) => Math.abs(a.at - kw) - Math.abs(b.at - kw));
+    if (!all.length) continue;
+    const ds = [all[0]];
+    const who = facts.find((f) => f.names.some((n) => n && nameIn(raw, n))) ?? (facts.length === 1 ? facts[0] : undefined);
+    if (!who) continue;
+    if (!who.est || ds.some((d) => Math.abs(dayDiff(d.ymd, who.est!)) > (d.approx ? 10 : 5))) bad.push(raw);
+  }
+  return bad;
+}
+/** Future-dated claims ("Meta AI spend guidance Sep 30", "Microsoft earnings call Sep 28") whose date appears
+ *  nowhere in the data the writer was given (the estimates, the sessions, the headlines). Round 3 found both
+ *  in a served midday brief; dates are the one kind of fact a reader cannot sanity-check. */
+export function unsupportedDated(items: string[], sourceText: string, todayYmd: string, extraYmds: string[] = []): string[] {
+  const allowed = [...datesIn(sourceText, todayYmd).map((d) => d.ymd), ...extraYmds];
+  return items.filter((it) => datesIn(it, todayYmd).some((d) => d.ymd >= todayYmd && !allowed.some((a) => Math.abs(dayDiff(a, d.ymd)) <= (d.approx ? 10 : 1))));
+}
+
+/** Plain words for the shared per-stock cards (every reader sees the same card): desk slang the model keeps
+ *  writing. Round 3: "show-me tape", "NVDA keeps ripping", "tape bid 0.5% higher", "bulls lean on". */
+export const CARD_PLAIN: [RegExp, string][] = [
+  [/\bshow-me tape\b/gi, "market that wants proof"], [/\bshow-me (?:story|market)\b/gi, "market that wants proof"],
+  [/\bkeeps ripping\b/gi, "keeps rising fast"], [/\bkept ripping\b/gi, "kept rising fast"], [/\bripping\b/gi, "rising fast"], [/\brips? higher\b/gi, "jumps"],
+  [/\btape (?:is |was )?bid\b/gi, "the stock is trading"], [/\bthe tape\b/gi, "trading"], [/\btape\b/gi, "trading"],
+  [/\bbulls lean on\b/gi, "supporters point to"], [/\bbears lean on\b/gi, "skeptics point to"], [/\bbulls\b/gi, "optimists"], [/\bbears\b/gi, "skeptics"],
+  [/\bpinned (?:near|at|around)\b/gi, "holding near"], [/\bTAM\b/g, "market size"], [/\bY1\b/g, "year one"], [/\bMorningstars\b/g, "Morningstar's"],
+  [/\bthe street keeps underweighting\b/gi, "analysts keep underrating"], [/\bthe street\b/gi, "analysts"], [/\bcapitulat(?:ing|ion)\b/gi, "giving up"],
+];
+
+/** Lines a shared card must never carry: pipeline internals ("Two-year price history is unavailable", round 3
+ *  KO card) and returns measured from a high or a low instead of the trailing window ("up 242.7% from the 1Y
+ *  low" next to a 231.6% 1Y on the chart). */
+export function cardCopyHits(text: string): string[] {
+  return sentencesOf(text).filter((s) =>
+    /\b(?:price )?(?:history|data|figures?|numbers?)\b[^.]{0,30}\b(?:unavailable|missing|not available|isn'?t available|not on file|lacking)\b|\bnot enough (?:price )?history\b|\bno (?:price )?(?:data|history) (?:on file|available|yet)\b|\bon file\b/i.test(s)
+    || /\bfrom (?:its|the) (?:1Y |52-week |one-year |yearly |annual |2Y |two-year |recent )?(?:low|lows|high|highs|bottom|peak|trough)\b[^.]{0,20}\d|\d[^.]{0,30}\bfrom (?:its|the) (?:1Y |52-week |one-year |yearly |annual |2Y |two-year |recent )?(?:low|lows|high|highs|bottom|peak|trough)\b/i.test(s));
+}
+
+// Function words and modifiers a sentence can never end on ("... on sustained a shrinking price tag relative.")
+const DANGLING_END = /\b(?:the|a|an|of|on|in|to|for|with|by|from|at|as|and|or|but|so|than|that|which|its|their|his|her|our|your|this|these|those|into|onto|over|under|about|between|against|toward|towards|through|across|amid|per|via|versus|vs|plus|including|relative|sustained|continued|further|ongoing|more|less|very|such|each|every|any|some|no|not|also|still|just|even|only|is|are|was|were|be|been|has|have|had|will|would|could|should|can|may|might)\s*[.!?]?$/i;
+/** Sentences a reader would stop at: a dangling ending, a doubled or stacked article, an article in front of
+ *  another determiner or an adjective-less gap, two amounts run together with no verb ("Total assets $26,600
+ *  cash $2,500"), or a bare "book" without a determiner ("risk for book overall performance"). Round 3
+ *  newcomer's first assessment: "Watch QQQ on sustained a shrinking price tag relative." */
+export function brokenSentences(text: string): string[] {
+  return sentencesOf(text).filter((raw) => {
+    const s = bare(raw).replace(/[)"'’”]+$/, "");
+    if (s.split(/\s+/).length < 3) return false;
+    return DANGLING_END.test(s.replace(/[.!?]+$/, ""))
+      || /\b(the|a|an)\s+(the|a|an)\b/i.test(s)
+      || /\b(sustained|continued|further|ongoing|persistent|renewed|steady|heavy|deeper|more|less)\s+an?\s+/i.test(s)
+      || /\$\d{1,3}(?:,\d{3})*(?:\.\d+)?[kKmMbB]?\s+(?!(?:vs|versus|to|and|or|from|plus|minus|over|against|in|of|per|at)\b)[a-z]+\s+\$\d/.test(s)
+      || /\b(?:for|of|to|in|on) book\b/i.test(s)
+      || /\b(?:a|an|the)\s*[.!?]$/i.test(s);
+  });
+}
+/** Stack of articles and an article after a modifier, left by a gloss swapped into a sentence ("on sustained a
+ *  shrinking price tag", "the the market") - deletion of the stray article only. */
+export const fixGlossArticles = (t: string): string => String(t ?? "")
+  .replace(/\b(sustained|continued|further|ongoing|persistent|renewed|steady|heavy|deeper|more|less)\s+an?\s+/gi, "$1 ")
+  .replace(/\b(the|a|an)\s+(?=(?:the|a|an)\s)/gi, "");

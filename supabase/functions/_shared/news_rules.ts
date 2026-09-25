@@ -37,7 +37,12 @@ export function isJunkNews(title: string, url: string, source = ""): boolean {
   // chain pages, so Moomoo as a byline goes whole; Stocktwits runs a real newsroom, so only its message URLs go
   if (/(?:moomoo\.com|futunn\.com)|stocktwits\.com\/[^/]+\/message\/|reddit\.com|\/\/(?:www\.)?(?:x|twitter)\.com\/|threads\.net|facebook\.com|tiktok\.com|youtube\.com\/shorts/.test(u)) return true;
   if (/^(moomoo|moomoo\.com|futu|futubull|webull community|reddit|pluang)$|\br\/\w+/i.test(src.trim())) return true;
-  if (/^\s*\$[^$]{1,60}\([A-Z0-9.]{1,12}\)\$/.test(t)) return true;   // the "$Name (TICKER.US)$" post format
+  if (/^\s*\$[^$]{1,60}\([A-Z0-9.]{1,12}\)\$/.test(t)) return true;
+  // 13F holding notices and automated signal pages (round 3: MarketBeat "Shares Bought by Envestnet", GuruFocus
+  // "... Holding History", Stock Traders Daily quant pages, Kavout "Should I Buy QQQM | AI Analysis", MEXC pages)
+  if (/\b(shares (?:bought|sold|acquired|purchased) by|(?:stock )?holdings? (?:lifted|lowered|raised|trimmed|cut|boosted|increased|decreased) by|(?:position|stake|holdings?) in\b.{1,80}\b(?:raised|lowered|lifted|trimmed|increased|decreased|boosted|cut|reduced) by|acquires? (?:a )?new (?:stake|position)|(?:buys?|sells?|purchases?|acquires?) [\d,.]+ shares of|holding history|short interest (?:update|report|data)|sees (?:unusually )?(?:high|large) options volume|trading report|ai analysis|stock (?:price )?forecast|price prediction|technical analysis report)\b/i.test(t)) return true;
+  if (/\([A-Za-z0-9]{8,}\)\s*$/.test(t) && /[a-z][A-Z]|[A-Z][a-z][A-Z]/.test((t.match(/\(([A-Za-z0-9]{8,})\)\s*$/) ?? ["", ""])[1])) return true;   // "... Raye (InTtzPzqpu)": a scraped page id
+  if (/(^|\.)(mexc\.com|kavout\.com|stocktradersdaily\.com|unisbamedia\.com)\b/.test(u) || /^(stock traders daily|kavout|mexc|mexc\.com|unisba media)$/i.test(src.trim())) return true;   // the "$Name (TICKER.US)$" post format
   return false;
 }
 
@@ -114,7 +119,9 @@ export function usableNews(row: NewsRow, aliases: string[] | null | undefined): 
 
 /** Normalized title key: the same story syndicated under different URLs (and different tickers). */
 export const titleKey = (title: string): string =>
-  decodeEntities(title).toLowerCase().replace(/\s+[-|–—]\s+[^-|–—]{2,40}$/, "").replace(/[^a-z0-9가-힣]+/g, " ").trim().slice(0, 90);
+  decodeEntities(title).toLowerCase().replace(/\s+[-|–—]\s+[^-|–—]{2,40}$/, "").replace(/[^a-z0-9가-힣]+/g, " ")
+    // "Nvidia Stock Tests Key Level" and "Nvidia Tests Key Level" are one story (round 3)
+    .replace(/\b(?:stock|stocks|shares|inc|corp)\b/g, " ").replace(/\s+/g, " ").trim().slice(0, 90);
 /** Which of several held symbols a story is MOST about: the one named earliest in the title. */
 export function centrality(title: string, aliases: string[]): number {
   const lower = title.toLowerCase();
@@ -140,7 +147,12 @@ const AGGREGATOR_SOURCES = /^(yahoo finance|yahoo|google news)$/i;
 export function publisherFor(url: string, source: string): string {
   let host = "";
   try { host = new URL(url).hostname.replace(/^www\./, "").toLowerCase(); } catch { return source; }
-  if (!host || /(^|\.)yahoo\.com$/.test(host) || /news\.google\.com$/.test(host)) return source;
+  if (!host || /(^|\.)yahoo\.com$/.test(host) || /news\.google\.com$/.test(host)) {
+    // an aggregator item whose byline is a bare domain ("fxleaders.com" next to "FXLeaders") gets the name
+    const bare = String(source ?? "").trim().toLowerCase().replace(/^www\./, "");
+    const named = Object.keys(PUBLISHERS).find((d) => bare === d || bare.endsWith("." + d));
+    return named ? PUBLISHERS[named] : source;
+  }
   const hit = Object.keys(PUBLISHERS).find((d) => host === d || host.endsWith("." + d));
   if (hit) return PUBLISHERS[hit];
   return AGGREGATOR_SOURCES.test(String(source ?? "").trim()) ? host : source;
