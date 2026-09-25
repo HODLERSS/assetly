@@ -10,6 +10,9 @@
 //   3 editor synthesis (memos + rebuttals + market context + yesterday's brief -> the note)
 //   4 fact-check       (every number verified against the deterministic stats, or cut)
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
+import { aliasesFor, booksKorean, deDirect, earningsLine, EVIDENCE_LAW, isJunkNews, liveNotYesterday, pctText, plainScrub, type FilingLite } from "../_shared/intel.ts";
+import { windowReturns } from "../_shared/history.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -53,80 +56,12 @@ let lastMeta = "";   // finish_reason + content length of the most recent call (
 // budget thinking on that prompt shape (HTTP 400 "truncated" after ~85s); gpt-oss-120b writes it validly in ~20s.
 const FAST_MODEL = "gpt-oss-120b";
 
-// ---- trading calendar (mirror of web/src/lib/markets.ts; lunar KR holidays are listed explicitly) ----
-// Every prompt that mentions a "day" move gets these lines, so the model knows WHICH session a figure
-// belongs to and how long ago that session ended. Caught 2026-09-11: a Friday 3:30 PM CT note said the
-// Korean names "fell 1.5% today" about a Korean session that had closed 14 hours earlier.
-type Mkt = "US" | "KR";
-const HOL: Record<Mkt, Set<string>> = {
-  US: new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25","2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05","2027-09-06","2027-11-25","2027-12-24"]),
-  KR: new Set(["2026-01-01","2026-02-16","2026-02-17","2026-02-18","2026-03-02","2026-05-01","2026-05-05","2026-05-25","2026-06-03","2026-06-06","2026-08-17","2026-09-24","2026-09-25","2026-10-05","2026-10-09","2026-12-25","2026-12-31","2027-01-01","2027-02-08","2027-02-09","2027-02-10","2027-03-01","2027-05-05","2027-05-13","2027-06-07","2027-08-16","2027-09-14","2027-09-15","2027-09-16","2027-10-04","2027-10-11","2027-12-31"]),
-};
-const TZ: Record<Mkt, string> = { US: "America/New_York", KR: "Asia/Seoul" };
-const OPEN_MIN: Record<Mkt, number> = { US: 570, KR: 540 };    // 9:30 ET, 9:00 KST
-const CLOSE_MIN: Record<Mkt, number> = { US: 960, KR: 930 };   // 4:00 PM ET, 3:30 PM KST
-function zonedParts(now: Date, tz: string): { ymd: string; dow: number; minutes: number } {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", hour: "numeric", minute: "numeric", hour12: false, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  const dow = ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[get("weekday")] ?? 0;
-  return { ymd: `${get("year")}-${get("month")}-${get("day")}`, dow, minutes: (Number(get("hour")) % 24) * 60 + Number(get("minute")) };
-}
-const ymdShift = (ymd: string, days: number): string => { const d = new Date(ymd + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
-const dowOf = (ymd: string): number => new Date(ymd + "T12:00:00Z").getUTCDay();
-const isTradingDay = (mkt: Mkt, ymd: string): boolean => { const d = dowOf(ymd); return d >= 1 && d <= 5 && !HOL[mkt].has(ymd); };
-const prevTradingDay = (mkt: Mkt, ymd: string): string => { let x = ymd; do x = ymdShift(x, -1); while (!isTradingDay(mkt, x)); return x; };
-const nextTradingDay = (mkt: Mkt, ymd: string): string => { let x = ymd; do x = ymdShift(x, 1); while (!isTradingDay(mkt, x)); return x; };
-function tzOffsetMin(epoch: number, tz: string): number {
-  const s = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" }).formatToParts(new Date(epoch)).find((p) => p.type === "timeZoneName")?.value ?? "GMT";
-  const m = s.match(/([+-])(\d{2}):?(\d{2})?/);
-  return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0)) : 0;
-}
-/** Epoch ms of a wall-clock minute on a date in a zone (DST-safe: the offset is read at that instant). */
-function zonedEpoch(ymd: string, minutes: number, tz: string): number {
-  const [y, mo, d] = ymd.split("-").map(Number);
-  const naive = Date.UTC(y, mo - 1, d, 0, minutes);
-  return naive - tzOffsetMin(naive, tz) * 60000;
-}
-type MarketState = { mkt: Mkt; ymd: string; dow: number; tradingToday: boolean; holidayToday: boolean; phase: "pre" | "open" | "post" | "closed"; minutesIn: number; lastSessionDate: string; lastCloseEpoch: number; hoursSinceClose: number; nextSessionDate: string; hoursToNextOpen: number; upcomingHolidays: string[] };
-function marketState(mkt: Mkt, now = new Date()): MarketState {
-  const z = zonedParts(now, TZ[mkt]);
-  const tradingToday = isTradingDay(mkt, z.ymd);
-  const phase: MarketState["phase"] = !tradingToday ? "closed" : z.minutes < OPEN_MIN[mkt] ? "pre" : z.minutes < CLOSE_MIN[mkt] ? "open" : "post";
-  const lastSessionDate = phase === "open" || phase === "post" ? z.ymd : prevTradingDay(mkt, z.ymd);
-  const lastCloseEpoch = zonedEpoch(lastSessionDate, CLOSE_MIN[mkt], TZ[mkt]);
-  const nextSessionDate = phase === "pre" ? z.ymd : nextTradingDay(mkt, z.ymd);
-  const nextOpenEpoch = zonedEpoch(nextSessionDate, OPEN_MIN[mkt], TZ[mkt]);
-  const horizon = ymdShift(z.ymd, 10);
-  return { mkt, ymd: z.ymd, dow: z.dow, tradingToday, holidayToday: HOL[mkt].has(z.ymd), phase, minutesIn: phase === "open" ? z.minutes - OPEN_MIN[mkt] : 0,
-    lastSessionDate, lastCloseEpoch, hoursSinceClose: phase === "open" ? 0 : Math.max(0, (now.getTime() - lastCloseEpoch) / 3600000),
-    nextSessionDate, hoursToNextOpen: Math.max(0, (nextOpenEpoch - now.getTime()) / 3600000),
-    upcomingHolidays: [...HOL[mkt]].filter((h) => h > z.ymd && h <= horizon).sort() };
-}
-const dayName = (ymd: string): string => new Date(ymd + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
-const weekdayOf = (ymd: string): string => dayName(ymd).split(",")[0];
-const spanText = (h: number): string => h < 1.5 ? `${Math.max(1, Math.round(h * 60))} minutes` : h < 48 ? `${Math.round(h)} hours` : `${Math.round(h / 24)} days`;
-/** Is a day figure from this market "today's tape"? Open now, or closed under 3 hours ago. */
-const isLiveTape = (s: MarketState): boolean => s.phase === "open" || (s.phase === "post" && s.hoursSinceClose < 3);
-/** One deterministic sentence per market for the prompts: what session the day figures belong to, how stale it is, what comes next. */
-function sessionLine(mkt: Mkt, now = new Date()): string {
-  const s = marketState(mkt, now);
-  const name = mkt === "US" ? "US market" : "Korean market (KRX)";
-  const hol = s.upcomingHolidays.length ? `; ${mkt} market holiday${s.upcomingHolidays.length > 1 ? "s" : ""} ahead: ${s.upcomingHolidays.map(dayName).join(", ")}` : "";
-  const next = `Next ${mkt} session: ${dayName(s.nextSessionDate)}, opens in ${spanText(s.hoursToNextOpen)}${hol}.`;
-  if (s.phase === "open") return `${name}: OPEN now, ${s.minutesIn} minutes into the ${dayName(s.ymd)} session. ${mkt} day changes are today's live tape. ${next}`;
-  const closedWhy = s.phase === "closed" ? (s.holidayToday ? " Closed today for a market holiday." : " Closed today (weekend).") : s.phase === "pre" ? " Not open yet today." : "";
-  const ago = s.phase === "post" && s.hoursSinceClose < 3 ? "just closed" : `closed ${spanText(s.hoursSinceClose)} ago`;
-  const which = s.phase === "post" ? `today's ${dayName(s.ymd)} session` : `its last session, ${dayName(s.lastSessionDate)}`;
-  const law = isLiveTape(s) ? `${mkt} day changes are today's final moves.`
-    : s.phase === "post" ? `${mkt} day changes are from today's session, which ended ${spanText(s.hoursSinceClose)} ago: past tense ("in today's session"), never "now", "this morning" or "live".`
-    : `${mkt} day changes are from that ${weekdayOf(s.lastSessionDate)} session, NOT today's tape: write "in ${weekdayOf(s.lastSessionDate)}'s session", never "today", "now" or "this morning".`;
-  return `${name}: ${ago} (${which}).${closedWhy} ${law} ${next}`;
-}
+// ---- trading calendar: ../_shared/calendar.ts (shared with insights-sync and ask) ----
 
 async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs = 30000, model?: string): Promise<Record<string, unknown> | null> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
-  const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
+  const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {   // base overridable for local fixture runs
     signal: ac.signal,
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -206,14 +141,13 @@ function readerBlock(inv: Investor | null | undefined): string {
 const krName = (sy: string, nick?: string | null, nm?: string | null) =>
   (nick || ((sy.endsWith(".KS") || sy.endsWith(".KQ")) && nm ? nm : sy));
 
-function pctOver(history: { ts: string; price: number }[], days: number): string {
-  if (!history.length) return "n/a";
-  const cutoff = Date.now() - days * 86400000;
-  const start = history.find((h) => +new Date(h.ts) >= cutoff);
-  const last = history[history.length - 1];
-  if (!start || start === last) return "n/a";
-  return (((last.price / start.price) - 1) * 100).toFixed(1) + "%";
-}
+/** "+4.1%" over the trailing window, or "not enough price history yet": read point by point (see
+ *  _shared/history.ts), never by reusing a shorter window when the stored history is thin. */
+// deno-lint-ignore no-explicit-any
+const windowsText = async (admin: any, symbol: string, days: number[]): Promise<Record<number, string>> => {
+  const wr = await windowReturns(admin, symbol, days);
+  return Object.fromEntries(days.map((d) => [d, pctText(wr.pct[d] ?? null)]));
+};
 
 const MONTH_IDX: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 // a calendar item survives only with an explicit date that is today or later (45-day lookback tolerance handles year rollover)
@@ -298,8 +232,9 @@ const NOVICE_MAP: [RegExp, string][] = [
   [/\bhigh[- ]beta\b/gi, "fast-moving"], [/\bcrypto[- ]beta\b/gi, "crypto exposure"],
 ];
 const noviceScrub = (t: string): string => {
-  let x = t;
-  for (const [re, plain] of NOVICE_MAP) x = x.replace(re, plain);
+  // plainScrub never doubles a gloss the model already wrote: "VIX, the market's fear gauge, fell" used to
+  // come out "The market's fear gauge, the market's fear gauge, fell" (2026-09-25)
+  let x = plainScrub(t, NOVICE_MAP);
   // A replacement that begins with a possessive collides with any article in front of the term it
   // replaced: "a CET1 ratio below 12%" became "A its safety cushion of capital below twelve percent".
   // Drop the stranded article - deletion only, and it cannot touch text the map did not rewrite.
@@ -356,7 +291,8 @@ CONCENTRATION LAW: a big position is NOT automatically a fault. Concentration is
 BANNED PHRASES (never write these or variants): "investors should", "keep an eye", "monitor closely", "time will tell", "stay tuned", "it's important", "as always", "remains to be seen", "worth watching", "demands scrutiny", "warrants attention".
 NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
-RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as \u20a9 (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.`;
+RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as \u20a9 (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.
+${EVIDENCE_LAW}`;
 function validSections(o: unknown): o is Sections {
   const s = o as Sections;
   return !!s && typeof s.lede === "string" && !!s.lede.trim() && typeof s.overnight === "string"
@@ -437,22 +373,23 @@ Deno.serve(async (req) => {
     const p = px.get(sy);
     return p ? `${label} ${p.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}${p.chg !== null ? ` (${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%)` : ""}` : null;
   };
-  const marketLines = [
+  // KOSPI and the won rate only reach books that hold something Korean: a USD-only reader never sees won
+  const krCtx = (korean: boolean) => korean ? [fmtCtx("^KS11", "KOSPI"), fmtCtx("USDKRW", "USDKRW")] : [];
+  const marketLinesFor = (korean: boolean) => [
     fmtCtx("ES=F", "S&P500 futures"), fmtCtx("NQ=F", "Nasdaq futures"), fmtCtx("^GSPC", "S&P500 close"),
-    fmtCtx("^VIX", "VIX"), fmtCtx("^KS11", "KOSPI"), fmtCtx("USDKRW", "USDKRW"),
+    fmtCtx("^VIX", "VIX"), ...krCtx(korean),
   ].filter(Boolean).join(" · ");
-  const mktLive = [
-    fmtCtx("^GSPC", "S&P500 index"), fmtCtx("NQ=F", "Nasdaq futures"), fmtCtx("^VIX", "VIX"),
-    fmtCtx("^KS11", "KOSPI"), fmtCtx("USDKRW", "USDKRW"),
+  const mktLiveFor = (korean: boolean) => [
+    fmtCtx("^GSPC", "S&P500 index"), fmtCtx("NQ=F", "Nasdaq futures"), fmtCtx("^VIX", "VIX"), ...krCtx(korean),
   ].filter(Boolean).join(" · ");
   const leaderLines = LEADERS.map((sy) => { const p = px.get(sy); return p && p.chg !== null ? `${sy} ${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%` : null; }).filter(Boolean).join(" · ");
   const since24h = new Date(Date.now() - 24 * 3600000).toISOString();
-  const { data: leaderNews } = await admin.from("news").select("symbol,title").in("symbol", LEADERS)
-    .gte("published_at", since24h).order("published_at", { ascending: false }).limit(7);
-  const leaderHeads = (leaderNews ?? []).map((n) => `- ${n.symbol}: ${String(n.title).slice(0, 90)}`).join("\n");
+  const { data: leaderNews } = await admin.from("news").select("symbol,title,url,source").in("symbol", LEADERS)
+    .gte("published_at", since24h).order("published_at", { ascending: false }).limit(20);
+  const leaderHeads = (leaderNews ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 7).map((n) => `- ${n.symbol}: ${String(n.title).slice(0, 90)}`).join("\n");
 
   // ---- users ----
-  const { data: pf } = await admin.from("portfolio").select("user_id, symbol, kind, account, currency, value, change_pct, nickname, name, cost_basis, total_gl");
+  const { data: pf } = await admin.from("portfolio").select("user_id, symbol, kind, account, currency, qty, price, value, change_pct, nickname, name, cost_basis, total_gl");
   const { data: invRows } = await admin.from("profiles").select("id, investor");
   const invBy = new Map<string, Investor | null>((invRows ?? []).map((r) => [String(r.id), r.investor as Investor | null]));
   const byUser = new Map<string, NonNullable<typeof pf>>();
@@ -508,29 +445,45 @@ Deno.serve(async (req) => {
       if (krEdition && !assets.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"))) continue;   // no Korean sleeve, no Korea edition
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
         .sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
-      // On a Korea edition every US day figure is labelled with its session, so "AMD rose 2.5%" cannot read as live
-      const usTag = krEdition ? (() => { const st = marketState("US"); return isLiveTape(st) ? "" : ` [${weekdayOf(st.lastSessionDate)}'s US session, past]`; })() : "";
+      const korean = booksKorean(rows);
+      // Every figure carries its label: POSITION VALUE (the whole holding) apart from SHARE PRICE (one share),
+      // and every day move stamped with the session it belongs to, in every edition. A morning brief written
+      // 31 minutes after the open called Microsoft's live +3.7% "yesterday" (2026-09-25); on a Korea edition the
+      // same tag keeps "AMD rose 2.5%" from reading as live.
       const statsLines = rows.map((r) => {
-        const sign = r.kind === "debt" ? -1 : 1;
-        const tagFor = r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ") || r.symbol.startsWith("$") || r.kind === "crypto" ? "" : usTag;
-        return `${krName(r.symbol, r.nickname, r.name)}: $${Math.round(sign * usd(Number(r.value ?? 0), r.currency))} (${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets), day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}${tagFor}, total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
+        const v = usd(Number(r.value ?? 0), r.currency);
+        const nm = krName(r.symbol, r.nickname, r.name);
+        if (r.kind === "debt") return `${nm}: debt owed $${Math.round(v)}`;
+        if (r.symbol.startsWith("$") || r.kind === "cash") return `${nm}: cash balance $${Math.round(v)} (${(v / total * 100).toFixed(1)}% of assets)`;
+        const px = r.price === null || r.price === undefined ? null : usd(Number(r.price), r.currency);
+        const pxT = px === null ? "n/a" : "$" + (px >= 1000 ? Math.round(px).toLocaleString("en-US") : px.toFixed(2));
+        const chg = r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%";
+        return `${nm}: position value $${Math.round(v)} (${(v / total * 100).toFixed(1)}% of assets), share price ${pxT}, day ${chg} [${dayTag(marketOf(r.symbol, r.kind, r.currency))}], total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
       }).join("\n");
+      const marketLines = marketLinesFor(korean), mktLive = mktLiveFor(korean);
+      // A morning edition that starts after the bell (a late cron, a retry through an API wave) is an OPENING
+      // READ: its US day figures are today's early moves, and it says so, never "yesterday".
+      const usNow = marketState("US");
+      const openingRead = edition === "morning" && usNow.phase === "open";
 
-      // deterministic next-earnings estimates: last call date + ~91d, rolled past today. The ONLY earnings dates the model may use.
-      const { data: trDates } = await admin.from("transcripts").select("symbol, published_at").in("symbol", holdings.slice(0, 6).map((r) => r.symbol)).order("published_at", { ascending: false });
-      const nextEarnSeen = new Set<string>();
-      const nextEarn: string[] = [];
-      for (const t of trDates ?? []) {
-        if (!t.published_at || nextEarnSeen.has(t.symbol)) continue;
-        nextEarnSeen.add(t.symbol);
-        const hRow = holdings.find((h) => h.symbol === t.symbol);
-        let d = new Date(+new Date(String(t.published_at)) + 91 * 86400000);
-        const today0 = new Date(briefDate + "T00:00:00Z");
-        while (+d < +today0) d = new Date(+d + 91 * 86400000);
-        nextEarn.push(`${krName(t.symbol, hRow?.nickname, hRow?.name)} ~${d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} (est)`);
-      }
-      const earnLine = nextEarn.join("; ") || "(none on file)";
-      const dateLaw = `TODAY is ${briefDate}. Anything dated before today is the PAST and must NOT appear in calendar or watch. Earnings dates may come ONLY from NEXT EARNINGS ESTIMATES, always labeled (est); never invent a date.`;
+      // deterministic earnings dates, the ONLY ones the model may use: the last REPORT date from SEC filings (an
+      // 8-K with item 2.02, or the 8-K filed with the 10-Q/10-K), else an earnings-call transcript, never a
+      // conference talk; next = last + ~91 days, labelled as an estimate. The old estimate ran from the newest
+      // transcript of any kind, so Nvidia's Sep 10 Goldman Sachs talk became "last call" and every brief said
+      // "profit report around December 10" (it reported Aug 26; next is about Nov 25).
+      const earnSyms = holdings.slice(0, 8).map((r) => r.symbol);
+      const [{ data: trDates }, { data: filDates }] = await Promise.all([
+        admin.from("transcripts").select("symbol, title, published_at").in("symbol", earnSyms).order("published_at", { ascending: false }).limit(60),
+        admin.from("filings").select("symbol, form, filed_at, items").in("symbol", earnSyms).order("filed_at", { ascending: false }).limit(200)
+          .then((r) => r.error ? admin.from("filings").select("symbol, form, filed_at").in("symbol", earnSyms).order("filed_at", { ascending: false }).limit(200) : r),
+      ]);
+      const nextEarn = earnSyms.map((sy) => {
+        const h = holdings.find((x) => x.symbol === sy)!;
+        return earningsLine(krName(sy, h.nickname, h.name), ((filDates ?? []) as (FilingLite & { symbol: string })[]).filter((f) => f.symbol === sy),
+          (trDates ?? []).filter((t) => t.symbol === sy), briefDate);
+      }).filter(Boolean);
+      const earnLine = nextEarn.length ? "\n" + nextEarn.map((x) => "- " + x).join("\n") : "(none on file)";
+      const dateLaw = `TODAY is ${briefDate}. Anything dated before today is the PAST and must NOT appear in calendar or watch. Earnings dates may come ONLY from NEXT EARNINGS ESTIMATES: a "last reported" date is history, and a next date is an ESTIMATE: in prose say "expected around late November", in calendar write it as "~Nov 25 (est)"; never state an estimate as a confirmed day and never invent a date.`;
       const krHeldAny = holdings.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"));
       const sessionLaw = `SESSIONS (deterministic; obey over any instinct):\n${sessionLine("US")}${krHeldAny ? "\n" + sessionLine("KR") : ""}\nDAY-CHANGE LAW: a holding's "day" figure belongs to ITS market's session above. Only a market that is OPEN or closed under 3 hours ago is today's tape. Anything older is past tense with the session named ("in Friday's Korean session"), mentioned at most once, and never in the lede unless it moved over 3% or has fresh news. Never add a "today" gain or loss across markets whose sessions ended more than 3 hours apart: keep them apart ("US names +$X in today's session; the Korean names were flat in Friday's").`;
 
@@ -585,16 +538,16 @@ Deno.serve(async (req) => {
           try {
             const dispN = krName(r.symbol, r.nickname, r.name);
             const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
-            const [{ data: news }, { data: fils }, { data: tr }, { data: hist }, { data: ins }] = await Promise.all([
-              admin.from("news").select("title,source,published_at").eq("symbol", r.symbol).gte("published_at", since14).order("published_at", { ascending: false }).limit(8),
+            const [{ data: news }, { data: fils }, { data: tr }, hist, { data: ins }] = await Promise.all([
+              admin.from("news").select("title,url,source,published_at").eq("symbol", r.symbol).gte("published_at", since14).order("published_at", { ascending: false }).limit(16)
+                .then((q) => ({ data: (q.data ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 8) })),
               admin.from("filings").select("form,filed_at").eq("symbol", r.symbol).order("filed_at", { ascending: false }).limit(4),
               admin.from("transcripts").select("title,content,published_at").eq("symbol", r.symbol).order("published_at", { ascending: false, nullsFirst: false }).limit(1),
-              admin.from("price_history").select("ts,price").eq("symbol", r.symbol).gte("ts", new Date(Date.now() - 400 * 86400000).toISOString()).order("ts", { ascending: true }).limit(1200),
+              windowsText(admin, r.symbol, [30, 365]),
               admin.from("insights").select("bullets").eq("symbol", r.symbol).order("generated_at", { ascending: false }).limit(1),
             ]);
-            const h = (hist ?? []).map((x) => ({ ts: String(x.ts), price: Number(x.price) }));
-            perf.push(`${dispN} 30d ${pctOver(h, 30)}, 1y ${pctOver(h, 365)}`);
-            const memoPrompt = `Quality memo on ${dispN} (${r.symbol}), ${w(r).toFixed(1)}% of a private investor's assets. Performance: 30d ${pctOver(h, 30)}, 1y ${pctOver(h, 365)}.
+            perf.push(`${dispN} 30d ${hist[30]}, 1y ${hist[365]}`);
+            const memoPrompt = `Quality memo on ${dispN} (${r.symbol}), ${w(r).toFixed(1)}% of a private investor's assets. Performance: 30d ${hist[30]}, 1y ${hist[365]} ("not enough price history yet" means no figure exists: never estimate one).
 ${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}, ${callAgeLine(tr[0].published_at, briefDate)}):\n${String(tr[0].content).slice(0, 4000)}` : "No earnings call on file."}
 ${(fils ?? []).length ? `Filings: ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}
 News (14d):\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- none"}
@@ -810,21 +763,20 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
         const { data: prevWeekend } = await admin.from("daily_briefs").select("generated_at, sections").eq("user_id", uid).eq("edition", "weekend")
           .gte("brief_date", ymdShift(briefDate, -3)).lt("brief_date", briefDate).order("generated_at", { ascending: false }).limit(1).maybeSingle();
         const newsSince = prevWeekend ? String(prevWeekend.generated_at) : sinceClose;
-        const { data: newNews } = await admin.from("news").select("symbol,title,source,published_at").in("symbol", holdings.slice(0, 12).map((r) => r.symbol))
-          .gte("published_at", newsSince).order("published_at", { ascending: false }).limit(40);
+        const { data: newNewsRaw } = await admin.from("news").select("symbol,title,url,source,published_at").in("symbol", holdings.slice(0, 12).map((r) => r.symbol))
+          .gte("published_at", newsSince).order("published_at", { ascending: false }).limit(60);
+        const newNews = (newNewsRaw ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 40);
         // Sunday's (or a second holiday's) read only earns its place with new information since the previous one
         if (prevWeekend && !force && !(newNews ?? []).length) { errors.push(uid.slice(0, 8) + ": weekend read skipped, nothing new since the last one"); continue; }
         const nameBy = new Map(holdings.map((r) => [r.symbol, krName(r.symbol, r.nickname, r.name)]));
         const weekLines: string[] = [];
-        for (const r of holdings.slice(0, 10)) {
-          const { data: hist } = await admin.from("price_history").select("ts,price").eq("symbol", r.symbol).gte("ts", new Date(Date.now() - 9 * 86400000).toISOString()).order("ts", { ascending: true }).limit(400);
-          weekLines.push(`${nameBy.get(r.symbol)}: week ${pctOver((hist ?? []).map((x) => ({ ts: String(x.ts), price: Number(x.price) })), 7)}, ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets`);
-        }
+        const weekOf = await Promise.all(holdings.slice(0, 10).map((r) => windowsText(admin, r.symbol, [7])));
+        holdings.slice(0, 10).forEach((r, i) => weekLines.push(`${nameBy.get(r.symbol)}: week ${weekOf[i][7]}, ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets`));
         const newsLines = (newNews ?? []).slice(0, 24).map((n) => `- ${nameBy.get(n.symbol) ?? n.symbol} [${n.source}, ${String(n.published_at).slice(0, 10)}]: ${String(n.title).slice(0, 110)}`).join("\n");
         // the positions list is decided in code: only companies with something new since the close may appear
         const newsSyms = [...new Set((newNews ?? []).map((n) => n.symbol))].filter((sy) => nameBy.has(sy));
         const eligible = newsSyms.length ? newsSyms.map((sy) => nameBy.get(sy)).join(", ") : `${nameBy.get(holdings[0]?.symbol ?? "") ?? "the largest holding"} only (nothing new anywhere)`;
-        const statsNoDay = statsLines.replace(/, day [^,]*/g, "");
+        const statsNoDay = statsLines.replace(/, day [^,[]*(?:\[[^\]]*\])?/g, "");
         const prevCtx = prevWeekend ? `PREVIOUS READ (never repeat a sentence from it; cover only what is NEW since): lede "${(prevWeekend.sections as Sections).lede}" · direction "${(prevWeekend.sections as Sections).desk_view}"`
           : (prev ? `LAST DAILY NOTE (for continuity): lede "${(prev.sections as { lede?: string })?.lede ?? ""}"` : "");
         const kind = usS.holidayToday ? "HOLIDAY" : "WEEKEND";
@@ -871,14 +823,14 @@ ${STYLE_RULES}\n${READER}`;
           try {
             const dispN = krName(r.symbol, r.nickname, r.name);
             const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
-            const [{ data: news }, { data: fils }, { data: tr }, { data: hist }] = await Promise.all([
-              admin.from("news").select("title,source,published_at").eq("symbol", r.symbol).gte("published_at", since14).order("published_at", { ascending: false }).limit(10),
+            const [{ data: news }, { data: fils }, { data: tr }, hist] = await Promise.all([
+              admin.from("news").select("title,url,source,published_at").eq("symbol", r.symbol).gte("published_at", since14).order("published_at", { ascending: false }).limit(20)
+                .then((q) => ({ data: (q.data ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 10) })),
               admin.from("filings").select("form,filed_at").eq("symbol", r.symbol).order("filed_at", { ascending: false }).limit(5),
               admin.from("transcripts").select("title,content,published_at").eq("symbol", r.symbol).order("published_at", { ascending: false, nullsFirst: false }).limit(1),
-              admin.from("price_history").select("ts,price").eq("symbol", r.symbol).gte("ts", new Date(Date.now() - 400 * 86400000).toISOString()).order("ts", { ascending: true }).limit(1200),
+              windowsText(admin, r.symbol, [30, 365]),
             ]);
-            const h = (hist ?? []).map((x) => ({ ts: String(x.ts), price: Number(x.price) }));
-            const memoPrompt = `Internal analyst memo on ${dispN} (${r.symbol}) for a portfolio where it is ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets. Day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}, 30d ${pctOver(h, 30)}, 1y ${pctOver(h, 365)}.
+            const memoPrompt = `Internal analyst memo on ${dispN} (${r.symbol}) for a portfolio where it is ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of assets. Day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"} [${dayTag(marketOf(r.symbol, r.kind, r.currency))}], 30d ${hist[30]}, 1y ${hist[365]} ("not enough price history yet" means no figure exists).
 ${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}, ${callAgeLine(tr[0].published_at, briefDate)}):\n${String(tr[0].content).slice(0, 4000)}` : "No earnings call on file."}
 ${(fils ?? []).length ? `Filings: ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}
 News (14d):\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- none"}
@@ -899,7 +851,10 @@ changed: what actually changed in the last 24-48h (or "quiet"). promise_check: m
         const pushback = Array.isArray((devil as { pushback?: unknown })?.pushback) ? (devil as { pushback: unknown[] }).pushback : [];
 
         // ---- stage 3: editor ----
-        const editorPrompt = `Write today's ${briefDate} morning brief for ONE investor. You are their personal research desk; this is your ${prev ? "ongoing coverage (yesterday's brief below)" : "first note to them"}.
+        const openingLaw = openingRead
+          ? `\nOPENING READ: the US market opened ${usNow.minutesIn} minutes ago, so this morning brief is written AFTER the bell. Every US holding's "day" figure is TODAY's early move (write "so far today" or "in early trading"), never "yesterday" and never "overnight". Futures and pre-market framing no longer apply to US names.`
+          : "";
+        const editorPrompt = `Write today's ${briefDate} morning brief for ONE investor. You are their personal research desk; this is your ${prev ? "ongoing coverage (yesterday's brief below)" : "first note to them"}.${openingLaw}
 
 MARKET: ${marketLines || "(no market data)"}
 LEADERS: ${leaderLines || "(none tracked)"}
@@ -921,6 +876,7 @@ ${prev ? `YESTERDAY'S NOTE (for continuity): lede "${(prev.sections as { lede?: 
 Return STRICT JSON:
 {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}
 lede: the ONE thing that matters for THIS portfolio today. <= 2 sentences, <= 34 words. Earn the reader's next 3 minutes.
+${EVIDENCE_LAW}
 overnight: the tape that touches them. MUST contain at least THREE literal numbers copied from the MARKET line (futures, VIX, index, FX) using their EXACT labels (never call futures "the S&P"; never merge two instruments), then one clause on what it means for their largest exposures BY NAME. <= 55 words.
 positions: the 1-4 holdings that EARNED coverage today (news, calls, filings, breaks). Not just the biggest. note <= 32 words with at least one number; incorporate the skeptic where it sharpens. Each note must OPEN WITH WHAT IT MEANS for this holding, never with the move: "Your biggest holding barely moved, which is the point" not "QQQM rose 0.1% today, representing 25.6% of assets". A run of notes that each begin with a price move is the laundry list this brief exists to replace, and the move belongs AFTER the judgement, if at all.${noteSplit} watch <= 10 words and must be a CONCRETE event, date, or level (e.g. "Q3 guidance Sep 4", "HBM pricing at Goldman conf"). NEVER verbs like monitor, watch, track, keep an eye.
 desk_view: one STRUCTURAL observation only: valuation, correlation, concentration, or rotation. It may not contain ANY overnight or single-day number; multi-week, valuation, or weight numbers only, and AT MOST THREE figures in total. Builds on yesterday when given. <= 40 words.
@@ -952,7 +908,7 @@ lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their h
 
         // ---- stage 4: fact-check (skipped when the wall clock is tight; scrub still runs) ----
         const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
-          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete any calendar or watch item whose date is before today (${briefDate}) and any undated calendar item; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers; delete any instruction to buy, sell, trim, add, reduce, or rotate a position and state the risk or setup instead.`, 10000, 30000);
+          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET: ${marketLines}\nLEADERS: ${leaderLines}\nPORTFOLIO:\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (lede 34, overnight 55, note 32, watch 10, desk_view 40) by tightening, not by losing substance. Also: replace any numeric KRX code (like 005930.KS) with the company name; write won as ₩ never "KRW"; delete any calendar or watch item whose date is before today (${briefDate}) and any undated calendar item; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; if desk_view recaps today's prices, rewrite it as a structural point; overnight must keep at least three market numbers; delete any instruction to buy, sell, trim, add, reduce, or rotate a position and state the risk or setup instead; delete any figure credited to a company when the headline gives it to an industry, a market or another company (an industry-wide "$200 billion" is never one company's cut), and any claim that a story hits or helps a holding "directly" unless a headline names that holding; a day move tagged LIVE is today's, never "yesterday".`, 10000, 30000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       } else {
         // ---- intraday editions (midday pulse / closing note): reuse the morning desk work, focus on the live tape ----
@@ -962,7 +918,8 @@ lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their h
             try {
               const dispN = krName(r.symbol, r.nickname, r.name);
               const since7 = new Date(Date.now() - 7 * 86400000).toISOString();
-              const { data: news } = await admin.from("news").select("title,source").eq("symbol", r.symbol).gte("published_at", since7).order("published_at", { ascending: false }).limit(6);
+              const { data: newsRaw } = await admin.from("news").select("title,url,source").eq("symbol", r.symbol).gte("published_at", since7).order("published_at", { ascending: false }).limit(12);
+              const news = (newsRaw ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 6);
               const m = await askModel(key, "You are a buy-side analyst. Terse.",
                 `Quick memo on ${dispN}, ${(usd(Number(r.value ?? 0), r.currency) / total * 100).toFixed(1)}% of the portfolio, day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}.
 News (7d):
@@ -976,9 +933,10 @@ Return STRICT JSON {"name": "${dispN}", "changed": str, "watch": str}. changed: 
         }
         const nameBy = new Map(holdings.map((r) => [r.symbol, krName(r.symbol, r.nickname, r.name)]));
         const since8h = new Date(Date.now() - 8 * 3600000).toISOString();
-        const { data: freshNews } = await admin.from("news").select("symbol,title").in("symbol", holdings.slice(0, 8).map((r) => r.symbol))
+        const { data: freshNewsRaw } = await admin.from("news").select("symbol,title,url,source").in("symbol", holdings.slice(0, 8).map((r) => r.symbol))
           .gte("published_at", since8h).order("published_at", { ascending: false }).limit(12);
-        const freshHeads = (freshNews ?? []).map((n) => `- ${nameBy.get(n.symbol) ?? n.symbol}: ${String(n.title).slice(0, 90)}`).join("\n");
+        const freshNews = (freshNewsRaw ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 12);
+        const freshHeads = freshNews.map((n) => `- ${nameBy.get(n.symbol) ?? n.symbol}: ${String(n.title).slice(0, 90)}`).join("\n");
         const pnlOf = (rs: typeof assets) => rs.reduce((a, r) => r.change_pct === null ? a : a + usd(Number(r.value ?? 0), r.currency) * (Number(r.change_pct) / 100) / (1 + Number(r.change_pct) / 100), 0);
         const dayPnl = pnlOf(assets);
         const dayPct = total > 0 ? (dayPnl / (total - dayPnl) * 100) : 0;
@@ -1088,7 +1046,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": writer failed [" + lastMeta + "]"); continue; }
         const caps = edition === "midday" || edition === "kr_open" ? "lede 28, overnight 50, note 28, watch 10, desk_view 36" : "lede 30, overnight 55, note 30, watch 10, desk_view 40";
         const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
-          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET NOW: ${mktLive}\nLEADERS: ${leaderLines}\nPORTFOLIO: Total $${Math.round(total)}. ${pnlLine}\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (${caps}) by tightening, not by losing substance. Also: replace any numeric KRX code with the company name; write won as \u20a9 never "KRW"; delete any calendar or watch item whose date is before today (${briefDate}) and any undated calendar item; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; overnight must keep at least three market numbers; delete any instruction to buy, sell, trim, add, reduce, or rotate a position and state the risk or setup instead.`, 10000, 30000);
+          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET NOW: ${mktLive}\nLEADERS: ${leaderLines}\nPORTFOLIO: Total $${Math.round(total)}. ${pnlLine}\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (${caps}) by tightening, not by losing substance. Also: replace any numeric KRX code with the company name; write won as \u20a9 never "KRW"; delete any calendar or watch item whose date is before today (${briefDate}) and any undated calendar item; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; overnight must keep at least three market numbers; delete any instruction to buy, sell, trim, add, reduce, or rotate a position and state the risk or setup instead; delete any figure credited to a company when the headline gives it to an industry, a market or another company (an industry-wide "$200 billion" is never one company's cut), and any claim that a story hits or helps a holding "directly" unless a headline names that holding; a day move tagged LIVE is today's, never "yesterday".`, 10000, 30000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       }
       if (!sections || !validSections(sections)) { errors.push(uid.slice(0, 8) + ": invalid sections"); continue; }
@@ -1096,6 +1054,15 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       sections.positions = sections.positions.slice(0, 4)
         .map((p) => ({ ...p, watch: p.watch.replace(/[,;\s]*\b(watch(ing)?|monitor(ing)?|track(ing)?)\b[.\s]*$/i, "").trim() }));
       sections = deepDeDash(sections);
+      // Session wording and causal links, guaranteed in code (relabel or delete only, never a new figure):
+      // an opening read's live US moves are "so far today", and "hits your X directly" loses the "directly"
+      // no headline supports. Both shipped in the 2026-09-25 morning brief.
+      const liveMoves = openingRead ? holdings.filter((r) => marketOf(r.symbol, r.kind, r.currency) === "US" && r.change_pct !== null)
+        .map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], pct: Number(r.change_pct) })) : [];
+      const guardWords = (t: string) => deDirect(liveMoves.length ? liveNotYesterday(t, liveMoves) : t);
+      sections = { ...sections, lede: guardWords(sections.lede), overnight: guardWords(sections.overnight), desk_view: guardWords(sections.desk_view),
+        positions: sections.positions.map((p) => ({ ...p, note: guardWords(p.note), watch: guardWords(p.watch) })),
+        ...(sections.horizon !== undefined ? { horizon: guardWords(sections.horizon) } : {}) };
       // deterministic style guarantees: KRX codes -> names, KRW-prefix -> ₩
       const codeToName = new Map(holdings.map((r) => [r.symbol, krName(r.symbol, r.nickname, r.name)] as [string, string]));
       const scrub = (t: string) => {

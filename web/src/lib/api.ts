@@ -23,7 +23,9 @@ export type HistoryPoint = { ts: string; price: number };
 export type Insight = {
   bullets: string[]; windows: Record<string, string> | null; news5?: string[] | null; model: string; generated_at: string;
 };
-export type NewsItem = { id: string; symbol: string; title: string; url: string; source: string; published_at: string | null };
+/** One earlier Ask exchange: the question and the answer the user saw. */
+export type AskTurn = { q: string; a: string };
+export type NewsItem ={ id: string; symbol: string; title: string; url: string; source: string; published_at: string | null };
 export type BriefSections = {
   lede: string; overnight: string;
   positions: { name: string; note: string; watch: string }[];
@@ -395,9 +397,14 @@ export function makeApi(sb: SupabaseClient = supabase) {
       return { status: fresh(at) ? "ready" : "pending", generatedAt: fresh(at) ? at : null,
                intelligenceAt: fresh(pit) ? pit : null, hadEarlier: !!at && !fresh(at) };
     },
-    /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
-    async ask(question: string): Promise<{ answer: string; followups: string[] }> {
-      const { data, error } = await sb.functions.invoke("ask", { body: { question } });
+    /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions.
+     *  `history` = the conversation so far, oldest first (question + the answer shown); only the last three
+     *  turns are sent, trimmed, so "why did that happen?" is answered about the previous answer. Optional:
+     *  a call without it is a fresh conversation, exactly as before. */
+    async ask(question: string, history?: AskTurn[]): Promise<{ answer: string; followups: string[] }> {
+      const turns = (history ?? []).filter((t) => t && String(t.q ?? "").trim()).slice(-3)
+        .map((t) => ({ q: String(t.q).slice(0, 300), a: String(t.a ?? "").slice(0, 700) }));
+      const { data, error } = await sb.functions.invoke("ask", { body: turns.length ? { question, history: turns } : { question } });
       if (error || !data?.ok) throw new Error(data?.error ?? "Ask is unavailable right now.");
       return { answer: String(data.answer), followups: Array.isArray(data.followups) ? data.followups.map(String).slice(0, 3) : [] };
     },

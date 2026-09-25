@@ -1,7 +1,22 @@
 // Assetly ASK — direct, analytical answers about YOUR portfolio, grounded in the DB.
 // Deterministic stats are computed server-side and handed to the model, so numbers
 // are never hallucinated. MARA Cloud MiniMax M3.
+//
+// Two rules sit above everything else here (audit 2026-09-25):
+//  1. INFORMATION, NEVER A TRADE INSTRUCTION. Ask explains drivers, risks, scenarios and what a buy or sell
+//     case would rest on; it never says buy / sell / hold / add / trim / swap for the user's own book and
+//     never sizes a position. Enforced in the prompt AND after generation (regenerate once, then delete the
+//     offending sentence), the way the daily brief's verifier does it. Follow-up chips ask why / what / how.
+//  2. EVERY NUMBER CARRIES ITS LABEL. Share price vs position value, the session a day move belongs to,
+//     the currency, and "not enough price history yet" instead of a window that silently reused a shorter one.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { dayTag, marketOf } from "../_shared/calendar.ts";
+import { windowReturns } from "../_shared/history.ts";
+import { bearerOf, userIdFrom } from "../_shared/auth.ts";
+import {
+  adviceHits, aliasesFor, booksKorean, cleanFollowups, earningsLine, EVIDENCE_LAW, fixPriceConfusions, isEarningsCallTitle, isJunkNews,
+  isTradeQuestion, NO_HISTORY, pctText, priceConfusions, stripAdvice, withNoCallLine, type PosFact,
+} from "../_shared/intel.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -9,15 +24,6 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
-
-function pctOver(history: { ts: string; price: number }[], days: number): number | null {
-  if (history.length < 2) return null;
-  const cutoff = Date.now() - days * 86400000;
-  const start = history.find((h) => +new Date(h.ts) >= cutoff);
-  const last = history[history.length - 1];
-  if (!start || start === last) return null;
-  return ((last.price / start.price) - 1) * 100;
-}
 
 /** Pull the question-relevant windows out of a long transcript instead of the
  *  boilerplate intro (operator, safe-harbor) that always leads these pages. */
@@ -65,23 +71,38 @@ function parseAnswer(raw: string): { answer: string; followups: string[] } | nul
   } catch { return null; }
 }
 
-/** Keep the hard 20-second-read guarantee even when the model overruns: cut at
- *  line boundaries down to ~95 words (whole first line survives regardless). */
-function trimAnswer(a: string): string {
+/** Keep the phone-read guarantee even when the model overruns: cut at line boundaries down to the
+ *  budget (the whole first line survives regardless). */
+function trimAnswer(a: string, cap = 100): string {
   const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
-  if (words(a) <= 100) return a;
+  if (words(a) <= cap) return a;
   const lines = a.split("\n");
-  let out: string[] = [], n = 0;
+  const out: string[] = [];
+  let n = 0;
   for (const ln of lines) {
     const w = words(ln);
-    if (out.length && n + w > 95) break;
+    if (out.length && n + w > cap - 5) break;
     out.push(ln); n += w;
   }
   let joined = out.join("\n");
-  if (words(joined) > 100) joined = joined.split(/\s+/).slice(0, 95).join(" ") + " …";
+  if (words(joined) > cap) joined = joined.split(/\s+/).slice(0, cap - 5).join(" ") + " …";
   return joined;
 }
 
+/** A long, multi-part question (concentration AND tax AND a plan) earns a longer answer than a quick one. */
+const isComplex = (q: string) => q.split(/\s+/).filter(Boolean).length > 28 || (q.match(/\?/g) ?? []).length >= 2
+  || (q.match(/\b(and|also|plus|as well as)\b/gi) ?? []).length >= 3;
+
+type Turn = { q: string; a: string };
+/** The last three turns from the client (question + short answer). Old 1.0 clients send none. */
+function historyOf(body: Record<string, unknown>): Turn[] {
+  const raw = Array.isArray(body.history) ? body.history : [];
+  const clean = (x: unknown, n: number) => String(x ?? "").replace(/\p{Cc}/gu, " ").replace(/\s+/g, " ").trim().slice(0, n);
+  return raw.slice(-3).map((t) => {
+    const o = (t ?? {}) as Record<string, unknown>;
+    return { q: clean(o.q ?? o.question, 300), a: clean(o.a ?? o.answer, 700) };
+  }).filter((t) => t.q);
+}
 
 // ---- reader profile: the 6 sign-up answers steer VOICE, EMPHASIS and PURPOSE, never the facts ----
 type Investor = { styles?: string[] | string; purpose?: string[] | string; horizon?: string[] | string; target?: string[] | string; risk?: string[] | string; level?: string[] | string };
@@ -102,7 +123,7 @@ function readerBlock(inv: Investor | null | undefined): string {
     income: "yield, payout safety and income stability first",
     index: "diversification, costs and factor tilts first",
     ai_tech: "AI and technology-cycle positioning first",
-    trader: "catalysts, momentum and actionable levels first",
+    trader: "catalysts, momentum and the levels that matter first",
     crypto: "crypto cycles, flows and custody risk first",
   };
   const purpG: Record<string, string> = {
@@ -133,155 +154,238 @@ function readerBlock(inv: Investor | null | undefined): string {
   const rk = v.risk.map((x) => riskG[x] ?? "").filter(Boolean).join(" and ");
   return `READER PROFILE (personalize EMPHASIS, VOCABULARY and FRAMING for this one reader; facts and numbers stay identical):
 - ${lvlG[v.level] ?? lvlG.novice}
-- Lens: ${st || styleG.value}. Apply the lens TO this book in EVERY position note and the structure section: the first judgment in each comes through this lens (value: what it is worth versus its price and the downside; income: state in EVERY position note whether and roughly how well that holding pays the owner, dividend or yield posture included, and in the structure section how much income the whole book actually produces), even when the book does not match the lens. Even the one-line verdict must carry the lens: name what kind of book it is AND what that means through this lens (for income: what the book pays its owner; for value: what it costs versus what it earns).
+- Lens: ${st || styleG.value}. Apply the lens to the answer: the first judgment comes through it, even when the book does not match the lens.
 - ${pp || purpG.watch}
 - ${hz}; target return ${v.target.join(" or ")}/yr; ${rk || riskG.hold}.`;
 }
 
+const money = (v: number, cur = "USD"): string => {
+  const a = Math.abs(v), s = v < 0 ? "-" : "";
+  if (cur === "KRW") return `${s}₩${Math.round(a).toLocaleString("en-US")}`;
+  const body = a >= 1000 ? Math.round(a).toLocaleString("en-US") : a.toFixed(2);
+  return cur === "USD" ? `${s}$${body}` : `${s}${body} ${cur}`;
+};
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const signedUsd = (v: number) => `${v >= 0 ? "+" : "-"}$${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  const auth = req.headers.get("Authorization") ?? "";
-  const userClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "", { global: { headers: { Authorization: auth } } });
-  const { data: u } = await userClient.auth.getUser();
-  if (!u?.user) return json({ ok: false, error: "sign in required" }, 401);
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const uid = await userIdFrom(admin, bearerOf(req));
+  if (!uid) return json({ ok: false, error: "sign in required" }, 401);
 
   const url = new URL(req.url);
   const fixture = url.searchParams.get("fixture") === "1";
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => ({})) as Record<string, unknown>;
   const question = String(body.question ?? "").slice(0, 500).trim();
   if (!question) return json({ ok: false, error: "ask something" }, 400);
+  const turns = historyOf(body);
+  const t0 = Date.now();
 
   // ---- deterministic portfolio math (the model never invents numbers) ----
-  const { data: rows } = await admin.from("portfolio").select("symbol,nickname,kind,account,currency,qty,value,change_pct,avg_cost,total_gl").eq("user_id", u.user.id);
-  const { data: invRow } = await admin.from("profiles").select("investor").eq("id", u.user.id).maybeSingle();
-  const READER = readerBlock(invRow?.investor as Investor | null);
-  const { data: fxRow } = await admin.from("prices").select("price").eq("symbol", "USDKRW").maybeSingle();
-  const fx = fxRow ? Number(fxRow.price) : 1380;
-  const { data: fxRows } = await admin.from("prices").select("symbol,price").like("symbol", "USD___");
-  const fxMap = new Map<string, number>([["USD", 1], ["KRW", fx]]);
+  const [{ data: rows }, { data: prof }, { data: fxRows }] = await Promise.all([
+    admin.from("portfolio").select("symbol,nickname,name,kind,account,currency,qty,price,value,change_pct,avg_cost,total_gl,as_of").eq("user_id", uid),
+    admin.from("profiles").select("investor,base_currency,display_kr").eq("id", uid).maybeSingle(),
+    admin.from("prices").select("symbol,price").like("symbol", "USD___"),
+  ]);
+  const READER = readerBlock(prof?.investor as Investor | null);
+  const fxMap = new Map<string, number>([["USD", 1], ["KRW", 1380]]);
   for (const r of fxRows ?? []) { const v = Number(r.price); if (v > 0) fxMap.set(String(r.symbol).slice(3), v); }
   const usd = (v: number, c: string) => v / (fxMap.get(c) ?? 1);
-  const held = (rows ?? []).filter((r) => !r.symbol.startsWith("$"));
+  const book = rows ?? [];
+  const korean = booksKorean(book, prof);
+  const nameOf = (r: { symbol: string; nickname?: string | null; name?: string | null }) =>
+    r.nickname || ((r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ")) && r.name ? r.name : r.symbol);
+  const held = book.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash" && r.kind !== "debt");
+  const assetsUsd = book.filter((r) => r.kind !== "debt").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
+  const weight = (v: number) => { const w = v / (assetsUsd || 1) * 100; return w > 0 && w < 0.05 ? "under 0.1%" : `${w.toFixed(1)}%`; };
   const windows = [7, 30, 90];
+  const perf = new Map(await Promise.all(held.slice(0, 20).map(async (r) => [r.symbol, await windowReturns(admin, r.symbol, windows)] as const)));
+  // the previous session's close, so "what did X close at?" has its own labelled number
+  const { data: quotes } = held.length ? await admin.from("prices").select("symbol,prev_close").in("symbol", held.map((r) => r.symbol)) : { data: [] };
+  const prevClose = new Map((quotes ?? []).map((q) => [String(q.symbol), q.prev_close === null ? null : Number(q.prev_close)]));
+
   const stats: string[] = [];
   let totNow = 0;
-  const totThen: Record<number, number> = { 7: 0, 30: 0, 90: 0 };
-  for (const r of rows ?? []) {
-    const sign = r.kind === "debt" ? -1 : 1;
-    const vNow = usd(Number(r.value ?? 0), r.currency) * sign;
-    totNow += vNow;
-    let line = `${r.nickname || r.symbol} (${r.kind}${r.account !== "brokerage" ? "/" + r.account : ""}): now $${Math.round(usd(Number(r.value ?? 0), r.currency))}, day ${r.change_pct === null ? "n/a" : Number(r.change_pct).toFixed(1) + "%"}, avg cost ${Number(r.avg_cost ?? 0).toFixed(2)} ${r.currency}, total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
-    if (!r.symbol.startsWith("$")) {
-      const { data: hist } = await admin.from("price_history").select("ts,price")
-        .eq("symbol", r.symbol).gte("ts", new Date(Date.now() - 91 * 86400000).toISOString())
-        .order("ts", { ascending: true }).limit(1500);
-      const h = (hist ?? []).map((x) => ({ ts: String(x.ts), price: Number(x.price) }));
-      for (const d of windows) {
-        const p = pctOver(h, d);
-        if (p !== null) {
-          const then = vNow / (1 + p / 100);
-          totThen[d] += then;
-          if (d === 7) line += `, 1W ${p.toFixed(1)}% ($${Math.round(vNow - then)})`;
-          if (d === 30) line += `, 1M ${p.toFixed(1)}% ($${Math.round(vNow - then)})`;
-        } else totThen[d] += vNow;
-      }
-    } else { for (const d of windows) totThen[d] += vNow; }
-    stats.push(line);
+  const moved: Record<number, { then: number; now: number; missing: string[] }> = { 7: { then: 0, now: 0, missing: [] }, 30: { then: 0, now: 0, missing: [] }, 90: { then: 0, now: 0, missing: [] } };
+  const posFacts: PosFact[] = [];
+  for (const r of book) {
+    const valUsd = usd(Number(r.value ?? 0), r.currency);
+    const acct = r.account !== "brokerage" ? `, ${r.account}` : "";
+    if (r.kind === "debt") { totNow -= valUsd; stats.push(`- ${nameOf(r)} (debt${acct}): owed ${money(valUsd)}`); continue; }
+    totNow += valUsd;
+    if (r.symbol.startsWith("$") || r.kind === "cash") { stats.push(`- ${nameOf(r)} (cash${acct}): balance ${money(valUsd)} (${weight(valUsd)} of assets)`); continue; }
+    const cur = String(r.currency ?? "USD");
+    const px = r.price === null || r.price === undefined ? null : Number(r.price);
+    const mk = marketOf(r.symbol, r.kind, cur);
+    const bits = [
+      `share price ${px === null ? "n/a" : money(px, cur)}${cur !== "USD" && px !== null ? ` (about ${money(usd(px, cur))})` : ""}`,
+      ...(prevClose.get(r.symbol) ? [`previous session close ${money(prevClose.get(r.symbol)!, cur)}`] : []),
+      `shares ${Number(r.qty ?? 0)}`,
+      `position value ${money(valUsd)} (${weight(valUsd)} of assets)`,
+      `day ${r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%"} [${dayTag(mk)}]`,
+      `avg cost ${money(Number(r.avg_cost ?? 0), cur)}/share`,
+      `total gain/loss ${signedUsd(usd(Number(r.total_gl ?? 0), cur))} since purchase`,
+    ];
+    const p = perf.get(r.symbol);
+    for (const d of windows) {
+      const pct = p?.pct[d] ?? null;
+      const label = d === 7 ? "1W" : d === 30 ? "1M" : "3M";
+      if (pct === null) { moved[d].missing.push(nameOf(r)); if (d !== 90) bits.push(`${label} ${NO_HISTORY}`); continue; }
+      const then = valUsd / (1 + pct / 100);
+      moved[d].then += then; moved[d].now += valUsd;
+      bits.push(`${label} ${pctText(pct)} (${signedUsd(valUsd - then)})`);
+    }
+    const who = r.name && r.name !== nameOf(r) ? `${r.name}, ${r.symbol}` : r.symbol;
+    stats.push(`- ${nameOf(r)} (${who === nameOf(r) ? "" : who + "; "}${r.kind}${acct}): ${bits.join(" · ")}`);
+    posFacts.push({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], price: px === null ? null : usd(px, cur), value: valUsd });
   }
+  const investedUsd = held.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
   const totalLines = windows.map((d) => {
-    const delta = totNow - totThen[d];
-    const pct = totThen[d] !== 0 ? (delta / totThen[d]) * 100 : 0;
-    return `${d}D: $${Math.round(delta)} (${pct.toFixed(1)}%)`;
+    const m = moved[d];
+    const label = d === 7 ? "1W" : d === 30 ? "1M" : "3M";
+    // a "portfolio" move that leaves out a fifth of the invested money is not the portfolio's move
+    if (!m.then || m.now < investedUsd * 0.8) return `${label}: ${NO_HISTORY}${m.missing.length ? ` (missing: ${m.missing.slice(0, 5).join(", ")})` : ""}`;
+    const delta = m.now - m.then;
+    const miss = m.missing.length ? ` (covers holdings with enough history; missing: ${m.missing.slice(0, 5).join(", ")})` : "";
+    return `${label}: ${signedUsd(delta)} (${pctText(delta / m.then * 100)})${miss}`;
   }).join(" · ");
 
-  // ---- signal digest for EVERY holding (news, filings, earnings calls) ----
+  // ---- signal digest for EVERY holding (news, filings, earnings) ----
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
   let digest = "";
   const digSyms = held.slice(0, 12).map((r) => r.symbol);
   if (digSyms.length) {
     const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
     const [{ data: dn }, { data: dt }, { data: df }] = await Promise.all([
-      admin.from("news").select("symbol,title,source,published_at").in("symbol", digSyms).gte("published_at", since14).order("published_at", { ascending: false }).limit(80),
+      admin.from("news").select("symbol,title,url,source,published_at").in("symbol", digSyms).gte("published_at", since14).order("published_at", { ascending: false }).limit(120),
       admin.from("transcripts").select("symbol,title,published_at").in("symbol", digSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(48),
-      admin.from("filings").select("symbol,form,filed_at").in("symbol", digSyms).order("filed_at", { ascending: false }).limit(60),
+      admin.from("filings").select("symbol,form,filed_at,items").in("symbol", digSyms).order("filed_at", { ascending: false }).limit(120)
+        .then((r) => r.error ? admin.from("filings").select("symbol,form,filed_at").in("symbol", digSyms).order("filed_at", { ascending: false }).limit(120) : r),
     ]);
     for (const s of digSyms) {
-      const tt = (dt ?? []).filter((x) => x.symbol === s).slice(0, 1).map((x) => `latest earnings call ${String(x.published_at).slice(0, 10)}`);
-      const ff = (df ?? []).filter((x) => x.symbol === s).slice(0, 2).map((x) => `${x.form} ${String(x.filed_at).slice(5, 10)}`);
-      const nn = (dn ?? []).filter((x) => x.symbol === s).slice(0, 2).map((x) => `"${String(x.title).slice(0, 90)}" [${x.source} ${String(x.published_at).slice(5, 10)}]`);
-      const bits = [...tt, ...(ff.length ? ["filings " + ff.join(", ")] : []), ...nn];
-      if (bits.length) digest += `\n${s}: ${bits.join(" · ")}`;
+      const r = held.find((h) => h.symbol === s)!;
+      const fs = (df ?? []).filter((x) => x.symbol === s) as { form: string; filed_at: string; items?: string | null }[];
+      const ts = (dt ?? []).filter((x) => x.symbol === s) as { title: string; published_at: string | null }[];
+      const earn = earningsLine(nameOf(r), fs, ts, today);
+      const talks = ts.filter((x) => !isEarningsCallTitle(x.title)).slice(0, 1).map((x) => `conference talk (not an earnings report) ${String(x.published_at).slice(0, 10)}`);
+      const ff = fs.slice(0, 2).map((x) => `${x.form} ${String(x.filed_at).slice(5, 10)}`);
+      const nn = (dn ?? []).filter((x) => x.symbol === s && !isJunkNews(x.title, x.url, x.source)).slice(0, 2).map((x) => `"${String(x.title).slice(0, 90)}" [${x.source} ${String(x.published_at).slice(5, 10)}]`);
+      const bits = [...(earn ? [earn.replace(/^[^:]+:\s*/, "")] : ["no earnings date on file"]), ...talks, ...(ff.length ? ["filings " + ff.join(", ")] : []), ...nn];
+      digest += `\n${nameOf(r)}: ${bits.join(" · ")}`;
     }
   }
 
-  // ---- context for mentioned symbols ----
-  const qUp = question.toUpperCase();
-  const mentioned = held.filter((r) => qUp.includes(r.symbol.toUpperCase().replace(".KS", "").replace(".KQ", "")) || (r.nickname && qUp.includes(r.nickname.toUpperCase()))).map((r) => r.symbol).slice(0, 3);
+  // ---- deeper context for the holdings this conversation is about ----
+  // the question first, then the last turn ("why did that happen?" is about the holding just discussed)
+  const convo = [question, ...turns.slice(-1).flatMap((t) => [t.q, t.a])].join(" ");
+  const mentioned = held.filter((r) => {
+    const tick = r.symbol.replace(/\.(KS|KQ)$/, "");
+    // a short ticker counts only in capitals ("ON" the ticker, never "on" the word); names in any case
+    const tickHit = !/^\d+$/.test(tick) && new RegExp(`(^|[^A-Za-z0-9])${esc(tick)}($|[^A-Za-z0-9])`, tick.length <= 3 ? "" : "i").test(convo);
+    return tickHit || [r.nickname, ...aliasesFor(r.symbol, r.name).filter((a) => a !== tick)].some((n) => !!n && n.length >= 3 && new RegExp(`(^|[^\\p{L}\\p{N}])${esc(n)}($|[^\\p{L}\\p{N}])`, "iu").test(convo));
+  }).map((r) => r.symbol).slice(0, 3);
   let context = "";
   for (const sym of mentioned) {
-    const { data: news } = await admin.from("news").select("title,source,published_at").eq("symbol", sym)
-      .gte("published_at", new Date(Date.now() - 7 * 86400000).toISOString())
-      .order("published_at", { ascending: false }).limit(12);
-    const { data: ins } = await admin.from("insights").select("bullets,generated_at").eq("symbol", sym)
-      .order("generated_at", { ascending: false }).limit(1);
-    const { data: fils } = await admin.from("filings").select("form,filed_at,title").eq("symbol", sym)
-      .order("filed_at", { ascending: false }).limit(6);
-    const { data: trAll } = await admin.from("transcripts").select("title,published_at,content").eq("symbol", sym)
-      .order("published_at", { ascending: false, nullsFirst: false }).limit(4);
-    context += `\n[${sym}] 7d headlines:\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- none"}`;
-    if (ins?.[0]) context += `\n[${sym}] current AI take: ${(ins[0].bullets as string[]).join(" | ")}`;
-    if (fils?.length) context += `\n[${sym}] SEC filings: ${fils.map((f) => `${f.form} ${f.filed_at}`).join(", ")}`;
-    if (trAll?.length) {
-      context += `\n[${sym}] earnings calls on file: ${trAll.map((t) => `${String(t.title).slice(0, 90)} (${String(t.published_at).slice(0, 10)})`).join(" ; ")}`;
-      const latest = trAll[0];
-      if (latest.content && String(latest.content).length > 200) context += `\n[${sym}] latest call excerpts (question-relevant windows): ${excerptFor(String(latest.content), question)}`;
+    const [{ data: news }, { data: ins }, { data: fils }, { data: trAll }] = await Promise.all([
+      admin.from("news").select("title,url,source,published_at").eq("symbol", sym).gte("published_at", new Date(Date.now() - 7 * 86400000).toISOString()).order("published_at", { ascending: false }).limit(16),
+      admin.from("insights").select("bullets,generated_at").eq("symbol", sym).order("generated_at", { ascending: false }).limit(1),
+      admin.from("filings").select("form,filed_at,title").eq("symbol", sym).order("filed_at", { ascending: false }).limit(6),
+      admin.from("transcripts").select("title,published_at,content").eq("symbol", sym).order("published_at", { ascending: false, nullsFirst: false }).limit(4),
+    ]);
+    const nm = nameOf(held.find((h) => h.symbol === sym)!);
+    const heads = (news ?? []).filter((n) => !isJunkNews(n.title, n.url, n.source)).slice(0, 12);
+    context += `\n[${nm}] 7d headlines:\n${heads.map((n) => `- [${n.source}, ${String(n.published_at).slice(5, 10)}] ${n.title}`).join("\n") || "- none"}`;
+    if (ins?.[0]) context += `\n[${nm}] current desk take (written ${String(ins[0].generated_at).slice(0, 16).replace("T", " ")} UTC; its prices may be older than the stats above, which win): ${(ins[0].bullets as string[]).join(" | ")}`;
+    if (fils?.length) context += `\n[${nm}] SEC filings: ${fils.map((f) => `${f.form} ${f.filed_at}`).join(", ")}`;
+    const calls = (trAll ?? []).filter((t) => isEarningsCallTitle(t.title));
+    const others = (trAll ?? []).filter((t) => !isEarningsCallTitle(t.title));
+    if (calls.length) {
+      context += `\n[${nm}] earnings calls on file: ${calls.map((t) => `${String(t.title).slice(0, 90)} (posted ${String(t.published_at).slice(0, 10)})`).join(" ; ")}`;
+      if (String(calls[0].content ?? "").length > 2000) context += `\n[${nm}] latest earnings call excerpts (question-relevant windows): ${excerptFor(String(calls[0].content), question)}`;
     }
+    if (others.length) context += `\n[${nm}] other talks on file (conferences, NOT earnings reports): ${others.map((t) => `${String(t.title).slice(0, 90)} (${String(t.published_at).slice(0, 10)})`).join(" ; ")}`;
   }
 
-  const prompt = `User's portfolio (all $ figures USD at ₩${Math.round(fx)}/$):
+  const complex = isComplex(question);
+  const cap = complex ? 170 : 90;
+  // "should I?" right after a trade question is the same question
+  const tradeQ = isTradeQuestion(question) || (turns.length > 0 && /\bshould (i|we)\b/i.test(question) && isTradeQuestion(turns[turns.length - 1].q));
+  const convoBlock = turns.length
+    ? `CONVERSATION SO FAR (oldest first). The new question may refer back to it ("that", "it", "why?", "what about the other one"): resolve those against the MOST RECENT answer and stay on the same holding unless the user switches.\n${turns.map((t, i) => `Q${i + 1}: ${t.q}\nA${i + 1}: ${t.a}`).join("\n")}\n`
+    : "";
+  const ccyLine = korean
+    ? `Money: portfolio totals and position values are US dollars ($); Korean shares also show their won price. Write won amounts with the ₩ sign.`
+    : `Money: every amount is in US dollars ($). This account holds nothing in Korean won: never write ₩ or won amounts.`;
+  const prompt = `TODAY is ${today} (US Eastern date).
+${ccyLine}
+User's portfolio (deterministic; the ONLY source of numbers). For each holding: "share price" is the price of ONE share; "position value" is what the user's whole holding is worth. They are different numbers: a question about the stock's price or close gets the SHARE PRICE, never the position value. Each "day" figure is tagged with the session it belongs to: a LIVE session is today's move so far, a "past (not today)" session is named by its day, and a live move is never "yesterday".
 ${stats.join("\n")}
-Portfolio total: $${Math.round(totNow)} · movement ${totalLines}
-Signals on file per holding (earnings calls, SEC filings, headlines):${digest || "\n(none)"}
+Portfolio total: ${money(totNow)} · movement ${totalLines}
+Window figures that read "${NO_HISTORY}" have no data: say so plainly for that window; never reuse another window's number in its place.
+Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
 ${context}
 
-Question: "${question}"
+${convoBlock}Question: "${question}"
 
 ${READER}
-Answer as THEIR analyst (see the reader profile): direct, specific, tight. Ground qualitative answers in the signals, headlines, filings, and earnings-call material above, not just prices. Numbers must come only from the stats block. Earnings-call titles and dates listed are reliable even when the excerpt is partial. HARD LIMIT: 80 words total, 3-5 short bullets max, readable on a phone in under 20 seconds. No preamble, no repetition. If the question needs data you truly don't have, one line saying exactly what's missing.`;
+Answer as THEIR analyst (see the reader profile): direct, specific, tight. Ground qualitative answers in the signals, headlines, filings and earnings material above, not just prices. Numbers come only from the stats block.
+ANSWER LAW (above everything else): you give INFORMATION, never a trade instruction on their own holdings. Never tell them to buy, sell, hold, add, trim, swap, rotate or take profits, never give a verdict ("Verdict: hold", "a buy here", "top pick"), and never size a position ("put $X into", "buy N shares"). Instead explain what is driving it, the risks, the scenarios, what to watch next (a date or a level), and what a buy case or a sell case would rest on.${tradeQ ? ` This question asks what to trade: open with ONE short, natural line that the decision is theirs to make (for example "I can't tell you whether to sell, but here's what it hinges on."), then give the balanced considerations on both sides. One line, never a wall of disclaimer.` : ""}
+${EVIDENCE_LAW}
+If the question is not about investing, their portfolio or markets, answer in one friendly line that you stick to their portfolio and markets, and suggest one thing you can help with.
+HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each part a short bold header and a direct answer" : "80 words total, 3-5 short bullets max, readable on a phone in under 20 seconds"}. No preamble, no repetition. If the question needs data you truly don't have, one line saying exactly what's missing.`;
 
-  if (fixture) return json({ ok: true, answer: "FIXTURE\n" + "TOTAL:" + Math.round(totNow) + "\n" + totalLines, followups: ["Fixture follow-up one?", "Fixture follow-up two?"], mentioned });
+  if (fixture) return json({ ok: true, answer: "FIXTURE\nTOTAL:" + Math.round(totNow) + "\n" + totalLines + "\nTURNS:" + turns.length + "\nKRW:" + korean, followups: ["Fixture follow-up one?", "Fixture follow-up two?"], mentioned, ...(url.searchParams.get("prompt") === "1" ? { prompt } : {}) });   // prompt=1: the caller's own data block, for tests
 
   let key = Deno.env.get("MARA_API_KEY") ?? "";
   if (!key) { const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" }); key = data ?? ""; }
   if (!key) return json({ ok: false, error: "not configured" }, 500);
+  const system = `You are a direct, analytical portfolio assistant. You explain and inform; you never tell the user what to buy or sell. Respond ONLY with strict JSON: {"answer": "...", "followups": ["...", "..."]}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, ${complex ? "170" : "80"} words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no boilerplate disclaimers.${korean ? " Refer to Korean companies by name, never numeric KRX codes; write won amounts with the ₩ sign." : " All money is US dollars; never write won."} The followups value: AFTER writing the answer, reread it and offer 2-3 natural next questions this user would ask, each under 12 words, ending with ?, starting with Why, What or How, answerable from their portfolio stats, news, SEC filings, or earnings data, never repeating the question just answered, and NEVER asking whether or how much to buy, sell, add or trim.`;
+  const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number) => {
+    const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), timeoutMs);
+    const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {   // base overridable for local fixture runs
+      signal: ac.signal,
+      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M3", messages: msgs, temperature, max_tokens: 6000, response_format: { type: "json_object" } }),
+    }).catch(() => null);
+    clearTimeout(timer);
+    if (!r || !r.ok) return null;
+    const out = await r.json().catch(() => null);
+    return parseAnswer(out?.choices?.[0]?.message?.content ?? "");
+  };
+  const base = [{ role: "system", content: system }, { role: "user", content: prompt }];
   let parsedA: { answer: string; followups: string[] } | null = null;
   // Reliability: each attempt gets a hard timeout (a hung call otherwise eats the whole 150s and surfaces
   // as a transport error = "unavailable"); 3 attempts with short backoff outlast a slow wave.
-  const t0 = Date.now();
   for (let attempt = 0; attempt < 3 && !parsedA; attempt++) {
-  if (Date.now() - t0 > 110000) break;
-  if (attempt > 0) await new Promise((res) => setTimeout(res, 2500 * attempt));
-  const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), attempt === 0 ? 45000 : 35000);
-  const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
-    signal: ac.signal,
-    method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M3",
-      messages: [
-        { role: "system", content: 'You are a direct, analytical portfolio assistant. Respond ONLY with strict JSON: {"answer": "...", "followups": ["...", "..."]}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, 80 words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no disclaimers. Refer to Korean companies by name, never numeric KRX codes; write won amounts with the \u20a9 sign. The followups value: AFTER writing the answer, reread it and offer 2-3 natural next questions this user would ask, each under 12 words, ending with ?, answerable from their portfolio stats, news, SEC filings, or earnings-call data, and never repeating the question just answered.' },
-        { role: "user", content: prompt },
-      ],
-      temperature: attempt === 0 ? 0.2 : 0.4, max_tokens: 6000,
-      response_format: { type: "json_object" },
-    }),
-  }).catch(() => null);
-  clearTimeout(timer);
-  if (!r || !r.ok) { continue; }
-  const out = await r.json().catch(() => null);
-  parsedA = parseAnswer(out?.choices?.[0]?.message?.content ?? "");
+    if (Date.now() - t0 > 110000) break;
+    if (attempt > 0) await new Promise((res) => setTimeout(res, 2500 * attempt));
+    parsedA = await ask(base, attempt === 0 ? 0.2 : 0.4, attempt === 0 ? 45000 : 35000);
   }
-  const deDash = (v: string) => v.trim().replace(/\s*\u2014\s*/g, ": ").replace(/\s*\u2013\s*/g, ": ");
-  const answer = trimAnswer(deDash(parsedA?.answer ?? ""));
+  const deDash = (v: string) => v.trim().replace(/\s*—\s*/g, ": ").replace(/\s*–\s*/g, ": ");
+  let answer = deDash(parsedA?.answer ?? "");
+  // ---- verifier: a trade instruction or a position value quoted as a share price gets ONE rewrite ----
+  const problems = (a: string) => [
+    ...adviceHits(a).map((s) => `It tells the user what to trade: "${s.slice(0, 120)}". Rewrite it as information (drivers, risks, what a buy or sell case would rest on).`),
+    ...priceConfusions(a, posFacts).map((h) => `It quotes ${h.match} as a share price, but that is the user's POSITION VALUE; the share price is in the stats.`),
+  ];
+  const found = answer ? problems(answer) : [];
+  if (found.length && Date.now() - t0 < 75000) {
+    const fixed = await ask([...base, { role: "assistant", content: JSON.stringify({ answer, followups: parsedA?.followups ?? [] }) },
+      { role: "user", content: `Your answer broke the rules:\n- ${found.join("\n- ")}\nReturn the corrected JSON in the same shape. Keep everything else that was right.` }], 0.2, 35000);
+    if (fixed && problems(deDash(fixed.answer)).length < found.length) { parsedA = fixed; answer = deDash(fixed.answer); }
+  }
+  // ...and whatever survives the rewrite is removed or corrected in code
   if (!answer) return json({ ok: false, error: "The analyst lost the thread mid-answer. Ask again." }, 502);
-  return json({ ok: true, answer, followups: (parsedA?.followups ?? []).map(deDash), mentioned });
+  const guarded = fixPriceConfusions(stripAdvice(answer), posFacts).trim();
+  answer = guarded ? withNoCallLine(guarded, question)
+    : "I can't tell you what to trade, but I can walk through what's driving it, the risks, and what to watch next.";
+  answer = trimAnswer(answer, cap + 10);
+  const focus = (mentioned.length ? mentioned : held.slice(0, 1).map((r) => r.symbol)).map((s) => nameOf(held.find((h) => h.symbol === s)!));
+  const fallbacks = [
+    ...(focus[0] ? [`What's driving ${focus[0]} right now?`, `What would change the outlook for ${focus[0]}?`] : []),
+    "How concentrated is my portfolio?", "What are the biggest risks in my portfolio?",
+  ];
+  const followups = cleanFollowups((parsedA?.followups ?? []).map(deDash), fallbacks);
+  return json({ ok: true, answer, followups, mentioned });
 });
