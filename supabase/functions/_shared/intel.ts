@@ -28,31 +28,45 @@ export function closesBetween(mkt: Mkt, fromMs: number, toMs: number, limit = In
   return n;
 }
 
-/** Percent change over the trailing `days`, or null when the stored history cannot honestly answer it.
- *  The old version started the window at the FIRST point after the cutoff, so a symbol with 7 days of
- *  stored prices reported the same "+3.7%" for 1W and 1M (TSLA, 2026-09-25). Round 1 then accepted a first
- *  point up to 3.75 days late as "the start of the month", and AMZN (history from Aug 28) reported a 28-day
- *  -5.9% as its 1M; the real month was -3.7%. Now the base must sit on the window's start, measured in the
- *  holding's own trading sessions: a base BEFORE the start may be at most 2 session closes stale (a missing
- *  daily bar or two), and a base AFTER the start may skip at most 1 session close (the session in progress
- *  when the window opened). Crypto trades every day: 2 days before, 1 day after. `mkt` undefined = US. */
+/** The calendar date a window starts on, in the market's own zone: 1M is the same day last month (Sep 25 ->
+ *  Aug 25), 3M three months back, 1Y / 2Y the same date one / two years back, and any other length (1W, 60d
+ *  in insights) that many days back. A day that does not exist (Mar 31 minus a month) falls to the month's end. */
+export function windowTargetYmd(days: number, now = Date.now(), mkt?: Mkt | null): string {
+  const market = mkt === undefined ? "US" : mkt;
+  const ymd = market ? zonedParts(new Date(now), TZ[market]).ymd : new Date(now).toISOString().slice(0, 10);
+  const months = ({ 30: 1, 60: 2, 90: 3, 180: 6, 365: 12, 730: 24 } as Record<number, number>)[days];
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!months) { const t = new Date(Date.UTC(y, m - 1, d - days)); return t.toISOString().slice(0, 10); }
+  const first = new Date(Date.UTC(y, m - 1 - months, 1));
+  const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, lastDay))).toISOString().slice(0, 10);
+}
+/** The last instant that still belongs to the window's target date (its end, in the market's zone). */
+export function windowCutoff(days: number, now = Date.now(), mkt?: Mkt | null): number {
+  const market = mkt === undefined ? "US" : mkt;
+  const ymd = windowTargetYmd(days, now, mkt);
+  return market ? zonedEpoch(ymd, 24 * 60, TZ[market]) - 1 : Date.parse(ymd + "T23:59:59.999Z");
+}
+
+/** Percent change over a window, or null when the stored history cannot honestly answer it. The base is the
+ *  last price ON OR BEFORE the window's target date (1M on Sep 25 = the Aug 25 close), never a later one:
+ *  round 1 let a base land after the start, and TSLA's 1M read +8.0% from the Aug 26 close instead of +6.6%
+ *  from Aug 25; before that, a symbol with 7 days of prices reported the same "+3.7%" for 1W and 1M. A base
+ *  more than 2 session closes older than the target date (a gap in the history, or a history that starts
+ *  after it) is no base: "not enough price history yet". Crypto trades every day: at most 2 days older.
+ *  `mkt` undefined = US, null = crypto. */
 export function pctOver(history: Pt[], days: number, now = Date.now(), mkt?: Mkt | null): number | null {
   if (history.length < 2) return null;
-  const cutoff = now - days * 86400000;
+  const market = mkt === undefined ? "US" : mkt;
+  const cutoff = windowCutoff(days, now, mkt);
   let base: Pt | null = null;
   for (const h of history) { if (+new Date(h.ts) <= cutoff) base = h; else break; }
-  const market = mkt === undefined ? "US" : mkt;
-  if (base) {
-    const at = +new Date(base.ts);
-    const stale = market ? closesBetween(market, at, cutoff + 1, 2) > 2 : cutoff - at > 2 * 86400000;
-    if (stale) return null;
-  } else {
-    const first = history[0], at = +new Date(first.ts);
-    const late = market ? closesBetween(market, cutoff, at, 1) > 1 : at - cutoff > 86400000;
-    if (!late) base = first;
-  }
+  if (!base) return null;
+  const at = +new Date(base.ts);
+  const stale = market ? closesBetween(market, at, cutoff, 2) > 2 : cutoff - at > 3 * 86400000;
+  if (stale) return null;
   const last = history[history.length - 1];
-  if (!base || base === last || !(base.price > 0) || !(last.price > 0)) return null;
+  if (base === last || !(base.price > 0) || !(last.price > 0)) return null;
   return ((last.price / base.price) - 1) * 100;
 }
 export const NO_HISTORY = "not enough price history yet";
@@ -80,9 +94,14 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const dayDiff = (a: string, b: string) => Math.round((+new Date(ymdOf(a) + "T12:00:00Z") - +new Date(ymdOf(b) + "T12:00:00Z")) / 86400000);
 
 /** The date the company last REPORTED results, from the strongest evidence on file:
- *  1. an 8-K carrying item 2.02 (Results of Operations) is the earnings release itself;
- *  2. an 8-K filed on the day of, or up to 3 days before, a 10-Q/10-K is the same release (companies
- *     file both around the call; NVDA 8-K + 10-Q on Aug 26, MSFT 8-K + 10-K on Jul 29);
+ *  1. the LAST 8-K carrying item 2.02 (Results of Operations) filed in the 45 days before a 10-Q/10-K: the
+ *     release that precedes the periodic report. Item 2.02 alone is not enough: Tesla files its quarterly
+ *     DELIVERIES under 2.02 in the first days of Jan/Apr/Jul/Oct, three weeks before its earnings release, and
+ *     "last reported Oct 2" made every surface say "next report ~early January" and Ask "~Oct 1" (round 2).
+ *     A 2.02 with no periodic report after it (a deliveries update, a release whose 10-Q is not filed yet)
+ *     is ignored. 45 days, not 10: banks file the 10-Q two to three weeks after the release;
+ *  2. an 8-K without item data filed on the day of, or up to 3 days before, a 10-Q/10-K (rows stored before
+ *     item numbers were kept; NVDA 8-K + 10-Q on Aug 26, MSFT 8-K + 10-K on Jul 29);
  *  3. an earnings-call transcript (never a conference talk), dated by publication.
  *  The fetch or publication date of anything else is NOT an earnings date. */
 export function lastEarnings(filings: FilingLite[], transcripts: TranscriptLite[], todayYmd: string):
@@ -94,12 +113,17 @@ export function lastEarnings(filings: FilingLite[], transcripts: TranscriptLite[
  *  Aug 27 are the same report: the filing date wins). */
 export function reportDates(filings: FilingLite[], transcripts: TranscriptLite[], todayYmd: string): { date: string; source: EarningsSource }[] {
   const cands: { date: string; source: EarningsSource; rank: number }[] = [];
-  const periodic = filings.filter((f) => /^10-[QK]/.test(f.form)).map((f) => ymdOf(f.filed_at));
+  // amendments (10-K/A) are filed at any time and date nothing
+  const periodic = filings.filter((f) => /^10-[QK]$/.test(f.form)).map((f) => ymdOf(f.filed_at));
+  const results = filings.filter((f) => /^8-K/.test(f.form) && /\b2\.02\b/.test(String(f.items ?? ""))).map((f) => ymdOf(f.filed_at));
+  for (const p of new Set(periodic)) {
+    const release = results.filter((d) => { const g = dayDiff(p, d); return g >= 0 && g <= 45; }).sort().pop();
+    if (release) cands.push({ date: release, source: "8-K item 2.02", rank: 0 });
+  }
   for (const f of filings) {
-    if (!/^8-K/.test(f.form)) continue;
+    if (!/^8-K/.test(f.form) || f.items) continue;
     const d = ymdOf(f.filed_at);
-    if (/\b2\.02\b/.test(String(f.items ?? ""))) cands.push({ date: d, source: "8-K item 2.02", rank: 0 });
-    else if (!f.items && periodic.some((p) => { const g = dayDiff(p, d); return g >= 0 && g <= 3; })) cands.push({ date: d, source: "8-K with 10-Q/10-K", rank: 1 });
+    if (periodic.some((p) => { const g = dayDiff(p, d); return g >= 0 && g <= 3; })) cands.push({ date: d, source: "8-K with 10-Q/10-K", rank: 1 });
   }
   for (const t of transcripts) if (t.published_at && isEarningsCallTitle(t.title)) cands.push({ date: ymdOf(t.published_at), source: "earnings call", rank: 2 });
   const past = cands.filter((c) => c.date <= todayYmd).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.rank - b.rank));
@@ -130,7 +154,9 @@ const addDays = (ymd: string, n: number) => { const d = new Date(ymd + "T12:00:0
  *  after the last one), the estimate is that report + 364 days (same weekday); otherwise last + 91 (13 weeks).
  *  When the date has just passed with nothing newer on file, the report is due, not a quarter away. */
 export function nextEarningsEstimate(lastYmd: string, todayYmd: string, history: string[] = []): { est: string; due: boolean } {
-  const yearAgo = history.map((d) => addDays(d, 364)).filter((d) => dayDiff(d, lastYmd) >= 56 && dayDiff(d, lastYmd) <= 126).sort()[0];
+  // the one nearest a quarter after the last report (never simply the earliest: a stray year-ago date must not win)
+  const yearAgo = history.map((d) => addDays(d, 364)).filter((d) => dayDiff(d, lastYmd) >= 56 && dayDiff(d, lastYmd) <= 126)
+    .sort((a, b) => Math.abs(dayDiff(a, lastYmd) - 91) - Math.abs(dayDiff(b, lastYmd) - 91))[0];
   let est = yearAgo ?? addDays(lastYmd, 91);
   if (est < todayYmd && dayDiff(todayYmd, est) <= 21) return { est, due: true };
   while (est < todayYmd) est = addDays(est, 91);
@@ -305,7 +331,10 @@ const NO_CALL = /\b(can'?t|cannot|won'?t|don'?t|isn'?t (?:mine|my place))\b[^.]{
  *  same canned opener on six answers in one conversation, which read robotic. */
 export function withNoCallLine(answer: string, question: string, previousAnswer = ""): string {
   if (!isTradeQuestion(question) || NO_CALL.test(answer) || NO_CALL.test(previousAnswer)) return answer;
-  return (hasHangul(question) ? "매매 여부는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다." : "I can't tell you whether to trade it, but here's what the decision rests on.") + "\n" + answer;
+  // the opener speaks the BODY's language, so the two can never mix (the body has already been held to the
+  // question's language; this only matters when that failed)
+  const ko = String(answer ?? "").trim() ? isKoreanText(answer) : questionIsKorean(question);
+  return (ko ? "매매 여부는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다." : "I can't tell you whether to trade it, but here's what the decision rests on.") + "\n" + answer;
 }
 /** Follow-up chips ask why / what / how, never "should I buy/sell/add". Caught: "Should I add to Meta on
  *  this dip?", "How much NVDA should I buy with the cash?", "Which holding should I add to next?". Round 2:
@@ -348,7 +377,20 @@ export function hangulShare(text: string): number {
 }
 /** Round 2: "테슬라 팔까요?" came back entirely in English, because the prompt's example opener was English and
  *  the model copied its language. A Korean question needs a Korean-majority answer. */
-export const wrongLanguage = (question: string, answer: string): boolean => hasHangul(question) && hangulShare(answer) < 0.5;
+/** Korean text: a Hangul majority of its words (tickers and numbers neutral). */
+export const isKoreanText = (s: string): boolean => hasHangul(s) && hangulShare(s) >= 0.5;
+/** The language of the CURRENT question decides the answer's and the chips': a Hangul-majority question is
+ *  Korean, anything else English ("Should I sell 삼성전자?" is English). Never the holdings' or the history's
+ *  language: round-2 live smoke on a book holding Samsung and SK hynix answered "Rank my holdings from best to
+ *  worst to own" with an English opener, a Korean body and Korean chips. */
+export const questionIsKorean = (q: string): boolean => isKoreanText(q);
+/** The answer's script does not match the question's language, in either direction. An English answer may
+ *  still name a Korean company in Hangul; a fifth of its words in Hangul is not English any more. */
+export const wrongLanguage = (question: string, answer: string): boolean =>
+  questionIsKorean(question) ? hangulShare(answer) < 0.5 : hangulShare(answer) > 0.2;
+/** A chip belongs to the conversation only in the question's language. */
+export const chipInLanguage = (question: string, chip: string): boolean =>
+  questionIsKorean(question) ? isKoreanText(chip) : hangulShare(chip) <= 0.2;
 
 // ---------------------------------------------------------------------------------------------
 // Share price vs position value
