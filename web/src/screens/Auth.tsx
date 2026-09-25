@@ -7,8 +7,9 @@ import { PRIVACY_URL, TERMS_URL } from "../lib/legal";
 // field is offered for the accounts that have one — it is visible, not hidden behind a gesture, so
 // App Review can reach the demo account the way any other user would.
 // Order is what a retail investor trusts: Apple, Google, then email. GitHub stays for the accounts
-// created with it, as a quiet text link at the end (the launch audit found it read as "side project"
-// when it was the one filled button).
+// created with it: an outline provider button with its mark, right under Google, the same family as the
+// others. Not the one filled button (the launch audit read that as "side project"), and not a lone text
+// link under the trust line either (it read as an afterthought; r6/r7 design m-4).
 export function AuthScreen() {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -73,6 +74,10 @@ export function AuthScreen() {
         <GoogleMark />
         Continue with Google
       </button>
+      <button className="btn secondary auth-provider auth-github" onClick={() => signInWithOAuth("github")} data-testid="auth-github">
+        <GitHubMark />
+        Continue with GitHub
+      </button>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0" }} aria-hidden="true">
         <span style={{ flex: 1, height: 1, background: "var(--as-rule)" }} /><span className="mutedc" style={{ fontSize: 12 }}>or</span><span style={{ flex: 1, height: 1, background: "var(--as-rule)" }} />
       </div>
@@ -108,15 +113,19 @@ export function AuthScreen() {
       <p className="mutedc" style={{ fontSize: 12.5, textAlign: "center", marginTop: 8 }} data-testid="auth-trust">
         Read-only. We can never trade or move money.
       </p>
-      <button type="button" className="linky auth-github" onClick={() => signInWithOAuth("github")} data-testid="auth-github">
-        Continue with GitHub
-      </button>
       {/* the legal line is the last thing on the page */}
       <p className="auth-legal" data-testid="auth-legal">
         By continuing you agree to the <a href={TERMS_URL} target="_blank" rel="noreferrer noopener" onClick={legal(TERMS_URL)}>Terms</a> and{" "}
         <a href={PRIVACY_URL} target="_blank" rel="noreferrer noopener" onClick={legal(PRIVACY_URL)}>Privacy Policy</a>.
       </p>
     </main>
+  );
+}
+
+/** GitHub mark, single colour (currentColor), per GitHub's logo guidance. */
+function GitHubMark() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
   );
 }
 

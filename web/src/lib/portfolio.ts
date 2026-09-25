@@ -7,6 +7,18 @@ import { marketOf, moveSession, priceSession } from "./markets";
 export const rowDayChange = (r: Pick<PortfolioRow, "value" | "change_pct" | "day_change">): number | null =>
   r.day_change !== undefined ? r.day_change : dayChangeAmount(r.value, r.change_pct);
 
+/** The row's day move in %, paired with rowDayChange so "±% (±$)" never disagree. With no same-day lot it is
+ *  the price move. With one, the $ counts the new lot from its cost, so the % is that $ over what the position
+ *  was worth coming into the day (older lots at the prior close, today's lots at their cost). NVDA with a
+ *  10 @ $200 lot read "+0.22% (+$270)" when $270 is 2.5% (r7 power-user m2). A move that rounds to $0 is 0,
+ *  so it renders neutral: KO bought entirely today read "-0.33% ($0)" in red. */
+export function rowDayPct(r: Pick<PortfolioRow, "value" | "change_pct" | "day_change">): number | null {
+  if (r.day_change === undefined || r.value === null || r.change_pct === null) return r.change_pct;
+  if (Math.abs(r.day_change) < 0.5) return 0;
+  const basis = r.value - r.day_change;
+  return basis > 0 ? (r.day_change / basis) * 100 : r.change_pct;
+}
+
 /** Lots bought in the session the row's move belongs to move from their cost, not from the prior close. NVDA and
  *  QQQ bought at the close with "Use today's price" showed "+$20 today" beside "$0 all time" (r6 newcomer m5).
  *  The session date is the market's own (priceSession), which is how "Use today's price" dates a lot. Rows with

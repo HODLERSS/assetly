@@ -20,6 +20,9 @@ const HOURLY_PAGES = 14, HOURLY_WAVE = 4;
 // chart it last had instead of an endless skeleton (r4 power-user M4).
 const seriesMemo = new WeakMap<Api, Map<string, HistoryPoint[]>>();
 const memoFor = (api: Api) => { let m = seriesMemo.get(api); if (!m) { m = new Map(); seriesMemo.set(api, m); } return m; };
+// which memoized series are a coin's hourly week (not the daily first pass or its fallback)
+const fineMemo = new WeakMap<Api, Set<string>>();
+const fineFor = (api: Api) => { let m = fineMemo.get(api); if (!m) { m = new Set(); fineMemo.set(api, m); } return m; };
 
 /** Intraday series for 1D: keep every print, append the live price as the newest point. */
 function withLiveTick(pts: HistoryPoint[], livePrice: number | null, liveAsOf: string | null): HistoryPoint[] {
@@ -84,6 +87,9 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
   const [failed, setFailed] = useState(false);                    // the last fetch failed
   const [attempt, setAttempt] = useState(0);                      // Retry, reconnect and foreground refetch
   const [scrub, setScrub] = useState<number | null>(null);        // index into the drawn points under the finger
+  // what `raw` is on an hourly range: "hourly" = the hourly line landed; "daily" = the daily line is final (the
+  // hourly read failed); null = the daily first pass, with the hourly line still coming
+  const [res, setRes] = useState<"hourly" | "daily" | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const intraday = range === "1D";
   const zone = seriesZone(symbol, crypto);
@@ -100,8 +106,14 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
     const key = `${symbol}:${range}`;
     const memo = memoFor(api).get(key) ?? null;
     setRaw(memo);
+    setRes(memo ? (fineFor(api).has(key) ? "hourly" : "daily") : null);
     setFailed(false);
-    const keep = (p: HistoryPoint[]) => { if (live) { memoFor(api).set(key, p); setRaw(p); } };
+    const keep = (p: HistoryPoint[], hourlyLine = false) => {
+      if (!live) return;
+      memoFor(api).set(key, p);
+      if (hourlyLine) fineFor(api).add(key); else fineFor(api).delete(key);
+      setRaw(p); setRes(hourlyLine ? "hourly" : "daily");
+    };
     const fail = () => { if (live) setFailed(true); };   // keep what is drawn; with nothing drawn, say so with Retry
     const now = new Date();
     if (range === "1D") {
@@ -115,7 +127,7 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
       const daily = api.getHistory(symbol, fetchHours(range, now, zone), { tz: zone, recentHours: DAILY }, { signal });
       const hourly = api.getHistory(symbol, fetchHours(range, now, zone),
         { tz: zone, recentHours: hourlyRecentHours(now, zone), maxPages: HOURLY_PAGES, wave: HOURLY_WAVE }, { signal })
-        .then((p) => { fine = true; keep(p); });
+        .then((p) => { fine = true; keep(p, true); });
       daily.then((p) => { if (live && !fine && !memo) setRaw(p); }).catch(() => {});
       hourly.catch(() => daily.then((p) => { if (!fine) keep(p); }).catch(fail));
     }
@@ -136,11 +148,14 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
     const start = rangeStartYmd(range, new Date(), zone);
     const daily = anchorRange(dailyCloses(raw, zone, livePrice, liveAsOf), start, zone);
     if (!hourlyRange(range, crypto)) return { ...daily, closes: daily.pts };
-    // A coin's week draws by the hour, but its high and low stay closing ones, the basis of every other range:
-    // from the hourly prints they jumped when the fine line landed ($86,602.91 to $87,164.81) and the 1W high
-    // sat above the 1M high (r6 designer m-2, the r2 2Y-vs-1Y trust break again).
-    return { ...anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone), closes: daily.pts };
-  }, [raw, range, zone, crypto, livePrice, liveAsOf]);
+    // A coin's week draws by the hour, and its L and H come from that same hourly line: closing ones let the
+    // drawn line dip below the "L" it printed (r7 design n-5). They show only once the hourly line is the one
+    // drawn, so they never jump when it replaces the daily first pass (r6 designer m-2).
+    if (res !== "hourly") return { ...anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone), closes: daily.pts, hlReady: res === "daily" };
+    const hourly = anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone);
+    return { ...hourly, closes: hourly.pts };
+  }, [raw, range, zone, crypto, livePrice, liveAsOf, res]);
+  const hlReady = !(series && "hlReady" in series && series.hlReady === false);
   const pts = series?.pts ?? null;
   const closes = series?.closes ?? null;
 
@@ -249,8 +264,9 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
             <div className="sub num" style={{ textAlign: "right", marginTop: 1 }}>avg {moneyExact(avgCost, currency)}</div>
           )}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
-            <span className="sub num" data-testid="range-low">L {moneyExact(view.low, currency)}</span>
-            <span className="sub num" data-testid="range-high">H {moneyExact(view.high, currency)}</span>
+            {/* the row keeps its height while an hourly week's L/H wait for the hourly line */}
+            <span className="sub num" data-testid="range-low" style={hlReady ? undefined : { visibility: "hidden" }}>L {moneyExact(view.low, currency)}</span>
+            <span className="sub num" data-testid="range-high" style={hlReady ? undefined : { visibility: "hidden" }}>H {moneyExact(view.high, currency)}</span>
           </div>
           {partial && (
             <div className="sub" data-testid="partial-note" style={{ textAlign: "center", marginTop: 1 }}>

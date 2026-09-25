@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Api, PortfolioRow, Profile } from "../lib/api";
 import { INVESTOR_DEFAULT } from "../lib/api";
 import { InvestorQuiz, investorLabel } from "../components/InvestorQuiz";
+import { ConnectNote, connectMsg, type ConnectMsg } from "../components/ConnectNote";
 import { timeAgo } from "../lib/format";
 import { getTheme, setTheme, THEME_CHOICES, type ThemeChoice } from "../lib/theme";
 import { isNative, openConnectPortal, openExternal, platformTag } from "../lib/native";
@@ -27,7 +28,7 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
   const [removing, setRemoving] = useState<{ id: string; institution: string } | null>(null);   // keep/delete sheet
   const [removeErr, setRemoveErr] = useState<string | null>(null);
   const [stBusy, setStBusy] = useState(false);
-  const [connErr, setConnErr] = useState<string | null>(null);
+  const [connErr, setConnErr] = useState<ConnectMsg | null>(null);
   useEffect(() => {
     let live = true;
     api.snaptrade("status").then(async (r) => {
@@ -171,7 +172,7 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
               setStBusy(true);
               setConnErr(null);
               try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); }
-              catch (e) { setConnErr(e instanceof Error && e.message ? e.message : "Could not start the brokerage link."); }
+              catch (e) { setConnErr(connectMsg(e)); }
               finally { setStBusy(false); }
             }}>Connect brokerage</button>
           )}
@@ -180,12 +181,12 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
               setStBusy(true);
               setConnErr(null);
               try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); }
-              catch (e) { setConnErr(e instanceof Error && e.message ? e.message : "Could not start the brokerage link."); }
+              catch (e) { setConnErr(connectMsg(e)); }
               finally { setStBusy(false); }
             }}>+ Add another brokerage</button>
           )}
         </div>
-        {connErr && <div className="error-note" role="alert" data-testid="settings-connect-error" style={{ margin: "4px 14px 12px" }}>{connErr}</div>}
+        <ConnectNote msg={connErr} testId="settings-connect-error" style={{ margin: "4px 14px 12px" }} />
       </div>
       {removing && (
         <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Remove brokerage connection">

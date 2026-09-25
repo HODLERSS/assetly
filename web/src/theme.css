@@ -183,6 +183,9 @@ input, select { font: inherit; }
 
 .error-note { background: var(--as-note-loss-bg); color: var(--as-loss); border: 1px solid var(--as-note-loss-rule);
   border-radius: var(--as-radius); padding: 10px 12px; font-size: 13.5px; margin: 10px 0; }
+/* neutral info: an expected state the user should know about (import at capacity), ink on the info tint */
+.info-note { background: var(--as-note-info-bg); color: var(--as-ink); border: 1px solid var(--as-note-info-rule);
+  border-radius: var(--as-radius); padding: 12px 14px; font-size: 13.5px; line-height: 1.45; margin: 10px 0; }
 /* neutral status: calm brand tint for "in progress" / "done" — never the error red */
 .status-line { font: 12px var(--as-font-num); color: var(--as-muted); }
 .status-note { background: var(--as-note-info-bg); color: var(--as-primary); border: 1px solid var(--as-note-info-rule);

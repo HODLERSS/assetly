@@ -117,16 +117,22 @@ describe("L2 a coin's week (r6 power-user m1, designer m-2)", () => {
     const utc = scrubLabel(liveAt, "1W", "UTC", true);
     if (utc !== scrubLabel(liveAt, "1W", undefined, true)) expect(text).not.toContain(utc);
   });
-  it("its high and low are closing ones, the basis of every other range: no spike, never above the 1M high", async () => {
+  it("its high and low come from the drawn hourly line (r7 design n-5), and stay hidden until that line lands", async () => {
     const { pts, live, liveAt } = coinWeek();
-    render(<PriceChart api={{ getHistory: vi.fn().mockResolvedValue(pts) } as unknown as Api} symbol="BTC-USD" currency="USD" livePrice={live} liveAsOf={liveAt} crypto />);
+    // the daily first pass answers at once; the hourly read waits until released
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const getHistory = vi.fn((_s: string, _h: number, opts?: { recentHours?: number; maxPages?: number }) =>
+      opts?.maxPages ? gate.then(() => pts) : Promise.resolve(pts));
+    render(<PriceChart api={{ getHistory } as unknown as Api} symbol="BTC-USD" currency="USD" livePrice={live} liveAsOf={liveAt} crypto />);
     await userEvent.click(screen.getByRole("tab", { name: "1W" }));
     await screen.findByTestId("price-chart");
-    await waitFor(() => expect(screen.getByTestId("range-high").textContent).toBe("H $80,500.00"));
-    const low1w = screen.getByTestId("range-low").textContent;
-    await userEvent.click(screen.getByRole("tab", { name: "1M" }));
-    await waitFor(() => expect(screen.getByTestId("range-high").textContent).toBe("H $80,500.00"));
-    expect(Number(low1w!.replace(/[^\d.]/g, ""))).toBeGreaterThanOrEqual(Number(screen.getByTestId("range-low").textContent!.replace(/[^\d.]/g, "")));
+    // daily line drawn, L/H held back (hidden, row reserved) so they never jump when the hourly line replaces it
+    await waitFor(() => expect(screen.getByTestId("range-high").style.visibility).toBe("hidden"));
+    await act(async () => { release(); });
+    await waitFor(() => expect(screen.getByTestId("range-high").style.visibility).toBe(""));
+    // the hourly spike is on the drawn line, so H names it: the line never pokes past its own label
+    expect(screen.getByTestId("range-high").textContent).toBe("H $90,000.00");
   });
 });
 

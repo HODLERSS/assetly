@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import type { Api, PortfolioRow } from "../lib/api";
 import { BriefCard } from "../components/BriefCard";
 import { AssessmentCard } from "../components/AssessmentCard";
+import { ConnectNote, connectMsg, type ConnectMsg } from "../components/ConnectNote";
 import type { AssessState } from "../lib/assessment";
 import { isMarketOpen, type Market, marketOf, moveSession, moverEligible, moverMode, sessionLabel } from "../lib/markets";
 import { convertCcy, glClass, labelParts, money, moneyClass, moneyExact, priceCompact, qtyUnit, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
 import { Icon } from "../components/Icon";
 import { accountTag, isRetirement } from "../lib/accounts";
 import { formatQty } from "../lib/numbers";
-import { dayGroups, isHeld, rowDayChange } from "../lib/portfolio";
+import { dayGroups, isHeld, rowDayChange, rowDayPct } from "../lib/portfolio";
 
 // Canvas 2a: net worth, movers, market pulse.
 const DETAIL_KEY = "assetly-nw-detail";
@@ -55,15 +56,15 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   // Import / Connect: one at a time (a double tap sent two connect calls), busy while the link is fetched, and a
   // failure said instead of swallowed (r5 power-user). startConnect opens the web portal window inside the tap.
   const [connecting, runConnect] = useInFlight();
-  const [connectErr, setConnectErr] = useState<string | null>(null);
+  const [connectErr, setConnectErr] = useState<ConnectMsg | null>(null);
   const connect = () => {
     setConnectErr(null);
     void runConnect(async () => {
       try { await startConnect(async () => (await api.snaptrade("connect", { platform: platformTag() })).url); }
-      catch (e) { setConnectErr(e instanceof Error && e.message ? e.message : "Could not start the brokerage link."); }
+      catch (e) { setConnectErr(connectMsg(e)); }
     });
   };
-  const connectNote = connectErr && <div className="error-note" role="alert" data-testid="connect-error">{connectErr}</div>;
+  const connectNote = <ConnectNote msg={connectErr} testId="connect-error" />;
   useEffect(() => {
     let live = true;
     if (mode.kind === "pulse") api.getPulse().then((p) => { if (live) setPulse(p); }).catch(() => {});
@@ -209,8 +210,9 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
         </div>
       )}
       {assessment && <AssessmentCard state={assessment} onRetry={() => onAssessRetry?.()} onDismiss={() => onAssessDismiss?.()} onOpenNews={onOpenNews} />}
-      {/* a fresh assessment remounts the brief card so it shows at once (its own look-up gave up after 4 min) */}
-      <BriefCard api={api} key={`${assessment?.readyAt ?? "brief"}:${briefRev}`} liveDayPct={liveDayPct} held={heldSymbols} book={rows}
+      {/* a fresh assessment reloads the brief card so it shows at once (its own look-up gave up after 4 min).
+          It refetches in place: a remount by key flashed the card washed out (r7 design n-3) */}
+      <BriefCard api={api} reload={`${assessment?.readyAt ?? "brief"}:${briefRev}`} liveDayPct={liveDayPct} held={heldSymbols} book={rows}
         totalUsd={convertCcy(totals.assets, baseCurrency, "USD", totals.fx)}
         pendingSince={assessPending ? assessment!.startedAt : null} onRefreshAssessment={onAssessRetry} />
       {nextArmed && rows.filter((r) => r.kind !== "cash" && r.kind !== "debt").length < 3 && (
@@ -250,8 +252,8 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           // the same grammar as a position row: coloured "±% (±$)"
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span></span>
-            <span className={`right num ${glClass(r.change_pct)}`}>
-              {signedPct(r.change_pct)}{(() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()}
+            <span className={`right num ${glClass(rowDayPct(r))}`}>
+              {signedPct(rowDayPct(r))}{(() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()}
               {isLive(r) && <span className="live-dot" aria-hidden="true" />}
             </span>
           </button>
@@ -314,7 +316,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
                 <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span>
                 {/* a balance has no daily move: "0.00% ($0) today" on cash was noise */}
                 {r.kind !== "cash" && r.kind !== "debt" && (<><br />
-                <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)}{r.change_pct !== null && (() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} <span className="row-session">{moveSession(r).label}</span>{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
+                <span className={`num sub ${glClass(rowDayPct(r))}`}>{signedPct(rowDayPct(r))}{r.change_pct !== null && (() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} <span className="row-session">{moveSession(r).label}</span>{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
               </span>
             </button>
           );

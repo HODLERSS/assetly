@@ -72,8 +72,12 @@ export function briefFreshness(brief: DailyBrief, opts: { now?: Date; liveDayPct
   return { stale: false, note: `Written at ${when}.` };
 }
 
-export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = null, book = null, totalUsd = null, onRefreshAssessment }: {
+export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = null, book = null, totalUsd = null, onRefreshAssessment, reload = "" }: {
   api: Api;
+  /** changes when the editions should be read again (a newer brief, a fresh assessment, back online). The card
+   *  refetches in place and keeps showing what it has until the answer lands: remounting it by `key` replayed
+   *  the fade-in, a washed-out card for a moment (r7 design n-3). */
+  reload?: string;
   /** the book's day move now, in % (the headline's figure) */
   liveDayPct?: number | null;
   /** a newer Portfolio Assessment run started at this time and hasn't landed */
@@ -113,7 +117,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
     });
     load();
     return () => { live = false; };
-  }, [api]);
+  }, [api, reload]);
 
   // Reserve the card's footprint while the first fetch is in flight: a card that pops in above "Movers"
   // after paint shoves the whole screen down (measured 0.18 CLS on an iPhone SE).
