@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { convertCcy, dayChangeAmount, type FxRates } from "./lib/format";
-import { isHeld, sortByBaseValue } from "./lib/portfolio";
+import { convertCcy, type FxRates } from "./lib/format";
+import { isHeld, rowDayChange, sortByBaseValue, withSameDayLots } from "./lib/portfolio";
 import { useAssessmentWatch } from "./lib/assessment";
 import { noteRemoval } from "./lib/heldIntel";
 import { foreignBrief } from "./lib/briefBasis";
 import { clearUserLocalState } from "./lib/localState";
-import { setPricesDown } from "./lib/net";
+import { offlineNow, setPricesDown } from "./lib/net";
 import type { Session } from "@supabase/supabase-js";
 import { completeNativeAuth, supabase } from "./lib/supabase";
 import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
@@ -34,7 +34,8 @@ export type View =
 
 const REFRESH_MS = 60_000;
 const STALE_ON_RETURN_MS = 30_000;
-const LOAD_TIMEOUT_MS = 8_000;
+const LOAD_TIMEOUT_MS = 8_000;      // a refresh this slow reads "Updating prices…" and keeps waiting
+const LOAD_GIVE_UP_MS = 30_000;     // one with no answer by now counts as failed
 export const PRICES_FAILED = "Couldn't refresh prices.";   // back from the background with a book older than this: refresh now
 
 // Last-known book per user, so a cold open paints holdings instead of a blank or an empty-state
@@ -216,29 +217,52 @@ export function App({ api = defaultApi }: { api?: Api }) {
   }, []);
 
   const lastLoadRef = useRef(0);
+  const loadSeqRef = useRef(0), appliedSeqRef = useRef(0);
+  const [slow, setSlow] = useState(false);   // a refresh past LOAD_TIMEOUT_MS that has not answered yet
   const load = useCallback(async () => {
     lastLoadRef.current = Date.now();
-    try {
-      // rates travel with the book: rows valued in one currency never paint without the other's rate
-      // Offline, a request can hang instead of failing, and a pull to refresh spun for 4.5s+ with no word
-      // (r3 power-user). Past the limit it is a failed refresh, said the same way as any other.
-      const [p, r, rates] = await Promise.race([
-        Promise.all([api.getProfile(), api.getPortfolio(), api.getFxRates().catch(() => null)]),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), LOAD_TIMEOUT_MS)),
-      ]);
+    const seq = ++loadSeqRef.current;
+    // rates travel with the book: rows valued in one currency never paint without the other's rate
+    // the recent lots only refine the day move of a position bought in the session: never a reason to fail
+    const book = Promise.all([api.getProfile(), api.getPortfolio(), api.getFxRates().catch(() => null),
+      Promise.resolve().then(() => api.getRecentLots()).then((l) => l ?? [], () => [])]);
+    let done = false;
+    const apply = ([p, book0, rates, lots]: Awaited<typeof book>) => {
+      const r = withSameDayLots(book0, lots);
+      done = true;
+      if (seq < appliedSeqRef.current) return;   // a newer refresh already painted: this older reply is stale
+      appliedSeqRef.current = seq;
       const fxNow = rates && Object.keys(rates).length > 1 ? rates : fxRef.current;   // a failed FX read keeps the last good rates
       setProfile(p);
       setRows(r);
       if (fxNow) setFx(fxNow);
       setError(null);
+      setSlow(false);
       setPricesDown(false);
       if (uidRef.current && p) writeBookCache(uidRef.current, p, r, fxNow);
-    } catch {
+    };
+    // Only a refresh that FAILED marks the connection down (lib/net: the reads behind it stop retrying and give
+    // up after 10s). A slow reply is not a failure: the 8s race used to drop a reply landing at 8.7s, show
+    // "Couldn't refresh prices." over correct numbers for a minute, and put every read behind it on the
+    // fail-fast path (r6 designer m-1).
+    const failed = (down: boolean) => {
+      done = true;
+      if (seq !== loadSeqRef.current || seq < appliedSeqRef.current) return;
+      setSlow(false);
       setError(PRICES_FAILED);
-      setPricesDown(true);   // the reads behind it (lots, charts, the brief) stop waiting out retries (lib/net)
-    } finally {
-      setBooted(true);
-    }
+      if (down) setPricesDown(true);
+    };
+    const settled = book.then(apply).catch(() => failed(true));
+    // Offline, a request can hang instead of failing, and a pull to refresh spun for 4.5s+ with no word
+    // (r3 power-user). Past LOAD_TIMEOUT_MS the refresh stops holding the spinner and says it is still updating;
+    // the reply still paints when it lands, and one that never comes counts as failed at LOAD_GIVE_UP_MS.
+    const waited = new Promise<void>((res) => setTimeout(() => {
+      if (!done && seq === loadSeqRef.current) { if (offlineNow()) failed(true); else setSlow(true); }
+      res();
+    }, LOAD_TIMEOUT_MS));
+    setTimeout(() => { if (!done) failed(offlineNow()); }, LOAD_GIVE_UP_MS);
+    await Promise.race([settled, waited]);
+    setBooted(true);
   }, [api]);
 
   const [notice, setNotice] = useState<string | null>(null);
@@ -428,7 +452,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       if (v === null) { unconverted += 1; continue; }   // no FX rate yet: exclude, never mislabel
       if (r.kind === "debt") { debt += v; continue; }   // debt reduces net worth only; it has no cost basis, G/L, or day move
       const c = convertCcy(r.cost_basis ?? 0, r.currency, base, fx) ?? 0;
-      const d = convertCcy(dayChangeAmount(r.value, r.change_pct) ?? 0, r.currency, base, fx) ?? 0;
+      const d = convertCcy(rowDayChange(r) ?? 0, r.currency, base, fx) ?? 0;
       assets += v; cost += c; day += d;
     }
     const value = assets - debt;
@@ -473,6 +497,10 @@ export function App({ api = defaultApi }: { api?: Api }) {
           <div className="error-note inline-note" role="alert" data-testid="prices-error" style={{ marginTop: 0 }}>
             <span>{error}</span> <button className="chip" onClick={() => void load()}>Retry</button>
           </div>
+        )}
+        {!error && slow && (
+          // a slow but live backend: the numbers below are the last good ones, and the reply paints when it lands
+          <p className="sub inline-note" role="status" data-testid="prices-slow" style={{ margin: "0 0 8px" }}>Updating prices…</p>
         )}
         {view.kind === "add" && (
           <AddPosition api={api} onRefresh={load} onAdded={scheduleBookChange} baseCurrency={profile?.base_currency ?? "USD"}

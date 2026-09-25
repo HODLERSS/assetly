@@ -3,6 +3,7 @@
 // a book silently wrong by 1000x (launch audit, 2026-09-25). Every number field reads through
 // here: a clean number comes back, anything else becomes a plain, field-specific error.
 import { ccySymbol, moneyExact } from "./format";
+import { priceSession } from "./markets";
 
 export type AmountField = "shares" | "units" | "cost" | "cash" | "debt";
 export type Parsed = { ok: true; value: number } | { ok: false; reason: "empty" | "invalid" | "negative" };
@@ -78,6 +79,16 @@ export function formatAmountInput(v: number): string {
  *  rounded to the currency's minor unit (cents; whole won). */
 export function quoteInput(price: number, currency: string): string {
   return moneyExact(price, currency).slice(ccySymbol(currency).length);
+}
+
+/** The "Use today's price" button: its words and the purchase date it brings. A closed market's quote is its
+ *  last close, so it says so and dates the lot on that session: Samsung on a KRX holiday filled Wednesday's
+ *  ₩285,500 under "today's price" and dated it Friday (r6 power-user m3; US stocks on a weekend the same). */
+export function quoteChoice(quote: { price: number; asOf: string | null }, picked: { symbol: string; kind: string; currency: string },
+  now: Date = new Date()): { label: string; ymd: string } {
+  const s = priceSession({ symbol: picked.symbol, kind: picked.kind, as_of: quote.asOf }, now);
+  const shown = moneyExact(quote.price, picked.currency);
+  return { label: s.today ? `Use today's price (${shown})` : `Use last close (${shown}, ${s.weekday})`, ymd: s.ymd };
 }
 
 /** Today on the reader's own calendar, as a date field holds it (YYYY-MM-DD). */

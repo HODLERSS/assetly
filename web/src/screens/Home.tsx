@@ -6,11 +6,11 @@ import { BriefCard } from "../components/BriefCard";
 import { AssessmentCard } from "../components/AssessmentCard";
 import type { AssessState } from "../lib/assessment";
 import { isMarketOpen, type Market, marketOf, moveSession, moverEligible, moverMode, sessionLabel } from "../lib/markets";
-import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyClass, moneyExact, priceCompact, qtyUnit, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
+import { convertCcy, glClass, labelParts, money, moneyClass, moneyExact, priceCompact, qtyUnit, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
 import { Icon } from "../components/Icon";
 import { accountTag, isRetirement } from "../lib/accounts";
 import { formatQty } from "../lib/numbers";
-import { dayGroups, isHeld } from "../lib/portfolio";
+import { dayGroups, isHeld, rowDayChange } from "../lib/portfolio";
 
 // Canvas 2a: net worth, movers, market pulse.
 const DETAIL_KEY = "assetly-nw-detail";
@@ -178,7 +178,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           }).join(" · ");
           return (
             <div data-testid="market-breakdown">
-              <div className="status-line num">{groups.length > 1 ? "latest sessions" : "today"}: {line((r) => dayChangeAmount(r.value, r.change_pct) ?? 0, (r) => (r.value ?? 0) - (dayChangeAmount(r.value, r.change_pct) ?? 0))}</div>
+              <div className="status-line num">{groups.length > 1 ? "latest sessions" : "today"}: {line((r) => rowDayChange(r) ?? 0, (r) => (r.value ?? 0) - (rowDayChange(r) ?? 0))}</div>
               <div className="status-line num">all time: {line((r) => r.total_gl ?? 0, (r) => r.cost_basis ?? 0)}</div>
             </div>
           );
@@ -249,7 +249,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span></span>
             <span className={`right num ${glClass(r.change_pct)}`}>
-              {signedPct(r.change_pct)}{(() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()}
+              {signedPct(r.change_pct)}{(() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()}
               {isLive(r) && <span className="live-dot" aria-hidden="true" />}
             </span>
           </button>
@@ -279,7 +279,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
         for (const r of shown) {
           const sign = r.kind === "debt" ? -1 : 1;
           const v = convertCcy(r.value ?? 0, r.currency, baseCurrency, totals.fx) ?? 0;
-          const d = convertCcy(dayChangeAmount(r.value, r.change_pct) ?? 0, r.currency, baseCurrency, totals.fx) ?? 0;
+          const d = convertCcy(rowDayChange(r) ?? 0, r.currency, baseCurrency, totals.fx) ?? 0;
           const g = convertCcy(r.total_gl ?? 0, r.currency, baseCurrency, totals.fx) ?? 0;
           value += sign * v; day += sign * d; gl += sign * g;
         }
@@ -312,7 +312,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
                 <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span>
                 {/* a balance has no daily move: "0.00% ($0) today" on cash was noise */}
                 {r.kind !== "cash" && r.kind !== "debt" && (<><br />
-                <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)}{r.change_pct !== null && (() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} <span className="row-session">{moveSession(r).label}</span>{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
+                <span className={`num sub ${glClass(r.change_pct)}`}>{signedPct(r.change_pct)}{r.change_pct !== null && (() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} <span className="row-session">{moveSession(r).label}</span>{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
               </span>
             </button>
           );

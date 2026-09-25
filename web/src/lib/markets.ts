@@ -111,13 +111,26 @@ const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  *            in Seoul, even when the viewer's own clock (Pacific) would call it Tuesday.
  *  Crypto trades around the clock and cash has no session: both always count as today. */
 export function moveSession(row: Pick<PortfolioRow, "symbol" | "kind" | "as_of">, now: Date = new Date()): { today: boolean; label: string } {
+  const s = priceSession(row, now);
+  return s.today ? { today: true, label: "today" } : { today: false, label: `${s.weekday} close` };
+}
+
+/** The session a price belongs to, and its date (YYYY-MM-DD): a stock's in its market's zone (a KRX session is
+ *  Friday in Seoul while it is still Thursday evening in Pacific), a coin's and cash's on the reader's own
+ *  calendar. `today`: trading now, or printed today in its market; otherwise the price is an earlier close. */
+export function priceSession(row: Pick<PortfolioRow, "symbol" | "kind" | "as_of">, now: Date = new Date()):
+  { today: boolean; ymd: string; weekday: string } {
   const m = marketOf(row);
-  if (m === null || m === "CRYPTO" || !row.as_of) return { today: true, label: "today" };
-  if (isMarketOpen(m, now)) return { today: true, label: "today" };
+  const day = (ymd: string) => WEEKDAY[new Date(`${ymd}T12:00:00Z`).getUTCDay()];
+  if (m === null || m === "CRYPTO") {
+    const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return { today: true, ymd, weekday: day(ymd) };
+  }
   const tz = SESS[m].tz;
+  const today = zoned(now, tz).ymd;
+  if (!row.as_of || isMarketOpen(m, now)) return { today: true, ymd: today, weekday: day(today) };
   const printed = zoned(new Date(row.as_of), tz).ymd;
-  if (printed === zoned(now, tz).ymd) return { today: true, label: "today" };
-  return { today: false, label: `${WEEKDAY[new Date(`${printed}T12:00:00Z`).getUTCDay()]} close` };
+  return { today: printed === today, ymd: printed, weekday: day(printed) };
 }
 
 /** Movers should reflect what is actually trading right now. Crypto always qualifies. */

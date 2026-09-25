@@ -186,7 +186,7 @@ describe("H3 minors", () => {
   });
 
   it("Add position offers today's price as the cost", async () => {
-    const api = stubApi({ getQuote: vi.fn().mockResolvedValue(516.43) });
+    const api = stubApi({ getQuote: vi.fn().mockResolvedValue({ price: 516.43, asOf: null }) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /add position/i }));

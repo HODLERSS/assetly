@@ -20,8 +20,11 @@ export type PortfolioRow = {
   value: number | null; total_gl: number | null;
   source?: string | null;
   account_label?: string | null;
+  /** client-side: the day's move in the row's currency when a lot was bought in the session (withSameDayLots) */
+  day_change?: number;
 };
 export type HistoryPoint = { ts: string; price: number };
+export type Quote = { price: number; asOf: string | null };
 export type Insight = {
   bullets: string[]; windows: Record<string, string> | null; news5?: string[] | null; model: string; generated_at: string;
   /** portfolio card only (migration 38; absent on older rows): the holdings each bullet is about, and the book it was written for */
@@ -89,16 +92,20 @@ function anySignal(signals: (AbortSignal | undefined)[]): AbortSignal | undefine
 }
 /** A read tuned to what the app knows about the connection (lib/net). After a failed price refresh it is sent
  *  once, without postgrest-js's three retries (1s, 2s, 4s: "Loading lots…" held ~7s; r5 designer m-3), and a
- *  request that hangs gives up after FAIL_FAST_MS (`limit`; the book's own load has its time limit).
+ *  request that hangs gives up after FAIL_FAST_MS. `limit` says when the time limit applies: "fast" only while
+ *  the connection is known to be bad, "always" for a chart page (an online but hung RPC left ETH 2Y a skeleton
+ *  for 25s+ with no Retry; r6 power-user m2), "never" for the book's own load, which has its own time limit.
  *  `signal` cancels it: a chart range the reader has already left. A builder without these knobs (a test
  *  double) passes through unchanged. */
-function tuned<Q>(q: Q, signal?: AbortSignal, limit = true): Q {
+function tuned<Q>(q: Q, signal?: AbortSignal, limit: "fast" | "always" | "never" = "fast"): Q {
   const b = q as unknown as { retry?: (on: boolean) => unknown; abortSignal?: (s: AbortSignal) => unknown };
   const fast = failFast();
   if (fast && typeof b.retry === "function") b.retry(false);
   if (typeof b.abortSignal === "function") {
     let timer: AbortSignal | undefined;
-    if (fast && limit) { const c = new AbortController(); setTimeout(() => c.abort(new Error("timed out")), FAIL_FAST_MS); timer = c.signal; }
+    if (limit === "always" || (fast && limit === "fast")) {
+      const c = new AbortController(); setTimeout(() => c.abort(new Error("timed out")), FAIL_FAST_MS); timer = c.signal;
+    }
     const s = anySignal([signal, timer]);
     if (s) b.abortSignal(s);
   }
@@ -195,7 +202,7 @@ export function makeApi(sb: SupabaseClient = supabase) {
     },
     async getPortfolio(): Promise<PortfolioRow[]> {
       online();   // offline, a pull to refresh says so at once instead of spinning out the load's time limit
-      const { data, error } = await tuned(sb.from("portfolio").select("*").order("value", { ascending: false, nullsFirst: false }), undefined, false);
+      const { data, error } = await tuned(sb.from("portfolio").select("*").order("value", { ascending: false, nullsFirst: false }), undefined, "never");
       if (error) throw error;
       return (data ?? []).map((r: Record<string, unknown>) => ({
         ...r,
@@ -229,6 +236,18 @@ export function makeApi(sb: SupabaseClient = supabase) {
         .order("created_at", { ascending: true }).order("id", { ascending: true }));
       if (error) throw error;
       return (data ?? []).map((l: Record<string, unknown>) => ({ ...l, qty: Number(l.qty), cost_per_share: Number(l.cost_per_share) })) as Lot[];
+    },
+    /** The book's lots dated in the last ten days (a KRX holiday run is up to a week), across holdings: a lot
+     *  bought in the session moves from its cost, not the prior close (withSameDayLots in lib/portfolio). One
+     *  small read beside the book's. */
+    async getRecentLots(): Promise<Pick<Lot, "holding_id" | "qty" | "cost_per_share" | "acquired_on">[]> {
+      online();
+      const since = new Date(Date.now() - 10 * 86400e3).toISOString().slice(0, 10);
+      const { data, error } = await tuned(sb.from("lots").select("holding_id,qty,cost_per_share,acquired_on").gte("acquired_on", since).limit(500));
+      if (error) throw error;
+      return (data ?? []).map((l: Record<string, unknown>) => ({
+        holding_id: String(l.holding_id), qty: Number(l.qty), cost_per_share: Number(l.cost_per_share), acquired_on: l.acquired_on ? String(l.acquired_on) : null,
+      }));
     },
     async addLot(holding_id: string, qty: number, cost_per_share: number, acquired_on?: string, note = "") {
       const { error } = await sb.from("lots").insert({ holding_id, qty, cost_per_share, acquired_on: acquired_on ?? null, note: note || null });
@@ -286,7 +305,7 @@ export function makeApi(sb: SupabaseClient = supabase) {
         const dailyBefore = new Date(Date.now() - (daily.recentHours ?? 48) * 3600 * 1000).toISOString();
         try {
           return await pageNewestFirst((from, to) => tuned(sb.rpc("price_history_series", { p_symbol: symbol, p_since: since, p_daily_before: dailyBefore, p_tz: daily.tz })
-            .order("ts", { ascending: false }).range(from, to), opts.signal), daily.maxPages ?? HISTORY_RPC_PAGES, symbol, daily.wave);
+            .order("ts", { ascending: false }).range(from, to), opts.signal, "always"), daily.maxPages ?? HISTORY_RPC_PAGES, symbol, daily.wave);
         } catch (e) {
           if (!rpcMissing(e)) throw e;
           seriesRpcMissing = true;   // not applied on this backend yet: page raw prints for the rest of the session
@@ -298,7 +317,7 @@ export function makeApi(sb: SupabaseClient = supabase) {
       // a higher cap than 1D: the 8-page cap cut BTC's 1Y to its last 5 days (r4 power-user M1).
       return pageNewestFirst((from, to) => tuned(sb.from("price_history")
         .select("ts,price").eq("symbol", symbol).gte("ts", since)
-        .order("ts", { ascending: false }).range(from, to), opts.signal), daily ? HISTORY_RAW_DAILY_PAGES : HISTORY_RAW_PAGES, symbol, daily?.wave);
+        .order("ts", { ascending: false }).range(from, to), opts.signal, "always"), daily ? HISTORY_RAW_DAILY_PAGES : HISTORY_RAW_PAGES, symbol, daily?.wave);
     },
     async updateBaseCurrency(base_currency: "USD" | "KRW") {
       const uid = await currentUserId(sb);
@@ -322,11 +341,12 @@ export function makeApi(sb: SupabaseClient = supabase) {
         price: Number(r.price), change_pct: r.change_pct === null ? null : Number(r.change_pct),
       })).sort((a, b) => a.symbol.localeCompare(b.symbol));
     },
-    /** The latest tracked price of one symbol, or null when the pipeline has none yet (a symbol not yet tracked). */
-    async getQuote(symbol: string): Promise<number | null> {
-      const { data } = await sb.from("prices").select("price").eq("symbol", symbol).maybeSingle();
+    /** The latest tracked price of one symbol and when it printed (a closed market's is its last close), or null
+     *  when the pipeline has none yet (a symbol not yet tracked). */
+    async getQuote(symbol: string): Promise<Quote | null> {
+      const { data } = await sb.from("prices").select("price,as_of").eq("symbol", symbol).maybeSingle();
       const v = data ? Number(data.price) : NaN;
-      return Number.isFinite(v) && v > 0 ? v : null;
+      return Number.isFinite(v) && v > 0 ? { price: v, asOf: data?.as_of ? String(data.as_of) : null } : null;
     },
     /** Rate + freshness for the Settings surface. */
     async getFxInfo(): Promise<{ rate: number; asOf: string } | null> {

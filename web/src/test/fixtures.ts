@@ -56,6 +56,7 @@ export function stubApi(over: Partial<Api> = {}): Api {
     getPortfolio: vi.fn().mockResolvedValue([row({})]),
     addPosition: vi.fn().mockResolvedValue(undefined),
     getLots: vi.fn().mockResolvedValue([{ id: "l1", holding_id: "h1", qty: 10, cost_per_share: 166.55, acquired_on: "2026-07-22", note: null }]),
+    getRecentLots: vi.fn().mockResolvedValue([]),
     addLot: vi.fn().mockResolvedValue(undefined),
     updateLot: vi.fn().mockResolvedValue(undefined),
     deleteLot: vi.fn().mockResolvedValue(undefined),

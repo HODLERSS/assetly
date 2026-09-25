@@ -1,7 +1,33 @@
 // Book-level shaping shared by every screen: which rows count as held, and the order they list in.
-import type { PortfolioRow } from "./api";
+import type { Lot, PortfolioRow } from "./api";
 import { convertCcy, dayChangeAmount, type FxRates } from "./format";
-import { marketOf, moveSession } from "./markets";
+import { marketOf, moveSession, priceSession } from "./markets";
+
+/** A row's day move in its own currency: what withSameDayLots worked out, else the price move on the whole row. */
+export const rowDayChange = (r: Pick<PortfolioRow, "value" | "change_pct" | "day_change">): number | null =>
+  r.day_change !== undefined ? r.day_change : dayChangeAmount(r.value, r.change_pct);
+
+/** Lots bought in the session the row's move belongs to move from their cost, not from the prior close. NVDA and
+ *  QQQ bought at the close with "Use today's price" showed "+$20 today" beside "$0 all time" (r6 newcomer m5).
+ *  The session date is the market's own (priceSession), which is how "Use today's price" dates a lot. Rows with
+ *  no such lot come back as they are. `lots` is the book's recently dated lots (api.getRecentLots). */
+export function withSameDayLots(rows: PortfolioRow[], lots: Pick<Lot, "holding_id" | "qty" | "cost_per_share" | "acquired_on">[],
+  now: Date = new Date()): PortfolioRow[] {
+  if (!lots.length) return rows;
+  return rows.map((r) => {
+    if (marketOf(r) === null || r.value === null || r.change_pct === null || r.price === null || !r.qty) return r;
+    const f = 1 + r.change_pct / 100;
+    if (f <= 0) return r;
+    const day = priceSession(r, now).ymd;
+    // on or after that day: a lot dated Saturday was bought after Friday's move, at Friday's close
+    const fresh = lots.filter((l) => l.holding_id === r.holding_id && !!l.acquired_on && l.acquired_on >= day);
+    if (!fresh.length) return r;
+    const qNew = fresh.reduce((s, l) => s + l.qty, 0);
+    const held = Math.max(0, r.qty - qNew) / r.qty;   // the part held from before the session moves from the prior close
+    const price = r.price;
+    return { ...r, day_change: (r.value - r.value / f) * held + fresh.reduce((s, l) => s + l.qty * (price - l.cost_per_share), 0) };
+  });
+}
 
 export type DayGroup = { label: string; today: boolean; markets: string[]; day: number; basis: number };
 const MKT_NAME = { US: "US", KR: "Korea", CRYPTO: "Crypto" } as const;
@@ -16,7 +42,7 @@ export function dayGroups(rows: PortfolioRow[], base: string, fx: FxRates | null
   for (const r of rows) {
     const m = marketOf(r);
     if (m === null || r.change_pct === null || r.value === null) continue;
-    const d = dayChangeAmount(r.value, r.change_pct);
+    const d = rowDayChange(r);
     const day = d === null ? null : convertCcy(d, r.currency, base, fx);
     const val = convertCcy(r.value, r.currency, base, fx);
     if (day === null || val === null) continue;
