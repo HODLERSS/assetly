@@ -20,7 +20,8 @@ import {
   curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, plainScrub, PORTFOLIO_PLAIN, wrongDeliveriesDates,
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
-  periodReturnMismatches, spanOfMonth, holdingRankClaims, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
+  perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
+  readerLevel,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -123,7 +124,8 @@ type Investor = { styles?: string[] | string; purpose?: string[] | string; horiz
 // answers may be single strings (old profiles) or arrays (multi-select quiz): normalize, and reduce where one value must win
 const toArr = (x: unknown, d: string[]): string[] => Array.isArray(x) ? (x.length ? x.map(String) : d) : (typeof x === "string" && x ? [x] : d);
 const LVL_ORDER = ["novice", "intermediate", "advanced", "pro"];
-const topLevel = (xs: string[]): string => xs.reduce((a, b) => (LVL_ORDER.indexOf(b) > LVL_ORDER.indexOf(a) ? b : a), "novice");
+// round 8: an unknown level ("confident" on the showcase profile) reads as intermediate, never as beginner
+const topLevel = (xs: string[]): string => readerLevel(xs);
 const HZ_ORDER = ["<1y", "1-3y", "3-10y", "10y+"];
 const longestHz = (xs: string[]): string => xs.reduce((a, b) => (HZ_ORDER.indexOf(b) > HZ_ORDER.indexOf(a) ? b : a), xs[0] ?? "3-10y");
 
@@ -182,8 +184,15 @@ const money = (v: number, cur = "USD"): string => {
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const signedUsd = (v: number) => `${v >= 0 ? "+" : "-"}$${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
 
+// Round 8: three single asks took ~54s. The budget clock started after sign-in and the book reads, and the per-holding
+// window reads (20 holdings x 5 windows, doubled by 1Y/YTD) had no cap under load. Every pre-model read is now capped
+// and the clock starts with the request.
+const capped = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
+  Promise.race([p.catch(() => fallback), new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const tReq = Date.now();
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const uid = await userIdFrom(admin, bearerOf(req));
   if (!uid) return json({ ok: false, error: "sign in required" }, 401);
@@ -194,7 +203,7 @@ Deno.serve(async (req) => {
   const question = String(body.question ?? "").slice(0, 500).trim();
   if (!question) return json({ ok: false, error: "ask something" }, 400);
   const turns = historyOf(body);
-  const t0 = Date.now();
+  const t0 = tReq;
 
   // ---- deterministic portfolio math (the model never invents numbers) ----
   const [{ data: rows }, { data: prof }, { data: fxRows }] = await Promise.all([
@@ -220,7 +229,7 @@ Deno.serve(async (req) => {
   // the per-holding reads run together (round 5 latency: they ran one after another before the model call)
   const heldSyms = held.map((r) => r.symbol);
   const [perfArr, quotesR, shareR, divRows] = await Promise.all([
-    Promise.all(held.slice(0, 20).map(async (r) => [r.symbol, await windowReturns(admin, r.symbol, windows, Date.now(), marketOf(r.symbol, r.kind, r.currency))] as const)),
+    Promise.all(held.slice(0, 20).map(async (r) => [r.symbol, await capped(windowReturns(admin, r.symbol, windows, Date.now(), marketOf(r.symbol, r.kind, r.currency)), 6000, { last: null, pct: {} as Record<number, number | null> })] as const)),
     held.length ? admin.from("prices").select("symbol,prev_close").in("symbol", heldSyms).then((r) => r, () => ({ data: [] })) : Promise.resolve({ data: [] }),
     held.length ? admin.from("symbols").select("symbol,shares_outstanding,shares_as_of").in("symbol", heldSyms).then((r) => r, () => ({ data: [] })) : Promise.resolve({ data: [] }),
     dividendRows(admin, heldSyms),
@@ -316,15 +325,22 @@ Deno.serve(async (req) => {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
   let digest = "";
   const askEsts: { names: string[]; est: string | null; range?: [string, string] }[] = [];
+  const headlinesBy = new Map<string, string>();
   const digSyms = held.slice(0, 12).map((r) => r.symbol);
   if (digSyms.length) {
     const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
+    const none = { data: [] as never[] };
     const [{ data: dn }, { data: dt }, { data: df }] = await Promise.all([
-      admin.from("news").select("symbol,title,url,source,summary,published_at").in("symbol", digSyms).gte("published_at", since14).order("published_at", { ascending: false }).limit(160),
-      admin.from("transcripts").select("symbol,title,published_at").in("symbol", digSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(48),
+      capped(admin.from("news").select("symbol,title,url,source,summary,published_at").in("symbol", digSyms).gte("published_at", since14).order("published_at", { ascending: false }).limit(160).then((r) => r) as unknown as Promise<{ data: unknown[] | null }>, 5000, none as { data: unknown[] | null }),
+      capped(admin.from("transcripts").select("symbol,title,published_at").in("symbol", digSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(48).then((r) => r) as unknown as Promise<{ data: unknown[] | null }>, 5000, none as { data: unknown[] | null }),
       // only the forms that date a report, 13 months deep (a page of "newest of any form" lost the year-ago quarter)
-      earningsFilings(admin, digSyms).then((data) => ({ data })),
-    ]);
+      capped(earningsFilings(admin, digSyms).then((data) => ({ data })), 5000, none as { data: unknown[] | null }),
+    ]) as unknown as [{ data: { symbol: string; title: string; url: string; source: string; summary: string | null; published_at: string }[] | null }, { data: { symbol: string; title: string; published_at: string | null }[] | null }, { data: { symbol: string; form: string; filed_at: string; items?: string | null }[] | null }];
+    // each holding's own recent headlines, for the cause check (round 8: META's drop "after a director sale filing" was AVGO's)
+    for (const s of digSyms) {
+      const r = held.find((h) => h.symbol === s)!;
+      headlinesBy.set(s, (dn ?? []).filter((x) => x.symbol === s && usableNews(x, aliasesFor(r.symbol, r.name))).slice(0, 12).map((x) => `${x.title} ${x.summary ?? ""}`).join(" \n "));
+    }
     for (const s of digSyms) {
       const r = held.find((h) => h.symbol === s)!;
       const aka = aliasesFor(r.symbol, r.name);
@@ -355,14 +371,20 @@ Deno.serve(async (req) => {
     const tickHit = !/^\d+$/.test(tick) && new RegExp(`(^|[^A-Za-z0-9])${esc(tick)}($|[^A-Za-z0-9])`, tick.length <= 3 ? "" : "i").test(convo);
     return tickHit || [r.nickname, ...aliasesFor(r.symbol, r.name).filter((a) => a !== tick)].some((n) => !!n && n.length >= 3 && new RegExp(`(^|[^\\p{L}\\p{N}])${esc(n)}($|[^\\p{L}\\p{N}])`, "iu").test(convo));
   }).map((r) => r.symbol).slice(0, 3);
+  const mentionedNow = held.filter((r) => {
+    const tick = r.symbol.replace(/\.(KS|KQ)$/, "");
+    const tickHit = !/^\d+$/.test(tick) && new RegExp(`(^|[^A-Za-z0-9])${esc(tick)}($|[^A-Za-z0-9])`, tick.length <= 3 ? "" : "i").test(question);
+    return tickHit || [r.nickname, ...aliasesFor(r.symbol, r.name).filter((a) => a !== tick), ...koNamesFor(r.symbol)].some((n) => !!n && n.length >= 2 && new RegExp(`(^|[^\\p{L}\\p{N}])${esc(n)}($|[^\\p{L}\\p{N}])`, "iu").test(question));
+  }).map((r) => r.symbol);
   let context = "";
   // the deep-context reads for the holdings this question is about run together, then are written in order
-  const deep = await Promise.all(mentioned.map((sym) => Promise.all([
+  const deepNone = [{ data: [] }, { data: [] }, { data: [] }, { data: [] }] as unknown as [{ data: { title: string; url: string; source: string; summary: string | null; published_at: string }[] | null }, { data: { bullets: string[]; generated_at: string }[] | null }, { data: { form: string; filed_at: string; title: string | null }[] | null }, { data: { title: string; published_at: string | null; content: string | null }[] | null }];
+  const deep = await Promise.all(mentioned.map((sym) => capped(Promise.all([
       admin.from("news").select("title,url,source,summary,published_at").eq("symbol", sym).gte("published_at", new Date(Date.now() - 7 * 86400000).toISOString()).order("published_at", { ascending: false }).limit(24),
       admin.from("insights").select("bullets,generated_at").eq("symbol", sym).order("generated_at", { ascending: false }).limit(1),
       admin.from("filings").select("form,filed_at,title").eq("symbol", sym).order("filed_at", { ascending: false }).limit(6),
       admin.from("transcripts").select("title,published_at,content").eq("symbol", sym).order("published_at", { ascending: false, nullsFirst: false }).limit(4),
-    ])));
+    ]) as unknown as Promise<typeof deepNone>, 6000, deepNone)));
   for (const [k, sym] of mentioned.entries()) {
     const [{ data: news }, { data: ins }, { data: fils }, { data: trAll }] = deep[k];
     const hr = held.find((h) => h.symbol === sym)!;
@@ -393,6 +415,24 @@ Deno.serve(async (req) => {
     { names: ["portfolio", "your holdings", "your book", "포트폴리오", "전체 자산", "총자산", "자산"], pct: bookDayPct },
   ];
   const causeSource = `${digest}\n${context}`;
+  // the direct answer to a share or best-performer question, from code (the lead a guard may have taken)
+  const leadFact = (): string | null => {
+    const one = mentionedNow.length === 1 ? held.find((h) => h.symbol === mentionedNow[0]) : null;
+    if (one && /\b(?:share|weight|percent|portion|how much of|what part)\b|%|비중|얼마나 차지/i.test(question)) {
+      const v = usd(Number(one.value ?? 0), one.currency);
+      return ko ? `• ${nameOf(one)}는 자산의 ${weight(v)}(${money(v)})입니다.` : `• ${nameOf(one)} is ${weight(v)} of your portfolio (${money(v)}).`;
+    }
+    const w = /\b(?:this year|YTD|year to date)\b|올해/i.test(question) ? YTD : /\bmonth\b|한 달/i.test(question) ? 30 : /\bweek\b|이번 주/i.test(question) ? 7 : /\byear\b|1년/i.test(question) ? 365 : null;
+    if (w !== null && /\b(?:best|strongest|top|leading|worst|weakest)\b|가장/i.test(question)) {
+      const worst = /\b(?:worst|weakest)\b|가장 (?:많이 내린|부진)/i.test(question);
+      const ranked = held.filter((r) => typeof perf.get(r.symbol)?.pct[w] === "number").sort((a, b) => (perf.get(b.symbol)!.pct[w]! - perf.get(a.symbol)!.pct[w]!) * (worst ? -1 : 1));
+      if (!ranked.length) return null;
+      const r0 = ranked[0], v = perf.get(r0.symbol)!.pct[w]!;
+      const lbl = w === YTD ? (ko ? "올해" : "this year") : w === 365 ? (ko ? "1년" : "over the past year") : w === 30 ? (ko ? "한 달" : "this month") : (ko ? "이번 주" : "this week");
+      return ko ? `• ${lbl} ${worst ? "가장 부진한" : "가장 많이 오른"} 종목은 ${nameOf(r0)}(${pctText(v)})입니다.` : `• ${nameOf(r0)} is your ${worst ? "weakest" : "best"} holding ${lbl}, ${pctText(v)}.`;
+    }
+    return null;
+  };
   const rankFacts = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100 }));
   /** The informational answer built from the stats when the model's is a husk: what the decision rests on. */
   // Round 6: the code-built answer was 2-3 thin bullets. It is now 4-5, specific to this book: concentration,
@@ -400,8 +440,11 @@ Deno.serve(async (req) => {
   // next 45 days (div_next_ex), and what a buyer would weigh.
   // Round 7: the husk fits the question: a seller's frame for sell/trim/dump, a ranking by stated metrics for "rank my
   // holdings", and an answer built around the one holding a trade question names
-  const tradeSyms = mentioned.filter((s) => held.some((h) => h.symbol === s));
-  const focusRow = tradeQ && tradeSyms.length === 1 ? held.find((h) => h.symbol === tradeSyms[0])! : null;
+  // Round 8: "Give me the 3 best stocks to buy" after "Is NVDA overvalued?" got a buyer's case for NVDA (the previous
+  // turn's symbol), and "Should I buy the dip on META?" got the generic husk. Focus follows the CURRENT question only,
+  // and a pick / "N best" question never focuses.
+  const nowSyms = mentionedNow;
+  const focusRow = tradeQ && !isPickQuestion(question) && nowSyms.length === 1 ? held.find((h) => h.symbol === nowSyms[0])! : null;
   const estOf = (sym: string) => { const r = held.find((h) => h.symbol === sym); const e = r ? askEsts.find((x) => x.names[0] === nameOf(r)) : undefined; return e ? (e.range ? spanOfMonth(e.range) : e.est ? "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : null) : null; };
   const defaultInfo = (): string => buildHusk({
     holdings: held.map((r) => ({ name: nameOf(r), symbol: r.symbol, kind: r.kind, usd: usd(Number(r.value ?? 0), r.currency) })),
@@ -422,8 +465,37 @@ Deno.serve(async (req) => {
   // Round 7: three 502s ("lost the thread") on plain data questions. A non-decision question whose model lanes both
   // failed now gets the figures built in code (today, the windows, the reports ahead, the largest holdings)
   const dataFallback = (): string => {
+    // Round 8: the fallback was the same generic block for every question ("TSLA is up 20% today, why?" got no TSLA
+    // figure and no correction). It now answers the question's own subject first, from code.
+    const one = mentionedNow.length === 1 ? held.find((h) => h.symbol === mentionedNow[0])! : null;
+    if (one) {
+      const nm = nameOf(one), chg = one.change_pct === null ? null : Number(one.change_pct), px = one.price === null ? null : Number(one.price);
+      const cur = String(one.currency ?? "USD");
+      const lines: string[] = [];
+      const claim = /\b(?:up|down|rose|fell|gained|lost|jumped|dropped|crashed|surged)\s+(\d+(?:\.\d+)?)\s?%/i.exec(question) ?? /(\d+(?:\.\d+)?)\s?%\s*(?:올랐|상승|내렸|하락|빠졌)/.exec(question);
+      if (claim && chg !== null && Math.abs(Math.abs(chg) - Number(claim[1])) > 0.3) {
+        lines.push(ko ? `• ${nm}는 오늘 ${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%입니다. ${claim[1]}%가 아닙니다.` : `• ${nm} ${chg >= 0 ? "rose" : "fell"} ${Math.abs(chg).toFixed(1)}% today, not ${claim[1]}%.`);
+      } else if (chg !== null) {
+        lines.push(ko ? `• ${nm}: 오늘 ${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%${px !== null ? `, 현재 ${money(px, cur)}` : ""}.` : `• ${nm} is ${chg >= 0 ? "up" : "down"} ${Math.abs(chg).toFixed(1)}% today${px !== null ? `, at ${money(px, cur)}` : ""}.`);
+      }
+      const w = usd(Number(one.value ?? 0), one.currency) / (assetsUsd || 1) * 100;
+      lines.push(ko ? `• 자산의 ${w.toFixed(1)}%(${money(usd(Number(one.value ?? 0), one.currency))})입니다.` : `• It is ${w.toFixed(1)}% of your portfolio (${money(usd(Number(one.value ?? 0), one.currency))}).`);
+      if (/\b(?:dividend|pay(?:s|out)?|per share|quarter)\b|배당/i.test(question)) {
+        const dl = divLines.find((x) => x.r.symbol === one.symbol)?.d.line;
+        if (dl) lines.push(`• ${dl.replace(/^[^:]+:\s*/, `${nm}: `)}.`);
+      }
+      const p = perf.get(one.symbol)?.pct ?? {};
+      const wins = [[30, ko ? "1개월" : "1 month"], [365, ko ? "1년" : "1 year"]].filter(([d]) => typeof p[d as number] === "number").map(([d, l]) => `${l} ${pctText(p[d as number] as number)}`);
+      if (wins.length) lines.push(`• ${wins.join(", ")}.`);
+      return lines.join("\n");
+    }
+    if (/\bconcentrat|\bhow (?:spread|diversified)\b|집중/i.test(question)) {
+      const ws = [...held].sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency)).slice(0, 6).map((r) => `${nameOf(r)} ${weight(usd(Number(r.value ?? 0), r.currency))}`);
+      const top3 = [...held].sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency)).slice(0, 3).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
+      return ko ? `• 상위 3개 종목이 자산의 ${top3.toFixed(0)}%입니다.\n• 비중: ${ws.join(", ")}.` : `• Your three largest holdings are ${top3.toFixed(0)}% of the portfolio.\n• Weights: ${ws.join(", ")}.`;
+    }
     const reps = [...askEsts].filter((e) => e.est && e.est > today).sort((a, b) => String(a.est).localeCompare(String(b.est))).slice(0, 8)
-      .map((e) => `${e.names[0]} ${e.range ? spanOfMonth(e.range) : "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`);
+      .map((e) => `${e.names[0]} ${e.range ? (ko ? spanOfMonthKo(e.range) : spanOfMonth(e.range)) : (ko ? "" : "~") + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }) + (ko ? "경" : "")}`);
     const tops = [...held].sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency)).slice(0, 3).map((r) => `${nameOf(r)} ${weight(usd(Number(r.value ?? 0), r.currency))}`);
     return ko ? [
       `• 오늘 포트폴리오: ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%(${signedUsd(bookDayUsd)}).`,
@@ -587,10 +659,28 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...diversifiedClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], fund: r.kind === "etf" || r.kind === "fund" }))), ...circularCauses(answer),
     // round 7 newcomer: "+7.2% this month, on pace with your 8-12% annual target"; "입금은 보통 2-4주 뒤"; "crypto hedge"
     ...targetPaceClaims(answer), ...paymentLagClaims(answer), ...promoCharacterisations(answer),
+    // round 8: "the strongest gain in your portfolio" (NVDA; AAPL leads YTD), "below your buy price" (TSLA is +50% over
+    // cost), "inside your 12-20% target" (11.5%), a cause from another holding's news
+    ...superlativeClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], windows: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> }))),
+    ...costBasisClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], gainPct: Number(r.avg_cost ?? 0) > 0 && r.price !== null ? (Number(r.price) / Number(r.avg_cost) - 1) * 100 : null }))),
+    ...targetBandClaims(answer),
+    ...misattributedCauses(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], headlines: headlinesBy.get(r.symbol) ?? "" }))),
     // round 7 newcomer: "339% this year" for Samsung (YTD +138%): a period claim is held to the holding's own window
     ...periodReturnMismatches(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], windows: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> })))]);
   const pruned0 = answer;
-  const pruned = pruned0.split("\n").map((l) => (dropLines.has(l.trim()) ? "" : [...dropLines].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
+  // Round 8: "What share of my portfolio is NVDA?" shipped "That is $675,210 out of…" with the 19.2% gone, and a premise
+  // answer read "NVDA is, at 19.2% of assets." Drops now remove WHOLE sentences only (never a substring inside one),
+  // and if the lead goes and the next line opens on "That/It/This", the lead fact is rebuilt from code.
+  const dropSet = [...dropLines].map((d) => d.trim()).filter(Boolean);
+  const isDropped = (sen: string) => dropSet.some((d) => d === sen.trim() || d.includes(sen.trim()) || (sen.trim().length > 12 && sen.includes(d)));
+  const leadSen = splitSentences(pruned0)[0] ?? "";
+  let pruned = perLine(pruned0, (line) => splitSentences(line).filter((sen) => !isDropped(sen)).join(" "));
+  if (leadSen && isDropped(leadSen) && /^\s*(?:•\s*)?(?:That|It|This|These|Those|They|이는|이것|그것)\b/.test(pruned)) {
+    const fact = leadFact();
+    const subj = mentionedNow.length === 1 ? nameOf(held.find((h) => h.symbol === mentionedNow[0])!) : null;
+    // the orphan pronoun takes the holding's name when the question names one; otherwise the orphan line goes
+    pruned = fact ? `${fact}\n${pruned}` : subj ? pruned.replace(/^(\s*(?:•\s*)?)(?:It|This|That)\b/, `$1${subj}`) : pruned.replace(/^\s*(?:•\s*)?(?:That|It|This|These|Those|They)\b[^\n]*\n?/, "");
+  }
 
   let guarded = fixPriceConfusions(stripAdvice(normalizeBullets(pruned), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
   // Round 4: after the guards, "What should I buy with $10K?" was left with one unrelated line and "top pick"
@@ -624,7 +714,11 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const cashShare = book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
   const cryptoShareA = held.filter((r) => r.kind === "crypto").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
   const fracGroupsA = [{ label: /\bcash\b/i, value: cashShare }, { label: /\bcrypto\b/i, value: cryptoShareA }];
-  answer = plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(fixFractions(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), fracHold, fracGroupsA)), question, lastA, prevQ, decisionQ))));
+  // round 8: "Tech makes up about 57% of assets" (it is ~97%)
+  const TECH = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]);
+  const techShare = held.filter((r) => TECH.has(themeOf(r.symbol, r.kind))).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
+  guarded = fixGroupShares(guarded, [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: techShare }]);
+  answer = unicodeMinus(plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(fixFractions(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), fracHold, fracGroupsA)), question, lastA, prevQ, decisionQ)))));
   void softFallback;
   // the code-built answer is 4-5 checked bullets (~100 words with the opener): the phone cap must not cut its
   // last bullet, which is the one about what a buyer weighs
