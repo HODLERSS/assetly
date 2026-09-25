@@ -37,10 +37,16 @@ describe("range start dates", () => {
     // a date the month lacks falls to its end (the server's rule)
     expect(rangeStartYmd("1M", new Date("2026-03-31T15:00:00Z"), ny)).toBe("2026-02-28");
   });
-  it("dates follow the market's zone: Seoul is already Saturday when New York is Friday evening", () => {
-    const friEveningNy = new Date("2026-09-26T00:30:00Z");
+  it("dates follow the market's zone, and its day starts at its open", () => {
+    const friEveningNy = new Date("2026-09-26T00:30:00Z");   // Sat 09:30 in Seoul: KRX's Saturday has begun
     expect(rangeStartYmd("1W", friEveningNy, "America/New_York")).toBe("2026-09-18");
     expect(rangeStartYmd("1W", friEveningNy, "Asia/Seoul")).toBe("2026-09-19");
+    // Fri 3:16 PM in New York is Sat 4:16 AM in Seoul, before its open: Seoul's day is still Friday
+    const friAfternoonNy = new Date("2026-09-25T19:16:00Z");
+    expect(rangeStartYmd("1Y", friAfternoonNy, "Asia/Seoul")).toBe("2025-09-25");
+    // New York before its open: yesterday's date; a coin's day is the UTC day
+    expect(rangeStartYmd("1W", new Date("2026-09-25T12:00:00Z"), "America/New_York")).toBe("2026-09-17");
+    expect(rangeStartYmd("1W", new Date("2026-09-25T00:05:00Z"), "UTC")).toBe("2026-09-18");
     expect(seriesZone("005930.KS", false)).toBe("Asia/Seoul");
     expect(seriesZone("NVDA", false)).toBe("America/New_York");
     expect(seriesZone("BTC-USD", true)).toBe("UTC");
@@ -67,6 +73,14 @@ describe("anchored returns match Yahoo", () => {
     expect(partial).toBe(false);
     expect(pts[0].price).toBe(119900);
     expect(pct(pts.at(-1)!.price, pts[0].price)).toBeCloseTo(138.12, 1);
+  });
+  it("Samsung 1Y from a US afternoon: base is the Sep 25 2025 close (₩86,100), +231.6% (Yahoo +231.6%, not +242.7%)", () => {
+    const tz = "Asia/Seoul";
+    const closes = [kr("2025-09-24", 85400), kr("2025-09-25", 86100), kr("2025-09-26", 83300), kr("2025-09-29", 84200), ...SAMSUNG.slice(-4)];
+    const { pts, partial } = anchorRange(dailyCloses(closes, tz, 285500, "2026-09-23T06:30:00Z"), rangeStartYmd("1Y", new Date("2026-09-25T19:16:00Z"), tz), tz);
+    expect(partial).toBe(false);
+    expect(pts[0].price).toBe(86100);
+    expect(pct(pts.at(-1)!.price, pts[0].price)).toBeCloseTo(231.59, 1);
   });
   it("history that starts after the range's start is partial, and draws what it has", () => {
     const tz = "America/New_York";

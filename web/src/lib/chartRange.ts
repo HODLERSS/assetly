@@ -20,11 +20,27 @@ export const ymdIn = (d: Date | string, timeZone: string): string =>
 
 const MONTHS: Partial<Record<RangeKey, number>> = { "1M": 1, "3M": 3, "6M": 6, "1Y": 12, "2Y": 24, "5Y": 60 };
 
-/** The calendar date a range starts on, in `timeZone`. 1W is seven days back; 1M..5Y the same date N months
- *  back (a date that does not exist, Mar 31 minus a month, falls to the month's end); YTD is Dec 31 of the prior
- *  year, so its base is the prior year's last close. */
+// When a market's day begins: before its open, "today" in its zone is still the previous trading day's date.
+const OPEN_MIN: Record<string, number> = { "Asia/Seoul": 9 * 60, "America/New_York": 9 * 60 + 30 };
+
+/** The market's current day: its zone's date, or the day before while its session has not opened yet. A US
+ *  evening is already the next morning in Seoul; counting Samsung's 1Y from that Seoul date based it on the
+ *  close a day later than Yahoo does (+242.7% instead of +231.6%, the r4 power-user's "one-year" mismatch). */
+export function marketToday(now: Date, timeZone: string): string {
+  const ymd = ymdIn(now, timeZone);
+  const open = OPEN_MIN[timeZone];
+  if (open === undefined) return ymd;
+  const [h, mi] = now.toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false }).split(":").map(Number);
+  if ((h % 24) * 60 + mi >= open) return ymd;
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+/** The calendar date a range starts on, in `timeZone`, counted from the market's current day. 1W is seven days
+ *  back; 1M..5Y the same date N months back (a date that does not exist, Mar 31 minus a month, falls to the
+ *  month's end); YTD is Dec 31 of the prior year, so its base is the prior year's last close. */
 export function rangeStartYmd(range: Exclude<RangeKey, "1D">, now: Date, timeZone: string): string {
-  const [y, m, d] = ymdIn(now, timeZone).split("-").map(Number);
+  const [y, m, d] = marketToday(now, timeZone).split("-").map(Number);
   if (range === "YTD") return `${y - 1}-12-31`;
   if (range === "1W") return new Date(Date.UTC(y, m - 1, d - 7)).toISOString().slice(0, 10);
   const months = MONTHS[range]!;
