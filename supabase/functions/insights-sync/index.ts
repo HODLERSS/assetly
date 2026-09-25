@@ -7,9 +7,9 @@ import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } 
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
   YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
-  digitsForWritten, dropInstructionEcho, fixFractions,
+  digitsForWritten, dropInstructionEcho, fixFractions, promoCharacterisations, crossedLevelClaims,
 } from "../_shared/intel.ts";
-import { dividendRows, ensureHistory, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
+import { dividendRows, ensureHistory, hiLo, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
 
@@ -296,6 +296,16 @@ Deno.serve(async (req) => {
       const wr = await windowReturns(admin, sy, [7, 30, 60, YTD, 365, 730], Date.now(), kind === "crypto" ? null : sy.endsWith(".KS") || sy.endsWith(".KQ") ? "KR" : "US");
       if (lines.some((l) => periodReturnMismatches(l, [{ names: [sy, ...aliasesFor(sy)], windows: wr.pct }]).length)) failing.add(sy);
     }
+    // round 7 native: a served card claiming a level the price never reached ("BTC surged past $87,000") is rewritten
+    const levelCards = [...age.keys()].filter((sy) => !failing.has(sy)).map((sy) => {
+      const e = (existing ?? []).find((x) => x.symbol === sy)!;
+      return [sy, [...((e.bullets as string[] | null) ?? []), String((e.windows as { trend?: string } | null)?.trend ?? "")]] as const;
+    }).filter(([, ls]) => ls.some((l) => /\$\s?\d/.test(l) && /\b(?:past|above|over|through|beyond|below|under|hit|reached|touched|topped)\b/i.test(l))).slice(0, 6);
+    for (const [sy, ls] of levelCards) {
+      const px = (await admin.from("prices").select("price").eq("symbol", sy).maybeSingle()).data?.price;
+      const hl = await hiLo(admin, sy, 30, px === null || px === undefined ? null : Number(px)).catch(() => ({ high: null, low: null }));
+      if (ls.some((l) => crossedLevelClaims(l, [{ names: [sy, ...aliasesFor(sy)], pct: null, ...hl }]).length)) failing.add(sy);
+    }
   }
   const { data: pv } = await admin.from("portfolio").select("symbol, value").in("symbol", targets);
   const invested = new Map<string, number>();
@@ -400,7 +410,9 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
         content = await askMaraFb(key, model, prompt);
         // one corrective rewrite when a line contradicts the live numbers or passes a verdict
         const first = content ? parseInsight(content) : null;
-        const facts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price) }];
+        // round 7 native: a level "surged past $87,000" is held to the highest price of the month
+        const hl = await hiLo(admin, symbol, 30, price === null ? null : Number(price)).catch(() => ({ high: null, low: null }));
+        const facts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price), ...hl }];
         const found = first ? takeProblems([...first.bullets, String(first.windows?.trend ?? "")].map(cardScrub), facts, dlvFacts) : [];
         if (found.length) {
           const redo = await askMaraFb(key, model, `${prompt}\n\nYOUR DRAFT:\n${content}\nIt broke these rules:\n- ${found.slice(0, 6).join("\n- ")}\nReturn the corrected JSON in the same shape; keep everything that was right.`).catch(() => null);
@@ -412,7 +424,8 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       if (!parsed) { errors.push(symbol + ": unparseable raw[" + String(content).slice(0, 260).replace(/\n/g, " ") + "]"); continue; }
       const trAge = callAgeDays(latestTr?.published_at);
       // whatever still contradicts the numbers (or passes a verdict) is dropped, never stored
-      const liveFacts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price) }];
+      const hl2 = await hiLo(admin, symbol, 30, price === null ? null : Number(price)).catch(() => ({ high: null, low: null }));
+      const liveFacts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price), ...hl2 }];
       // no historical comparison the data does not hold ("Tech concentration at 1965 highs", round 3)
       let bullets = parsed.bullets.map((b) => fixArticles(cardScrub(deJust(b, trAge))))
         .filter((b) => lineOk(b, liveFacts, dlvFacts) && !(sourceText && (historicalClaims(b, sourceText, today).length || unsupportedCauses(b, sourceText).length))
@@ -491,8 +504,9 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const posFacts: PosFact[] = assets.filter((r) => !r.symbol.startsWith("$")).map((r) => ({ names: [nOf(r.symbol), ...aliasesFor(r.symbol, r.name)], price: pxOf(r), value: usd(r) }));
       const bookNames = assets.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash" && r.kind !== "debt")
         .map((r) => ({ symbol: r.symbol, names: [nOf(r.symbol), ...aliasesFor(r.symbol, r.name)] }));
-      const liveFacts: LiveFact[] = assets.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash" && r.kind !== "debt")
-        .map((r) => ({ names: [nOf(r.symbol), ...aliasesFor(r.symbol, r.name)], pct: r.change_pct === null ? null : Number(r.change_pct), price: pxOf(r) }));
+      const liveFacts: LiveFact[] = await Promise.all(assets.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash" && r.kind !== "debt").slice(0, 20)
+        .map(async (r) => ({ names: [nOf(r.symbol), ...aliasesFor(r.symbol, r.name)], pct: r.change_pct === null ? null : Number(r.change_pct), price: pxOf(r),
+          ...(await hiLo(admin, r.symbol, 30, pxOf(r)).catch(() => ({ high: null, low: null }))) })));
       const korean = booksKorean(rows);
       const { data: invRow } = await admin.from("profiles").select("investor").eq("id", uid).maybeSingle();
       const READER = readerBlock(invRow?.investor as Investor | null);
@@ -554,7 +568,9 @@ ${VALUE_LAW}`;
       if (!parsed) { errors.push("user " + uid.slice(0, 8) + ": unparseable"); continue; }
       const freshestCall = Math.min(...sigSyms.map((sy) => callAgeDays(trs.find((x) => x.symbol === sy)?.published_at) ?? Infinity));
       const pAge = Number.isFinite(freshestCall) ? freshestCall : null;
-      const isNovice = ["novice", "intermediate"].includes(topLevel(toArr((invRow?.investor as Investor | null | undefined)?.level, ["novice"])));
+      // round 7 newcomer: beginner glosses for BEGINNERS only ("Bitcoin down 0.3% as ETF new money turn positive" reached an
+      // Intermediate reader)
+      const isNovice = topLevel(toArr((invRow?.investor as Investor | null | undefined)?.level, ["novice"])) === "novice";
       // a position value quoted as a share price is corrected from the same data block the model was given
       // a holding's weight is its own ("30.1% Bitcoin weight" was Bitcoin + Ether, round 5)
       const weightFacts = assets.filter((r) => !r.symbol.startsWith("$")).map((r) => ({ names: [nOf(r.symbol), ...aliasesFor(r.symbol, r.name)], weight: usd(r) / total * 100 }));
@@ -574,8 +590,18 @@ ${VALUE_LAW}`;
       const ownDollars = [total, debt, ...assets.map((r) => usd(r)), ...assets.map((r) => {
         const d = divRowsP.get(r.symbol); return d?.div_ttm ? Number(d.div_ttm) * Number(r.qty ?? 0) : 0;
       })].filter((v) => v > 0);
+      // round 7 newcomer: "Samsung stock has run 339% this year" (the headline gave no period; YTD is +138%) and "SCHD up
+      // 0.3% this week" (the week is -1.4%; +0.3% was today): a period claim about a holding is checked against its window
+      const heldSyms = assets.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash").map((r) => r.symbol).slice(0, 15);
+      const winOf = new Map(await Promise.all(heldSyms.map(async (sy) => {
+        const r = assets.find((a) => a.symbol === sy)!;
+        const w = await windowReturns(admin, sy, [7, 30, 365, YTD], Date.now(), r.kind === "crypto" ? null : sy.endsWith(".KS") || sy.endsWith(".KQ") ? "KR" : "US").catch(() => null);
+        return [sy, w?.pct ?? {}] as const;
+      })));
+      const periodFacts = heldSyms.map((sy) => ({ names: [nOf(sy), ...aliasesFor(sy, assets.find((a) => a.symbol === sy)?.name)], windows: winOf.get(sy) ?? {} }));
       const keep = (x: string) => lineOk(x, liveFacts) && !mentionedSymbols(x, bookNames).some((sy) => gone.has(sy)) && !(prompt && historicalClaims(x, prompt, todayEt).length)
-        && !unattributedDollars(x, ownDollars).length && !dividendContradictions(x, payers).length && !(prompt && unsupportedCauses(x, prompt).length);
+        && !unattributedDollars(x, ownDollars).length && !dividendContradictions(x, payers).length && !(prompt && unsupportedCauses(x, prompt).length)
+        && !periodReturnMismatches(x, periodFacts).length && !promoCharacterisations(x).length;
       let bullets = scrubB(parsed.bullets).filter(keep).slice(0, 3);
       let news5 = parsed.news5 ? scrubB(parsed.news5).filter(keep) : parsed.news5;
       if (!fixture) {
