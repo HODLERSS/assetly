@@ -7,6 +7,7 @@ import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } 
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
   YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
+  digitsForWritten, dropInstructionEcho,
 } from "../_shared/intel.ts";
 import { dividendRows, ensureHistory, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
@@ -133,7 +134,9 @@ function takeProblems(lines: string[], facts: LiveFact[], dlv: DlvFact[] = []): 
 const lineOk = (l: string, facts: LiveFact[], dlv: DlvFact[] = []) => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length
   && !wrongDeliveriesDates(l, dlv, todayEt()).length && !cardCopyHits(l).length;
 // the shared cards are read by every tier, so desk slang is translated for everyone ("show-me tape", "ripping")
-const cardScrub = (t: string) => tidyNumbers(noviceGloss(plainScrub(t, [...PORTFOLIO_PLAIN, ...CARD_PLAIN])));
+// round 6: our own prompt words echoed into a card ("…two weeks old, so it is context, not news") go, and figures
+// stay digits in written copy
+const cardScrub = (t: string) => tidyNumbers(digitsForWritten(noviceGloss(plainScrub(dropInstructionEcho(t), [...PORTFOLIO_PLAIN, ...CARD_PLAIN]))));
 
 /** A second read of a finished card by the fast model, for what patterns cannot see: a bullet that is garbled
  *  (two headlines compressed into nonsense, round 3: "TSLA leads 2,500 electric trucks backed by Microsoft and
