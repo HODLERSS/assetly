@@ -31,11 +31,14 @@ export function closesBetween(mkt: Mkt, fromMs: number, toMs: number, limit = In
 /** The calendar date a window starts on, in the market's own zone: 1M is the same day last month (Sep 25 ->
  *  Aug 25), 3M three months back, 1Y / 2Y the same date one / two years back, and any other length (1W, 60d
  *  in insights) that many days back. A day that does not exist (Mar 31 minus a month) falls to the month's end. */
+/** The window key for "year to date" (pass it where a number of days goes). */
+export const YTD = -1;
 export function windowTargetYmd(days: number, now = Date.now(), mkt?: Mkt | null): string {
   const market = mkt === undefined ? "US" : mkt;
   const ymd = market ? marketToday(market, now) : new Date(now).toISOString().slice(0, 10);
   const months = ({ 30: 1, 60: 2, 90: 3, 180: 6, 365: 12, 730: 24 } as Record<number, number>)[days];
   const [y, m, d] = ymd.split("-").map(Number);
+  if (days === YTD) return `${y - 1}-12-31`;   // year to date: the base is the prior year's last close
   if (!months) { const t = new Date(Date.UTC(y, m - 1, d - days)); return t.toISOString().slice(0, 10); }
   const first = new Date(Date.UTC(y, m - 1 - months, 1));
   const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
@@ -238,7 +241,22 @@ const IMPERATIVE = new RegExp("^(?:(?:in|for|with|inside) your [^,]{1,30},\\s*)?
   + "(?!\\s*(?:ratings?|side|case|signals?|-side|backs?|volume|orders?|in mind|an eye|aware|informed|tuned|the course of)\\b)", "i");
 // a sentence may end inside bold or a quote ("**Add to NVDA next.** Your cash...")
 // (a list number is not a sentence end: "1. MSFT" stays one line)
-const sentencesOf = (t: string): string[] => String(t ?? "").split(/(?<=[.!?。](?:\*\*|["'”’)\]])?)(?<!(?:^|\n)[\s*•-]*\d{1,2}[.)])\s+(?=\S)|\n+/).map((s) => s.trim()).filter(Boolean);
+// An abbreviation's period is not a sentence end (round 5: "BND is a bond fund holding U.S." lost "Treasury and
+// corporate bonds" at the split). Shared by every splitter here and exported for the functions.
+const ABBREV_END = /(?:\b(?:U\.S|U\.K|U\.N|E\.U|Inc|Co|Corp|Ltd|Cos|Bros|e\.g|i\.e|etc|vs|No|St|Mr|Ms|Mrs|Dr|Jr|Sr|a\.m|p\.m|approx|est|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.)$/;
+export function splitSentences(t: string): string[] {
+  const parts = String(t ?? "").split(/(?<=[.!?。](?:\*\*|["'”’)\]])?)(?<!(?:^|\n)[\s*•-]*\d{1,2}[.)])\s+(?=\S)|\n+/);
+  const out: string[] = [];
+  for (const p of parts) {
+    const x = p.trim();
+    if (!x) continue;
+    // glue a piece back onto one that ended on an abbreviation and is followed by more of the same sentence
+    if (out.length && ABBREV_END.test(out[out.length - 1]) && /^[A-Za-z0-9$]/.test(x)) out[out.length - 1] += " " + x;
+    else out.push(x);
+  }
+  return out;
+}
+const sentencesOf = (t: string): string[] => splitSentences(t);
 const bare = (s: string) => s.replace(/^[\s•*\-–·\d.)]+/, "").replace(/\*\*/g, "").trim();
 
 // A figure a reader can check: a multiple, a ratio against an average, a percentage over a named window.
@@ -831,7 +849,8 @@ const DANGLING_END = /\b(?:the|a|an|of|on|in|to|for|with|by|from|at|as|and|or|bu
 export function brokenSentences(text: string): string[] {
   return sentencesOf(text).filter((raw) => {
     const s = bare(raw).replace(/[)"'’”]+$/, "");
-    if (s.split(/\s+/).length < 3) return false;
+    // "It adds." (round 5): a pronoun and a verb with nothing after is a fragment left by a deletion
+    if (s.split(/\s+/).length < 3) return /^(?:it|this|that|they|these|those|he|she)\s+\w+[.!]?$/i.test(s);
     return DANGLING_END.test(s.replace(/[.!?]+$/, ""))
       || /\b(the|a|an)\s+(the|a|an)\b/i.test(s)
       || /\b(sustained|continued|further|ongoing|persistent|renewed|steady|heavy|deeper|more|less)\s+an?\s+/i.test(s)
@@ -1079,6 +1098,11 @@ export function parseDividends(body: { chart?: { result?: { events?: { dividends
     let t = Date.parse(last.ymd + "T12:00:00Z") + freqDays * 86400000;
     while (t < Date.parse(todayYmd + "T12:00:00Z")) t += freqDays * 86400000;
     nextEx = new Date(t).toISOString().slice(0, 10);
+    // the same quarter a year earlier sets the date when it is on file (round 5: KO's Q4 ex-date comes around
+    // Dec 1, not "last + 91" Dec 18): the payment a year before the rhythm's date, plus 364 days
+    const want = t - 364 * 86400000;
+    const yearAgo = pts.map((p) => Date.parse(p.ymd + "T12:00:00Z")).filter((x) => Math.abs(x - want) <= 25 * 86400000).sort((a, b) => Math.abs(a - want) - Math.abs(b - want))[0];
+    if (yearAgo && yearAgo + 364 * 86400000 >= Date.parse(todayYmd + "T12:00:00Z")) nextEx = new Date(yearAgo + 364 * 86400000).toISOString().slice(0, 10);
   }
   const perYear = freqDays ? last.amount * Math.max(1, Math.round(365 / freqDays)) : null;
   return { last: last.amount, lastEx: last.ymd, ttm: ttm > 0 ? Number(ttm.toFixed(4)) : null, perYear, freqDays, nextEx, yieldPct: price && ttm > 0 ? Number((ttm / price * 100).toFixed(2)) : null };
@@ -1107,6 +1131,8 @@ export function wrongDividendAmounts(text: string, facts: { names: string[]; amo
  *  the low is fine only when it says so ("from its 12-month low"). `windows` maps days to the window return. */
 export function periodReturnMismatches(text: string, facts: { names: string[]; windows: Record<number, number | null> }[], tolPp = 1): string[] {
   const WINDOW_WORDS: [RegExp, number][] = [
+    // year to date first: "231.6% year to date" for Samsung was its 1Y figure (YTD +138.1%), round 5
+    [/\b(?:year[- ]to[- ]date|YTD|so far this year|this year|since (?:the start of the year|January))\b/i, YTD],
     [/\b(?:in a year|one-year|1-year|1Y|12-month|twelve-month|over the (?:past|last) year|year-over-year run|on the year|past 12 months|in the past year|a year ago)\b/i, 365],
     [/\b(?:two-year|2-year|2Y|over (?:the )?(?:past |last )?two years|in two years)\b/i, 730],
     [/\b(?:two-month|2-month|60-day|over (?:the )?(?:past |last )?two months)\b/i, 60],
@@ -1133,4 +1159,126 @@ export function periodReturnMismatches(text: string, facts: { names: string[]; w
  *  brief "Copilot earnings preview Sep 27"). */
 export function weekendDated(items: string[], todayYmd: string): string[] {
   return items.filter((it) => datesIn(it, todayYmd).some((d) => !d.approx && [0, 6].includes(new Date(d.ymd + "T12:00:00Z").getUTCDay())));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Round 5 (2026-09-25): exposure figures, promotional and forecast lines, hypothetical figures, risk-profile ideas
+// ---------------------------------------------------------------------------------------------
+/** "VOO rise and fall" (round 5): a single ticker (or "it", "the fund") takes a singular verb. */
+export const fixAgreement = (t: string): string => String(t ?? "").replace(
+  /(?<!(?:\band|\bor|,|&|\bwith)\s+)\b((?:[A-Z]{2,5}(?:\.[A-Z]{1,2})?)|[Ii]t|[Tt]he fund|[Tt]he stock|[Tt]he portfolio)\s+(rise|fall|move|trade|track|drop|climb|swing|react|lag|lead)(\s+and\s+)(rise|fall|move|drop|climb|swing|react|lag|lead)\b/g,
+  (_m, subj: string, v1: string, and: string, v2: string) => `${subj} ${v1}s${and}${v2}s`);
+
+/** Promotional or unsupported product claims in the app's voice ("captures the full S&P 500 upside while
+ *  avoiding individual stock fees", round 5): not analysis. */
+export function promoClaims(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\bcaptures? (?:the )?(?:full|entire|all (?:of )?the)\b[^.]{0,40}\bupside\b|\bavoid(?:s|ing)? (?:individual[- ])?stock fees\b|\bwithout (?:the |any )?(?:risk|downside)\b|\b(?:risk-free|guaranteed|can'?t lose|no-lose)\b/i.test(s));
+}
+/** A return forecast in the app's voice ("should support a 4-8% annual return", round 5). */
+export function returnForecasts(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\b(?:support|deliver|generate|produce|achieve|reach|hit|earn|return|yield|compound(?:ing)? at)\w*\b[^.]{0,40}?\b\d+(?:\.\d+)?(?:\s?(?:-|–|to)\s?\d+(?:\.\d+)?)?\s?%\s*(?:an?\s+|per\s+)?(?:annual(?:ly|ized)?|a year|per year|yearly|each year)?\s*(?:returns?|gains?|growth)\b/i.test(s)
+    && !/\b(?:target|goal|you (?:set|chose|picked)|your (?:target|goal))\b/i.test(s) || /\b(?:should|will|can)\s+(?:return|earn|deliver|compound)\b[^.]{0,30}\d+(?:\.\d+)?\s?%/i.test(s));
+}
+/** An idea to ADD to crypto for a reader whose profile is not crypto (round 5: a stability / income investor
+ *  was told to "improve the modest Bitcoin position"). */
+export function offRiskIdea(idea: string, styles: string[]): boolean {
+  if (styles.includes("crypto")) return false;
+  return /\b(?:crypto|bitcoin|btc|ether(?:eum)?|solana|altcoins?)\b/i.test(idea) && /\b(?:improve|increase|add|grow|expand|build|raise|larger|bigger|more)\b/i.test(idea);
+}
+
+export type Exposure = { usEquity: number; krEquity: number; crypto: number; bonds: number; cash: number; other?: number };
+const EXPOSURE_KEYS: [keyof Exposure, RegExp][] = [
+  ["usEquity", /\b(?:US|U\.S\.|American)\s+(?:equit(?:y|ies)|stocks?|shares)(?:\s+exposure)?\b/i],
+  ["krEquity", /\b(?:Korea(?:n)?|KRX)\s*(?:equit(?:y|ies)|stocks?|shares)?(?:\s+exposure)?\b/i],
+  ["crypto", /\bcrypto(?:currency|currencies)?(?:\s+exposure)?\b/i],
+  ["bonds", /\bbonds?(?:\s+(?:exposure|funds?|sleeve))?\b/i],
+  ["cash", /\bcash\b/i],
+];
+/** Exposure percentages the text states ("the 46.4% US equity exposure") corrected to the computed ones
+ *  (round 5: 46.4% was VOO alone; US equity was 69.2%). A figure is corrected only when it sits right next to the
+ *  quantity it names; the correction comes from the same numbers the writer was given. */
+export function fixExposure(text: string, exp: Exposure, tolPp = 1): string {
+  let out = String(text ?? "");
+  for (const [key, re] of EXPOSURE_KEYS) {
+    const truth = exp[key];
+    if (typeof truth !== "number") continue;
+    const src = re.source;
+    // "46.4% US equity" / "US equity exposure of 46.4%" / "US equity at 46.4%" / "US equity (46.4%)"
+    const before = new RegExp(`(\\d+(?:\\.\\d+)?)\\s?%(\\s+(?:of\\s+(?:the\\s+)?(?:portfolio\\s+)?(?:is\\s+|in\\s+)?)?(?:${src}))`, "gi");
+    const after = new RegExp(`((?:${src})\\s*(?:is|at|of|stands at|sits at|makes up|\\(|:|,)?\\s*(?:about|around|roughly)?\\s*)(\\d+(?:\\.\\d+)?)\\s?%`, "gi");
+    out = out.replace(before, (m: string, n: string, rest: string) => Math.abs(Number(n) - truth) > tolPp ? `${truth.toFixed(1)}%${rest}` : m);
+    out = out.replace(after, (m: string, lead: string, n: string) => Math.abs(Number(n) - truth) > tolPp ? `${lead}${truth.toFixed(1)}%` : m);
+  }
+  return out;
+}
+
+/** A dollar figure from an article, stated as if it were the reader's ("VOO: $10,450 tax on reinvested
+ *  dividends", round 5; the article's hypothetical $1M stake): a figure of $1,000 or more that is not one of the
+ *  reader's own numbers must say where it comes from ("an article estimates", "on a $1M stake"). */
+export function unattributedDollars(text: string, own: number[]): string[] {
+  return sentencesOf(text).filter((s) => {
+    if (/\b(?:article|estimates?|example|hypothetical|illustrat\w*|according to|says|said|reports?|on a \$|for a \$|per \$|analysts?|survey)\b/i.test(s)) return false;
+    return [...s.matchAll(/\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(\s?[kKmMbBtT](?:illion|n)?\b)?/g)].some((m) => {
+      const suf = (m[2] ?? "").trim().toLowerCase();
+      if (/^[bt]/.test(suf)) return false;   // company-scale sizes are the story's, not the reader's
+      const v = moneyVal(m[1], suf.startsWith("m") ? "m" : suf.startsWith("k") ? "k" : "");
+      return v >= 1000 && !own.some((o) => o > 0 && Math.abs(v / o - 1) <= 0.03);
+    });
+  });
+}
+/** "no cash paid out" / "pays no dividend" about a holding that pays one (round 5: VOO, $1.962 a share in June). */
+export function dividendContradictions(text: string, payers: { names: string[] }[]): string[] {
+  return sentencesOf(text).filter((s) => /\bno (?:cash|dividends?|payouts?|income) (?:is )?(?:paid|paid out|payout)?\b|\bpays? no (?:cash|dividends?)\b|\bdoesn'?t pay (?:a )?(?:cash|dividends?)\b|\bno cash paid out\b/i.test(s)
+    && payers.some((p) => p.names.some((n) => n && nameIn(s, n))));
+}
+
+/** Data-pipeline words in reader copy ("no dividend data on file", "the rate on file", round 5). */
+export const plainDataWords = (t: string): string => String(t ?? "")
+  .replace(/\bthe (?:exchange )?rate on file\b/gi, "the latest stored rate")
+  .replace(/\b(?:no |not )?(?:\w+ )?(?:data|figures?|numbers?|dates?|history|record) on file\b/gi, (m) => m.replace(/\s+on file\b/i, "").replace(/^no (\w+ )?(data|figures?|numbers?)$/i, "no $1$2 available"))
+  .replace(/\bon file\b/gi, "available").replace(/\s{2,}/g, " ");
+
+/** The assessment's YOUR PORTFOLIO paragraph, built from the book: every holding of 2% or more with its dollars and
+ *  share, cash, the smaller holdings counted, the exposure by type, then at most two of the model's sentences
+ *  that carry no figures and no geography list (round 4/5: the model's version named two or three holdings and
+ *  ended "…, and one smaller position"). Every sentence has a verb, so no later grammar pass can drop it. */
+export function buildPortfolioParagraph(holdings: { name: string; usd: number }[], cashUsd: number, total: number, exp: Exposure, modelText = ""): string {
+  const money = (v: number) => "$" + Math.round(v).toLocaleString("en-US");
+  const pct = (v: number) => (v / (total || 1) * 100).toFixed(1) + "%";
+  const sorted = [...holdings].sort((a, b) => b.usd - a.usd);
+  const big = sorted.filter((h) => h.usd / (total || 1) >= 0.02);
+  const small = sorted.filter((h) => h.usd / (total || 1) < 0.02);
+  const parts = [...big.map((h) => `${h.name} ${money(h.usd)} (${pct(h.usd)})`), ...(cashUsd > 0 ? [`cash ${money(cashUsd)} (${pct(cashUsd)})`] : [])];
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts.join("");
+  const smallShare = small.reduce((a, h) => a + h.usd, 0) / (total || 1) * 100;
+  const count = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"][small.length] ?? String(small.length);
+  const smallTxt = small.length ? ` ${count} smaller holding${small.length > 1 ? "s" : ""} make${small.length > 1 ? "" : "s"} up ${smallShare < 0.1 ? "under 0.1%" : smallShare.toFixed(1) + "%"}.` : "";
+  const types = [["US stocks and stock funds", exp.usEquity], ["bonds", exp.bonds], ["crypto", exp.crypto], ["Korean stocks", exp.krEquity], ["cash", exp.cash]]
+    .filter(([, v]) => Number(v) > 0).map(([k, v]) => `${Number(v).toFixed(1)}% ${k}`);
+  const typeTxt = types.length ? ` By type, it holds ${types.length > 1 ? `${types.slice(0, -1).join(", ")} and ${types[types.length - 1]}` : types[0]}.` : "";
+  const extra = splitSentences(modelText).filter((x) => !/\d\s?%|\$\s?\d|\bgeograph|\bUnited States\b|\bsmaller position|\btotals?\b|\bbiggest holdings?\b/i.test(x) && !brokenSentences(x).length).slice(0, 2);
+  return `Your portfolio of ${money(total)} is made up of ${list}.${smallTxt}${typeTxt}${extra.length ? " " + extra.join(" ") : ""}`.replace(/\s{2,}/g, " ").trim();
+}
+
+/** A holding's weight stated wrong ("30.1% Bitcoin weight" when BTC is 25.2%; 30.1% was BTC + ETH, round 5
+ *  poweruser). A figure next to a holding's name and a weight word must be that holding's weight, unless the
+ *  sentence labels it as a group ("crypto 30.1%") and it equals that group's share. Corrected from the book. */
+export function fixWeights(text: string, holdings: { names: string[]; weight: number }[], groups: { label: RegExp; value: number }[] = [], tolPp = 0.6): string {
+  return splitSentences(text).map((s) => {
+    if (!/\b(?:weight(?:ing)?|of (?:assets|the portfolio|your portfolio|the book|holdings)|stake|allocation|position|share)\b/i.test(s)) return s;
+    return s.replace(/(\d+(?:\.\d+)?)\s?%/g, (m: string, n: string, at: number) => {
+      const v = Number(n);
+      const near = s.slice(Math.max(0, at - 40), at + m.length + 30);
+      if (groups.some((g) => g.label.test(near) && Math.abs(g.value - v) <= tolPp)) return m;
+      // the holding named closest to the figure (before it, or right after: "30.1% Bitcoin weight")
+      const cands = holdings.map((h) => {
+        const i = h.names.map((nm) => { const k = firstIdx(s, [nm]); return k === Infinity ? Infinity : Math.abs(k - at); }).reduce((a, b) => Math.min(a, b), Infinity);
+        return { h, i };
+      }).filter((x) => x.i <= 40).sort((a, b) => a.i - b.i);
+      const who = cands[0]?.h;
+      if (!who || Math.abs(who.weight - v) <= tolPp) return m;
+      if (holdings.some((h) => Math.abs(h.weight - v) <= 0.05 && h !== who)) return m;   // another holding's weight: leave to the reader
+      return `${who.weight.toFixed(1)}%`;
+    });
+  }).join(" ");
 }

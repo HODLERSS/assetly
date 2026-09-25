@@ -114,7 +114,7 @@ export async function historyHasGaps(admin: Db, symbol: string, mkt: Mkt | null,
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 /** Fetch ~`range` of daily closes for one symbol and upsert them into price_history. Idempotent: rows are
  *  keyed (symbol, ts), and a re-run writes the same close timestamps. Returns the number of days written. */
-export async function backfillDaily(admin: Db, symbol: string, yahoo: string, range = "2y"): Promise<number> {
+export async function backfillDaily(admin: Db, symbol: string, yahoo: string, range = "5y"): Promise<number> {
   const r = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahoo)}?range=${range}&interval=1d&includePrePost=false`,
     { headers: { "User-Agent": UA, Accept: "application/json" } }).catch(() => null);
   if (!r || !r.ok) return 0;
@@ -125,7 +125,37 @@ export async function backfillDaily(admin: Db, symbol: string, yahoo: string, ra
     const { error } = await admin.from("price_history").upsert(chunk, { onConflict: "symbol,ts", ignoreDuplicates: true });
     if (!error) wrote += chunk.length;
   }
+  if (wrote) await purgeStale(admin, symbol, pts).catch(() => 0);
   return wrote;
+}
+
+/** Rows a daily backfill makes redundant: inside the span it now covers (and older than the 8 days the minute
+ *  ticks and today's session own), every stored row that is not one of the new close-stamped daily rows. That is
+ *  exactly the old register-time data: weekly bars stamped at their Monday carrying the Friday close, and daily
+ *  bars stamped at the session open (round 5 poweruser: SK hynix 2Y +913% against Yahoo's +1,026%, BTC 2Y
+ *  +28.05% against +33.09%). Cache data, regenerable from Yahoo; per symbol, idempotent, bounded. */
+export function staleRows(existing: string[], daily: Pt[], now = Date.now()): string[] {
+  if (!daily.length) return [];
+  const keep = new Set(daily.map((p) => new Date(p.ts).toISOString()));
+  const from = Date.parse(daily[0].ts), to = Math.min(Date.parse(daily[daily.length - 1].ts), now - 8 * 86400000);
+  return existing.filter((ts) => { const t = Date.parse(ts); return t >= from && t <= to && !keep.has(new Date(ts).toISOString()); });
+}
+async function purgeStale(admin: Db, symbol: string, daily: Pt[]): Promise<number> {
+  const rows: string[] = [];
+  for (let page = 0; page < 10; page++) {
+    const { data, error } = await admin.from("price_history").select("ts").eq("symbol", symbol).gte("ts", daily[0].ts)
+      .lte("ts", new Date(Date.now() - 8 * 86400000).toISOString()).order("ts", { ascending: true }).range(page * 1000, page * 1000 + 999);
+    if (error || !data?.length) break;
+    rows.push(...(data as { ts: string }[]).map((x) => String(x.ts)));
+    if (data.length < 1000) break;
+  }
+  const bad = staleRows(rows, daily);
+  let n = 0;
+  for (let i = 0; i < bad.length; i += 100) {
+    const { error } = await admin.from("price_history").delete().eq("symbol", symbol).in("ts", bad.slice(i, i + 100));
+    if (!error) n += Math.min(100, bad.length - i);
+  }
+  return n;
 }
 
 // Symbols this worker already tried recently: a young listing (an IPO under 400 days old) is short forever,
@@ -133,6 +163,9 @@ export async function backfillDaily(admin: Db, symbol: string, yahoo: string, ra
 // migration 37) carries the same memo across workers; this map covers the time before that migration.
 const tried = new Map<string, number>();
 const RETRY_MS = 7 * 86400000;
+// Every symbol backfilled before the 5-year daily backfill and its purge of mis-stamped rows is done again once
+// (round 5 poweruser: 2Y / 5Y bases read Monday-stamped weekly rows).
+const HISTORY_RESET = Date.parse("2026-09-25T21:00:00Z");
 
 /** Backfill every symbol in the list whose history is short (or all of them with force); at most `cap`
  *  per call, four at a time. A symbol backfilled in the last 7 days is skipped unless forced (it is as long
@@ -150,7 +183,8 @@ export async function backfillShort(admin: Db, symbols: string[], opts: { force?
   for (const sy of (syms ?? []) as { symbol: string; yahoo: string | null; kind: string | null; currency: string | null; history_backfilled_at?: string | null }[]) {
     const age = sy.history_backfilled_at ? Date.now() - +new Date(sy.history_backfilled_at) : Infinity;
     // short history: once a week at most; holes in a long history: once a day at most (the refill is idempotent)
-    const due = opts.force || (age >= RETRY_MS && await historyIsShort(admin, sy.symbol))
+    const stampedAt = sy.history_backfilled_at ? +new Date(sy.history_backfilled_at) : 0;
+    const due = opts.force || (!withStamp.error && stampedAt < HISTORY_RESET) || (age >= RETRY_MS && await historyIsShort(admin, sy.symbol))
       || (age >= 86400000 && await historyHasGaps(admin, sy.symbol, marketOf(sy.symbol, sy.kind, sy.currency)));
     if (due) todo.push({ symbol: sy.symbol, yahoo: sy.yahoo ?? sy.symbol });
     else tried.set(sy.symbol, Date.now());   // whole and gap-free (or recently done): no need to look again for a while
@@ -158,7 +192,7 @@ export async function backfillShort(admin: Db, symbols: string[], opts: { force?
   const batch = todo.slice(0, opts.cap ?? 60);
   const backfilled: Record<string, number> = {};
   for (let i = 0; i < batch.length; i += 4) {
-    const part = await Promise.all(batch.slice(i, i + 4).map(async (t) => [t.symbol, await backfillDaily(admin, t.symbol, t.yahoo, "2y")] as const));
+    const part = await Promise.all(batch.slice(i, i + 4).map(async (t) => [t.symbol, await backfillDaily(admin, t.symbol, t.yahoo, "5y")] as const));
     for (const [sy, n] of part) {
       backfilled[sy] = n;
       if (n > 0) {
