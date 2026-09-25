@@ -1,6 +1,5 @@
 import UIKit
 import Capacitor
-import AVFoundation
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -8,16 +7,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // UIBackgroundModes alone does NOT keep audio alive: WKWebView media defaults to the
-        // ambient session, which iOS silences on lock. .playback is what lets the brief keep
-        // talking with the screen off, and what puts the controls on the lock screen.
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [])
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            // not fatal: audio still plays while the app is in the foreground
-            print("Assetly: audio session unavailable — \(error.localizedDescription)")
-        }
+        // No audio session here. Activating .playback at launch stopped the user's music on every open;
+        // the narration player claims it when a brief starts (AssetlyNativePlugin.activateAudio) and
+        // hands it back when the brief ends or is closed.
         return true
     }
 

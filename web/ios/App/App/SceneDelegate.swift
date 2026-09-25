@@ -8,7 +8,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = CAPBridgeViewController()
+        // the in-app appearance choice (Settings) and the matching ground, before the first frame: the
+        // web view is transparent until its first paint, so whatever is behind it is what the user sees
+        let choice = UserDefaults.standard.string(forKey: AssetlyNativePlugin.appearanceKey)
+        window?.overrideUserInterfaceStyle = AssetlyNativePlugin.style(for: choice)
+        window?.backgroundColor = UIColor(named: "Ground") ?? .systemBackground
+        window?.rootViewController = AppViewController()
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)

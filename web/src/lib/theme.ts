@@ -2,6 +2,8 @@
 // The choice lives on <html data-theme>, which the Relay tokens key off. A pre-paint
 // script in index.html applies the stored choice before React mounts, so the page never
 // flashes the wrong ground; this module keeps that in sync afterwards.
+import { setNativeAppearance } from "./native";
+
 export type ThemeChoice = "system" | "light" | "dark";
 
 const KEY = "assetly-theme";
@@ -35,6 +37,8 @@ export function applyTheme(choice: ThemeChoice): void {
   root.style.colorScheme = choice === "system" ? "light dark" : choice;
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", resolvesDark(choice) ? GROUND.dark : GROUND.light);
+  // in the app, the window follows too: status bar text, the keyboard, and the native ground behind the page
+  setNativeAppearance(choice);
 }
 
 export function setTheme(choice: ThemeChoice): void {
