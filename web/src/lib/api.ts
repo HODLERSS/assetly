@@ -325,12 +325,15 @@ export function makeApi(sb: SupabaseClient = supabase) {
      *  Portfolio Assessment from the last 14 days, oldest first by generation time. */
     async getDailyBriefs(): Promise<DailyBrief[]> {
       type R = { brief_date: string; edition: string | null; sections: unknown; generated_at: string; audio_path: string | null; script: string | null };
-      const [{ data: d1 }, { data: d2 }] = await Promise.all([
+      const [{ data: d1, error: e1 }, { data: d2, error: e2 }] = await Promise.all([
         sb.from("daily_briefs").select("brief_date,edition,sections,generated_at,audio_path,script").neq("edition", "assessment")
           .order("brief_date", { ascending: false }).order("generated_at", { ascending: true }).limit(6),
         sb.from("daily_briefs").select("brief_date,edition,sections,generated_at,audio_path,script").eq("edition", "assessment")
           .order("generated_at", { ascending: false }).limit(1),
       ]);
+      // a network failure comes back as { error }, not a rejection: throw it, or the caller saves [] over
+      // the copy kept on this device and the offline brief vanishes (r4 designer)
+      if (e1 || e2) throw e1 ?? e2;
       const daily = (d1 ?? []) as R[];
       const day = daily.length ? String(daily[0].brief_date) : null;
       const a = ((d2 ?? []) as R[])[0];

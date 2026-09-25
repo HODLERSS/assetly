@@ -100,7 +100,8 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
     const load = () => api.getDailyBriefs().then((b) => {
       if (!live) return;
       memo.set(api, b); setBriefs(b); setSavedCopy(false);
-      try { localStorage.setItem(SAVED_KEY, JSON.stringify(b)); } catch { /* private mode */ }
+      // never replace a kept copy with nothing: an empty answer is "not written yet", not "gone"
+      if (b.length) { try { localStorage.setItem(SAVED_KEY, JSON.stringify(b)); } catch { /* private mode */ } }
       // a fresh account's first brief is still generating: keep looking for ~4 minutes
       if (!b.length && tries++ < 16) setTimeout(load, 15000);
     }).catch(() => {

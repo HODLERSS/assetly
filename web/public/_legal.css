@@ -16,3 +16,6 @@ table{width:100%;border-collapse:collapse;margin-top:6px}
 td,th{text-align:left;padding:9px 10px;border-bottom:1px solid var(--as-rule);font-size:14.5px;vertical-align:top}
 th{color:var(--as-muted);font-weight:600;white-space:nowrap}
 footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--as-rule);font-size:13px;color:var(--as-muted)}
+/* phones: a question/answer row stacks instead of squeezing the answer into a sliver beside a nowrap label */
+@media (max-width:560px){table,tbody,tr,th,td{display:block;width:100%}tr{border-bottom:1px solid var(--as-rule);padding:8px 0}td,th{border:0;padding:2px 0}th{white-space:normal}}
+footer a{display:inline-block;padding:12px 4px;min-height:44px}
