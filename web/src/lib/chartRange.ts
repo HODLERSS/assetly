@@ -68,6 +68,28 @@ export function dailyCloses(pts: HistoryPoint[], timeZone: string, livePrice: nu
   return [...byDay.values()].sort((a, b) => a.ts.localeCompare(b.ts));
 }
 
+/** A coin's week is drawn by the hour, not by the day: eight daily points of a market that never closes read
+ *  as a step chart next to a detailed 1D (r5 native m3). Stocks keep daily points on 1W: the time axis would
+ *  spend two thirds of their week on flat nights and a weekend. */
+export const hourlyRange = (range: RangeKey, crypto: boolean): boolean => crypto && range === "1W";
+
+/** The hourly week's raw window starts the day after the base day: the base close itself (the last print of the
+ *  start date) comes folded, exactly as the daily line has it, so refining the line never moves its figure. */
+export function hourlyRecentHours(now: Date, timeZone: string): number {
+  const from = Date.parse(`${rangeStartYmd("1W", now, timeZone)}T00:00:00Z`) + 86400e3;
+  return Math.max(1, (now.getTime() - from) / 3600e3);
+}
+
+/** One point per clock hour (the last print in it), the live price as the newest. Input ascending. Points already
+ *  a day apart (the folded base close) pass through as they are. */
+export function hourlyCloses(pts: HistoryPoint[], livePrice: number | null, liveAsOf: string | null): HistoryPoint[] {
+  const byHour = new Map<string, HistoryPoint>();
+  const hourOf = (ts: string) => { const t = Date.parse(ts); return Number.isNaN(t) ? ts : new Date(t).toISOString().slice(0, 13); };
+  for (const p of pts) byHour.set(hourOf(p.ts), p);                 // ascending input: last print wins
+  if (livePrice !== null && liveAsOf) byHour.set(hourOf(liveAsOf), { ts: liveAsOf, price: livePrice });
+  return [...byHour.values()].sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+}
+
 /** A base more than this many days before the start date is a gap in the history, not a base. */
 const BASE_TOLERANCE_DAYS = 10;
 /** The range's points from its base: the last close on or before the start date. When the stored history

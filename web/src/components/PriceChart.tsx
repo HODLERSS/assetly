@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Api, HistoryPoint } from "../lib/api";
 import { glClass, moneyExact, signedPct } from "../lib/format";
-import { anchorRange, dailyCloses, fetchHours, RANGE_KEYS, rangeStartYmd, seriesZone, type RangeKey } from "../lib/chartRange";
+import { anchorRange, dailyCloses, fetchHours, hourlyCloses, hourlyRange, hourlyRecentHours, RANGE_KEYS, rangeStartYmd, seriesZone, type RangeKey } from "../lib/chartRange";
 import { onForeground } from "../lib/native";
 export type { RangeKey };
 
 // Minimal price chart: pure SVG, no library. 1D is the latest session's prints; every longer range is one close
 // per trading day, anchored on the last close on or before the range's start date (lib/chartRange.ts).
 
-// 1D asks for four days so a market holiday or a weekend still has a last session to show
-const ONE_D_FETCH_HOURS = 96;
+// 1D asks for four days so a market holiday or a weekend still has a last session to show. A coin always has a
+// last 24 hours: four days of its minute prints were ~6 pages for a one-day line.
+const ONE_D_FETCH_HOURS = 96, ONE_D_COIN_FETCH_HOURS = 26;
+// The daily ranges need one close per day and nothing finer: the server folds every day up to now. A 48-hour raw
+// window came along with every range, ~2,900 minute rows over 4 sequential pages for a coin's 5Y (r5 power-user).
+const DAILY = 0;
+// a coin's hourly week: ~10k minute prints, fetched four pages at a time
+const HOURLY_PAGES = 14, HOURLY_WAVE = 4;
 // The last series each range drew this session, per api: offline (or on a failed refresh) a position shows the
 // chart it last had instead of an endless skeleton (r4 power-user M4).
 const seriesMemo = new WeakMap<Api, Map<string, HistoryPoint[]>>();
@@ -56,8 +62,9 @@ function thin(pts: HistoryPoint[], n = 180): HistoryPoint[] {
 export const chartZone = (symbol: string): string | undefined => (/\.(KS|KQ)$/i.test(symbol) ? "Asia/Seoul" : undefined);
 /** The scrub readout's time: the hour on 1D, the day within a year (no year: it only added noise), the
  *  full date from 1Y out (r3 design m5). */
-export function scrubLabel(ts: string, range: RangeKey, timeZone?: string): string {
+export function scrubLabel(ts: string, range: RangeKey, timeZone?: string, hourly = false): string {
   const d = new Date(ts);
+  if (hourly) return d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", timeZone });
   if (range === "1D") return d.toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone });
   if (range === "1Y" || range === "2Y" || range === "5Y") return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone });
   return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone });
@@ -87,17 +94,33 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
   const tick = intraday ? liveAsOf : null;
   useEffect(() => {
     let live = true;
+    // a range the reader has already left stops fetching (quick switches used to interleave their pages)
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    const signal = ctl?.signal;
     const key = `${symbol}:${range}`;
     const memo = memoFor(api).get(key) ?? null;
     setRaw(memo);
     setFailed(false);
-    const req = range === "1D"
-      ? api.getHistory(symbol, ONE_D_FETCH_HOURS)
-      : api.getHistory(symbol, fetchHours(range, new Date(), zone), { tz: zone });
-    req.then((p) => { if (live) { memoFor(api).set(key, p); setRaw(p); } })
-      .catch(() => { if (live) setFailed(true); });   // keep what is drawn; with nothing drawn, say so with Retry
-    return () => { live = false; };
-  }, [api, symbol, range, zone, attempt, tick]);
+    const keep = (p: HistoryPoint[]) => { if (live) { memoFor(api).set(key, p); setRaw(p); } };
+    const fail = () => { if (live) setFailed(true); };   // keep what is drawn; with nothing drawn, say so with Retry
+    const now = new Date();
+    if (range === "1D") {
+      api.getHistory(symbol, crypto ? ONE_D_COIN_FETCH_HOURS : ONE_D_FETCH_HOURS, undefined, { signal }).then(keep).catch(fail);
+    } else if (!hourlyRange(range, crypto)) {
+      api.getHistory(symbol, fetchHours(range, now, zone), { tz: zone, recentHours: DAILY }, { signal }).then(keep).catch(fail);
+    } else {
+      // progressive: the daily line (one small page) draws at once, the hourly week replaces it when it lands.
+      // Both share the base close and the live price, so the figure never moves; only the line gains detail.
+      let fine = false;
+      const daily = api.getHistory(symbol, fetchHours(range, now, zone), { tz: zone, recentHours: DAILY }, { signal });
+      const hourly = api.getHistory(symbol, fetchHours(range, now, zone),
+        { tz: zone, recentHours: hourlyRecentHours(now, zone), maxPages: HOURLY_PAGES, wave: HOURLY_WAVE }, { signal })
+        .then((p) => { fine = true; keep(p); });
+      daily.then((p) => { if (live && !fine && !memo) setRaw(p); }).catch(() => {});
+      hourly.catch(() => daily.then((p) => { if (!fine) keep(p); }).catch(fail));
+    }
+    return () => { live = false; ctl?.abort(); };
+  }, [api, symbol, range, zone, crypto, attempt, tick]);
   // a chart that failed comes back by itself when the connection or the app does
   useEffect(() => {
     if (!failed) return;
@@ -110,8 +133,9 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
   const series = useMemo(() => {
     if (!raw) return null;
     if (range === "1D") return { pts: latestSession(withLiveTick(raw, livePrice, liveAsOf)), partial: false };
-    return anchorRange(dailyCloses(raw, zone, livePrice, liveAsOf), rangeStartYmd(range, new Date(), zone), zone);
-  }, [raw, range, zone, livePrice, liveAsOf]);
+    const points = hourlyRange(range, crypto) ? hourlyCloses(raw, livePrice, liveAsOf) : dailyCloses(raw, zone, livePrice, liveAsOf);
+    return anchorRange(points, rangeStartYmd(range, new Date(), zone), zone);
+  }, [raw, range, zone, crypto, livePrice, liveAsOf]);
   const pts = series?.pts ?? null;
 
   const view = useMemo(() => {
@@ -159,7 +183,7 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
         {sp ? (
           // the scrub readout replaces the header while a finger is on the line
           <span className="sub num" data-testid="scrub-readout" aria-live="polite">
-            <strong className="num" style={{ color: "var(--as-ink)" }}>{moneyExact(sp.price, currency)}</strong> · {scrubLabel(sp.ts, range, intraday ? tz : zone)}
+            <strong className="num" style={{ color: "var(--as-ink)" }}>{moneyExact(sp.price, currency)}</strong> · {scrubLabel(sp.ts, range, intraday ? tz : zone, hourlyRange(range, crypto))}
           </span>
         ) : (
           <span className="sub">Price · {notToday && last ? `last session, ${last.toLocaleDateString("en-US", { weekday: "short", timeZone: tz })}` : range}</span>
