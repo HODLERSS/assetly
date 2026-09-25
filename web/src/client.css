@@ -1,0 +1,32 @@
+/* Behaviour-owned states (forms, first-run, confirmations). Tokens only, no new colours:
+   theme.css owns the look; these classes are the hooks it can restyle. */
+
+/* per-field validation + the live entry echo */
+.field-error { margin: 2px 2px 0; font-size: 12.5px; color: var(--as-loss); }
+.field input[aria-invalid="true"] { border-color: var(--as-loss); }
+.entry-preview { margin: -4px 2px 14px; font-size: 13px; color: var(--as-muted); }
+
+/* "Building your assessment" card on Home */
+.assess-card { padding: 14px; margin-bottom: 16px; }
+.assess-card .assess-steps { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.assess-card .assess-steps li { display: flex; align-items: center; gap: 8px; }
+.assess-card .assess-steps li[data-done="true"] { color: var(--as-gain); }
+.assess-card .assess-foot { margin: 10px 0 0; font-size: 12.5px; color: var(--as-muted); }
+.assess-card .assess-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* one-time next-step hint after the first adds */
+.next-steps { padding: 12px 14px; margin-bottom: 16px; }
+.next-steps .next-steps-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+/* in-sheet confirmation (lot delete) */
+.sheet-confirm { margin: 0 0 12px; }
+
+/* sign-in: provider marks and the legal line */
+.auth-provider { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.auth-provider svg { flex: none; }
+.auth-legal { font-size: 12px; text-align: center; color: var(--as-muted); margin: 4px 0 0; }
+.auth-legal a { color: inherit; text-decoration: underline; }
+.auth-github { font-size: 13px; }
+
+/* per-market "today" lines under the headline */
+.day-split { margin-top: 2px; }

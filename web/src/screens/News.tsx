@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
 import { labelParts, timeAgo } from "../lib/format";
+import { decodeEntities, dedupeNews } from "../lib/news";
 import { InsightsCard } from "../components/InsightsCard";
 import { Icon } from "../components/Icon";
 import { PullToRefresh } from "../components/PullToRefresh";
@@ -19,10 +20,10 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
   const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
   const [cache] = useState(() => new Map<string, NewsItem[]>());   // instant chip flips
   const [top5, setTop5] = useState<Insight | null>(null);          // Assetly Intelligence, portfolio-wide
-  // pull to refresh: bumping the nonce re-runs the news load; the promise settles when it has landed
-  const [nonce, setNonce] = useState(0);
+  const [retryN, setRetryN] = useState(0);                         // Retry after a failed load, or a pull to refresh
+  // pull to refresh bumps the same counter; its promise settles once the reload has landed
   const settled = useRef<(() => void) | null>(null);
-  const refresh = () => new Promise<void>((resolve) => { settled.current = resolve; setNonce((n) => n + 1); });
+  const refresh = () => new Promise<void>((resolve) => { settled.current = resolve; setRetryN((n) => n + 1); });
   // cash and debt have no news; one chip per symbol even when held in several accounts
   const newsRows = rows.filter((r, i) => r.kind !== "cash" && r.kind !== "debt"
     && rows.findIndex((x) => x.symbol === r.symbol) === i);
@@ -35,7 +36,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
       setTop5(best); if (best) onInsightsSeen?.(best.generated_at);
     }).catch(() => {});
     return () => { live = false; };
-  }, [api, rows.length, nonce]);
+  }, [api, rows.length, retryN]);
   // an app-level refresh that finished while this screen was away (or open) lands here
   useEffect(() => {
     if (freshInsights && freshInsights.generated_at !== top5?.generated_at) { setTop5(freshInsights); onInsightsSeen?.(freshInsights.generated_at); }
@@ -49,10 +50,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
     else setState("loading");
     const held = newsRows.map((r) => r.symbol);
     const scope = filter ?? held;
-    const load = () => api.getNews(scope).then((n) => {
-      const seen = new Set<string>();
-      return n.filter((x) => (seen.has(x.url) ? false : (seen.add(x.url), true)));
-    });
+    const load = () => api.getNews(scope).then(dedupeNews);   // one copy per story (URL or headline), entities decoded
     load()
       .then(async (n) => {
         if (!live) return;
@@ -71,7 +69,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
       .catch(() => { if (live) setState("error"); })
       .finally(() => { settled.current?.(); settled.current = null; });
     return () => { live = false; };
-  }, [api, filter, rows, nonce]);
+  }, [api, filter, rows, retryN]);
 
   return (
     <PullToRefresh onRefresh={refresh}>
@@ -96,21 +94,25 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
           {/* the portfolio read that used to live on the Holdings tab */}
           {(top5?.bullets?.length ?? 0) > 0 && (
             <ul className="insights-list" data-testid="portfolio-insights-card">
-              {top5!.bullets.map((b, i) => <li key={i}>{b}</li>)}
+              {top5!.bullets.map((b, i) => <li key={i}>{decodeEntities(b)}</li>)}
             </ul>
           )}
           {(top5?.news5?.length ?? 0) > 0 && (
             <>
               {(top5?.bullets?.length ?? 0) > 0 && <p className="sub" style={{ margin: "10px 2px 4px", borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>This week across your holdings</p>}
               <ul className="insights-list" data-testid="news-top5-list">
-                {top5!.news5!.map((b, i) => <li key={i}>{b}</li>)}
+                {top5!.news5!.map((b, i) => <li key={i}>{decodeEntities(b)}</li>)}
               </ul>
             </>
           )}
           <p className="insights-foot">Not financial advice</p>
         </section>
       )}
-      {state === "error" && <div className="error-note" role="alert">News missed the handoff — pull to retry.</div>}
+      {state === "error" && (
+        <div className="error-note" role="alert">
+          Couldn't load news. <button className="chip" onClick={() => setRetryN((n) => n + 1)} style={{ marginLeft: 8 }}>Retry</button>
+        </div>
+      )}
       {state === "pulling" && (
         <p className="empty" aria-busy="true">Pulling the latest stories{filter ? ` for ${filter}` : ""}…</p>
       )}

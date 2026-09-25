@@ -360,12 +360,12 @@ describe("Accounts + cash positions", () => {
 
   it("two labeled cash balances coexist in one bank account; equity adds still merge", async () => {
     const a = makeApi(alice);
-    const h1 = await a.addPosition("$CASH", 2500, 1, undefined, "bank", "Cash (Yeonhwa)");
-    const h2 = await a.addPosition("$CASH", 4000, 1, undefined, "bank", "Cash (Minjae)");
+    const h1 = await a.addPosition("$CASH", 2500, 1, undefined, "bank", "Emergency fund");
+    const h2 = await a.addPosition("$CASH", 4000, 1, undefined, "bank", "Travel fund");
     expect(h1).not.toBe(h2);
     const rows = (await a.getPortfolio()).filter((r) => r.symbol === "$CASH");
     expect(rows.length).toBe(2);
-    expect(rows.map((r) => r.nickname).sort()).toEqual(["Cash (Minjae)", "Cash (Yeonhwa)"]);
+    expect(rows.map((r) => r.nickname).sort()).toEqual(["Emergency fund", "Travel fund"]);
     const m1 = await a.addPosition("AAPL", 1, 100);
     const m2 = await a.addPosition("AAPL", 1, 100);            // unlabeled market adds merge
     expect(m1).toBe(m2);

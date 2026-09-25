@@ -382,6 +382,11 @@ button, a, input, select, [role="button"] { touch-action: manipulation; }
 .btn.apple svg { flex: 0 0 auto; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.apple { background: #fff; color: #000; } }
 :root[data-theme="dark"] .btn.apple { background: #fff; color: #000; }
+/* Sign in with Google: Google's neutral button (its branding guidelines), sitting as the same height and
+   weight as Apple's so neither provider looks like the lesser option. */
+.btn.google { background: #fff; color: #1F1F1F; border: 1px solid #747775; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.google { background: #131314; color: #E3E3E3; border-color: #8E918F; } }
+:root[data-theme="dark"] .btn.google { background: #131314; color: #E3E3E3; border-color: #8E918F; }
 
 /* ---------- native feel ---------- */
 

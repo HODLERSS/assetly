@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Investor } from "../lib/api";
 import { INVESTOR_DEFAULT } from "../lib/api";
 
-// Five tap-only questions; no typing, skippable at any point (skip = novice value investor defaults).
+// Six tap-only questions; no typing, skippable at any point (skip keeps what was answered and fills the rest with defaults).
 // Used at sign-up (Onboarding step 1) and in Settings for later edits.
 // every question is multi-select ("pick all that fit") and advances with its own Continue button
 export const QUIZ: { key: keyof Investor; q: string; opts: [string, string][] }[] = [
@@ -31,8 +31,14 @@ export function investorLabel(v: Investor): string {
   return `${lvl} · ${style} · ${hz || "3–10 years"}`;
 }
 
-export function InvestorQuiz({ initial, onDone, onSkip, doneLabel = "Continue" }: {
-  initial?: Investor | null; onDone: (v: Investor) => void; onSkip?: () => void; doneLabel?: string;
+export function InvestorQuiz({ initial, draft, startAt = 0, onDone, onSkip, onProgress, doneLabel = "Continue" }: {
+  initial?: Investor | null; onDone: (v: Investor) => void; doneLabel?: string;
+  /** Skip hands back the answers given so far, the unanswered ones filled with defaults. */
+  onSkip?: (v: Investor) => void;
+  /** Raw answers (unanswered = empty) and the question on screen, on every tap: lets setup survive a reload. */
+  onProgress?: (raw: Investor, index: number) => void;
+  /** Resume point: raw answers exactly as the reader left them (not defaulted), and the question to open on. */
+  draft?: Investor | null; startAt?: number;
 }) {
   // Sign-up starts every question UNSELECTED (a tap expresses a real choice); editing starts from the saved answers.
   // Anything left empty falls back to the defaults when submitted.
@@ -46,8 +52,9 @@ export function InvestorQuiz({ initial, onDone, onSkip, doneLabel = "Continue" }
     horizon: x.horizon.length ? x.horizon : [...INVESTOR_DEFAULT.horizon], target: x.target.length ? x.target : [...INVESTOR_DEFAULT.target],
     risk: x.risk.length ? x.risk : [...INVESTOR_DEFAULT.risk], level: x.level.length ? x.level : [...INVESTOR_DEFAULT.level],
   });
-  const [v, setV] = useState<Investor>(norm(initial));
-  const [i, setI] = useState(0);
+  const [v, setV] = useState<Investor>(() => draft ? { ...norm(null), ...draft } : norm(initial));
+  const [i, setI] = useState(() => Math.min(Math.max(0, startAt), QUIZ.length - 1));
+  useEffect(() => { onProgress?.(v, i); }, [v, i]);   // eslint-disable-line react-hooks/exhaustive-deps
   const q = QUIZ[i];
   const last = i === QUIZ.length - 1;
   const next = () => (last ? onDone(complete(v)) : setI(i + 1));
@@ -73,7 +80,7 @@ export function InvestorQuiz({ initial, onDone, onSkip, doneLabel = "Continue" }
       <div style={{ display: "flex", gap: 10, marginTop: 14, alignItems: "center" }}>
         <button className="btn" style={{ flex: "0 0 auto", width: "auto", padding: "10px 18px" }} onClick={next}>{last ? doneLabel : "Continue"}</button>
         {i > 0 && <button className="chip" onClick={() => setI(i - 1)}>← Back</button>}
-        {onSkip && <button className="chip" data-testid="quiz-skip" onClick={onSkip}>Skip — use defaults</button>}
+        {onSkip && <button className="chip" data-testid="quiz-skip" onClick={() => onSkip(complete(v))}>Skip — use defaults</button>}
       </div>
     </section>
   );

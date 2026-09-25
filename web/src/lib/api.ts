@@ -2,6 +2,7 @@
 // against the real local Supabase stack, UI tests stub this module.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+import { rankSymbols, searchQuery } from "./search";
 
 export type SymbolRow = {
   symbol: string; name: string; exchange: string; currency: string; kind: string;
@@ -83,12 +84,14 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { error } = await sb.from("profiles").update({ investor }).eq("id", uid);
       if (error) throw error;
     },
-    async searchSymbols(q: string): Promise<SymbolRow[]> {
-      // Instant hits from the local catalog...
+    async searchSymbols(raw: string, preferCcy = "USD"): Promise<SymbolRow[]> {
+      const q = searchQuery(raw);   // "nvidea" -> "nvidia"
+      // Instant hits from the local catalog... (PostgREST's or() is comma- and paren-delimited: keep them out)
+      const like = q.replace(/[,()*%\\]/g, " ").trim();
       const { data, error } = await sb.from("symbols")
         .select("symbol,name,exchange,currency,kind,yahoo")
-        .or(`symbol.ilike.%${q}%,name.ilike.%${q}%`)
-        .eq("active", true).limit(12);
+        .or(`symbol.ilike.%${like}%,name.ilike.%${like}%`)
+        .eq("active", true).limit(24);
       if (error) throw error;
       const local = (data ?? []) as SymbolRow[];
       // ...merged with the universal search (every US + Korean listing, via Yahoo Finance).
@@ -100,7 +103,8 @@ export function makeApi(sb: SupabaseClient = supabase) {
         }
       } catch { /* search still works from the catalog when the function is unreachable */ }
       const seen = new Set(local.map((r) => r.symbol));
-      return [...local, ...remote.filter((r) => !seen.has(r.symbol))].slice(0, 12);
+      // rank the merged list BEFORE the cut, so an exact ticker from the remote search is never sliced off
+      return rankSymbols(raw, [...local, ...remote.filter((r) => !seen.has(r.symbol))], preferCcy).slice(0, 12);
     },
     async ensureSymbol(row: SymbolRow): Promise<void> {
       // Always ensure — also for catalog hits: it verifies the ticker, refreshes the price,
@@ -156,6 +160,25 @@ export function makeApi(sb: SupabaseClient = supabase) {
     async deleteLot(id: string) {
       const { error } = await sb.from("lots").delete().eq("id", id);
       if (error) throw error;
+    },
+    /** Move a position to another account. When that account already holds the same symbol (and label),
+     *  the two are one position: this one's lots fold into it and its id is returned instead. */
+    async setHoldingAccount(holding_id: string, account: Account): Promise<string> {
+      const { error } = await sb.from("holdings").update({ account }).eq("id", holding_id);
+      if (!error) return holding_id;
+      if (error.code !== "23505") throw error;   // anything but the (user, symbol, account, nickname) unique key
+      const { data: cur, error: e1 } = await sb.from("holdings").select("user_id,symbol,nickname").eq("id", holding_id).single();
+      if (e1) throw e1;
+      const { data: target, error: e2 } = await sb.from("holdings").select("id,source")
+        .eq("user_id", cur.user_id).eq("symbol", cur.symbol).eq("account", account).eq("nickname", cur.nickname).single();
+      if (e2) throw e2;
+      // a synced holding's lots are rewritten by every sync: manual lots folded into it would vanish
+      if (target.source === "snaptrade") throw new Error(`${cur.symbol} is already synced from your brokerage in that account.`);
+      const { error: e3 } = await sb.from("lots").update({ holding_id: target.id }).eq("holding_id", holding_id);
+      if (e3) throw e3;
+      const { error: e4 } = await sb.from("holdings").delete().eq("id", holding_id);
+      if (e4) throw e4;
+      return String(target.id);
     },
     async removeHolding(holding_id: string) {
       const { error } = await sb.from("holdings").delete().eq("id", holding_id);
@@ -342,7 +365,35 @@ export function makeApi(sb: SupabaseClient = supabase) {
     },
     /** The book-changed moment (brokerage connect, or a run of manual adds): sync -> news -> all intelligence -> Portfolio Assessment. */
     async brokerageConnected(): Promise<void> {
-      await sb.functions.invoke("brokerage-connected", { body: {} }).catch(() => null);
+      // It used to swallow every failure while the UI said "on the way": manual-add runs hit a 401 here
+      // (a stale access token after the app sat in the background) and the assessment never came. One
+      // retry on a freshly refreshed session; if that fails too, the caller shows it and offers Retry.
+      const call = async () => {
+        const { data, error } = await sb.functions.invoke("brokerage-connected", { body: {} });
+        if (error) throw error;
+        if (data && typeof data === "object" && "ok" in data && !data.ok) throw new Error(String(data.error ?? "brokerage-connected failed"));
+      };
+      try { await call(); }
+      catch {
+        await withTimeout(sb.auth.refreshSession(), 8000, null).catch(() => null);
+        try { await call(); }
+        catch { throw new Error("We couldn't start your assessment."); }
+      }
+    },
+    /** Where the Portfolio Assessment stands for a run that started at `since` (ISO).
+     *  Today readiness is read off the rows themselves: an assessment edition in daily_briefs newer than
+     *  `since`, and the portfolio intelligence that the chain writes first. A server-side status (queued /
+     *  failed) plugs in here without the UI changing: map it onto `status`. */
+    async getAssessmentStatus(since: string): Promise<{ status: "pending" | "ready" | "failed"; generatedAt: string | null; intelligenceAt: string | null; hadEarlier: boolean }> {
+      const [{ data: a }, { data: pi }] = await Promise.all([
+        sb.from("daily_briefs").select("generated_at").eq("edition", "assessment").order("generated_at", { ascending: false }).limit(1).maybeSingle(),
+        sb.from("portfolio_insights").select("generated_at").order("generated_at", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      const at = a?.generated_at ? String(a.generated_at) : null;
+      const pit = pi?.generated_at ? String(pi.generated_at) : null;
+      const fresh = (t: string | null) => !!t && +new Date(t) > +new Date(since);
+      return { status: fresh(at) ? "ready" : "pending", generatedAt: fresh(at) ? at : null,
+               intelligenceAt: fresh(pit) ? pit : null, hadEarlier: !!at && !fresh(at) };
     },
     /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
     async ask(question: string): Promise<{ answer: string; followups: string[] }> {

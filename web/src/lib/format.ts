@@ -5,6 +5,7 @@ const ZERO_DP = new Set(["KRW", "JPY", "TWD"]);   // currencies quoted without d
 export const ccySymbol = (c: string) => SYM[c] ?? c + " ";
 export function money(v: number | null | undefined, currency: string = "USD", compactKrw = false): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  if (Math.round(v) === 0) v = 0;   // -0.3 prints as "$0", never "-$0"
   if (currency === "KRW") {
     const n = Math.round(v);
     if (compactKrw && Math.abs(n) >= 1e8) return `₩${(n / 1e8).toFixed(1)}억`;
@@ -21,14 +22,18 @@ export function moneyExact(v: number | null | undefined, currency: string = "USD
   return `${ccySymbol(currency)}${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** Signed whole-unit amount. Anything that rounds to zero is a neutral "$0": a 3-cent move on a starter
+ *  position printed as a red "-$0" (launch audit, 2026-09-25). */
 export function signedMoney(v: number | null | undefined, currency: string = "USD"): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
+  if (Math.round(Math.abs(v)) === 0) return money(0, currency);
+  const sign = v > 0 ? "+" : "-";
   return sign + money(Math.abs(v), currency);
 }
 
 export function signedPct(v: number | null | undefined, dp = 2): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  if (Number(v.toFixed(dp)) === 0) return `${(0).toFixed(dp)}%`;   // never "-0.00%"
   const sign = v > 0 ? "+" : "";
   return `${sign}${v.toFixed(dp)}%`;
 }
@@ -36,6 +41,11 @@ export function signedPct(v: number | null | undefined, dp = 2): string {
 export function glClass(v: number | null | undefined): string {
   if (v === null || v === undefined || v === 0) return "mutedc";
   return v > 0 ? "gain" : "loss";
+}
+
+/** Colour for a whole-unit money figure: what prints as "$0" reads neutral, not red or green. */
+export function moneyClass(v: number | null | undefined): string {
+  return glClass(v === null || v === undefined ? v : Math.round(v) === 0 ? 0 : v);
 }
 
 export function priceAsOf(iso: string | null): string {
@@ -90,7 +100,9 @@ export function labelParts(r: { symbol: string; name?: string | null; name_kr?: 
 /** Compact signed money for tight row lines: +$28.1K, -\u20a99.3M. */
 export function signedMoneyCompact(v: number | null, ccy: string): string {
   if (v === null) return "\u2014";
-  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
+  const sym = ccySymbol(ccy);
+  if (Math.round(Math.abs(v)) === 0) return `${sym}0`;
+  const sign = v > 0 ? "+" : "-";
   const num = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: Math.abs(v) < 1000 ? 0 : 1 }).format(Math.abs(v));
-  return `${sign}${ccy === "KRW" ? "\u20a9" : "$"}${num}`;
+  return `${sign}${sym}${num}`;
 }
