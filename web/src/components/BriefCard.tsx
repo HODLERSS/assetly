@@ -100,9 +100,9 @@ export function BriefCard({ api }: { api: Api }) {
           ))}
         </div>
       )}
-      <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, fontWeight: open ? 400 : 500 }}>{s.lede}</p>
+      <p className="prose" style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, fontWeight: open ? 400 : 500 }}>{s.lede}</p>
       {open && (
-        <div data-testid="brief-body">
+        <div className="prose" data-testid="brief-body">
           <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>{meta.tape}</p>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>{s.overnight}</p>
           <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>{meta.positions}</p>

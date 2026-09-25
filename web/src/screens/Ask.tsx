@@ -124,7 +124,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
       </div>
       <form className="ask-composer" onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
         <input aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
-               placeholder="Ask about your portfolio…" />
+               placeholder="Ask about your portfolio…" enterKeyHint="send" autoComplete="off" />
         <button className="btn" disabled={busy || !q.trim()}>{busy ? "…" : "Send"}</button>
       </form>
     </>

@@ -6,10 +6,19 @@ const config: CapacitorConfig = {
   webDir: "dist",
   ios: {
     packageManager: "SPM",
-    // the brand ground, so the notch area and rubber-band overscroll match the page
-    backgroundColor: "#F4F5F7",
+    // No backgroundColor here: one fixed colour can only match one theme, and the light one flashed
+    // between the dark launch screen and the dark page. AppViewController sets the web view's ground
+    // from the "Ground" asset colour, which has a light and a dark value.
     contentInset: "never",
     limitsNavigationsToAppBoundDomains: false,
+  },
+  plugins: {
+    Keyboard: {
+      // "native" shrinks the web view to the space above the keyboard, so bottom-docked chrome (the Ask
+      // composer) sits on the keyboard and WebKit never has to scroll the page under the status bar to
+      // reveal a field. The tab bar hides while the keyboard is up (lib/keyboard.ts).
+      resize: "native",
+    },
   },
   server: {
     // OAuth returns through this scheme; see snaptrade-callback

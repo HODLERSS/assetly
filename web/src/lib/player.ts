@@ -9,8 +9,12 @@
 //  - MediaSession lives here, not in a component, so the lock screen and Control Center keep working
 //    no matter which screen is on top (or none, when the app is backgrounded).
 //  - setPositionState keeps the lock-screen scrubber honest, including at non-1x speeds.
+//  - The native audio session is claimed when a brief starts and handed back when it ends or is
+//    closed (never at launch: that stopped the user's music every time the app opened). A pause keeps
+//    it, so the lock-screen play button still resumes the brief.
 
 import { VoiceEngine } from "./speech";
+import { activateAudioSession, deactivateAudioSession } from "./native";
 
 export type Track = { id: string; title: string; subtitle: string; date?: string };
 export type Source = "audio" | "voice";   // an MP3 from storage, or the device voice reading the script
@@ -55,6 +59,14 @@ let el: HTMLAudioElement | null = null;
 let engine: VoiceEngine | null = null;               // the device voice, created on first use
 let resolveUrl: (() => Promise<string | null>) | null = null;   // re-signable: storage URLs expire
 let retried = false;
+let sessionHeld = false;                              // the native audio session is ours right now
+
+const claimSession = () => { sessionHeld = true; return activateAudioSession(); };
+const releaseSession = () => {
+  if (!sessionHeld) return;
+  sessionHeld = false;
+  void deactivateAudioSession();
+};
 
 const positionState = () => {
   if (!el || !("mediaSession" in navigator)) return;
@@ -90,7 +102,7 @@ const ensureElement = (): HTMLAudioElement => {
   a.addEventListener("loadedmetadata", () => set({ loading: false, duration: Number.isFinite(a.duration) ? a.duration : 0 }));
   a.addEventListener("play", () => set({ playing: true, error: null }));
   a.addEventListener("pause", () => set({ playing: false }));
-  a.addEventListener("ended", () => { set({ playing: false, position: 0 }); a.currentTime = 0; });
+  a.addEventListener("ended", () => { set({ playing: false, position: 0 }); a.currentTime = 0; releaseSession(); });
   a.addEventListener("error", () => { void recover(); });
   el = a;
   return a;
@@ -98,12 +110,12 @@ const ensureElement = (): HTMLAudioElement => {
 
 // A signed storage URL expires. Rather than surfacing a dead player, re-sign once and resume where we were.
 const recover = async () => {
-  if (!el || !resolveUrl || retried) { set({ loading: false, playing: false, error: "That recording could not be played." }); return; }
+  if (!el || !resolveUrl || retried) { set({ loading: false, playing: false, error: "That recording could not be played." }); releaseSession(); return; }
   retried = true;
   const at = el.currentTime;
   const wasPlaying = state.playing;
   const url = await resolveUrl().catch(() => null);
-  if (!url) { set({ loading: false, playing: false, error: "That recording could not be played." }); return; }
+  if (!url) { set({ loading: false, playing: false, error: "That recording could not be played." }); releaseSession(); return; }
   el.src = url;
   el.load();
   const resume = () => { el!.currentTime = at; if (wasPlaying) void el!.play().catch(() => {}); };
@@ -145,23 +157,26 @@ export const loadSpeech = (track: Track, script: string) => {
   engine ??= new VoiceEngine({
     onStart: () => set({ playing: true, loading: false, error: null }),
     onProgress: (p) => set({ position: p }),
-    onEnd: () => set({ playing: false, position: 0 }),
-    onError: (m) => set({ playing: false, loading: false, error: m }),
+    onEnd: () => { set({ playing: false, position: 0 }); releaseSession(); },
+    onError: (m) => { set({ playing: false, loading: false, error: m }); releaseSession(); },
   });
   engine.stop();
   engine.rate = state.rate;
   engine.load(script);
   set({ source: "voice", track, loading: false, error: null, position: 0, duration: engine.duration, playing: false });
   wireMediaSession(track);
+  void claimSession();                                  // not awaited: speak() must stay inside the gesture
   engine.play(0);
 };
 
 export const play = async () => {
-  if (state.source === "voice") { if (engine) { engine.resume(); set({ playing: true, error: null }); } return; }
+  if (state.source === "voice") { if (engine) { void claimSession(); engine.resume(); set({ playing: true, error: null }); } return; }
   const a = el;
   if (!a || !a.src) return;
+  // the session first, so the first syllable already plays under .playback (lock screen, silent switch)
+  await claimSession();
   try { await a.play(); set({ playing: true, loading: false, error: null }); }
-  catch { set({ playing: false, loading: false, error: "Tap play to start the audio." }); }
+  catch { set({ playing: false, loading: false, error: "Tap play to start the audio." }); releaseSession(); }
 };
 
 export const pause = () => { if (state.source === "voice") { engine?.pause(); set({ playing: false }); return; } el?.pause(); set({ playing: false }); };
@@ -196,6 +211,7 @@ export const stop = () => {
   resolveUrl = null;
   retried = false;
   if ("mediaSession" in navigator) { try { navigator.mediaSession.metadata = null; } catch { /* ignore */ } }
+  releaseSession();
   set({ track: null, source: "audio", playing: false, loading: false, position: 0, duration: 0, error: null });
 };
 
@@ -209,7 +225,7 @@ export const clock = (s: number) => {
 export const __resetPlayer = () => {
   try { el?.pause(); } catch { /* jsdom */ }
   try { engine?.stop(); } catch { /* jsdom */ }
-  el = null; engine = null; resolveUrl = null; retried = false;
+  el = null; engine = null; resolveUrl = null; retried = false; sessionHeld = false;
   state = { track: null, source: "audio", playing: false, loading: false, position: 0, duration: 0, rate: 1, error: null };
   emit();
 };

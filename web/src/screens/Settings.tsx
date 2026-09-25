@@ -220,7 +220,7 @@ export function SettingsScreen({ api, profile, rows, onChanged, onSignedOut }: {
         </p>
       </div>
       <button className="btn secondary" onClick={async () => { await api.signOut(); onSignedOut(); }}>Sign out</button>
-      <button className="btn danger" style={{ marginTop: 10 }} onClick={() => { setDeleteErr(null); setDeleting(true); }} data-testid="delete-account">Delete account</button>
+      <button className="btn danger-quiet" style={{ marginTop: 10 }} onClick={() => { setDeleteErr(null); setDeleting(true); }} data-testid="delete-account">Delete account</button>
       <p className="mutedc" style={{ fontSize: 12.5, marginTop: 14 }}>
         Deleting your account removes your holdings, lots, briefs, insights, narration audio and any brokerage connection permanently.
       </p>
