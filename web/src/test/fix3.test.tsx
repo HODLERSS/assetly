@@ -79,10 +79,12 @@ describe("G1 every edition is checked against the book it was written for (r3 ne
     expect(briefBasis(b, kr).stale).toBe(false);
   });
   it("Home opens on the newest edition written for this book; the other is a tap away, labelled and dimmed", async () => {
-    const close = brief("close", { lede: "NVDA closed up.", held: ["NVDA"] }, new Date(Date.now() - 3 * 3600_000).toISOString());
-    // half of what it covers is still held: a smaller change, shown labelled (fewer than half: not shown; fix4)
-    const midday = brief("midday", { lede: "Your TSLA stake is doing most of today's damage.", held: ["TSLA", "NVDA"] });
-    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(nvdaOnly), getDailyBriefs: vi.fn().mockResolvedValue([close, midday]) });
+    const close = brief("close", { lede: "NVDA closed up.", held: ["NVDA", "AAPL"] }, new Date(Date.now() - 3 * 3600_000).toISOString());
+    // two of the three holdings it covers are still held: a smaller change, shown labelled (half or fewer: not
+    // shown at all; fix4, r5)
+    const book = [...nvdaOnly, row({ holding_id: "a", symbol: "AAPL", name: "Apple Inc." })];
+    const midday = brief("midday", { lede: "Your TSLA stake is doing most of today's damage.", held: ["TSLA", "NVDA", "AAPL"] });
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(book), getDailyBriefs: vi.fn().mockResolvedValue([close, midday]) });
     render(<App api={api} />);
     const card = await screen.findByTestId("brief-card");
     expect(within(card).getByTestId("brief-lede").textContent).toBe("NVDA closed up.");

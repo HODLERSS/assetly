@@ -108,6 +108,14 @@ describe("H2 a brief about a different set of holdings is not shown (r4 newcomer
   ];
   const tslaMidday = brief("midday", { lede: "Your TSLA stake is doing most of today's damage.", held: ["VOO", "TSLA", "BTC-USD", "NVDA"] });
 
+  it("r5: exactly half still held is foreign", () => {
+    const book: PortfolioRow[] = [row({ holding_id: "v", symbol: "VOO", name: "Vanguard S&P 500 ETF" }), row({ holding_id: "b", symbol: "BTC", name: "Bitcoin", kind: "crypto" })];
+    const midday = brief("midday", { positions: [{ name: "TSLA", note: "", watch: "" }, { name: "VOO", note: "", watch: "" }, { name: "BTC", note: "", watch: "" }, { name: "NVDA", note: "", watch: "" }] });
+    expect(briefOverlap(midday, book)).toBe(0.5);
+    expect(foreignBrief(midday, book)).toBe(true);
+    const leadsHeld = brief("close", { positions: [{ name: "VOO", note: "", watch: "" }, { name: "BTC", note: "", watch: "" }, { name: "TSLA", note: "", watch: "" }] });
+    expect(foreignBrief(leadsHeld, book)).toBe(false);   // 2 of 3 still held
+  });
   it("overlap: the share of what it covers that is still held", () => {
     expect(briefOverlap(tslaMidday, incomeBook)).toBe(0);
     expect(foreignBrief(tslaMidday, incomeBook)).toBe(true);

@@ -92,5 +92,8 @@ export function briefOverlap(brief: DailyBrief, book: BookName[]): number {
  *  Dimming was not enough: a newcomer holding MSFT, VTI and SCHD read "Your TSLA stake is doing most of today's
  *  damage" under a "written before your latest changes" note (r4 newcomer). Such a brief is not shown at all. */
 export function foreignBrief(brief: DailyBrief, book: BookName[] | null): boolean {
-  return !!book && briefOverlap(brief, book) < 0.5;
+  if (!book) return false;
+  // half or fewer still held (r5: a book holding VOO and
+  // BTC scored exactly 0.5 against a VOO/TSLA/BTC/NVDA midday and read "Your TSLA stake…" first)
+  return briefOverlap(brief, book) <= 0.5;
 }
