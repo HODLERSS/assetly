@@ -3,7 +3,7 @@ import type { Api, BriefEdition, DailyBrief } from "../lib/api";
 import { getSnapshot, load as loadTrack, loadSpeech, subscribe, toggle as togglePlayer } from "../lib/player";
 import { hasDeviceVoice } from "../lib/speech";
 import { Icon } from "./Icon";
-import { briefBasis, type BookName } from "../lib/briefBasis";
+import { briefBasis, foreignBrief, type BookName } from "../lib/briefBasis";
 
 // The Daily Brief — three personal research notes a trading day: morning (pre-open),
 // midday pulse (11am CT), closing note (post-close) — plus the Portfolio Assessment, the
@@ -49,6 +49,7 @@ function readSaved(): DailyBrief[] | null {
 }
 
 export const BOOK_CHANGED_NOTE = "Written before your latest changes.";
+export const FOREIGN_BRIEF_NOTE = "Your next brief will cover your current holdings.";
 export function briefFreshness(brief: DailyBrief, opts: { now?: Date; liveDayPct?: number | null; pendingSince?: string | null;
   held?: string[] | null; book?: BookName[] | null; totalUsd?: number | null } = {}):
   { stale: boolean; note: string | null; bookChanged?: boolean } {
@@ -123,10 +124,28 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
     </section>
   );
   if (!briefs.length) return null;
+  // an edition about a different set of holdings altogether is not shown, not even dimmed: its lede reads as
+  // being about you. When that is every edition there is, the card says what comes next instead.
+  const bookNow = book ?? (held ? held.map((symbol) => ({ symbol, kind: "stock" })) : null);
+  const shown = briefs.filter((b) => !foreignBrief(b, bookNow));
+  if (!shown.length) {
+    // an old assessment of another book is still the one to replace: Refresh stays on offer when nothing is running
+    const canRefreshForeign = briefs.some((b) => b.edition === "assessment") && !pendingSince && !!onRefreshAssessment && !refreshAsked;
+    return (
+      <section className="card insights" data-testid="brief-foreign" aria-label="Your brief">
+        <div className="insights-head"><span className="insights-brand">Your brief</span></div>
+        <p className="sub brief-asof" style={{ margin: 0 }}>
+          <span>{FOREIGN_BRIEF_NOTE}</span>
+          {canRefreshForeign && <button className="chip" data-testid="brief-refresh-assessment"
+            onClick={() => { setRefreshAsked(true); onRefreshAssessment!(); }}>Refresh assessment</button>}
+        </p>
+      </section>
+    );
+  }
   const freshOf = (b: DailyBrief) => briefFreshness(b, { liveDayPct, pendingSince, held, book, totalUsd });
-  // opens on the newest edition written for THIS book; one written for another book is a tap away, labelled
-  const current = [...briefs].reverse().find((b) => !freshOf(b).bookChanged) ?? briefs[briefs.length - 1];
-  const brief = (picked && briefs.find((b) => b.edition === picked)) ?? current;
+  // opens on the newest edition written for THIS book; one written before a smaller change is a tap away, labelled
+  const current = [...shown].reverse().find((b) => !freshOf(b).bookChanged) ?? shown[shown.length - 1];
+  const brief = (picked && shown.find((b) => b.edition === picked)) ?? current;
   const meta = ED_META[brief.edition] ?? ED_META.morning;
   const dow = new Date(brief.brief_date + "T12:00:00Z").getUTCDay();
   const title = brief.edition === "weekend" && dow !== 0 && dow !== 6 ? "Holiday Read" : meta.title;
@@ -172,9 +191,9 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
           </button>
         </span>
       </div>
-      {briefs.length > 1 && (
+      {shown.length > 1 && (
         <div className="chips" style={{ padding: "6px 0 8px" }} role="group" aria-label="Brief editions">
-          {briefs.map((b) => (
+          {shown.map((b) => (
             <button key={b.edition} className="chip" aria-pressed={b.edition === brief.edition} onClick={() => pick(b.edition)}>
               {(ED_META[b.edition] ?? ED_META.morning).chip}
             </button>

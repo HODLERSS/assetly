@@ -80,7 +80,8 @@ describe("G1 every edition is checked against the book it was written for (r3 ne
   });
   it("Home opens on the newest edition written for this book; the other is a tap away, labelled and dimmed", async () => {
     const close = brief("close", { lede: "NVDA closed up.", held: ["NVDA"] }, new Date(Date.now() - 3 * 3600_000).toISOString());
-    const midday = brief("midday", { lede: "Your TSLA stake is doing most of today's damage.", held: ["VOO", "TSLA", "NVDA"] });
+    // half of what it covers is still held: a smaller change, shown labelled (fewer than half: not shown; fix4)
+    const midday = brief("midday", { lede: "Your TSLA stake is doing most of today's damage.", held: ["TSLA", "NVDA"] });
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(nvdaOnly), getDailyBriefs: vi.fn().mockResolvedValue([close, midday]) });
     render(<App api={api} />);
     const card = await screen.findByTestId("brief-card");
@@ -111,8 +112,10 @@ describe("G2 an old assessment about other holdings is never the hero (r3 power-
   it("Home labels it and offers Refresh assessment once, which kicks the pipeline", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(nvdaOnly), getDailyBriefs: vi.fn().mockResolvedValue([pepsi()]) });
     render(<App api={api} />);
-    const card = await screen.findByTestId("brief-card");
-    expect(within(card).getByTestId("brief-asof").textContent).toMatch(/^Written before your latest changes\./);
+    // nothing it names is held: its body is not shown at all (fix4), and Refresh is still on offer
+    const card = await screen.findByTestId("brief-foreign");
+    expect(card.textContent).toMatch(/^Your brief\s*Your next brief will cover your current holdings\./);
+    expect(card.textContent).not.toMatch(/Pepsi/);
     await userEvent.click(within(card).getByTestId("brief-refresh-assessment"));
     await waitFor(() => expect(api.brokerageConnected).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId("brief-refresh-assessment")).toBeNull();   // the pending run takes over
@@ -122,8 +125,7 @@ describe("G2 an old assessment about other holdings is never the hero (r3 power-
     localStorage.setItem("assetly-assess:u-test", JSON.stringify({ startedAt: new Date().toISOString(), first: false }));
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(nvdaOnly), getDailyBriefs: vi.fn().mockResolvedValue([pepsi()]) });
     render(<App api={api} />);
-    const card = await screen.findByTestId("brief-card");
-    expect(card.getAttribute("data-stale")).toBe("true");
+    const card = await screen.findByTestId("brief-foreign");
     expect(within(card).queryByTestId("brief-refresh-assessment")).toBeNull();
   });
 });

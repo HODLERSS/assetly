@@ -75,3 +75,22 @@ export function briefBasis(brief: DailyBrief, book: BookName[] | null, total: nu
   }
   return fresh;
 }
+
+/** The share of the holdings a brief was written about that are still in the book (1 when it names none). */
+export function briefOverlap(brief: DailyBrief, book: BookName[]): number {
+  const s = brief.sections ?? ({} as DailyBrief["sections"]);
+  if (Array.isArray(s.held)) {
+    const now = new Set(holdingsOf(book).map((r) => r.symbol));
+    const was = [...new Set(s.held.map(String).filter((x) => !x.startsWith("$")))];
+    return was.length ? was.filter((x) => now.has(x)).length / was.length : 1;
+  }
+  const named = (s.positions ?? []).map((p) => (p?.name ?? "").trim()).filter((n) => n && !GENERIC.test(n));
+  return named.length ? named.filter((n) => inBook(n, book)).length / named.length : 1;
+}
+
+/** Written for a different set of holdings altogether: fewer than half of the holdings it covers are still held.
+ *  Dimming was not enough: a newcomer holding MSFT, VTI and SCHD read "Your TSLA stake is doing most of today's
+ *  damage" under a "written before your latest changes" note (r4 newcomer). Such a brief is not shown at all. */
+export function foreignBrief(brief: DailyBrief, book: BookName[] | null): boolean {
+  return !!book && briefOverlap(brief, book) < 0.5;
+}

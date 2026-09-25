@@ -9,6 +9,23 @@ import { PriceChart } from "../components/PriceChart";
 import { InsightsCard } from "../components/InsightsCard";
 import { Icon } from "../components/Icon";
 import { AmountField, EntryPreview } from "../components/AmountField";
+import { onForeground } from "../lib/native";
+
+// Each position's lots as last read this session: offline, a position shows the lots it had instead of none.
+const lotsMemo = new WeakMap<Api, Map<string, Lot[]>>();
+const lotsFor = (api: Api) => { let m = lotsMemo.get(api); if (!m) { m = new Map(); lotsMemo.set(api, m); } return m; };
+
+/** A failed write, said in words the user can act on. supabase-js rejects with a PostgrestError (not an Error)
+ *  whose message is the browser's "Load failed" / "The network connection was lost": the merge that died on a
+ *  dropped connection read "Could not change the account." with no hint why (r4 power-user). */
+export function writeError(e: unknown, fallback: string): string {
+  const msg = typeof (e as { message?: unknown } | null)?.message === "string" ? (e as { message: string }).message : "";
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+  if (offline || /load failed|failed to fetch|network|timed out|internet connection/i.test(msg)) {
+    return `${fallback.replace(/\.$/, "")}: the connection dropped. Check it and try again.`;
+  }
+  return e instanceof Error && msg ? msg : fallback;
+}
 
 // Canvas 2c + 3i + the remove flow (gap screen g1): detail, every lot editable, delete with confirm.
 // Every write here (save, delete, remove, change account) runs through one in-flight guard: a second tap
@@ -21,8 +38,12 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   /** The position now lives under another holding id (moved into an account that already held it). */
   onMoved?: (holdingId: string) => Promise<void> | void;
 }) {
-  const [lots, setLots] = useState<Lot[]>([]);
+  const [lots, setLots] = useState<Lot[]>(() => (row ? lotsFor(api).get(row.holding_id) : undefined) ?? []);
   const [lotsLoaded, setLotsLoaded] = useState(false);
+  // a failed read is not an empty list: offline, "No lots yet." beside an average cost read as lost records,
+  // and it stayed after reconnecting (r4 power-user M4)
+  const [lotsFailed, setLotsFailed] = useState(false);
+  const [lotsAttempt, setLotsAttempt] = useState(0);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState<Lot | null>(null);
   const [adding, setAdding] = useState(false);
@@ -32,19 +53,35 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   const [busyWhat, setBusyWhat] = useState<"remove" | "import" | "move" | null>(null);
   const [mergeInto, setMergeInto] = useState<PortfolioRow | null>(null);   // the move waiting on "Merge?"
 
+  const holdingId = row?.holding_id;
   useEffect(() => {
     let live = true;
-    setLotsLoaded(false);
-    if (row) api.getLots(row.holding_id)
-      .then((l) => { if (live) { setLots(l); setLotsLoaded(true); } })
-      .catch(() => { if (live) { setLots([]); setLotsLoaded(true); } });
+    if (!holdingId) return;
+    const memo = lotsFor(api).get(holdingId);
+    setLots(memo ?? []);
+    setLotsLoaded(!!memo);
+    api.getLots(holdingId)
+      .then((l) => { if (live) { lotsFor(api).set(holdingId, l); setLots(l); setLotsLoaded(true); setLotsFailed(false); } })
+      .catch(() => { if (live) setLotsFailed(true); });   // keep what is shown; with nothing shown, say so with Retry
     return () => { live = false; };
-  }, [api, row?.holding_id]);
+  }, [api, holdingId, lotsAttempt]);
+  // back online, back in the foreground, or a fresh book after the price Retry: read the lots again
+  const bookAt = row?.as_of;
+  useEffect(() => {
+    if (!lotsFailed) return;
+    const again = () => setLotsAttempt((n) => n + 1);
+    window.addEventListener("online", again);
+    const off = onForeground(again);
+    return () => { window.removeEventListener("online", again); off(); };
+  }, [lotsFailed]);
+  useEffect(() => { if (lotsFailed) setLotsAttempt((n) => n + 1); }, [bookAt]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!row) return <p className="empty">Position not found. <button className="chip" onClick={onBack}>Back</button></p>;
 
   const reload = async () => {
-    setLots(await api.getLots(row.holding_id));
+    const l = await api.getLots(row.holding_id);
+    lotsFor(api).set(row.holding_id, l);
+    setLots(l); setLotsLoaded(true); setLotsFailed(false);
     await onChanged();
   };
   const cashish = row.kind === "cash" || row.kind === "debt";
@@ -66,7 +103,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
       const id = await api.setHoldingAccount(row.holding_id, a);
       if (id !== row.holding_id) await onMoved?.(id);
       else await reload();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Could not change the account."); }
+    } catch (e) { setErr(writeError(e, "Could not change the account.")); }
   };
   const remove = (excludeToo: boolean) => run(async () => {
     setBusyWhat(excludeToo ? "import" : "remove");
@@ -74,7 +111,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
       if (excludeToo) await api.excludeImport(row.symbol);
       await api.removeHolding(row.holding_id);
       await onRemoved();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Could not remove."); setConfirming(false); }
+    } catch (e) { setErr(writeError(e, "Could not remove.")); setConfirming(false); }
     finally { setBusyWhat(null); }
   });
   const qtyLabel = row.kind === "crypto" ? "Quantity" : "Shares";
@@ -141,7 +178,13 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
           </button>
         ))}
         {lotsLoaded && lots.length === 0 && <p className="empty">No lots yet.</p>}
-        {!lotsLoaded && <div className="row" aria-busy="true" aria-label="Loading lots" style={{ minHeight: 76 }}><span className="sub">Loading lots…</span></div>}
+        {!lotsLoaded && lotsFailed && (
+          <p className="empty" role="alert" data-testid="lots-error">
+            Couldn't load your lots.{" "}
+            <button className="chip" onClick={() => setLotsAttempt((n) => n + 1)}>Retry</button>
+          </p>
+        )}
+        {!lotsLoaded && !lotsFailed && <div className="row" aria-busy="true" aria-label="Loading lots" style={{ minHeight: 76 }}><span className="sub">Loading lots…</span></div>}
       </div>
       </>)}
       {!cashish && <p className="mutedc" style={{ fontSize: 12.5, margin: "8px 0 16px" }}>{row.source === "snaptrade" ? <><Icon name="bolt" size={12} /> Synced from {row.account_label ?? "your brokerage"}. Shares and cost update automatically.</> : row.account_label ? `Imported from ${row.account_label} (no longer syncing). Average cost comes from your lots.` : "Average cost comes from your lots."}</p>}
@@ -180,7 +223,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
                 ? `This position is synced from your brokerage. Removing it alone brings it back on the next sync.`
                 : cashish
                   ? `This removes ${name} from your portfolio. You can add it back anytime.`
-                  : `This removes ${name} and its ${lots.length === 1 ? "lot" : `${lots.length} lots`}. You can add it back anytime.`}
+                  : `This removes ${name} and its ${!lotsLoaded ? "lots" : lots.length === 1 ? "lot" : `${lots.length} lots`}. You can add it back anytime.`}
             </p>
             {row.source === "snaptrade" && (
               <button className="btn danger" disabled={busy} onClick={() => remove(true)}>
@@ -211,14 +254,14 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
               setEditing(null); setAdding(false);
               if (account && account !== row.account) { await reload(); await requestMove(account); }
               else await reload();
-            } catch (e) { setErr(e instanceof Error ? e.message : "Could not save lot."); }
+            } catch (e) { setErr(writeError(e, "Could not save lot.")); }
           }}
           onDelete={editing ? async () => {
             try {
               // The last lot IS the position: deleting it removes the holding, never a 0-share row.
               if (lots.length === 1) { await api.removeHolding(row.holding_id); setEditing(null); await onRemoved(); return; }
               await api.deleteLot(editing.id); setEditing(null); await reload();
-            } catch (e) { setErr(e instanceof Error ? e.message : "Could not delete lot."); }
+            } catch (e) { setErr(writeError(e, "Could not delete lot.")); }
           } : undefined}
         />
       )}
@@ -274,6 +317,13 @@ function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", n
   return (
     <div className="sheet-back" role="dialog" aria-modal="true" aria-label={lot ? "Edit lot" : "Add lot"}>
       <div className="sheet" aria-busy={busy}>
+        {/* the decimal pad has no Done key and covered Cancel (r4 native m4): while the keyboard is up the sheet
+            carries its own Done, pinned to the top of the (scrolling) sheet. Pointer-down keeps the field's focus
+            from moving before the tap lands. */}
+        <div className="sheet-kbbar">
+          <button type="button" className="chip" data-testid="sheet-kb-done" onPointerDown={(e) => e.preventDefault()}
+            onClick={() => { const el = document.activeElement; if (el instanceof HTMLElement) el.blur(); }}>Done</button>
+        </div>
         <h2>{cashish ? (lot ? "Edit balance" : "Add balance") : lot ? "Edit lot" : "Add lot"}</h2>
         <AmountField id="lot-qty" label={cashish ? `Amount (${sym})` : crypto ? "Quantity" : "Shares"} value={qty}
           onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} />
