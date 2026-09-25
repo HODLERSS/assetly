@@ -14,7 +14,7 @@ import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekday
 import {
   aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
-  perLine, assessmentReader, capNoteKeepRisk, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
+  perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
 } from "../_shared/intel.ts";
 import { dividendLine, dividendRows, windowReturns } from "../_shared/history.ts";
@@ -70,7 +70,8 @@ const FAST_MODEL = "gpt-oss-120b";
 // from current data; older editions are patched with the full sentence chain (repairDrops) and re-narrated.
 // 8 (round 7): today's rows carried a weight read as a move ("META dropped 12.8%"), a live move called "yesterday"
 // and a 0.5% yield; they are patched (past-window) or regenerated (the current edition).
-const GEN_VERSION = 8;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+// 9 (round 7 newcomer): theme weights, gloss grammar, "(est)" on non-dates, promo characterisations, 6-holding reads
+const GEN_VERSION = 9;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -335,7 +336,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   const liveFacts = wasLive && ctx ? ctx.facts.filter((f) => typeof basis.day_by_symbol?.[f.symbol] === "number").map((f) => ({ names: f.names, pct: basis.day_by_symbol![f.symbol] })) : [];
   // a collapsed appositive can leave a comma between a subject and its verb ("The market's fear gauge, fell 3.3%")
   const unComma = (t: string) => t.replace(/(^|[.!?]\s+)([A-Z][^,.!?]{2,50}),\s+(fell|rose|jumped|slipped|climbed|dropped|gained|lost|added|edged|dipped|sank|rallied)\b/g, "$1$2 $3");
-  const text = (t: string) => tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(String(t ?? ""))))), PORTFOLIO_PLAIN)));
+  const text = (t: string) => fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(String(t ?? ""))))), PORTFOLIO_PLAIN))));
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
@@ -344,7 +345,8 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     // "...Nasdaq futures (+0.7%), and one smaller position." survived a repair that ran only the calendar checks
     const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests), ...wrongDeliveriesDates(x, dlvFacts, today), ...parts.filter((p) => strengthAsRisk(p)), ...repairDrops(x),
       // round 7: a weight printed as a move ("META dropped 12.8%"), a yield we never computed ("near 0.5%")
-      ...(ctx ? [...weightAsMoveHits(x, ctx.facts), ...(ctx.yields.length ? wrongYieldClaims(x, ctx.yields) : [])] : [])]);
+      ...(ctx ? [...weightAsMoveHits(x, ctx.facts), ...(ctx.yields.length ? wrongYieldClaims(x, ctx.yields) : [])] : []),
+      ...promoCharacterisations(x), ...targetPaceClaims(x)]);
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
     return kept.length ? kept.join(" ") : x;
   };
@@ -354,7 +356,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     const canon = canonicalCalendar([p.watch], ests, "", today);
     const earn = /\b(earnings|results|reports?|call|print|preview)\b/i.test(p.watch) && ests.some((e) => e.names.some((n) => n && String(p.watch).toLowerCase().includes(n.toLowerCase())));
     const dated = datesIn(p.watch, today).length > 0 || weekendDated([p.watch], today).length > 0;
-    return { ...p, note: dropWrong(p.note), watch: earn ? canon[0] ?? "No confirmed date yet" : dated ? "No confirmed date yet" : text(p.watch) };
+    return { ...p, note: dropWrong(p.note), watch: earn ? canon[0] ?? "No confirmed date yet" : dated ? "No confirmed date yet" : stripStrayEst(text(p.watch)) };
   });
   s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today).filter((c) => !weekendDated([c], today).length);
   if (src.ideas) s.ideas = src.ideas.map(text).filter((i) => !repairDrops(i).length);
@@ -364,7 +366,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
 function validSections(o: unknown): o is Sections {
   const s = o as Sections;
   return !!s && typeof s.lede === "string" && !!s.lede.trim() && typeof s.overnight === "string"
-    && Array.isArray(s.positions) && s.positions.length >= 1 && s.positions.length <= 5
+    && Array.isArray(s.positions) && s.positions.length >= 1 && s.positions.length <= 6
     && s.positions.every((p) => p && typeof p.name === "string" && typeof p.note === "string" && typeof p.watch === "string")
     && typeof s.desk_view === "string" && Array.isArray(s.calendar ?? []);
 }
@@ -717,7 +719,10 @@ Deno.serve(async (req) => {
         // a lead word is lowered only when it is an ordinary word: never an acronym, a name, "S&P" or "Nasdaq-100"
         const PROPER = /^(?:[A-Z][A-Z0-9&.-]+|[A-Z][a-z]+-\d+|Nasdaq|Treasury|Fed|US|U\.S\.|AI|S&P|Nvidia|Palantir|Apple|Microsoft|Google|Alphabet|Amazon|Meta|Tesla|Vanguard|Invesco|Bitcoin|Ethereum|Ether)\b/;
         const names = [name, String(m?.name ?? ""), String(m?.symbol ?? "")].filter(Boolean);
-        const lead = PROPER.test(phrase) || names.some((n) => phrase.startsWith(n)) ? phrase : phrase[0].toLowerCase() + phrase.slice(1);
+        // only an ordinary opening word is lowered (round 7: "december quarter", "siri settlement")
+        const firstWord = phrase.split(/\s+/)[0] ?? "";
+        const ordinary = /^(?:[A-Z][a-z]+)$/.test(firstWord) && !/^(?:January|February|March|April|May|June|July|August|September|October|November|December|Monday|Tuesday|Wednesday|Thursday|Friday|Siri|Azure|Copilot|Windows|Office|Android|Google|Apple|Amazon|Tesla|Samsung|Bitcoin|Ethereum|Vanguard|Schwab|Chinese|China|Korean|Korea|European|Europe|US|American)$/.test(firstWord);
+        const lead = PROPER.test(phrase) || names.some((n) => phrase.startsWith(n)) || !ordinary ? phrase : phrase[0].toLowerCase() + phrase.slice(1);
         return `The risk: ${lead}.`;
       };
       const watchFallback = (name: string): string => {
@@ -757,7 +762,7 @@ Deno.serve(async (req) => {
           if (r.kind === "debt") return `${krName(r.symbol, r.nickname, r.name)}: $${Math.round(usd(Number(r.value ?? 0), r.currency))} OWED (a liability equal to ${w(r).toFixed(1)}% of assets; write it as "debt of $X", never with a minus sign)`;
           return `${krName(r.symbol, r.nickname, r.name)}: $${Math.round(usd(Number(r.value ?? 0), r.currency))} (${w(r).toFixed(1)}% of assets), total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
         }).join("\n");
-        const memoTargets = holdings.slice(0, 5);
+        const memoTargets = holdings.slice(0, 6);   // round 7: the read covers up to 6 holdings, each needs its memo
         const perf: string[] = [];
         const memos = await Promise.all(memoTargets.map(async (r) => {
           try {
@@ -815,7 +820,7 @@ NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
 ${dateLaw}
 
 QUALITY MEMOS:
-${memosOut.slice(0, 5).map((m) => `- ${m.name}: business: ${m.business}. quality: ${m.quality}. role: ${m.role}. long case: ${m.long_case}. tripwire: ${m.tripwire}. near: ${m.near}`).join("\n")}
+${memosOut.slice(0, 6).map((m) => `- ${m.name}: business: ${m.business}. quality: ${m.quality}. role: ${m.role}. long case: ${m.long_case}. tripwire: ${m.tripwire}. near: ${m.near}`).join("\n")}
 STRUCTURE FACT (deterministic): ${skStructure || "none"}
 GAPS (deterministic hints; refine with judgment): ${skMissing || "none"}`;
         const styles = toArr((invBy.get(uid) as Investor | null | undefined)?.styles, ["value"]);
@@ -828,11 +833,11 @@ ${dataBlock}
 ${shapeA}
 lede: the verdict on this book in one breath: what kind of bet it is, and the single structural fact that matters most. <= 30 words.
 overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their weights, the concentration figure, the theme and geography mix, and cash or debt if present. At least THREE numbers copied from PORTFOLIO or THEME EXPOSURE, quoted EXACTLY as given: never add themes together into a new percentage, never relabel a theme (MARA-style miners and MSTR are "crypto beta" equities, not "crypto"); never state the same weight twice (if a theme is one holding, name it once). Three or four short sentences, none over 20 words. No performance figures here (they belong in the notes). <= 60 words.
-positions: the 3-4 largest equity, fund, or crypto holdings by weight (2 only if the book has two), largest first; every such holding above 20% of assets MUST appear; cash and debt are NEVER positions (they belong in YOUR BOOK and STRUCTURE only). note 28-38 words of flowing prose: what the business is, the quality verdict (for a company: moat, growth, balance sheet; for a fund: what it holds, concentration, cost; for a coin: adoption, supply, custody), and its role in this book; a strength AND a risk or condition, written as sentences, NEVER as "Strength:" / "Risk:" labels: the LAST sentence of every note must be the risk, and must start with "The risk:" or "But" (never a positive clause after "while"); at most two numbers, from the data only, and NEVER state a holding's size twice: give its WEIGHT (25.6% of book) or its DOLLAR VALUE ($5,900), never both, because they are one fact and the weight is the more useful half. If the note also carries a threshold, that threshold is one of the two. watch 5-10 words, no padding words: the thesis TRIPWIRE, MEASURABLE (a metric with a threshold, a guidance item, or a dated event); vague words like "significantly", "sharply", "weakens" are forbidden; NEVER verbs like monitor, watch, track, keep an eye.
+positions: EVERY equity, fund, or crypto holding, largest first (the 6 largest when the book has more than 6), so the quality read covers the whole portfolio; every such holding above 20% of assets MUST appear; cash and debt are NEVER positions (they belong in YOUR BOOK and STRUCTURE only). note 28-38 words of flowing prose: what the business is, the quality verdict (for a company: moat, growth, balance sheet; for a fund: what it holds, concentration, cost; for a coin: adoption, supply, custody), and its role in this book; a strength AND a risk or condition, written as sentences, NEVER as "Strength:" / "Risk:" labels: the LAST sentence of every note must be the risk, and must start with "The risk:" or "But" (never a positive clause after "while"); at most two numbers, from the data only, and NEVER state a holding's size twice: give its WEIGHT (25.6% of book) or its DOLLAR VALUE ($5,900), never both, because they are one fact and the weight is the more useful half. If the note also carries a threshold, that threshold is one of the two. watch 5-10 words, no padding words: the thesis TRIPWIRE, MEASURABLE (a metric with a threshold, a guidance item, or a dated event); vague words like "significantly", "sharply", "weakens" are forbidden; NEVER verbs like monitor, watch, track, keep an eye.
 desk_view: STRUCTURE, exactly two or three sentences. Sentence 1: the ONE concentration, correlation, currency or leverage fact that most shapes this book, with its percentage from the data - a single fact, NEVER a list of holdings with their moves. THE WHOLE desk_view MAY CONTAIN AT MOST THREE FIGURES: one weight in sentence 1 and at most two more anywhere after it. Naming several holdings with a percentage each is the laundry list this section exists to replace; say "the rest is spread across five smaller positions" instead of listing them. Sentence 2 MUST start with "This means" and say what that structure does FOR them: if the concentration fits their stated risk appetite, style and target, name the upside it is buying (the exposure they wanted, the compounding it allows, the cost it avoids); if it does not fit, name what it has delivered for them so far. Sentence 3 (optional): the single condition that would turn it into a problem. No performance figures here (they belong in the notes), no list of returns, no single-day numbers. <= 50 words. Never invent a hypothetical loss or drawdown percentage.
 horizon: exactly two labeled clauses in this shape: "${HZ1}: ... ${HZ2}: ..." The first names what actually decides the ${HZ1.toLowerCase()} for THIS book (a print, a cycle, a macro number); any date you write must be AFTER today and come from NEXT EARNINGS ESTIMATES, otherwise say "the next earnings print" without a date. The second names what must be true over the ${HZ2.toLowerCase()} for this book to deliver. 36-46 words total.
 ideas: 2-3 items, <= 14 words each, each about a GAP in this book (not about the names already held): name the gap, then the specific theme or instrument type worth researching to fill it (e.g. ${incomeLens ? `"No income sleeve: dividend-growth ETFs", ` : `"One-theme book: AI software and infrastructure beyond chips", `}"All-US book: developed-market ex-US index funds"). The gaps must fit THIS reader's lens and purpose (READER PROFILE)${incomeLens ? "" : `: this reader invests for growth, so never propose dividend, income or bond products; a missing asset class may be named only as a diversification FACT ("No bond or international exposure: one driver moves everything"), never as a product to research`}. Never write a return target or goal as a figure. Never start with Add, Buy, Consider, or Allocate (write "No income sleeve: dividend-growth ETFs" or "All-US book: developed-market ex-US index funds"; after the colon name the instrument type directly, never a verb); never a price target.
-LENGTH TARGET: ${holdings.length <= 2 ? `220-320 words in total. This book has only ${holdings.length} holding${holdings.length > 1 ? "s" : ""}: give each note a deeper quality read of 36-48 words, and use the full budgets for the book, structure and horizon.` : "280-360 words in total, a two-minute read."} Use the budget: lede 18-28 words, book 34-48, ${holdings.length <= 2 ? "each note 36-48" : "each note 28-38"}, structure 32-44, horizon 32-42, each idea 8-13. Shorter than the floors reads thin; longer than the caps gets cut.
+LENGTH TARGET: ${holdings.length <= 2 ? `220-320 words in total. This book has only ${holdings.length} holding${holdings.length > 1 ? "s" : ""}: give each note a deeper quality read of 36-48 words, and use the full budgets for the book, structure and horizon.` : (holdings.length > 4 ? "340-460 words in total, a three-minute read." : "280-360 words in total, a two-minute read.")} Use the budget: lede 18-28 words, book 34-48, ${holdings.length <= 2 ? "each note 36-48" : holdings.length > 4 ? "each note 24-32" : "each note 28-38"}, structure 32-44, horizon 32-42, each idea 8-13. Shorter than the floors reads thin; longer than the caps gets cut.
 ADVICE LAW: never tell them to buy, sell, trim, add, or take profits. You describe, you judge quality, you point at what to research.
 HORIZON LAW: forbidden words and phrases: today, tonight, overnight, yesterday, this morning, premarket, after-hours, after market close, at the bell, futures, session, intraday. Timeframes are weeks, months, quarters, years.
 BALANCE LAW: the book's strengths and its risks both get real words; no hype, no doom.
@@ -850,9 +855,9 @@ ${bookLine}
 ${structLines}
 THEME EXPOSURE: ${themeLine}
 MEMOS:
-${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.business}. ${m.quality}. tripwire: ${m.tripwire}`).join("\n")}
+${memosOut.slice(0, 6).map((m) => `- ${m.name}: ${m.business}. ${m.quality}. tripwire: ${m.tripwire}`).join("\n")}
 ${shapeA}
-lede 20-30 words (the verdict on this book); overnight 40-60 words naming the top holdings with weights and the concentration figure (>= 3 numbers from the data); 2-4 positions largest first, note 26-34 words of prose with a strength and a risk (no "Strength:" labels), watch <= 12 words naming a MEASURABLE tripwire (a metric with a threshold or a dated event; NEVER monitor/watch/track, never "significantly"); desk_view 36-50 words on concentration or correlation with its percentage, no invented loss figures; horizon "${HZ1}: ... ${HZ2}: ..." 36-50 words; ideas: 2-3 gaps worth researching, 8-14 words each, never buy or sell instructions. Aim for 340 words in total. Forbidden words: today, overnight, yesterday, session, futures. A total G/L figure may only be phrased as "up/down $X since purchase", never as a move or a delivery. No filler, no em dashes, Korean companies by name, won as ₩.\n${READER_A}`;
+lede 20-30 words (the verdict on this book); overnight 40-60 words naming the top holdings with weights and the concentration figure (>= 3 numbers from the data); 2-6 positions largest first (every holding, up to 6), note 26-34 words of prose with a strength and a risk (no "Strength:" labels), watch <= 12 words naming a MEASURABLE tripwire (a metric with a threshold or a dated event; NEVER monitor/watch/track, never "significantly"); desk_view 36-50 words on concentration or correlation with its percentage, no invented loss figures; horizon "${HZ1}: ... ${HZ2}: ..." 36-50 words; ideas: 2-3 gaps worth researching, 8-14 words each, never buy or sell instructions. Aim for 340 words in total. Forbidden words: today, overnight, yesterday, session, futures. A total G/L figure may only be phrased as "up/down $X since purchase", never as a move or a delivery. No filler, no em dashes, Korean companies by name, won as ₩.\n${READER_A}`;
           draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 8000, Math.max(20000, Math.min(30000, (146 - elapsed()) * 1000)), FAST_MODEL);
           if (draft && validAssessment(draft)) usedCompact = true;
         }
@@ -1283,7 +1288,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       }
       if (!sections || !validSections(sections)) { errors.push(uid.slice(0, 8) + ": invalid sections"); continue; }
       sections.calendar = (sections.calendar ?? []).filter((c) => futureDated(String(c), briefDate)).slice(0, 3);
-      sections.positions = sections.positions.slice(0, 4)
+      sections.positions = sections.positions.slice(0, edition === "assessment" ? 6 : 4)
         .map((p) => ({ ...p, watch: p.watch.replace(/[,;\s]*\b(watch(ing)?|monitor(ing)?|track(ing)?)\b[.\s]*$/i, "").trim() }));
       snap("(start of shared chain)", sections);
       sections = deepDeDash(sections);
@@ -1520,7 +1525,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       if (wcAll(sections) < dietFloor && wcAll(preDiet) >= wcAll(sections)) sections = preDiet;
       snap("number diet (deWeightParens/collapse/trimStats/deAdvice/deSemi/tidy)", sections);
       // BEGINNER readers get the plain-language map applied in code, everywhere including tripwires
-      if (["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])))) {
+      // round 7 newcomer: the beginner glosses ran for "Intermediate" readers too, and most assessment garbles came
+      // from them ("ETF new money turn negative", "Its ecosystem lasting edge over competitors"): beginners only
+      if (topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])) === "novice") {
         sections = JSON.parse(noviceScrub(JSON.stringify(sections), edition === "assessment" ? ["P/E"] : [])) as Sections;
       }
       snap("noviceScrub (glosses)", sections);
@@ -1633,6 +1640,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const moveWeightFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / total * 100, pct: r.change_pct === null ? null : Number(r.change_pct) }));
         const ttmIncome = divData.reduce((a, x) => a + Number(x.r.qty ?? 0) * Number(divRows.get(x.r.symbol)?.div_ttm ?? 0) / (fxMap.get(x.r.currency ?? "USD") ?? 1), 0);
         const allowedYields = divIncome > 0 ? [divIncome / total * 100, ttmIncome / total * 100, ...divData.map((x) => Number(divRows.get(x.r.symbol)?.div_yield ?? 0)).filter((v) => v > 0)].map((v) => Number(v.toFixed(2))) : [];
+        const divShares = divData.filter((x) => x.d.annual > 0).map((x) => ({ names: [krName(x.r.symbol, x.r.nickname, x.r.name), ...aliasesFor(x.r.symbol, x.r.name)], share: divIncome > 0 ? x.d.annual / divIncome * 100 : 0 }));
         const payerNames = divData.filter((x) => x.d.amounts.length).map((x) => ({ names: [krName(x.r.symbol, x.r.nickname, x.r.name), ...aliasesFor(x.r.symbol, x.r.name)] }));
         const paysOf = (name: string): boolean | null => {
           const h = holdings.find((r) => [r.symbol, krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)].some((n) => n && n.toLowerCase() === name.toLowerCase()));
@@ -1654,7 +1662,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity },
         ];
         const clean = (t: string) => {
-          const x = fixWeights(fixAgreement(fixExposure(fixFractions(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN)))), weightFacts, fracGroups), exposure)), weightFacts, weightGroups);
+          const x = fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]);
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
@@ -1667,6 +1675,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             ...dividendContradictions(x, payerNames), ...circularCauses(x),
             // round 7: "META dropped 12.8%" (its weight), "a yield near 0.5%" (the book yields 0.30% / 0.34%)
             ...weightAsMoveHits(x, moveWeightFacts), ...(allowedYields.length ? wrongYieldClaims(x, allowedYields) : []),
+            // round 7 newcomer: "while cushioning volatility", "crypto hedge", "delivering most of its dividend yield"
+            // (AAPL + MSFT pay 26% of it), "+7.2% this month, on pace with your 8-12% annual target"
+            ...promoCharacterisations(x), ...dividendShareClaims(x, divShares), ...targetPaceClaims(x),
             // a two-word fragment left by an earlier deletion ("It adds.", round 5) goes without a model call
             ...brokenSentences(x).filter((b) => b.split(/\s+/).length <= 2)];
           if (!bad.length) return x;
@@ -1699,7 +1710,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           const kept = splitSentences(note).filter((x) => !bad.includes(x));
           return kept.length ? kept.join(" ") : note;
         };
-        sections.positions = sections.positions.map((p) => ({ ...p, note: noStrengthRisk(deDiv(clean(p.note), p.name), p.name), watch: tidyNumbers(digitsForWritten(plainScrub(p.watch, PORTFOLIO_PLAIN))) }));
+        sections.positions = sections.positions.map((p) => ({ ...p, note: noStrengthRisk(deDiv(clean(p.note), p.name), p.name), watch: stripStrayEst(fixProperCase(tidyNumbers(digitsForWritten(plainScrub(p.watch, PORTFOLIO_PLAIN))))) }));
         sections.ideas = (sections.ideas ?? []).map(clean);
         // a weekend-dated item is no event (round 4: "Copilot earnings preview Sep 27", a Sunday), nor is a
         // deliveries date that is not the estimate ("Tesla delivery numbers Sep 28"; the report is Oct 2)

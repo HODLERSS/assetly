@@ -4,7 +4,7 @@
 // Pass 2 (background, EdgeRuntime.waitUntil): full transcript/filing pull, then a
 //   richer regeneration that silently upgrades the card. The hourly cron owns it after.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { ensureHistory, refreshDividends, windowReturns } from "../_shared/history.ts";
+import { ensureHistory, hiLo, refreshDividends, windowReturns } from "../_shared/history.ts";
 import { adviceHits, aliasesFor, cardCopyHits, unsupportedCauses, dayMoveMismatches, EVIDENCE_LAW, fixArticles, isEarningsCallTitle, levelMismatches, type LiveFact, pctText, usableNews } from "../_shared/intel.ts";
 import { dayTag, marketOf } from "../_shared/calendar.ts";
 
@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
     const news = (newsRaw ?? []).filter((n) => usableNews(n, aka)).slice(0, deep ? 12 : 8);
     const px = quote?.price === null || quote?.price === undefined ? null : Number(quote.price);
     const chg = quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct);
-    const facts: LiveFact[] = [{ names: aka, pct: chg, price: px }];
+    const facts: LiveFact[] = [{ names: aka, pct: chg, price: px, ...(await hiLo(admin, symbol, 30, px).catch(() => ({ high: null, low: null }))) }];
     const perf = { d30: pctText(wr.pct[30] ?? null), y1: pctText(wr.pct[365] ?? null), y2: pctText(wr.pct[730] ?? null) };
     // a conference talk is not an earnings call
     const latestTr = (tr ?? []).find((t) => isEarningsCallTitle(t.title));

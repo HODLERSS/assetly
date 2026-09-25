@@ -20,7 +20,7 @@ import {
   curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, plainScrub, PORTFOLIO_PLAIN, wrongDeliveriesDates,
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
-  spanOfMonth, holdingRankClaims, holdingRankPremise, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
+  periodReturnMismatches, spanOfMonth, holdingRankClaims, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -213,7 +213,9 @@ Deno.serve(async (req) => {
   const held = book.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash" && r.kind !== "debt");
   const assetsUsd = book.filter((r) => r.kind !== "debt").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
   const weight = (v: number) => { const w = v / (assetsUsd || 1) * 100; return w > 0 && w < 0.05 ? "under 0.1%" : `${w.toFixed(1)}%`; };
-  const windows = [7, 30, 90];
+  // round 7 newcomer: "1-year return isn't loaded" for long-listed names; 1Y and YTD are windows too
+  const windows = [7, 30, 90, 365, YTD];
+  const winLabel = (d: number) => d === 7 ? "1W" : d === 30 ? "1M" : d === 90 ? "3M" : d === 365 ? "1Y" : "YTD";
   // each window is judged in the holding's own sessions (a Korean share by KRX closes, crypto by the day)
   // the per-holding reads run together (round 5 latency: they ran one after another before the model call)
   const heldSyms = held.map((r) => r.symbol);
@@ -256,7 +258,7 @@ Deno.serve(async (req) => {
 
   const stats: string[] = [];
   let totNow = 0;
-  const moved: Record<number, { then: number; now: number; missing: string[] }> = { 7: { then: 0, now: 0, missing: [] }, 30: { then: 0, now: 0, missing: [] }, 90: { then: 0, now: 0, missing: [] } };
+  const moved: Record<number, { then: number; now: number; missing: string[] }> = { 7: { then: 0, now: 0, missing: [] }, 30: { then: 0, now: 0, missing: [] }, 90: { then: 0, now: 0, missing: [] }, 365: { then: 0, now: 0, missing: [] }, [YTD]: { then: 0, now: 0, missing: [] } };
   const posFacts: PosFact[] = [];
   for (const r of book) {
     const valUsd = usd(Number(r.value ?? 0), r.currency);
@@ -280,8 +282,8 @@ Deno.serve(async (req) => {
     const p = perf.get(r.symbol);
     for (const d of windows) {
       const pct = p?.pct[d] ?? null;
-      const label = d === 7 ? "1W" : d === 30 ? "1M" : "3M";
-      if (pct === null) { moved[d].missing.push(nameOf(r)); if (d !== 90) bits.push(`${label} ${NO_HISTORY}`); continue; }
+      const label = winLabel(d);
+      if (pct === null) { moved[d].missing.push(nameOf(r)); if (d === 7 || d === 30) bits.push(`${label} ${NO_HISTORY}`); continue; }
       const then = valUsd / (1 + pct / 100);
       moved[d].then += then; moved[d].now += valUsd;
       bits.push(`${label} ${pctText(pct)} (${signedUsd(valUsd - then)})`);
@@ -302,7 +304,7 @@ Deno.serve(async (req) => {
   const bookDayPct = totNow - bookDayUsd > 0 ? bookDayUsd / (totNow - bookDayUsd) * 100 : 0;
   const totalLines = windows.map((d) => {
     const m = moved[d];
-    const label = d === 7 ? "1W" : d === 30 ? "1M" : "3M";
+    const label = winLabel(d);
     // a "portfolio" move that leaves out a fifth of the invested money is not the portfolio's move
     if (!m.then || m.now < investedUsd * 0.8) return `${label}: ${NO_HISTORY}${m.missing.length ? ` (missing: ${m.missing.slice(0, 5).join(", ")})` : ""}`;
     const delta = m.now - m.then;
@@ -470,7 +472,7 @@ User's portfolio (deterministic; the ONLY source of numbers). For each holding: 
 ${stats.join("\n")}
 Portfolio total: ${money(totNow)} · TODAY (this session only${closedToday.length ? `; excludes ${closedToday.join(", ")}, whose market is closed today` : ""}): ${signedUsd(bookDayUsd)} (${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%) · longer windows (NEVER "today"): ${totalLines}
 Window figures that read "${NO_HISTORY}" have no data: say so plainly for that window; never reuse another window's number in its place.
-DIVIDENDS per holding (the ONLY dividend figures you may state, each for its own holding; an estimate is labelled "(est)"):
+DIVIDENDS per holding (the ONLY dividend figures you may state, each for its own holding; an estimate is labelled "(est)" and every estimated date you write keeps that label; when the cash is paid after the ex-date is NOT in the data, so never state a payment lag; a coin such as bitcoin pays no dividend, say so plainly):
 ${divLines.map((x) => "- " + x.d.line).join("\n")}
 ${divPending ? `Portfolio dividend income: still loading for ${divPending} holding(s); say the figures are being fetched and to ask again in a minute, never state $0 or a partial total as the portfolio's income.` : `Portfolio dividend income ≈ ${money(divIncome)} a year (shares × last 12 months' payments per holding)${assetsUsd > 0 ? `, ${(divIncome / assetsUsd * 100).toFixed(2)}% of assets` : ""}.`}
 Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
@@ -508,7 +510,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     const again = withNoCallLine(defaultInfo(), question, "", "", true);
     return json({ ok: true, answer: plainDataWords(tidyNumbers(again)), followups: cleanFollowups([], ko ? ["내 포트폴리오는 얼마나 집중돼 있나요?", "내 포트폴리오의 가장 큰 위험은 뭔가요?"] : ["How concentrated is my portfolio?", "What are the biggest risks in my portfolio?"]), mentioned });
   }
-  const FAST = "gpt-oss-120b", BUDGET = decisionQ ? 15000 : 29000;
+  // round 7 newcomer: a 502 at 27.9s (Korean 1-year question). The whole non-decision answer now ships inside 26s, well
+  // under the gateway, with the code-built figures as the fallback
+  const FAST = "gpt-oss-120b", BUDGET = decisionQ ? 15000 : 26000;
   const left = () => BUDGET - (Date.now() - t0);
   const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3") => {
     if (timeoutMs < 1500) return null;
@@ -580,7 +584,11 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...dayMoveMismatches(answer, moveFacts, 0.15), ...wrongEarningsMonths(answer, askEsts), ...unsupportedCauses(answer, causeSource), ...wrongDividendAmounts(answer, divFacts),
     ...wrongDividendTiming(answer, divTiming, today),
     // round 6: "QQQ·VOO·NVDA는 여러 종목을 담고 있어" (NVDA is one company); "SoFi fell after an article noted its drop"
-    ...diversifiedClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], fund: r.kind === "etf" || r.kind === "fund" }))), ...circularCauses(answer)]);
+    ...diversifiedClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], fund: r.kind === "etf" || r.kind === "fund" }))), ...circularCauses(answer),
+    // round 7 newcomer: "+7.2% this month, on pace with your 8-12% annual target"; "입금은 보통 2-4주 뒤"; "crypto hedge"
+    ...targetPaceClaims(answer), ...paymentLagClaims(answer), ...promoCharacterisations(answer),
+    // round 7 newcomer: "339% this year" for Samsung (YTD +138%): a period claim is held to the holding's own window
+    ...periodReturnMismatches(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], windows: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> })))]);
   const pruned0 = answer;
   const pruned = pruned0.split("\n").map((l) => (dropLines.has(l.trim()) ? "" : [...dropLines].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
 
@@ -604,6 +612,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   }
   // a closed market's day move is labelled with its session, or dropped when it is called today's (round 6)
   guarded = labelClosedMoves(guarded, closedFacts) || guarded;
+  // every date we ESTIMATED (ex-dates, report dates) carries its label (round 7: "2026-09-28 (3일 뒤)" with no 추정)
+  guarded = labelEstimatedDates(guarded, [...held.map((r) => divRows.get(r.symbol)?.div_next_ex ?? ""), ...askEsts.map((e) => e.est ?? "")], ko);
   // round 7: "Apple is my biggest holding" (NVDA is) was repeated as fact: the premise is corrected in the first line
   { const fix = holdingRankPremise(question, rankFacts, ko); if (fix && !guarded.includes(fix)) guarded = `${fix}\n${guarded}`; }
   // the husk text is held to the same report dates as everything else (round 5: "NVDA … late October")
