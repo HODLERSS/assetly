@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  aliasesFor, booksKorean, brokenSentences, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
 } from "../_shared/intel.ts";
@@ -65,7 +65,9 @@ const FAST_MODEL = "gpt-oss-120b";
 // ---- trading calendar: ../_shared/calendar.ts (shared with insights-sync and ask) ----
 
 // Bumped whenever the brief's guards change enough that today's earlier rows should be rewritten (see "outdated").
-const GEN_VERSION = 6;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+// 7 (round 5): a live edition (today's current or previous clock edition) from an older version is REGENERATED
+// from current data; older editions are patched with the full sentence chain (repairDrops) and re-narrated.
+const GEN_VERSION = 7;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -286,16 +288,16 @@ function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: numbe
   return buildPortfolioParagraph(holdings, cashUsd, total, exp, modelText);
 }
 
-/** Repair every row of `briefDate` for one user written by an older GEN_VERSION (except `skipEdition`). */
+/** Patch in code every row of `briefDate` for one user written by an older GEN_VERSION, except the LIVE editions
+ *  (`live`: those are regenerated from current data, never patched). Returns the editions it patched, whose
+ *  script and audio were cleared, so the caller can have them re-narrated. */
 // deno-lint-ignore no-explicit-any
-async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, skipEdition: string | null): Promise<number> {
-  let q = admin.from("daily_briefs").select("id, edition, sections, gen_version").eq("user_id", uid).eq("brief_date", briefDate);
-  if (skipEdition) q = q.neq("edition", skipEdition);
-  const r = await q;
-  if (r.error) return 0;   // before migration 39
+async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[]): Promise<string[]> {
+  const r = await admin.from("daily_briefs").select("id, edition, sections, gen_version").eq("user_id", uid).eq("brief_date", briefDate);
+  if (r.error) return [];   // before migration 39
   const stale = ((r.data ?? []) as { id: number; edition: string; sections: unknown; gen_version: number | null }[])
-    .filter((o) => Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
-  if (!stale.length) return 0;
+    .filter((o) => !live.includes(o.edition) && Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
+  if (!stale.length) return [];
   const syms = rows.filter((x) => !x.symbol.startsWith("$") && x.kind !== "cash" && x.kind !== "debt").map((x) => x.symbol).slice(0, 12);
   const [fl, { data: tr }] = await Promise.all([
     earningsFilings(admin, syms),
@@ -311,7 +313,7 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
     const fixed = repairSections(o.sections as Sections, ests, briefDate);
     await admin.from("daily_briefs").update({ sections: fixed, gen_version: GEN_VERSION, audio_path: null, script: null }).eq("id", o.id).then(() => {}, () => {});
   }
-  return stale.length;
+  return stale.map((o) => o.edition);
 }
 
 /** Code-only repair of a stored brief (no model, no new facts): doubled phrases and glosses collapse, "directly"
@@ -325,7 +327,9 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   const dropWrong = (t: string) => {
     const x = text(t);
     const parts = splitSentences(x);
-    const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests), ...wrongDeliveriesDates(x, dlvFacts, today), ...parts.filter((p) => strengthAsRisk(p))]);
+    // round 5: the full sentence chain too (broken and verbless fragments, advice, valuation, promo, forecasts):
+    // "...Nasdaq futures (+0.7%), and one smaller position." survived a repair that ran only the calendar checks
+    const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests), ...wrongDeliveriesDates(x, dlvFacts, today), ...parts.filter((p) => strengthAsRisk(p)), ...repairDrops(x)]);
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
     return kept.length ? kept.join(" ") : x;
   };
@@ -338,7 +342,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     return { ...p, note: dropWrong(p.note), watch: earn ? canon[0] ?? "No confirmed date yet" : dated ? "No confirmed date yet" : text(p.watch) };
   });
   s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today).filter((c) => !weekendDated([c], today).length);
-  if (src.ideas) s.ideas = src.ideas.map(text);
+  if (src.ideas) s.ideas = src.ideas.map(text).filter((i) => !repairDrops(i).length);
   return s;
 }
 
@@ -468,10 +472,46 @@ Deno.serve(async (req) => {
   // code (deletion and relabelling only, a few hundred milliseconds each). Round 4 poweruser: a midday row with
   // gen_version null still carried "Copilot earnings preview Sep 27" hours after the fix, because the
   // regenerate-once path reaches only the one or two users a run has wall-clock time to rewrite.
-  const repairStart = Date.now();
-  for (const uid of userIds) {
-    if (Date.now() - repairStart > 30000) break;
-    await repairToday(admin, uid, byUser.get(uid) ?? [], briefDate, null).catch(() => null);
+  // Round 5: a LIVE edition (the one this run writes, the one before it, and the clock's own pair) is never
+  // patched: a patched morning kept "...Nasdaq futures (+0.7%), and one smaller position." and called live
+  // moves "yesterday". It is REGENERATED from current data by a forced self-invocation (so a morning rewritten
+  // after 9:30 ET takes the opening-read path); only older editions are patched, and those are re-narrated
+  // because the patch clears the script.
+  const isRegen = body.regen === true;   // a regeneration run never repairs or dispatches (no cascades)
+  const usClock: Edition = !marketState("US").tradingToday ? "weekend" : utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
+  const live: string[] = [...new Set([...liveEditions(edition), ...liveEditions(usClock)])];
+  const svcKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  let itokShared = Deno.env.get("INTERNAL_TOKEN") ?? "";
+  const handOff = async (fn: string, payload: Record<string, unknown>) => {
+    if (!itokShared) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itokShared = data ?? ""; }
+    const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/${fn}`, {
+      method: "POST", headers: { Authorization: `Bearer ${svcKey}`, apikey: svcKey, "Content-Type": "application/json", "x-internal-token": itokShared },
+      body: JSON.stringify(payload),
+    }).then((r) => r.text().catch(() => "")).catch(() => null);
+    try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(p); } catch { /* ignore */ }
+  };
+  const loopIds = new Set(userIds.slice(0, 10));
+  let dispatched = 0, renarrated = 0;
+  if (!isRegen) {
+    const repairStart = Date.now();
+    for (const uid of userIds) {
+      if (Date.now() - repairStart > 30000) break;
+      const patched = await repairToday(admin, uid, byUser.get(uid) ?? [], briefDate, live).catch(() => [] as string[]);
+      // the patch cleared the script: re-script and re-voice it now (narrate's sweep catches any beyond 8)
+      for (const ed of patched) if (!fixture && !noAudio && renarrated < 8) { renarrated++; await handOff("narrate", { user_id: uid, brief_date: briefDate, edition: ed }); }
+    }
+    if (!fixture) {
+      const staleLive = await admin.from("daily_briefs").select("user_id, edition, gen_version, generated_at").eq("brief_date", briefDate).in("edition", live).in("user_id", userIds);
+      for (const o of (staleLive.error ? [] : staleLive.data ?? []) as { user_id: string; edition: string; gen_version: number | null; generated_at: string | null }[]) {
+        if (dispatched >= 8) break;
+        if (Number(o.gen_version ?? 0) >= GEN_VERSION || !validEd(o.edition) || o.edition === "assessment") continue;
+        if (Date.now() - +new Date(String(o.generated_at ?? 0)) < 15 * 60000) continue;   // its narration may still be running
+        // the edition this run writes is regenerated inline for the users the loop reaches
+        if (o.edition === edition && loopIds.has(o.user_id)) continue;
+        dispatched++;
+        await handOff("daily-brief", { force: true, regen: true, user_id: o.user_id, edition: o.edition, ...(noAudio ? { noAudio: true } : {}) });
+      }
+    }
   }
   userIds = userIds.slice(0, 10);
 
@@ -489,7 +529,7 @@ Deno.serve(async (req) => {
       const total = assets.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
       if (total < 100) continue;
       // Today's OTHER editions written by an older version are repaired in code (the pass above normally got them)
-      await repairToday(admin, uid, rows, briefDate, edition).catch(() => null);
+      if (!isRegen) await repairToday(admin, uid, rows, briefDate, live).catch(() => null);
       let backfillOnly: Sections | null = null;
       if (!force) {
         const haveQ = (cols: string) => admin.from("daily_briefs").select(cols).eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
@@ -1585,13 +1625,16 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         // The notification IS the shortest brief: push the lede, which has already been through BLUF,
         // the number diet and the tier vocabulary. Fire-and-forget on the same waitUntil pattern, and
         // inert until the APNs credentials exist, so a missing Apple account never costs anyone a brief.
+        // A regeneration of an edition the reader was already notified about is not pushed again.
+        if (!isRegen) {
         const pushed = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/push-send`, {
           method: "POST", headers: { Authorization: `Bearer ${svcK}`, apikey: svcK, "Content-Type": "application/json", "x-internal-token": itok },
           body: JSON.stringify({ user_id: uid, edition, lede: sections.lede }),
         }).then((r) => r.text().catch(() => "")).catch(() => null);
         try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(pushed); } catch { /* ignore */ }
+        }
       }
     } catch (e) { errors.push(uid.slice(0, 8) + ": " + (e instanceof Error ? e.message : String(e))); }
   }
-  return json({ ok: true, users: userIds.length, wrote, briefDate, ...(superseded ? { superseded: true } : {}), errors: errors.slice(0, 5) });
+  return json({ ok: true, users: userIds.length, wrote, briefDate, ...(dispatched ? { regenerating: dispatched } : {}), ...(renarrated ? { renarrated } : {}), ...(superseded ? { superseded: true } : {}), errors: errors.slice(0, 5) });
 });

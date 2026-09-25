@@ -278,12 +278,21 @@ Deno.serve(async (req) => {
   const edition = typeof body.edition === "string" ? body.edition : null;
 
   // target rows: a specific brief, or (sweep mode) every real-user brief from the last 2 days missing audio
-  let q = admin.from("daily_briefs").select("id, user_id, brief_date, edition, sections, audio_path, script").is("audio_path", null)
-    .gte("brief_date", new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10));
-  if (uid) q = q.eq("user_id", uid);
-  if (briefDate) q = q.eq("brief_date", briefDate);
-  if (edition) q = q.eq("edition", edition);
-  const { data: rows } = await q.order("generated_at", { ascending: false }).limit(uid ? 3 : 6);
+  const since = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+  const target = (withScript: boolean | null) => {
+    let q = admin.from("daily_briefs").select("id, user_id, brief_date, edition, sections, audio_path, script").is("audio_path", null).gte("brief_date", since);
+    if (withScript === false) q = q.is("script", null);
+    if (uid) q = q.eq("user_id", uid);
+    if (briefDate) q = q.eq("brief_date", briefDate);
+    if (edition) q = q.eq("edition", edition);
+    return q.order("generated_at", { ascending: false }).limit(uid ? 3 : 6);
+  };
+  // Round 5: rows whose script a repair cleared go FIRST (a repaired morning sat with script NULL and no audio
+  // behind newer rows); then the rest of the rows missing audio, up to the same cap
+  const { data: first } = await target(false);
+  const { data: rest } = (first ?? []).length >= (uid ? 3 : 6) ? { data: [] } : await target(null);
+  const seen = new Set<unknown>();
+  const rows = [...(first ?? []), ...(rest ?? [])].filter((r) => !seen.has(r.id) && (seen.add(r.id), true)).slice(0, uid ? 3 : 6);
   if (!rows?.length) return json({ ok: true, narrated: 0, reason: "nothing missing audio" });
 
   let ek = Deno.env.get("ELEVEN_API_KEY") ?? "";
