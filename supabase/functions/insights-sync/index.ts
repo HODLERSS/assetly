@@ -6,9 +6,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } from "../_shared/calendar.ts";
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
-  historicalClaims, isEarningsCallTitle, noviceGloss, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
+  YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
 } from "../_shared/intel.ts";
-import { ensureHistory, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
+import { dividendRows, ensureHistory, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
 
@@ -20,7 +20,7 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-const WINDOWS: [string, number][] = [["d7", 7], ["d30", 30], ["d60", 60], ["y1", 365], ["y2", 730]];
+const WINDOWS: [string, number][] = [["d7", 7], ["d30", 30], ["d60", 60], ["ytd", YTD], ["y1", 365], ["y2", 730]];
 
 
 async function askMara(key: string, model: string, prompt: string, maxTokens = 10000, timeoutMs = 75000): Promise<string | null> {
@@ -277,11 +277,22 @@ Deno.serve(async (req) => {
   // written before a guard existed) is rewritten on the next lap, a few per lap, so no card has to wait for
   // its market's staleness clock (round 3: Samsung "45% undervaluation framing", KO "a clear catalyst").
   const failing = new Set<string>();
+  const periodCards = new Map<string, string[]>();
   for (const e of existing ?? []) {
     if (age.has(e.symbol)) continue;
     age.set(e.symbol, +new Date(e.generated_at));
     const lines = [...((e.bullets as string[] | null) ?? []), String((e.windows as { trend?: string } | null)?.trend ?? "")];
     if (lines.some((l) => adviceHits(l).length || cardCopyHits(l).length)) failing.add(e.symbol);
+    else if (lines.some((l) => /\d\s?%/.test(l) && /\b(?:year|YTD|month|week|1Y|2Y)\b/i.test(l))) periodCards.set(e.symbol, lines);
+  }
+  // served cards stating a period return are checked against the windows, a few per lap (round 5 poweruser:
+  // "Up 453% in a year" for SK hynix at +422%, Samsung's 1Y figure labelled "year to date")
+  if (!fixture && !only) {
+    for (const [sy, lines] of [...periodCards.entries()].slice(0, 6)) {
+      const kind = (await admin.from("symbols").select("kind").eq("symbol", sy).maybeSingle()).data?.kind;
+      const wr = await windowReturns(admin, sy, [7, 30, 60, YTD, 365, 730], Date.now(), kind === "crypto" ? null : sy.endsWith(".KS") || sy.endsWith(".KQ") ? "KR" : "US");
+      if (lines.some((l) => periodReturnMismatches(l, [{ names: [sy, ...aliasesFor(sy)], windows: wr.pct }]).length)) failing.add(sy);
+    }
   }
   const { data: pv } = await admin.from("portfolio").select("symbol, value").in("symbol", targets);
   const invested = new Map<string, number>();
@@ -370,7 +381,7 @@ Deno.serve(async (req) => {
         const chg = quote?.change_pct === null || quote?.change_pct === undefined ? "n/a" : (Number(quote.change_pct) >= 0 ? "+" : "") + Number(quote.change_pct).toFixed(1) + "%";
         const prompt = `TODAY is ${today}.
 Company: ${srow?.name ?? symbol} (${symbol}). Share price (ONE share) ${px}${quote?.as_of ? ` as of ${String(quote.as_of).slice(0, 16).replace("T", " ")} UTC` : ""}; day change ${chg} [${dayTag(marketOf(symbol, kindOf.get(symbol), cur))}].
-Price change by window (d7 = 1 week, d30 = 1 month, d60 = 2 months, y1 = 1 year, y2 = 2 years; "not enough price history yet" means there is no figure for that window, so never state one): ${JSON.stringify(perf)}.
+Price change by window (d7 = 1 week, d30 = 1 month, d60 = 2 months, ytd = year to date (since the prior year's last close; never call a 1-year figure "this year"), y1 = 1 year, y2 = 2 years; "not enough price history yet" means there is no figure for that window, so never state one): ${JSON.stringify(perf)}.
 Session: ${mkt ? sessNote(mkt) : "Crypto trades 24/7; day changes are rolling."}
 Earnings: ${earn ? earn.replace(/^[^:]+:\s*/, "") : "no earnings date known; never guess one"}.${dlv ? `\nDeliveries: the ${dlv.quarter} deliveries report is expected ~${dlv.est.slice(5).replace("-", "/")} (est), about the 2nd day after the quarter ends; it is NOT the earnings report.` : ""}
 Headlines from the last 7 days (${n30 ?? 0} stories in 30d):
@@ -542,14 +553,26 @@ ${VALUE_LAW}`;
       const pAge = Number.isFinite(freshestCall) ? freshestCall : null;
       const isNovice = ["novice", "intermediate"].includes(topLevel(toArr((invRow?.investor as Investor | null | undefined)?.level, ["novice"])));
       // a position value quoted as a share price is corrected from the same data block the model was given
-      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => fixArticles(plainScrub(fixPriceConfusions(deJust(isNovice ? noviceScrub(x) : x, pAge), posFacts), PORTFOLIO_PLAIN)));
+      // a holding's weight is its own ("30.1% Bitcoin weight" was Bitcoin + Ether, round 5)
+      const weightFacts = assets.filter((r) => !r.symbol.startsWith("$")).map((r) => ({ names: [nOf(r.symbol), ...aliasesFor(r.symbol, r.name)], weight: usd(r) / total * 100 }));
+      const cryptoShare = assets.filter((r) => r.kind === "crypto").reduce((a, r) => a + usd(r), 0) / total * 100;
+      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => fixWeights(fixArticles(plainScrub(fixPriceConfusions(deJust(isNovice ? noviceScrub(x) : x, pAge), posFacts), PORTFOLIO_PLAIN)), weightFacts, [{ label: /\bcrypto\b/i, value: cryptoShare }]));
       // The book may have changed while the model wrote (round 2: PEP and F were removed at 12:18 and a card
       // stamped 12:20 still led with "Pepsi near yearly lows"): a line about a symbol that has left the book is
       // dropped, and so is a line that contradicts the live numbers or passes a verdict.
       const { data: nowRows } = await admin.from("portfolio").select("symbol").eq("user_id", uid);
       const heldNow = new Set((nowRows ?? []).map((r) => String(r.symbol)));
       const gone = new Set(bookNames.map((b) => b.symbol).filter((sy) => !heldNow.has(sy)));
-      const keep = (x: string) => lineOk(x, liveFacts) && !mentionedSymbols(x, bookNames).some((sy) => gone.has(sy)) && !(prompt && historicalClaims(x, prompt, todayEt).length);
+      // Round 5: "VOO: $10,450 tax on reinvested dividends, no cash paid out" was an article's hypothetical $1M
+      // stake stated as the reader's own figure, and false (VOO pays cash quarterly). A dollar figure of $1,000+
+      // that is not one of the reader's own numbers must say where it comes from, and a payer never "pays no cash".
+      const divRowsP = await dividendRows(admin, bookNames.map((b) => b.symbol));
+      const payers = bookNames.filter((b) => Number(divRowsP.get(b.symbol)?.div_ttm ?? 0) > 0);
+      const ownDollars = [total, debt, ...assets.map((r) => usd(r)), ...assets.map((r) => {
+        const d = divRowsP.get(r.symbol); return d?.div_ttm ? Number(d.div_ttm) * Number(r.qty ?? 0) : 0;
+      })].filter((v) => v > 0);
+      const keep = (x: string) => lineOk(x, liveFacts) && !mentionedSymbols(x, bookNames).some((sy) => gone.has(sy)) && !(prompt && historicalClaims(x, prompt, todayEt).length)
+        && !unattributedDollars(x, ownDollars).length && !dividendContradictions(x, payers).length && !(prompt && unsupportedCauses(x, prompt).length);
       let bullets = scrubB(parsed.bullets).filter(keep).slice(0, 3);
       let news5 = parsed.news5 ? scrubB(parsed.news5).filter(keep) : parsed.news5;
       if (!fixture) {

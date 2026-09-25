@@ -5,7 +5,7 @@
 //   richer regeneration that silently upgrades the card. The hourly cron owns it after.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { ensureHistory, refreshDividends, windowReturns } from "../_shared/history.ts";
-import { adviceHits, aliasesFor, cardCopyHits, dayMoveMismatches, EVIDENCE_LAW, fixArticles, isEarningsCallTitle, levelMismatches, type LiveFact, pctText, usableNews } from "../_shared/intel.ts";
+import { adviceHits, aliasesFor, cardCopyHits, unsupportedCauses, dayMoveMismatches, EVIDENCE_LAW, fixArticles, isEarningsCallTitle, levelMismatches, type LiveFact, pctText, usableNews } from "../_shared/intel.ts";
 import { dayTag, marketOf } from "../_shared/calendar.ts";
 
 const CORS = {
@@ -132,11 +132,13 @@ Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes.$
   };
 
   // a line that contradicts the live quote ("VOO down 0.6%" at +0.45%) or passes a verdict is not stored
-  const okLine = (l: string, facts: LiveFact[]) => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length && !cardCopyHits(l).length;
-  const writeGlance = async (content: string | null, facts: LiveFact[] = []) => {
+  // ...nor a cause no headline gives ("profit-taking not thesis break" on a KO strip card, round 5)
+  const okLine = (l: string, facts: LiveFact[], src = "") => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length && !cardCopyHits(l).length
+    && !(src && unsupportedCauses(l, src).length);
+  const writeGlance = async (content: string | null, facts: LiveFact[] = [], src = "") => {
     const parsed = content ? parseGlance(content) : null;
     if (!parsed) return false;
-    const bullets = parsed.bullets.map(fixArticles).filter((b) => okLine(b, facts));
+    const bullets = parsed.bullets.map(fixArticles).filter((b) => okLine(b, facts, src));
     if (bullets.length < 2) return false;
     const windows = parsed.windows.trend && !okLine(parsed.windows.trend, facts) ? {} : parsed.windows;
     const { error: e } = await admin.from("insights").insert({
@@ -151,13 +153,15 @@ Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes.$
   let content: string | null;
   if (fixture) content = JSON.stringify(body.canned ?? { bullets: ["fixture call verdict with date", "fixture biggest headline take"], trend: "fixture two-year trajectory in one line" });
   else content = await askModel(key, g1.prompt, 5000);
-  const wrote = await writeGlance(content, g1.facts);
+  const wrote = await writeGlance(content, g1.facts, g1.prompt);
   if (!wrote && !fixture) {
     // one immediate retry on a transient model failure (or a take that contradicted the quote) keeps the promise to the UI
     const retry = await askModel(key, g1.prompt, 5000);
-    if (!(await writeGlance(retry, g1.facts))) return json({ ok: false, error: "unparseable" }, 502);
+    // a take the guards rejected (or a model hiccup) is not a server error: 200 with ok:false, and the client retries
+    // after the add (round 5: four 502s in the console during a newcomer's adds)
+    if (!(await writeGlance(retry, g1.facts, g1.prompt))) return json({ ok: false, error: "no take yet" });
   } else if (!wrote) {
-    return json({ ok: false, error: "unparseable" }, 502);
+    return json({ ok: false, error: "no take yet" });
   }
 
   // ---- pass 2: background enrichment (transcript + filings), never blocks the card ----
@@ -168,7 +172,7 @@ Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes.$
         const g2 = await gather(true);
         if (g2.hadTranscript || g2.newsCount > g1.newsCount) {
           const richer = await askModel(key, g2.prompt, 8000);
-          await writeGlance(richer, g2.facts);
+          await writeGlance(richer, g2.facts, g2.prompt);
         }
       } catch { /* the hourly lap covers it */ }
     })();

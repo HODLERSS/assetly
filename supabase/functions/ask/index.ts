@@ -10,7 +10,7 @@
 //  2. EVERY NUMBER CARRIES ITS LABEL. Share price vs position value, the session a day move belongs to,
 //     the currency, and "not enough price history yet" instead of a window that silently reused a shorter one.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { dayTag, marketOf } from "../_shared/calendar.ts";
+import { dayTag, marketOf, marketState } from "../_shared/calendar.ts";
 import { dividendLine, dividendRows, ensureHistory, refreshDividends, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
@@ -18,7 +18,7 @@ import {
   adviceHits, aliasesFor, booksKorean, chipInLanguage, cleanFollowups, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, isEarningsCallTitle, questionIsKorean,
   isTradeQuestion, NO_HISTORY, pctText, priceConfusions, stripAdvice, usableNews, withNoCallLine, wrongLanguage, type PosFact,
   curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, plainScrub, PORTFOLIO_PLAIN, wrongDeliveriesDates,
-  dayMoveMismatches, earningsEstimate, type LiveFact, spanOfMonth, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
+  dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, spanOfMonth, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -275,7 +275,11 @@ Deno.serve(async (req) => {
   }
   const investedUsd = held.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
   // the portfolio's move TODAY, stated on its own line: a Korean answer called the 1-week +2.6% "오늘" (round 4)
-  const bookDayUsd = held.reduce((a, r) => r.change_pct === null ? a : a + usd(Number(r.value ?? 0), r.currency) * (Number(r.change_pct) / 100) / (1 + Number(r.change_pct) / 100), 0);
+  // today = the sessions trading TODAY (and crypto); a market closed today keeps its last session's move out of
+  // the total (round 5: Samsung's Wednesday move was counted in Friday's "today" during KRX's Chuseok break)
+  const tradesToday = (r: (typeof held)[number]) => { const mk = marketOf(r.symbol, r.kind, r.currency); return mk === null || marketState(mk).tradingToday; };
+  const closedToday = held.filter((r) => !tradesToday(r)).map((r) => nameOf(r));
+  const bookDayUsd = held.filter(tradesToday).reduce((a, r) => r.change_pct === null ? a : a + usd(Number(r.value ?? 0), r.currency) * (Number(r.change_pct) / 100) / (1 + Number(r.change_pct) / 100), 0);
   const bookDayPct = totNow - bookDayUsd > 0 ? bookDayUsd / (totNow - bookDayUsd) * 100 : 0;
   const totalLines = windows.map((d) => {
     const m = moved[d];
@@ -313,7 +317,7 @@ Deno.serve(async (req) => {
       // judged again at read time: rows stored before the ingest gate still hold option chains and off-topic stories
       const nn = (dn ?? []).filter((x) => x.symbol === s && usableNews(x, aka)).slice(0, 2).map((x) => `"${String(x.title).slice(0, 90)}" [${x.source} ${String(x.published_at).slice(5, 10)}]`);
       const dlv = deliveriesEstimate(s, today);
-      const bits = [...(earn ? [earn.replace(/^[^:]+:\s*/, "")] : ["no earnings date on file"]),
+      const bits = [...(earn ? [earn.replace(/^[^:]+:\s*/, "")] : ["no earnings date known"]),
         // a deliveries report is not earnings (round 3: "Q3 deliveries due late October"; Tesla's came Oct 2)
         ...(dlv ? [`${dlv.quarter} deliveries report expected ~${dlv.est.slice(5).replace("-", "/")} (est; about the 2nd day after the quarter ends, separate from earnings)`] : []),
         ...talks, ...(ff.length ? ["filings " + ff.join(", ")] : []), ...nn];
@@ -362,7 +366,7 @@ Deno.serve(async (req) => {
   const ko = questionIsKorean(question);
   // today's move per holding and for the portfolio, for the number check (±0.15 point, sign)
   const moveFacts: LiveFact[] = [
-    ...held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], pct: r.change_pct === null ? null : Number(r.change_pct) })),
+    ...held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], pct: r.change_pct === null || !tradesToday(r) ? null : Number(r.change_pct) })),
     { names: ["portfolio", "your holdings", "your book", "포트폴리오", "전체 자산", "총자산", "자산"], pct: bookDayPct },
   ];
   const causeSource = `${digest}\n${context}`;
@@ -402,7 +406,7 @@ Deno.serve(async (req) => {
 ${ccyLine}
 User's portfolio (deterministic; the ONLY source of numbers). For each holding: "share price" is the price of ONE share; "position value" is what the user's whole holding is worth. They are different numbers: a question about the stock's price or close gets the SHARE PRICE, never the position value. Each "day" figure is tagged with the session it belongs to: a LIVE session is today's move so far, a "past (not today)" session is named by its day, and a live move is never "yesterday".
 ${stats.join("\n")}
-Portfolio total: ${money(totNow)} · TODAY (this session only): ${signedUsd(bookDayUsd)} (${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%) · longer windows (NEVER "today"): ${totalLines}
+Portfolio total: ${money(totNow)} · TODAY (this session only${closedToday.length ? `; excludes ${closedToday.join(", ")}, whose market is closed today` : ""}): ${signedUsd(bookDayUsd)} (${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%) · longer windows (NEVER "today"): ${totalLines}
 Window figures that read "${NO_HISTORY}" have no data: say so plainly for that window; never reuse another window's number in its place.
 DIVIDENDS per holding (the ONLY dividend figures you may state, each for its own holding; an estimate is labelled "(est)"):
 ${divLines.map((x) => "- " + x.d.line).join("\n")}
@@ -506,7 +510,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       : `• Today your portfolio is ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}% (${signedUsd(bookDayUsd)}).`;
     guarded = tradeQ || pickQ ? defaultInfo() : [day, defaultInfo().split("\n")[0]].join("\n");
   }
-  answer = tidyNumbers(withNoCallLine(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), question, lastA, turns.length ? turns[turns.length - 1].q : ""));
+  // "on file" is pipeline language (round 5: "BTC: no dividend data on file")
+  answer = plainDataWords(tidyNumbers(withNoCallLine(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), question, lastA, turns.length ? turns[turns.length - 1].q : "")));
   answer = trimAnswer(answer, cap + 10);
   const focus = (mentioned.length ? mentioned : held.slice(0, 1).map((r) => r.symbol)).map((s) => nameOf(held.find((h) => h.symbol === s)!));
   const fallbacks = ko ? [
