@@ -38,7 +38,10 @@
   bottom: var(--as-kb-inset, 0px); padding: 6px 16px; background: var(--as-surface); border-top: 1px solid var(--as-rule); }
 /* an empty optional date reads "No date", not WebKit's grey today that looked filled in */
 .date-wrap { position: relative; display: block; }
-.date-wrap input { width: 100%; box-sizing: border-box; }
+/* WebKit gives a date input an intrinsic width: without these it ran past the card edge */
+.date-wrap input { display: block; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; text-align: left;
+  color: var(--as-ink); min-height: 3.1em; }   /* iOS tints an unstyled date blue and sets it shorter than a text field */
+.date-wrap input::-webkit-date-and-time-value { text-align: left; }
 .date-wrap[data-empty] input::-webkit-datetime-edit { color: transparent; }
 .date-wrap[data-empty] input:focus::-webkit-datetime-edit { color: inherit; }
 .date-empty { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--as-muted); pointer-events: none; }
