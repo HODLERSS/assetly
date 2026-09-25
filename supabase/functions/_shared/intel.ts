@@ -770,7 +770,11 @@ export const normalizeBullets = (t: string): string => String(t ?? "").replace(/
   // a fact table joined by semicolons in one bullet ("NVDA $224, 19.1%; AAPL $336, 13.6%; ...", round 4)
   .split("\n").map((line) => {
     const parts = line.replace(/^\s*•\s*/, "").split(/;\s+/);
-    return parts.length >= 3 && parts.every((p) => /^\**[A-Z0-9][A-Za-z0-9.&'-]{0,20}\b/.test(p.trim())) ? parts.map((p) => "• " + p.trim().replace(/[.;]$/, "") + ".").join("\n") : line;
+    // round 6: any run of 3+ short clauses ("BTC down 0.9% (largest 25% weight); cash stable $18.5k; SK hynix up
+    // 1.2%; ...") is a table, whatever case each clause starts with
+    const short = parts.every((p) => p.trim().split(/\s+/).length <= 14);
+    const upper = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
+    return parts.length >= 3 && short ? parts.map((p) => "• " + upper(p.trim().replace(/[.;]$/, "")) + ".").join("\n") : line;
   }).join("\n").trim();
 
 const DELIVERIES_REPORTERS = new Set(["TSLA", "RIVN", "LCID", "NIO", "XPEV", "LI", "POLE"]);
@@ -1330,4 +1334,131 @@ export function liveEditions(edition: ClockEdition): ClockEdition[] {
     case "weekend": return ["weekend"];
     default: return [];
   }
+}
+
+/** Holding themes (moved here from daily-brief so Ask's code-built answer can state the theme mix). */
+export const THEMES: Record<string, string> = {
+  NVDA: "AI semiconductors", AMD: "AI semiconductors", ARM: "AI semiconductors", INTC: "AI semiconductors", AVGO: "AI semiconductors", TSM: "AI semiconductors", MU: "AI semiconductors", QCOM: "AI semiconductors", MRVL: "AI semiconductors",
+  "000660.KS": "AI semiconductors", "005930.KS": "AI semiconductors", "005935.KS": "AI semiconductors",
+  SMCI: "AI infrastructure", DELL: "AI infrastructure", VRT: "AI infrastructure", ANET: "AI infrastructure", IREN: "AI infrastructure", CIFR: "AI infrastructure", WULF: "AI infrastructure", APLD: "AI infrastructure", NBIS: "AI infrastructure", CRWV: "AI infrastructure",
+  MARA: "crypto beta", MSTR: "crypto beta", COIN: "crypto beta", RIOT: "crypto beta", CLSK: "crypto beta", HOOD: "crypto beta",
+  BTC: "crypto", ETH: "crypto", SOL: "crypto", "BTC-USD": "crypto", "ETH-USD": "crypto", "SOL-USD": "crypto",
+  MSFT: "mega-cap platforms", META: "mega-cap platforms", AAPL: "mega-cap platforms", GOOGL: "mega-cap platforms", GOOG: "mega-cap platforms", AMZN: "mega-cap platforms", NFLX: "mega-cap platforms",
+  TSLA: "EV and autos", RIVN: "EV and autos", "005380.KS": "EV and autos", "000270.KS": "EV and autos",
+  RDDT: "consumer internet", SNAP: "consumer internet", PINS: "consumer internet", UBER: "consumer internet", SPOT: "consumer internet", DUOL: "consumer internet", "035420.KS": "consumer internet", "035720.KS": "consumer internet",
+  PLTR: "software", CRM: "software", NOW: "software", ORCL: "software", SNOW: "software", FIG: "software", CRWD: "software", ADBE: "software",
+  JPM: "financials", BAC: "financials", GS: "financials", COF: "financials", V: "financials", MA: "financials", "024110.KS": "financials", "105560.KS": "financials",
+  "BRK.B": "diversified conglomerate", "BRK-B": "diversified conglomerate",
+  JNJ: "healthcare", UNH: "healthcare", LLY: "healthcare", PFE: "healthcare", "068270.KS": "healthcare", "207940.KS": "healthcare",
+  XOM: "energy", CVX: "energy", "373220.KS": "batteries", "006400.KS": "batteries", "003690.KS": "consumer staples", KO: "consumer staples", PG: "consumer staples", COST: "consumer staples", WMT: "consumer staples",
+  "012450.KS": "defense", LMT: "defense", RTX: "defense", "042660.KS": "shipbuilding", "009540.KS": "shipbuilding", "329180.KS": "shipbuilding",
+  SPY: "broad US index", VOO: "broad US index", VTI: "broad US index", IVV: "broad US index", FXAIX: "broad US index", QQQ: "Nasdaq 100 index", QQQM: "Nasdaq 100 index",
+  VXUS: "international index", BND: "bonds", TLT: "bonds", AGG: "bonds", GLD: "gold", IAU: "gold", SCHD: "dividend equity", VYM: "dividend equity", JEPI: "income equity",
+};
+export const themeOf = (sym: string, kind: string | null): string => THEMES[sym] ?? (kind === "crypto" || /-USD$/.test(sym) ? "crypto" : kind === "etf" || kind === "fund" ? "funds" : "other");
+const THEME_KO: Record<string, string> = {
+  "AI semiconductors": "AI 반도체", "AI infrastructure": "AI 인프라", "crypto beta": "암호화폐 관련주", crypto: "암호화폐", "mega-cap platforms": "대형 플랫폼",
+  "EV and autos": "전기차·자동차", "consumer internet": "인터넷 서비스", software: "소프트웨어", financials: "금융", "diversified conglomerate": "복합 기업",
+  healthcare: "헬스케어", energy: "에너지", batteries: "배터리", "consumer staples": "필수소비재", defense: "방산", shipbuilding: "조선",
+  "broad US index": "미국 지수", "Nasdaq 100 index": "나스닥100 지수", "international index": "해외 지수", bonds: "채권", gold: "금",
+  "dividend equity": "배당주", "income equity": "인컴 ETF", funds: "펀드", other: "기타",
+};
+
+/** Inputs for the answer built in code for a trade or pick question (round 6: it was 2-3 thin bullets). */
+export type HuskInput = {
+  holdings: { name: string; symbol: string; kind: string | null; usd: number }[];
+  cashUsd: number; assetsUsd: number; today: string;
+  reports: { name: string; est: string | null; range?: [string, string] }[];
+  dividends: { name: string; annualUsd: number; nextEx: string | null }[];
+};
+const addDaysYmd = (ymd: string, n: number) => new Date(Date.parse(ymd + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+const within = (ymd: string | null | undefined, today: string, days: number) => !!ymd && ymd >= today && ymd <= addDaysYmd(today, days);
+const usdText = (v: number) => `$${Math.round(v >= 1000 ? Math.round(v / 100) * 100 : v).toLocaleString("en-US")}`;
+const pct1 = (v: number, ko = false) => v > 0 && v < 0.05 ? (ko ? "0.1% 미만" : "under 0.1%") : `${v.toFixed(1)}%`;
+const NUM_WORD = ["", "one", "two", "three"];
+/** The code-built answer to a trade or pick question: 4-5 bullets specific to this portfolio, one per line.
+ *  Concentration, theme mix with crypto and cash, reports in the next 45 days (estimates), dividend payers and
+ *  income with ex-dates in the next 45 days, and what a buyer would weigh. Never names anything to buy. */
+export function buildHusk(inp: HuskInput, ko: boolean): string {
+  const A = inp.assetsUsd || 1;
+  const hs = [...inp.holdings].filter((h) => h.usd > 0).sort((a, b) => b.usd - a.usd);
+  const top = hs.slice(0, 3);
+  const topShare = top.reduce((a, h) => a + h.usd, 0) / A * 100;
+  const themes = new Map<string, number>();
+  for (const h of hs) { const t = themeOf(h.symbol, h.kind); themes.set(t, (themes.get(t) ?? 0) + h.usd); }
+  const crypto = hs.filter((h) => themeOf(h.symbol, h.kind) === "crypto").reduce((a, h) => a + h.usd, 0) / A * 100;
+  const cashPct = inp.cashUsd / A * 100;
+  // a theme under half a percent is noise in a mix line ("AI semiconductors 0.0%", round 6 mock)
+  const topThemes = [...themes.entries()].filter(([t, v]) => t !== "other" && v / A * 100 >= 0.5).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const cryptoListed = topThemes.some(([t]) => t === "crypto");
+  const reports = inp.reports.filter((r) => within(r.range ? r.range[0] : r.est, inp.today, 45) || within(r.est, inp.today, 45));
+  const payers = inp.dividends.filter((d) => d.annualUsd > 0).sort((a, b) => b.annualUsd - a.annualUsd);
+  const income = payers.reduce((a, d) => a + d.annualUsd, 0);
+  const soonEx = payers.filter((d) => within(d.nextEx, inp.today, 45));
+  const md = (ymd: string) => new Date(ymd + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const out: string[] = [];
+  if (ko) {
+    if (top.length) out.push(top.length === 1 ? `• 집중도: 보유 종목은 ${top[0].name} 하나로 자산의 ${topShare.toFixed(0)}%입니다.` : `• 집중도: 상위 ${top.length}개 종목(${top.map((h) => `${h.name} ${pct1(h.usd / A * 100, true)}`).join(", ")})이 자산의 ${topShare.toFixed(0)}%입니다.`);
+    out.push(`• 구성: ${[...topThemes.map(([t, v]) => `${THEME_KO[t] ?? t} ${pct1(v / A * 100, true)}`), ...(crypto > 0 && !cryptoListed ? [`암호화폐 ${pct1(crypto, true)}`] : []), `현금 ${pct1(cashPct, true)}(${usdText(inp.cashUsd)})`].join(", ")}입니다.`);
+    out.push(reports.length ? `• 45일 안에 예상되는 실적 발표(추정): ${reports.map((r) => `${r.name} ${r.range ? `${md(r.range[0])}~${md(r.range[1])}` : md(r.est!) + "경"}`).join(", ")}.` : "• 45일 안에 실적 발표가 예상되는 보유 종목은 없습니다.");
+    out.push(payers.length ? `• 배당: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` 외 ${payers.length - 4}개` : ""}에서 연 약 ${usdText(income)}이 나옵니다. ${soonEx.length ? `45일 안의 배당락(추정): ${soonEx.map((d) => `${d.name} ${md(d.nextEx!)}경`).join(", ")}.` : "45일 안에 배당락이 예상되는 종목은 없습니다."}` : "• 배당: 기록상 배당을 주는 보유 종목이 없습니다.");
+    out.push(`• 이런 결정에서 보통 따지는 것: 새 돈이 이미 ${topShare.toFixed(0)}%인 ${top.length === 1 ? top[0].name : "상위 종목"} 비중을 더 키우는지, ${crypto > 0 ? `포트폴리오가 암호화폐(현재 ${pct1(crypto)})에 얼마나 흔들리길 원하는지` : `현금(현재 ${pct1(cashPct)})을 얼마나 남겨둘지`}, 투자 기간과 세금.`);
+    return out.join("\n");
+  }
+  if (top.length) out.push(top.length === 1 ? `• Concentration: your only holding, ${top[0].name}, is ${topShare.toFixed(0)}% of the portfolio.` : `• Concentration: your ${NUM_WORD[top.length]} largest holdings (${top.map((h) => `${h.name} ${pct1(h.usd / A * 100)}`).join(", ")}) are ${topShare.toFixed(0)}% of the portfolio.`);
+  const mix = [...topThemes.map(([t, v]) => `${t} ${pct1(v / A * 100)}`), ...(crypto > 0 && !cryptoListed ? [`crypto ${pct1(crypto)}`] : [])];
+  out.push(`• Mix: ${mix.length ? mix.join(", ") + ", and " : ""}cash ${pct1(cashPct)} (${usdText(inp.cashUsd)}).`);
+  out.push(reports.length ? `• Reports expected in the next 45 days (estimates): ${reports.map((r) => `${r.name} ${r.range ? spanOfMonth(r.range) : "~" + md(r.est!)}`).join(", ")}.` : "• No holding has an earnings report expected in the next 45 days.");
+  out.push(payers.length ? `• Dividends: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` and ${payers.length - 4} more` : ""} pay about ${usdText(income)} a year together; ${soonEx.length ? `ex-dates expected in the next 45 days: ${soonEx.map((d) => `${d.name} ~${md(d.nextEx!)}`).join(", ")}.` : "none has an ex-date expected in the next 45 days."}` : "• Dividends: no holding pays a dividend on record.");
+  out.push(`• What a buyer usually weighs here: whether new money adds to the ${topShare.toFixed(0)}% already in ${top.length === 1 ? top[0].name : `the top ${NUM_WORD[top.length]}`}, ${crypto > 0 ? `how much of the portfolio should swing with crypto (${pct1(crypto)} now)` : `how much to keep in cash (${pct1(cashPct)} now)`}, and their time horizon and taxes.`);
+  return out.join("\n");
+}
+
+const MOVE_PCT = String.raw`(?:up|down|rose|fell|gained|lost|slipped|climbed|dropped|jumped|added|sank|edged (?:up|down)|[+\-−])\s?\d+(?:\.\d+)?%`;
+const SESSION_LABEL = /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:day|sday|nesday|rsday|urday)?\b|\b(?:last|previous|prior) (?:session|close|trading day)\b|\b(?:1W|1M|3M|YTD|week|month|year|quarter)\b|요일|지난 거래일|직전 거래일|주간|개월|1년|연초/i;
+/** A day move for a holding whose market is CLOSED today, stated without its session (round 6: during a KRX
+ *  holiday a pick answer listed "SK hynix up 1.2%; Samsung up 3.3%", Wednesday's moves, as if current). The
+ *  move gets its session label ("(Wed)"); a sentence that calls it today's is dropped. */
+export function labelClosedMoves(text: string, closed: { names: string[]; label: string }[]): string {
+  if (!closed.length) return String(text ?? "");
+  return String(text ?? "").split("\n").map((line) => {
+    const lead = (line.match(/^\s*(?:•\s*)?/) ?? [""])[0];
+    const kept = splitSentences(line.slice(lead.length)).map((sent) => {
+      let x = sent; const labelled = SESSION_LABEL.test(sent);
+      for (const c of closed) {
+        for (const n of c.names.filter(Boolean)) {
+          const nm = /[가-힣]/.test(n) ? esc(n) : `(?<![A-Za-z0-9])${esc(n)}(?![A-Za-z0-9])`;
+          const re = new RegExp(`(${nm}[^.;%\\n]{0,30}?${MOVE_PCT})(?!\\s*\\((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|월|화|수|목|금|토|일)(?:요일)?\\))`, /^[A-Z0-9.]{1,6}$/.test(n) ? "g" : "gi");
+          if (!re.test(x)) continue;
+          if (/\btoday\b|\bso far\b|\bthis session\b|오늘|장중/i.test(x)) return "";
+          if (labelled) continue;   // the sentence already names its session or window
+          x = x.replace(new RegExp(re.source, re.flags), (m) => `${m} (${c.label})`);
+        }
+      }
+      return x;
+    }).filter((x) => x.trim());
+    return kept.length ? lead + kept.join(" ") : "";
+  }).filter((l) => l.trim()).join("\n");
+}
+
+/** An answer to a pick or trade question that is mostly a list of day moves ("BTC down 0.9%; SK hynix up 1.2%;
+ *  Samsung up 3.3%; ..."): four or more holdings with a move is not an answer to "what's your top pick". */
+export function dayMoveDump(text: string, holdings: { names: string[] }[]): boolean {
+  const t = String(text ?? "");
+  const hit = holdings.filter((h) => h.names.filter(Boolean).some((n) => {
+    const nm = /[가-힣]/.test(n) ? esc(n) : `(?<![A-Za-z0-9])${esc(n)}(?![A-Za-z0-9])`;
+    return new RegExp(`${nm}[^.;\\n]{0,30}?${MOVE_PCT}`, /^[A-Z0-9.]{1,6}$/.test(n) ? "" : "i").test(t);
+  }));
+  return hit.length >= 4;
+}
+
+/** "Dividends are coming soon from AAPL, VOO" / "배당이 곧 들어오는 주식은 AAPL, VOO 등" when neither has an
+ *  ex-date expected in the next 45 days (round 6): a payout timing claim is checked against div_next_ex. */
+export function wrongDividendTiming(text: string, divs: { names: string[]; nextEx: string | null }[], today: string): string[] {
+  const SOON = /\b(?:dividends?|payouts?)\b[^.]{0,40}\b(?:soon|coming up|upcoming|imminent|about to|next few weeks|this month|shortly)\b|\b(?:soon|upcoming|imminent)\b[^.]{0,20}\b(?:dividends?|payouts?|ex-dividend|ex-dates?)\b|\bex-dividend soon\b|배당[^.]{0,20}(?:곧|임박|다가오|앞두)|(?:곧|임박|다가오는|앞둔)[^.]{0,20}배당/i;
+  return sentencesOf(text).filter((s) => {
+    if (!SOON.test(s)) return false;
+    const named = divs.filter((d) => d.names.some((n) => n && nameIn(s, n)));
+    return named.length > 0 && named.some((d) => !within(d.nextEx, today, 45));
+  });
 }
