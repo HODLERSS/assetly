@@ -3,7 +3,7 @@
 // Each helper exists because a model got a number, a date or a framing wrong in production; the
 // comment on each names the failure it closes.
 import { CLOSE_MIN, HOL, TZ, type Mkt, zonedEpoch, zonedParts } from "./calendar.ts";
-export { aliasesFor, centrality, decodeEntities, isJunkNews, newsRelevant, type NewsRow, publisherFor, titleKey, usableNews } from "./news_rules.ts";
+export { aliasesFor, centrality, decodeEntities, isJunkNews, newsRelevant, type NewsRow, publisherFor, staleRedated, titleKey, urlDate, usableNews } from "./news_rules.ts";
 
 // ---------------------------------------------------------------------------------------------
 // Returns over a window
@@ -245,11 +245,22 @@ export function valuationHits(text: string): string[] {
   const hits: string[] = [];
   for (const raw of sentencesOf(text)) {
     const s = bare(raw);
-    if (!s || ATTRIBUTED.test(s)) continue;
-    const call = /\b(?:looks?|looking|seems?|appears?|is|are|remains?|stays?|trad(?:es|ing)|priced|now)\s+(?:\w+\s+){0,2}?(?:cheap|inexpensive|expensive|pricey|undervalued|overvalued|under-valued|over-valued|a bargain|a steal|attractive(?:ly priced)?|good value|great value|compelling value|a no-brainer)\b/i.test(s)
+    // "undervalued" needs a NAMED source ("Morningstar says"): "another piece calls it 24% undervalued" is our voice
+    const valuationWord = /\b(?:undervalued|overvalued|under-?valuation|over-?valuation|fair value)\b/i.test(s);
+    const GENERIC = /^(?:The|This|That|It|Another|A|An|Some|One|Its|Their|Our|We|They|He|She|Analysts?|Critics|Investors|Bulls|Bears|Many|Most|Wall|Street)$/;
+    const namedSource = [...s.matchAll(/\b(?:according to ([A-Z][\w&.'-]+)|([A-Z][\w&.'-]+)(?: [A-Z][\w&.'-]+){0,3}(?:'s)? (?:says|said|calls|called|sees|rates|estimates|puts|pegs|argues|argued|analysts?|fair value|price target|target))\b/g)]
+      .some((m) => !GENERIC.test(m[1] ?? m[2] ?? ""));
+    const debate = /\bbulls?\b[\s\S]*\bbears?\b|\bbears?\b[\s\S]*\bbulls?\b/i.test(s);   // both sides of an argument is information
+    if (!s || (ATTRIBUTED.test(s) && (!valuationWord || namedSource || debate))) continue;
+    // round 4: "a hidden asset the market isn't fully pricing", "17x versus the S&P's 25x leaves cushion", "the
+    // long-term story still looks solid" (to "is it on sale?"): verdicts in the app's voice
+    const ownVoice = /\b(?:isn'?t|is not|aren'?t|are not|not) (?:yet )?(?:fully |really )?pric(?:ing|ed)(?: in)?\b|\bnot fully priced\b|\bhidden (?:asset|value|gem)\b|\bleaves? (?:a |some |plenty of |more )?(?:cushion|room(?: to run| for upside)?|upside)\b|\b(?:valuation|margin of safety) cushion\b|\bat a discount\b|\b(?:cheap(?:er)?|discounted) (?:versus|vs\.?|relative to|compared (?:to|with)) the (?:market|index|S&P)|\b(?:story|thesis|case) (?:still |remains |is still )?(?:looks |look )?(?:solid|intact|strong|compelling)\b|\bstill intact\b|\bthe run is real\b|\bsupports? the upside view\b|\bahead of most targets\b/i.test(s)
+      // a buy-the-dip nudge about the user's cash ("Holding cash lets you buy during a pullback", r3/r4)
+      || /\b(?:lets? you|allows? you to|so you can|ready to|leaves? you room to|gives? you room to)\s+(?:buy|add|pounce|act|scoop|step in)\b[^.]{0,50}\b(?:dips?|pullbacks?|drops?|sell-?offs?|lower prices?|weakness|falls?|declines?)\b/i.test(s);
+    const call = ownVoice || /\b(?:looks?|looking|seems?|appears?|is|are|remains?|stays?|trad(?:es|ing)|priced|now)\s+(?:\w+\s+){0,2}?(?:cheap|inexpensive|expensive|pricey|undervalued|overvalued|under-valued|over-valued|a bargain|a steal|attractive(?:ly priced)?|good value|great value|compelling value|a no-brainer)\b/i.test(s)
       || /\b(?:undervalued|overvalued|under-?valuation|over-?valuation|bargain|downside protection|(?:gives?|hands?|offers?|has) \w+(?:'s)? (?:a )?(?:clear|strong|obvious|real) (?:near-term )?catalyst|catalyst for (?:upside|gains|a rally|a re-?rating)|top pick|good entry|attractive entry|entry point|buying opportunity|attractive (?:price|valuation|level|levels)|on sale|cheap (?:entry|shares|stock)|sets? up well|screams? (?:buy|value))\b/i.test(s)
       || /(저평가|고평가|싸\s?보|싼 편|비싸\s?보|매수\s?기회|저가\s?매수|하방\s?경직|하방\s?보호)/.test(s);
-    if (call && !(OBJECTIVE.test(s) && !/\b(cheap|undervalued|overvalued|under-?valuation|over-?valuation|bargain|buying opportunity|downside protection)\b/i.test(s))) hits.push(raw);
+    if (ownVoice || call && !(OBJECTIVE.test(s) && !/\b(cheap|undervalued|overvalued|under-?valuation|over-?valuation|bargain|buying opportunity|downside protection)\b/i.test(s))) hits.push(raw);
   }
   return hits;
 }
@@ -327,7 +338,10 @@ export function isTradeQuestion(q: string): boolean {
     || /\bdo\s+(i|we)\s+(?:still\s+|just\s+|really\s+)?(buy|sell|add|trim|dump|exit|get out|get rid of|take profits?|swap|rotate|double down|average down|cut|load up|rebalance|ditch|unload)\b/i.test(t)
     || /\b(buy|sell|hold|add|trim|keep|dump)\s*(?:it\s+)?(or|\/)\s*(buy|sell|hold|add|trim|wait|keep|dump)\b/i.test(t)
     || /\b(is|it's)\s+(it|now|this)\s+(a\s+)?(good|right|bad|smart)\s+(time|moment|idea)\s+to\s+(buy|sell|add|trim)\b/i.test(t)
-    || /\btime to (buy|sell|take profits?|get out|trim|add|cash out)\b|\bbuy the dip\b/i.test(t)
+    || /\btime to (buy|sell|take profits?|get out|trim|add|cash out)\b|\bbuy(?:ing)? the dip\b/i.test(t)
+    // round 4: "META fell 3% today. Is it on sale now?" got "the long-term story still looks solid"
+    || /\bon sale\b|\b(?:a|the) bargain\b|\bcheap (?:now|here|enough)\b|\b(?:is|are) (?:it|they|\w+) cheap\b|\bgood entry\b|\bentry point\b|\bworth buying\b|\bundervalued now\b/i.test(t)
+    || /(싸졌|싸게|저가 매수|줍줍|바겐|저점 매수|물타기)/.test(t)
     || /\bhow much\b[^?]{0,40}\b(buy|sell|add|put|invest|allocate)\b/i.test(t)
     || new RegExp(`\\bwhich\\b[^?]{0,50}\\b(?:should|would|do|to)\\s+(?:i\\s+|you\\s+|we\\s+)?(?:\\w+\\s+)?(${TRADE_VERB})\\b`, "i").test(t)
     || /\bworth (buying|selling|adding|keeping|holding|owning)\b/i.test(t)
@@ -349,12 +363,15 @@ export function isTradeQuestion(q: string): boolean {
 
 // the model's own ways of saying the decision is theirs; round 3 found a second, canned opener stacked on top of
 // "The call is yours; here is what each side rests on." and "정리 여부는 본인 판단이지만"
-const NO_CALL = /\b(can'?t|cannot|won'?t|don'?t|isn'?t (?:mine|my place))\b[^.]{0,40}\b(tell you|say|make|pick|decide|call|recommend|rank)\b|\b(not|isn'?t) my call\b|\byour (?:own )?(?:call|decision|choice)\b|\b(?:call|decision|choice) (?:is|stays|remains) (?:yours|your own|up to you)\b|\bup to you\b|\bthat's your decision\b|제가 (정해|결정)|(말씀|정해|골라|추천해)\s?드릴 수 없|판단은[^.]{0,20}몫|결정은[^.]{0,20}몫|본인(?:의)? (?:판단|선택|결정)|직접 (?:결정|판단)|스스로 (?:결정|판단)/i;
+const NO_CALL = /\b(can'?t|cannot|won'?t|don'?t|isn'?t (?:mine|my place))\b[^.]{0,40}\b(tell you|say|make|pick|decide|call|recommend|rank)\b|\b(not|isn'?t) my call\b|\byour (?:own )?(?:call|decision|choice)\b|\b(?:call|decision|choice) (?:is|stays|remains) (?:yours|your own|up to you)\b|\bup to you\b|\bthat's your decision\b|\b(?:is|are|stays|remains) (?:yours|your own|your call)\b|\byours to (?:make|decide|call)\b|제가 (정해|결정)|정하실 몫|결정하실 몫|판단하실 몫|본인이 (?:정|결정|판단)|(말씀|정해|골라|추천해)\s?드릴 수 없|판단은[^.]{0,20}몫|결정은[^.]{0,20}몫|본인(?:의)? (?:판단|선택|결정)|직접 (?:결정|판단)|스스로 (?:결정|판단)/i;
 /** A "should I sell X" answer opens with ONE short, natural line that the decision is theirs, then gives
  *  the considerations. Added in code when the model left it out, and never twice in a row: round 2 found the
  *  same canned opener on six answers in one conversation, which read robotic. */
-export function withNoCallLine(answer: string, question: string, previousAnswer = ""): string {
-  if (!isTradeQuestion(question) || NO_CALL.test(answer) || NO_CALL.test(previousAnswer)) return answer;
+export function withNoCallLine(answer: string, question: string, previousAnswer = "", previousQuestion = ""): string {
+  // skipped only when the turn just before was ALSO a trade question and already said it (round 4: a trade
+  // question after an unrelated one lost its opener because an earlier answer had said "your call")
+  const saidJustNow = NO_CALL.test(previousAnswer) && (!previousQuestion || isTradeQuestion(previousQuestion));
+  if (!isTradeQuestion(question) || NO_CALL.test(answer) || saidJustNow) return answer;
   // the opener speaks the BODY's language, so the two can never mix (the body has already been held to the
   // question's language; this only matters when that failed)
   const ko = String(answer ?? "").trim() ? isKoreanText(answer) : questionIsKorean(question);
@@ -541,19 +558,22 @@ export const EVIDENCE_LAW = `EVIDENCE LAW: a figure belongs to whoever the headl
 // ---------------------------------------------------------------------------------------------
 /** What a take may say about a holding right now: its names, its session day move (%), its live share price. */
 export type LiveFact = { names: string[]; pct: number | null; price?: number | null };
+// Hangul names match as substrings (a particle attaches: "자산은", "Nvidia는"); Latin names end at a Latin letter
 const nameIn = (s: string, n: string) => !!n && (/^[A-Z0-9.]{1,6}$/.test(n)
   ? new RegExp(`(?:^|[^A-Za-z0-9])\\$?${esc(n)}(?=$|[^A-Za-z0-9])`).test(s)
-  : new RegExp(`(?:^|[^\\p{L}])${esc(n)}(?=$|[^\\p{L}])`, "iu").test(s));
+  : /[\uac00-\ud7a3]/.test(n) ? s.includes(n)
+  : new RegExp(`(?:^|[^A-Za-z])${esc(n)}(?=$|[^A-Za-z])`, "i").test(s));
 const firstIdx = (s: string, names: string[]) => Math.min(...names.map((n) => {
   if (!n) return Infinity;
-  const m = s.match(/^[A-Z0-9.]{1,6}$/.test(n) ? new RegExp(`(?:^|[^A-Za-z0-9])\\$?${esc(n)}(?=$|[^A-Za-z0-9])`) : new RegExp(`(?:^|[^\\p{L}])${esc(n)}(?=$|[^\\p{L}])`, "iu"));
+  if (/[\uac00-\ud7a3]/.test(n)) { const i = s.indexOf(n); return i < 0 ? Infinity : i; }
+  const m = s.match(/^[A-Z0-9.]{1,6}$/.test(n) ? new RegExp(`(?:^|[^A-Za-z0-9])\\$?${esc(n)}(?=$|[^A-Za-z0-9])`) : new RegExp(`(?:^|[^A-Za-z])${esc(n)}(?=$|[^A-Za-z])`, "i"));
   return m?.index ?? Infinity;
 }));
 const NEG_MOVE = /^(down|fell|falls|falling|lost|loses|losing|slipped|slips|slid|slides|dropped|drops|dropping|sank|sinks|shed|sheds|declined|declines|dipped|dips|edged down|edged lower|lower|off|tumbled|tumbles|plunged|plunges|drop|decline|fall|slide|loss|dip|slump|selloff|sell-off)$/i;
 const MOVE_FWD = /\b(up|down|rose|rises|rising|fell|falls|falling|gained|gains|gaining|lost|loses|losing|slipped|slips|slid|slides|dropped|drops|dropping|climbed|climbs|jumped|jumps|sank|sinks|added|adds|shed|sheds|rallied|rallies|declined|declines|dipped|dips|edged (?:up|down|higher|lower)|higher|lower|off|advanced|surged|surges|tumbled|tumbles|plunged|plunges|popped|pops)\s+(?:by\s+|about\s+|nearly\s+|roughly\s+|almost\s+|another\s+)?(\d+(?:\.\d+)?)\s?%/gi;
 const MOVE_REV = /\b(\d+(?:\.\d+)?)\s?%\s+(gain|rise|jump|pop|rally|climb|advance|drop|decline|fall|slide|loss|dip|slump|selloff|sell-off)\b/gi;
 // a figure qualified by a window, a fundamental or a previous session is not today's move
-const NOT_TODAY = /\b(weeks?|weekly|months?|monthly|years?|yearly|annual|annually|quarters?|quarterly|YTD|since|over the|past|\d+-day|two-month|decade|all-time|from (?:its|the) (?:high|peak|low)|(?:below|off) (?:its|the) (?:high|peak)|record|drawdown|target|upside|downside|expected|forecast|guidance|revenue|sales|earnings|margins?|growth|share of|of assets|weight|stake|yields?|dividends?|rates?|inflation|index|yesterday|last session|overnight|premarket|pre-market|after-hours|(?:mon|tues|wednes|thurs|fri|satur|sun)day's|in (?:mon|tues|wednes|thurs|fri)day)\b/i;
+const NOT_TODAY = /(?:1주|일주일|한 주|주간|한 달|1개월|\d+개월|분기|1년|연간|올해)|\b(weeks?|weekly|months?|monthly|years?|yearly|annual|annually|quarters?|quarterly|YTD|since|over the|past|\d+-day|two-month|decade|all-time|from (?:its|the) (?:high|peak|low)|(?:below|off) (?:its|the) (?:high|peak)|record|drawdown|target|upside|downside|expected|forecast|guidance|revenue|sales|earnings|margins?|growth|share of|of assets|weight|stake|yields?|dividends?|rates?|inflation|index|yesterday|last session|overnight|premarket|pre-market|after-hours|(?:mon|tues|wednes|thurs|fri|satur|sun)day's|in (?:mon|tues|wednes|thurs|fri)day)\b/i;
 /** Sentences that state a holding's move as today's with a figure that is not its live session move.
  *  Caught 2026-09-25 (round 2): a VOO card said "VOO down 0.6% on GOOG drag" while VOO was +0.45% and never
  *  traded below its prior close. A sentence that qualifies its figure (a window, a fundamental, yesterday)
@@ -566,6 +586,13 @@ export function dayMoveMismatches(text: string, facts: LiveFact[], tolPp = 0.35)
     const moves: { idx: number; val: number }[] = [];
     for (const m of s.matchAll(MOVE_FWD)) moves.push({ idx: m.index ?? 0, val: Number(m[2]) * (NEG_MOVE.test(m[1].split(/\s+/).pop()!) || /\bdown\b|\blower\b/i.test(m[1]) ? -1 : 1) });
     for (const m of s.matchAll(MOVE_REV)) moves.push({ idx: m.index ?? 0, val: Number(m[1]) * (NEG_MOVE.test(m[2]) ? -1 : 1) });
+    // a signed figure tied to "today" / "오늘" ("today +2.6%", "오늘 -0.4%", "오늘 2.6% 올랐") (round 4: the 1-week
+    // +2.6% labelled "오늘")
+    for (const m of s.matchAll(/(?:\btoday\b|오늘|금일)[^.%\d+−-]{0,16}([+−-]?)\s?(\d+(?:\.\d+)?)\s?%(\s?(?:하락|내렸|떨어|빠졌|down|lower))?/gi)) {
+      if (moves.some((x) => Math.abs(x.idx - (m.index ?? 0)) < 25)) continue;
+      const neg = m[1] === "-" || m[1] === "−" || !!m[3];
+      moves.push({ idx: m.index ?? 0, val: Number(m[2]) * (neg ? -1 : 1) });
+    }
     if (!moves.length) continue;
     for (const mv of moves) {
       // the holding the figure belongs to: the nearest one named before it, else the only one there is
@@ -697,7 +724,12 @@ export function curatedListHits(text: string, book: { symbol: string; names: str
 }
 
 /** "• A. • B. • C." on one line (the model returned bullets without newlines) becomes one bullet per line. */
-export const normalizeBullets = (t: string): string => String(t ?? "").replace(/[ \t]+•\s+/g, "\n• ").replace(/^\s*•\s*/, "• ").trim();
+export const normalizeBullets = (t: string): string => String(t ?? "").replace(/[ \t]+•\s+/g, "\n• ").replace(/^\s*•\s*/, "• ")
+  // a fact table joined by semicolons in one bullet ("NVDA $224, 19.1%; AAPL $336, 13.6%; ...", round 4)
+  .split("\n").map((line) => {
+    const parts = line.replace(/^\s*•\s*/, "").split(/;\s+/);
+    return parts.length >= 3 && parts.every((p) => /^\**[A-Z0-9][A-Za-z0-9.&'-]{0,20}\b/.test(p.trim())) ? parts.map((p) => "• " + p.trim().replace(/[.;]$/, "") + ".").join("\n") : line;
+  }).join("\n").trim();
 
 const DELIVERIES_REPORTERS = new Set(["TSLA", "RIVN", "LCID", "NIO", "XPEV", "LI", "POLE"]);
 /** Companies that publish a quarterly DELIVERIES / production report, separate from earnings: Tesla's comes out
@@ -768,7 +800,7 @@ export const CARD_PLAIN: [RegExp, string][] = [
   [/\btape (?:is |was )?bid\b/gi, "the stock is trading"], [/\bthe tape\b/gi, "trading"], [/\btape\b/gi, "trading"],
   [/\bbulls lean on\b/gi, "supporters point to"], [/\bbears lean on\b/gi, "skeptics point to"], [/\bbulls\b/gi, "optimists"], [/\bbears\b/gi, "skeptics"],
   [/\bpinned (?:near|at|around)\b/gi, "holding near"], [/\bTAM\b/g, "market size"], [/\bY1\b/g, "year one"], [/\bMorningstars\b/g, "Morningstar's"],
-  [/\bthe street keeps underweighting\b/gi, "analysts keep underrating"], [/\bthe street\b/gi, "analysts"], [/\bcapitulat(?:ing|ion)\b/gi, "giving up"],
+  [/\bthe street keeps underweighting\b/gi, "analysts keep underrating"], [/\bdouble-edged catalyst\b/gi, "event that could cut either way"], [/\boverhangs?\b/gi, "risk hanging over it"], [/\bthe street\b/gi, "analysts"], [/\bcapitulat(?:ing|ion)\b/gi, "giving up"],
 ];
 
 /** Lines a shared card must never carry: pipeline internals ("Two-year price history is unavailable", round 3
@@ -795,7 +827,8 @@ export function brokenSentences(text: string): string[] {
       || /\b(sustained|continued|further|ongoing|persistent|renewed|steady|heavy|deeper|more|less)\s+an?\s+/i.test(s)
       || /\$\d{1,3}(?:,\d{3})*(?:\.\d+)?[kKmMbB]?\s+(?!(?:vs|versus|to|and|or|from|plus|minus|over|against|in|of|per|at)\b)[a-z]+\s+\$\d/.test(s)
       || /\b(?:for|of|to|in|on) book\b/i.test(s)
-      || /\b(?:a|an|the)\s*[.!?]$/i.test(s);
+      || /\b(?:a|an|the)\s*[.!?]$/i.test(s)
+      || verblessList(raw).length > 0;
   });
 }
 /** Stack of articles and an article after a modifier, left by a gloss swapped into a sentence ("on sustained a
@@ -826,5 +859,99 @@ export function historicalClaims(text: string, sourceText: string, todayYmd: str
     if (years.some((y) => !src.includes(String(y)))) return true;
     const phrase = s.match(/\b(all-time (?:high|low)s?|record (?:high|low)s?|(?:highest|lowest|most|least|biggest|largest|worst|best|strongest|weakest|first) (?:level |close |week |month |quarter |year )?since)\b/i)?.[1];
     return !!phrase && !src.includes(phrase.toLowerCase().split(" ")[0] === "all-time" ? "all-time" : phrase.toLowerCase().includes("record") ? "record" : "since");
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Round 4 (2026-09-25): earnings months, verbless lists, spoken scripts, calendar labels
+// ---------------------------------------------------------------------------------------------
+const MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+/** A sentence that puts a holding's report in a month its estimate does not cover ("NVDA reports in December"
+ *  when the estimate is mid to late November, round 4). English month names and Korean "N월". */
+export function wrongEarningsMonths(text: string, ests: { names: string[]; est: string | null; range?: [string, string] }[]): string[] {
+  const bad: string[] = [];
+  for (const raw of sentencesOf(text)) {
+    if (!/\b(earnings|results|reports?|reporting|quarterly|print|call)\b|실적|어닝/i.test(raw)) continue;
+    const who = ests.find((e) => e.est && e.names.some((n) => n && nameIn(raw, n)));
+    if (!who || !who.est) continue;
+    const [lo, hi] = who.range ?? [who.est, who.est];
+    const allowed = new Set([Number(lo.slice(5, 7)), Number(hi.slice(5, 7))]);
+    const months = [
+      ...[...raw.toLowerCase().matchAll(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/g)].map((m) => MONTH_NAMES.indexOf(m[1]) + 1),
+      ...[...raw.matchAll(/(\d{1,2})월/g)].map((m) => Number(m[1])),
+    ].filter((m) => m >= 1 && m <= 12);
+    if (months.length && months.every((m) => !allowed.has(m))) bad.push(raw);
+  }
+  return bad;
+}
+
+const VERB_HINT = /\b(is|are|was|were|be|been|has|have|had|rose|fell|gained|lost|added|slipped|climbed|dropped|trades?|traded|sits?|sat|closed|opened|moved|leads?|led|holds?|held|shows?|showed|stands?|stood|ended|finished|jumped|sank|edged|dipped|rallied|slid|remains?|remained|hit|reached|makes?|made|means?|meant|drives?|drove|carries|carried|reports?|reported|expects?|expected|grew|grows|rises?|falls?|gets?|got|keeps?|kept|puts?|looks?|seems?|matters?|comes?|came|goes|went|owns?|pays?|paid|lifts?|lifted|weighs?|weighed|surged|tumbled|advanced|declined|eased|firmed|steadied)\b|\b\w+ed\b/i;
+/** A list of figures with no verb ("S&P 500 7,737.41 (+0.4%), Nasdaq futures 30,887.75 (+0.7%), and one smaller
+ *  position.", round 4 midday brief): a fragment, never a sentence. */
+export function verblessList(text: string): string[] {
+  return sentencesOf(text).filter((raw) => {
+    const s = bare(raw).replace(/\([^)]*\)/g, " ");
+    return (s.match(/,/g) ?? []).length >= 2 && (raw.match(/\d/g) ?? []).length >= 4 && !VERB_HINT.test(s);
+  });
+}
+
+/** Spoken-script sentences that must not be read aloud: a promise about returns or goals ("boosting future
+ *  returns", "should enhance long-term returns", "aligns with your goals"), a trade or valuation call, a
+ *  threshold on a day move ("if NVIDIA falls below zero point two percent"), a move read as a weight
+ *  ("Microsoft added three point seven percent weight" when it rose 3.7%), a broken sentence, or a
+ *  historical comparison the brief does not make. Round 4: the midday script said all of these. */
+export function scriptProblems(script: string, sectionsText: string, todayYmd: string): string[] {
+  const src = String(sectionsText ?? "");
+  const movePcts = new Set([...src.matchAll(/\b(?:up|down|rose|fell|gained|lost|slipped|climbed|jumped|dropped|added|shed|rallied|declined)\s+(?:by\s+)?(\d+(?:\.\d+)?)\s?%/gi)].map((m) => Number(m[1])));
+  const weightPcts = new Set([...src.matchAll(/(\d+(?:\.\d+)?)\s?%\s+(?:of (?:assets|the portfolio|your portfolio|the book|holdings)|weight|stake)/gi)].map((m) => Number(m[1])));
+  const numOf = (s: string) => [...s.matchAll(/(\d+(?:\.\d+)?)\s?(?:%|percent)/gi)].map((m) => Number(m[1]));
+  return String(script ?? "").replace(/<break[^>]*\/>/g, " ").split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean).filter((s) =>
+    /\b(?:boost(?:s|ing)?|enhanc(?:e|es|ing)|improv(?:e|es|ing)|lift(?:s|ing)?|rais(?:e|es|ing)|increas(?:e|es|ing)|supercharg\w*)\b[^.]{0,30}\b(?:future |long-term |your |its )?returns?\b|\baligns? with your (?:long-term )?goals\b|\b(?:should|will|would) (?:deliver|pay off|reward|enhance|boost)\b|\boutlook improves\b/i.test(s)
+    || adviceHits(s).length > 0 || valuationHits(s).length > 0
+    || /\b(?:falls?|drops?|slips?|dips?|rises?|climbs?)\s+(?:below|above|under|past)\s+(?:zero point \w+|0\.\d+|\d?\.\d+)\s?(?:%|percent)/i.test(s)
+    || (/\bweight\b|\bstake\b|\bof your (?:holdings|portfolio)\b/i.test(s) && /\badded\b|\bgained\b/i.test(s) && numOf(s).some((n) => movePcts.has(n) && !weightPcts.has(n)))
+    || brokenSentences(s).length > 0 || verblessList(s).length > 0
+    || historicalClaims(s, src, todayYmd).length > 0);
+}
+
+/** Calendar lines built from the computed estimates, never from the model's wording: "Microsoft earnings
+ *  expected ~Oct 28 (est)", "Nvidia earnings expected mid to late November (est)". Round 4: the midday brief
+ *  listed "Oct 28 earnings call MSFT", "Oct 29 earnings preview AAPL" and an invented "Oct 28 AI spend update
+ *  META" as facts. A model item about a holding's earnings is replaced by its estimate line; any other dated
+ *  item must share a content word with a dated line in the writers' sources, or it goes. */
+export function canonicalCalendar(items: string[], ests: { names: string[]; label: string; est: string | null; range?: [string, string] }[], sourceText: string, todayYmd: string): string[] {
+  const out: string[] = [];
+  const srcLines = String(sourceText ?? "").split(/\n+/);
+  const MONTHISH = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)(?:[a-z]*)$/;
+  const words = (x: string) => new Set((x.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !(MONTHISH.test(w) && MONTH_NAMES.some((m) => m.startsWith(w)) || w === "sept")));
+  for (const raw of items) {
+    const t = String(raw ?? "").trim();
+    if (!t) continue;
+    const who = ests.find((e) => e.names.some((n) => n && nameIn(t, n)));
+    if (who && /\b(earnings|results|reports?|reporting|quarterly|Q[1-4]|call|print|preview)\b/i.test(t)) {
+      if (!who.est) continue;
+      const line = who.range ? `${who.label} earnings expected ${spanOfMonth(who.range)} (est)`
+        : `${who.label} earnings expected ~${new Date(who.est + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} (est)`;
+      if (!out.includes(line)) out.push(line);
+      continue;
+    }
+    const ds = datesIn(t, todayYmd);
+    const mine = words(t);
+    for (const e of ests) for (const n of e.names) for (const w of words(n)) mine.delete(w);
+    const supported = !ds.length || srcLines.some((l) => datesIn(l, todayYmd).some((d) => ds.some((x) => Math.abs(dayDiff(d.ymd, x.ymd)) <= 1)) && [...mine].some((w) => l.toLowerCase().includes(w)));
+    if (supported && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+/** A move explained by profit-taking or by who "warned", with no headline saying so (round 3/4: "META's drop
+ *  is profit-taking, not a thesis break"; "트윌리오가 경고했고 투자자들이 이익을 확정"). A cause is a fact: it
+ *  needs a source. */
+export function unsupportedCauses(text: string, sourceText: string): string[] {
+  const src = String(sourceText ?? "").toLowerCase();
+  return sentencesOf(text).filter((s) => {
+    if (/\b(profit[- ]taking|taking profits|took profits|cashing out|locked? in gains|traders? (?:sold|cashing)|selling after a big (?:gain|run))\b|이익을?\s?(?:실현|확정)|차익\s?실현/i.test(s)) return !/profit|차익|이익 실현/.test(src);
+    const warned = s.match(/\b([A-Z][\w&.-]+)(?:'s)? (?:warned|warns|warning)\b/);
+    return !!warned && !src.includes(warned[1].toLowerCase());
   });
 }

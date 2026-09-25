@@ -164,6 +164,15 @@ Deno.serve(async (req) => {
   const byStored = new Map((stored ?? []).map((s) => [s.symbol, s]));
   for (const q of quotes.values()) {
     const st = byStored.get(q.symbol);
+    // Futures trade almost around the clock and settle at 5 PM ET: the last price before a UTC midnight is not
+    // their previous close, the exchange SETTLE is (round 4: Nasdaq futures showed +0.7% against a 7:59 PM ET
+    // price; against the settle they were +0.4%). Yahoo's chart meta carries the prior settle; use it.
+    if (q.symbol.endsWith("=F")) {
+      const prev = plausiblePrev(q.price, q.prev_close);
+      q.prev_close = prev;
+      q.change_pct = prev !== null ? ((q.price / prev) - 1) * 100 : null;
+      continue;
+    }
     if (st && st.as_of) {
       const rolled = q.as_of.slice(0, 10) > String(st.as_of).slice(0, 10);
       const derived = rolled ? Number(st.price) : (st.prev_close !== null ? Number(st.prev_close) : null);

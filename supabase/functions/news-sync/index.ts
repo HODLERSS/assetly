@@ -13,7 +13,7 @@
 //    (_shared/news_rules.ts usableNews: every function that feeds headlines to a model, and the News tab)
 //    and admit it on its lead exactly as ingest did.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { aliasesFor, centrality, decodeEntities, isJunkNews, newsRelevant, publisherFor, titleKey } from "../_shared/intel.ts";
+import { aliasesFor, centrality, decodeEntities, isJunkNews, newsRelevant, publisherFor, titleKey, urlDate } from "../_shared/intel.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
@@ -36,6 +36,10 @@ function parseRss(xml: string, symbol: string, source: string, symbolFeed = fals
     if (!title || !link) continue;
     let published: string | null = null;
     if (pub) { const d = new Date(pub); if (!isNaN(+d)) published = d.toISOString(); }
+    // a feed that re-dates an old story ("TSLA Stock Jumps 3% Ahead Of Q2 Report", July, shown as 4h old in
+    // round 4): the date in the article's own URL wins when it is more than a week earlier
+    const ud = urlDate(link);
+    if (ud && (!published || Date.parse(published) - Date.parse(ud + "T23:59:59Z") > 7 * 86400000)) published = ud + "T12:00:00.000Z";
     const [headline, publisher] = splitPublisher(title, source);
     items.push({ symbol, title: headline.slice(0, 500), url: link.slice(0, 1000), source: publisherFor(link, publisher), published_at: published, lead: (pick("description") ?? "").slice(0, 400), symbolFeed });
   }

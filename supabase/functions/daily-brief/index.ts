@@ -13,7 +13,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
   aliasesFor, booksKorean, brokenSentences, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
-  historicalClaims, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
+  canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
 } from "../_shared/intel.ts";
 import { windowReturns } from "../_shared/history.ts";
 import { userIdFrom } from "../_shared/auth.ts";
@@ -64,7 +64,7 @@ const FAST_MODEL = "gpt-oss-120b";
 // ---- trading calendar: ../_shared/calendar.ts (shared with insights-sync and ask) ----
 
 // Bumped whenever the brief's guards change enough that today's earlier rows should be rewritten (see "outdated").
-const GEN_VERSION = 3;
+const GEN_VERSION = 4;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -311,6 +311,33 @@ NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst no
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
 RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as \u20a9 (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.
 ${EVIDENCE_LAW}`;
+/** Code-only repair of a stored brief (no model, no new facts): doubled phrases and glosses collapse, "directly"
+ *  loses its unsupported intensity, articles and plain words are fixed, a sentence dating a holding's report
+ *  away from its estimate is deleted, and calendar / watch lines are rebuilt from the estimates. */
+function repairSections(src: Sections, ests: { names: string[]; label: string; est: string | null; range?: [string, string] }[], today: string): Sections {
+  // a collapsed appositive can leave a comma between a subject and its verb ("The market's fear gauge, fell 3.3%")
+  const unComma = (t: string) => t.replace(/(^|[.!?]\s+)([A-Z][^,.!?]{2,50}),\s+(fell|rose|jumped|slipped|climbed|dropped|gained|lost|added|edged|dipped|sank|rallied)\b/g, "$1$2 $3");
+  const text = (t: string) => fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(String(t ?? ""))))), PORTFOLIO_PLAIN));
+  const dropWrong = (t: string) => {
+    const x = text(t);
+    const parts = x.split(/(?<=[.!?])\s+/);
+    const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests)]);
+    const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
+    return kept.length ? kept.join(" ") : x;
+  };
+  const s: Sections = { ...src, lede: dropWrong(src.lede), overnight: dropWrong(src.overnight), desk_view: dropWrong(src.desk_view) };
+  if (src.horizon) s.horizon = dropWrong(src.horizon);
+  s.positions = (src.positions ?? []).map((p) => {
+    const canon = canonicalCalendar([p.watch], ests, "", today);
+    const earn = /\b(earnings|results|reports?|call|print|preview)\b/i.test(p.watch) && ests.some((e) => e.names.some((n) => n && String(p.watch).toLowerCase().includes(n.toLowerCase())));
+    const dated = datesIn(p.watch, today).length > 0;
+    return { ...p, note: dropWrong(p.note), watch: earn ? canon[0] ?? "No confirmed date yet" : dated ? "No confirmed date yet" : text(p.watch) };
+  });
+  s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today);
+  if (src.ideas) s.ideas = src.ideas.map(text);
+  return s;
+}
+
 function validSections(o: unknown): o is Sections {
   const s = o as Sections;
   return !!s && typeof s.lede === "string" && !!s.lede.trim() && typeof s.overnight === "string"
@@ -448,6 +475,32 @@ Deno.serve(async (req) => {
       const assets = rows.filter((r) => r.kind !== "debt");
       const total = assets.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
       if (total < 100) continue;
+      // Today's OTHER clock editions written by an older version are REPAIRED in code (never regenerated: a
+      // morning brief rewritten at 3 PM from afternoon data would be a different brief). Round 4: the morning
+      // still said "The market's fear gauge, the market's fear gauge" and "Nvidia around December 10" hours
+      // after the fix. Deletion and relabelling only; the row is marked current so this runs once.
+      {
+        const olds = await admin.from("daily_briefs").select("id, edition, sections, gen_version").eq("user_id", uid).eq("brief_date", briefDate)
+          .neq("edition", edition).neq("edition", "assessment").then((r) => (r.error ? [] : (r.data ?? [])), () => []) as { id: number; edition: string; sections: unknown; gen_version: number | null }[];
+        const stale = olds.filter((o) => Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
+        if (stale.length) {
+          const syms = rows.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash" && r.kind !== "debt").map((r) => r.symbol).slice(0, 12);
+          const [fl, { data: tr }] = await Promise.all([
+            earningsFilings(admin, syms),
+            admin.from("transcripts").select("symbol, title, published_at").in("symbol", syms).order("published_at", { ascending: false }).limit(60),
+          ]);
+          const ests = syms.map((sy) => {
+            const h = rows.find((r) => r.symbol === sy)!;
+            const e = earningsEstimate(fl.filter((f) => f.symbol === sy), (tr ?? []).filter((t) => t.symbol === sy), briefDate);
+            const names = [krName(sy, h.nickname, h.name), ...aliasesFor(sy, h.name)];
+            return { names, label: names[0], est: e?.est ?? null, ...(e?.range ? { range: e.range } : {}) };
+          });
+          for (const o of stale) {
+            const fixed = repairSections(o.sections as Sections, ests, briefDate);
+            await admin.from("daily_briefs").update({ sections: fixed, gen_version: GEN_VERSION, audio_path: null, script: null }).eq("id", o.id).then(() => {}, () => {});
+          }
+        }
+      }
       let backfillOnly: Sections | null = null;
       if (!force) {
         const haveQ = (cols: string) => admin.from("daily_briefs").select(cols).eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();
@@ -1362,8 +1415,17 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const dropDated = (t: string) => { const bad = unsupportedDated(String(t ?? "").split(/(?<=[.!?])\s+/), srcText, briefDate, estYmds); return bad.length ? String(t).split(/(?<=[.!?])\s+/).filter((x) => !bad.includes(x)).join(" ") || t : t; };
         sections.lede = dropDated(sections.lede); sections.overnight = dropDated(sections.overnight); sections.desk_view = dropDated(sections.desk_view);
         sections.positions = sections.positions.map((p) => ({ ...p, note: dropDated(p.note) }));
-        sections.calendar = (sections.calendar ?? []).filter((c) => !wrongDates.has(c));
-        sections.positions = sections.positions.map((p) => wrongDates.has(p.watch) ? { ...p, watch: "No confirmed date yet" } : p);
+        // Calendar lines are rebuilt from the estimates, labelled as estimates, with the same span text as Ask
+        // (round 4: "Oct 28 earnings call MSFT", "Oct 29 earnings preview AAPL", an invented "Oct 28 AI spend
+        // update META"); any other dated item must be backed by a dated line in the sources
+        const labelled = earnEsts.map((e) => ({ ...e, label: e.names[0] }));
+        sections.calendar = canonicalCalendar((sections.calendar ?? []).filter((c) => !wrongDates.has(c) || /\b(earnings|results|report)/i.test(c)), labelled, srcText, briefDate);
+        sections.positions = sections.positions.map((p) => {
+          const canon = canonicalCalendar([p.watch], labelled, srcText, briefDate);
+          const earningsWatch = /\b(earnings|results|reports?|call|print|preview)\b/i.test(p.watch) && labelled.some((e) => e.names.some((n) => n && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(p.watch)));
+          if (earningsWatch) return { ...p, watch: canon[0] ?? "No confirmed date yet" };
+          return wrongDates.has(p.watch) ? { ...p, watch: "No confirmed date yet" } : p;
+        });
         // a valuation call ("looks cheap", "a bargain") is a verdict: the sentence goes, the rest of the note stays
         const deValue = (t: string) => { const bad = valuationHits(t); if (!bad.length) return t; const kept = t.split(/(?<=[.!?])\s+/).filter((x) => !bad.some((b) => b.includes(x.trim()) || x.includes(b))); return kept.length ? kept.join(" ") : t; };
         sections.positions = sections.positions.map((p) => ({ ...p, note: dropEcho(deValue(p.note), p.watch) }));
@@ -1410,7 +1472,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const hsrc = [...SOURCES, JSON.stringify(memosOut)].join("\n");
         const clean = (t: string) => {
           const x = plainScrub(String(t ?? ""), PORTFOLIO_PLAIN);
-          const bad = historicalClaims(x, hsrc, briefDate);
+          // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too
+          const bad = [...historicalClaims(x, hsrc, briefDate), ...unsupportedCauses(x, hsrc)];
           if (!bad.length) return x;
           const kept = x.split(/(?<=[.!?])\s+/).filter((s) => !bad.some((b) => b.includes(s.trim()) || s.includes(b)));
           return kept.length ? kept.join(" ") : x;

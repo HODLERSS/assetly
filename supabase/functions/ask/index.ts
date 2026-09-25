@@ -18,6 +18,7 @@ import {
   adviceHits, aliasesFor, booksKorean, chipInLanguage, cleanFollowups, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, isEarningsCallTitle, questionIsKorean,
   isTradeQuestion, NO_HISTORY, pctText, priceConfusions, stripAdvice, usableNews, withNoCallLine, wrongLanguage, type PosFact,
   curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, plainScrub, PORTFOLIO_PLAIN, wrongDeliveriesDates,
+  dayMoveMismatches, earningsEstimate, type LiveFact, spanOfMonth, unsupportedCauses, wrongEarningsMonths,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -261,6 +262,9 @@ Deno.serve(async (req) => {
     posFacts.push({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], price: px === null ? null : usd(px, cur), value: valUsd });
   }
   const investedUsd = held.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
+  // the portfolio's move TODAY, stated on its own line: a Korean answer called the 1-week +2.6% "오늘" (round 4)
+  const bookDayUsd = held.reduce((a, r) => r.change_pct === null ? a : a + usd(Number(r.value ?? 0), r.currency) * (Number(r.change_pct) / 100) / (1 + Number(r.change_pct) / 100), 0);
+  const bookDayPct = totNow - bookDayUsd > 0 ? bookDayUsd / (totNow - bookDayUsd) * 100 : 0;
   const totalLines = windows.map((d) => {
     const m = moved[d];
     const label = d === 7 ? "1W" : d === 30 ? "1M" : "3M";
@@ -274,6 +278,7 @@ Deno.serve(async (req) => {
   // ---- signal digest for EVERY holding (news, filings, earnings) ----
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
   let digest = "";
+  const askEsts: { names: string[]; est: string | null; range?: [string, string] }[] = [];
   const digSyms = held.slice(0, 12).map((r) => r.symbol);
   if (digSyms.length) {
     const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
@@ -289,6 +294,8 @@ Deno.serve(async (req) => {
       const fs = (df ?? []).filter((x) => x.symbol === s) as { form: string; filed_at: string; items?: string | null }[];
       const ts = (dt ?? []).filter((x) => x.symbol === s) as { title: string; published_at: string | null }[];
       const earn = earningsLine(nameOf(r), fs, ts, today);
+      const est = earningsEstimate(fs, ts, today);
+      if (est) askEsts.push({ names: [nameOf(r), ...aka], est: est.est, ...(est.range ? { range: est.range } : {}) });
       const talks = ts.filter((x) => !isEarningsCallTitle(x.title)).slice(0, 1).map((x) => `conference talk (not an earnings report) ${String(x.published_at).slice(0, 10)}`);
       const ff = fs.slice(0, 2).map((x) => `${x.form} ${String(x.filed_at).slice(5, 10)}`);
       // judged again at read time: rows stored before the ingest gate still hold option chains and off-topic stories
@@ -341,6 +348,32 @@ Deno.serve(async (req) => {
   // the language of the QUESTION decides the answer's language, trade questions included (round 2: "테슬라
   // 팔까요?" came back in English because the example opener below was English and the model copied it)
   const ko = questionIsKorean(question);
+  // today's move per holding and for the portfolio, for the number check (±0.15 point, sign)
+  const moveFacts: LiveFact[] = [
+    ...held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], pct: r.change_pct === null ? null : Number(r.change_pct) })),
+    { names: ["portfolio", "your holdings", "your book", "포트폴리오", "전체 자산", "총자산", "자산"], pct: bookDayPct },
+  ];
+  const causeSource = `${digest}\n${context}`;
+  /** The informational answer built from the stats when the model's is a husk: what the decision rests on. */
+  const defaultInfo = (): string => {
+    const invested = [...held].sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
+    const top = invested.slice(0, 3);
+    const share = (rs: typeof held) => rs.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
+    const cashUsd = book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
+    const reports = askEsts.slice(0, 4).map((e) => `${e.names[0]} ${e.range ? spanOfMonth(e.range) : "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`);
+    if (ko) return [
+      top.length ? `• 상위 ${top.length}개 종목(${top.map((r) => `${nameOf(r)} ${weight(usd(Number(r.value ?? 0), r.currency)).replace("under 0.1%", "0.1% 미만")}`).join(", ")})이 자산의 ${share(top).toFixed(0)}%입니다.` : "",
+      `• 현금은 자산의 ${(cashUsd / (assetsUsd || 1) * 100).toFixed(1)}%(${money(cashUsd)})입니다.`,
+      reports.length ? `• 다가오는 실적(추정): ${reports.join(", ")}.` : "",
+      "• 보통 따져보는 것: 한 테마가 이미 포트폴리오를 얼마나 움직이는지, 투자 기간, 차익에 대한 세금.",
+    ].filter(Boolean).join("\n");
+    return [
+      top.length ? `• Your ${top.length} largest holdings (${top.map((r) => `${nameOf(r)} ${weight(usd(Number(r.value ?? 0), r.currency))}`).join(", ")}) are ${share(top).toFixed(0)}% of your portfolio.` : "",
+      `• Cash is ${(cashUsd / (assetsUsd || 1) * 100).toFixed(1)}% of your portfolio (${money(cashUsd)}).`,
+      reports.length ? `• Reports coming up (estimates): ${reports.join(", ")}.` : "",
+      "• What people usually weigh: how much one theme already drives the portfolio, their time horizon, and taxes on gains.",
+    ].filter(Boolean).join("\n");
+  };
   const pickQ = isPickQuestion(question);
   const bookNames = held.map((r) => ({ symbol: r.symbol, names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] }));
   const dlvFacts = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], est: deliveriesEstimate(r.symbol, today)?.est ?? null }));
@@ -357,7 +390,7 @@ Deno.serve(async (req) => {
 ${ccyLine}
 User's portfolio (deterministic; the ONLY source of numbers). For each holding: "share price" is the price of ONE share; "position value" is what the user's whole holding is worth. They are different numbers: a question about the stock's price or close gets the SHARE PRICE, never the position value. Each "day" figure is tagged with the session it belongs to: a LIVE session is today's move so far, a "past (not today)" session is named by its day, and a live move is never "yesterday".
 ${stats.join("\n")}
-Portfolio total: ${money(totNow)} · movement ${totalLines}
+Portfolio total: ${money(totNow)} · TODAY (this session only): ${signedUsd(bookDayUsd)} (${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%) · longer windows (NEVER "today"): ${totalLines}
 Window figures that read "${NO_HISTORY}" have no data: say so plainly for that window; never reuse another window's number in its place.
 Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
 ${context}
@@ -366,7 +399,7 @@ ${convoBlock}Question: "${question}"
 
 ${READER}
 Answer as THEIR analyst (see the reader profile): direct, specific, tight. Ground qualitative answers in the signals, headlines, filings and earnings material above, not just prices. Numbers come only from the stats block.
-PREMISE LAW: check every fact the question takes for granted against the stats first ("X is cheaper than Y", "X is down this month", "X reports next week"). If it is false, say so in the first line with the real figures, then answer. A share price says nothing about a company's size or value: compare companies by market cap only when it is given above, and never infer shares outstanding or company value from a share price. Dates: earnings, deliveries and other events only as given above; a deliveries report is not an earnings report; never invent a date. Never make a historical comparison (a past year, "since 2008", "all-time", "record") the data above does not state. Plain words: say "portfolio", never "book"; "the market", never "the tape"; "stocks", never "names".
+PREMISE LAW: check every fact the question takes for granted against the stats first ("X is cheaper than Y", "X is down this month", "X reports next week"). If it is false, say so in the first line with the real figures, then answer. A share price says nothing about a company's size or value: compare companies by market cap only when it is given above, and never infer shares outstanding or company value from a share price. Dates: earnings, deliveries and other events only as given above; a deliveries report is not an earnings report; never invent a date. Never make a historical comparison (a past year, "since 2008", "all-time", "record") the data above does not state. Plain words: say "portfolio", never "book"; "the market", never "the tape"; "stocks", never "names". A cause for a move comes only from a headline above (never "profit-taking" or "X warned" unless a headline says so); otherwise say the news does not explain it. Name holdings by name, never anonymously ("a semiconductor firm"). A figure for TODAY is only the "day" figure or the portfolio's TODAY line; 1W / 1M / 3M are never "today".
 ANSWER LAW (above everything else): you give INFORMATION, never a trade instruction or a verdict on their own holdings. Never tell them to buy, sell, hold, add, trim, swap, rotate or take profits, never give a verdict ("Verdict: hold", "a buy here", "top pick", "the one I'd dump"), never rank their holdings by which is best or worst to own or keep (a ranking by a stated metric over a stated window, like 1-month return, is fine), never call a holding cheap, expensive, undervalued, overvalued, a bargain or a buying opportunity (state the metric instead: its P/E versus its own history), and never size a position ("put $X into", "buy N shares"). Instead explain what is driving it, the risks, the scenarios, what to watch next (a date or a level), and what a buy case or a sell case would rest on.${tradeQ ? (saidNoCall ? ` This question asks what to trade or which holding wins; your previous answer already said the call is theirs, so do not repeat that line: go straight to the balanced considerations on both sides.` : ` This question asks what to trade or which holding wins: open with ONE short, natural line in your own words that the decision is theirs to make (the sense of ${opener}), then give the balanced considerations on both sides. One line, never a wall of disclaimer.`) : ""}
 LANGUAGE (decided by the CURRENT question only, never by the holdings' names or the conversation so far): ${ko ? "the question is in KOREAN: write the entire answer AND every followup in natural Korean (tickers and US company names may stay as written)." : "the question is in ENGLISH: write the entire answer AND every followup in English, even when earlier turns or Korean holdings' names are in Korean (use a Korean company's English name)."}
 ${EVIDENCE_LAW}
@@ -414,6 +447,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       : "It is written in Korean but the question is in English: write the whole answer and the followups in English."] : []),
     ...(pickQ ? curatedListHits(a, bookNames) : []).slice(0, 1).map(() => `It answers a pick question with a shortlist of some holdings. Do not single out names: explain what such a decision rests on (concentration, drivers, risks) for the book as a whole, or give one neutral fact per holding for ALL holdings in order of weight.`),
     ...wrongDeliveriesDates(a, dlvFacts, today).map((s) => `"${s.slice(0, 120)}" dates a deliveries report that is not in the data (a deliveries report is not earnings).`),
+    ...dayMoveMismatches(a, moveFacts, 0.15).map((s) => `"${s.slice(0, 120)}" states a move for TODAY that is not today's figure in the stats (check the period and the sign; longer windows are never "today").`),
+    ...wrongEarningsMonths(a, askEsts).map((s) => `"${s.slice(0, 120)}" puts a report in a month its estimate does not cover.`),
+    ...unsupportedCauses(a, causeSource).map((s) => `"${s.slice(0, 120)}" gives a cause for a move that no headline states; say the cause is not clear from the news.`),
   ];
   const found = answer ? problems(answer) : [];
   if (found.length && left() > 5000) {
@@ -425,12 +461,36 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   if (!answer) return json({ ok: false, error: "The analyst lost the thread mid-answer. Ask again." }, 502);
   // code-side guards, on EVERY answer (whether or not an opener is added): verdicts and valuation calls, a
   // shortlist answering a pick question, a deliveries date that is not in the data
-  const dropLines = new Set([...(pickQ ? curatedListHits(answer, bookNames) : []), ...wrongDeliveriesDates(answer, dlvFacts, today)]);
+  const dropLines = new Set([...(pickQ ? curatedListHits(answer, bookNames) : []), ...wrongDeliveriesDates(answer, dlvFacts, today),
+    ...dayMoveMismatches(answer, moveFacts, 0.15), ...wrongEarningsMonths(answer, askEsts), ...unsupportedCauses(answer, causeSource)]);
   const pruned = answer.split("\n").map((l) => (dropLines.has(l.trim()) ? "" : [...dropLines].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
-  const guarded = fixPriceConfusions(stripAdvice(normalizeBullets(pruned), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
-  answer = guarded ? withNoCallLine(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), question, lastA)
-    : ko ? "매매 여부는 제가 정해드릴 수 없지만, 무엇이 움직이고 있는지, 위험 요인과 다음에 볼 것을 짚어드릴 수 있습니다."
-    : "I can't tell you what to trade, but I can walk through what's driving it, the risks, and what to watch next.";
+  const guardAll = (a: string) => {
+    const drop = new Set([...(pickQ ? curatedListHits(a, bookNames) : []), ...wrongDeliveriesDates(a, dlvFacts, today),
+      ...dayMoveMismatches(a, moveFacts, 0.15), ...wrongEarningsMonths(a, askEsts), ...unsupportedCauses(a, causeSource)]);
+    const kept = a.split("\n").map((l) => (drop.has(l.trim()) ? "" : [...drop].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
+    return fixPriceConfusions(stripAdvice(normalizeBullets(kept), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
+  };
+  let guarded = fixPriceConfusions(stripAdvice(normalizeBullets(pruned), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
+  // Round 4: after the guards, "What should I buy with $10K?" was left with one unrelated line and "top pick"
+  // with a ten-holding dump. When the guards took most of an answer to a trade or pick question, the model
+  // gets ONE informational re-ask, and if that is thin too, the answer is built in code from the stats.
+  const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
+  const husk = (g: string) => (tradeQ || pickQ) && (words(g) < 25 || words(g) < words(answer) * 0.45);
+  if (husk(guarded) && left() > 6000) {
+    const frame = ko
+      ? "이 질문에는 무엇을 사고팔지 말하지 말고, 이 포트폴리오에서 그 결정이 무엇에 달려 있는지 3-5개 불릿으로 답하세요: 집중도(상위 보유 종목과 비중), 현금 비중, 다가오는 실적 일정(추정치로 표시), 위험 구성. 특정 종목을 고르지 마세요."
+      : "Answer WITHOUT naming anything to buy, sell or pick: in 3-5 bullets, say what that decision rests on for THIS portfolio: concentration (the top holdings and their weights), the cash share, the reports coming up (as estimates), and the risk mix. One bullet per line.";
+    const re = await ask([...base, { role: "user", content: frame }], 0.2, Math.min(12000, left()), FAST);
+    const g2 = re ? guardAll(normalizeBullets(deDash(re.answer))) : "";
+    if (g2 && !husk(g2) && !wrongLanguage(question, g2)) { guarded = g2; parsedA = { answer: re!.answer, followups: re!.followups.length ? re!.followups : parsedA?.followups ?? [] }; }
+  }
+  if (husk(guarded) || !guarded) {
+    // a data question whose every sentence failed the number checks gets the verified figures instead
+    const day = ko ? `• 오늘 포트폴리오는 ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%(${signedUsd(bookDayUsd)})입니다.`
+      : `• Today your portfolio is ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}% (${signedUsd(bookDayUsd)}).`;
+    guarded = tradeQ || pickQ ? defaultInfo() : [day, defaultInfo().split("\n")[0]].join("\n");
+  }
+  answer = withNoCallLine(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), question, lastA, turns.length ? turns[turns.length - 1].q : "");
   answer = trimAnswer(answer, cap + 10);
   const focus = (mentioned.length ? mentioned : held.slice(0, 1).map((r) => r.symbol)).map((s) => nameOf(held.find((h) => h.symbol === s)!));
   const fallbacks = ko ? [

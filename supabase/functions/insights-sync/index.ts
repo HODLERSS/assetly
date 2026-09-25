@@ -6,7 +6,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } from "../_shared/calendar.ts";
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
-  historicalClaims, isEarningsCallTitle, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
+  historicalClaims, isEarningsCallTitle, overlap, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
 } from "../_shared/intel.ts";
 import { ensureHistory, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
@@ -410,11 +410,14 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const liveFacts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price) }];
       // no historical comparison the data does not hold ("Tech concentration at 1965 highs", round 3)
       let bullets = parsed.bullets.map((b) => fixArticles(cardScrub(deJust(b, trAge))))
-        .filter((b) => lineOk(b, liveFacts, dlvFacts) && !(sourceText && historicalClaims(b, sourceText, today).length));
+        .filter((b) => lineOk(b, liveFacts, dlvFacts) && !(sourceText && (historicalClaims(b, sourceText, today).length || unsupportedCauses(b, sourceText).length)));
       if (!fixture) { const bad = await incoherent(key, bullets, sourceText); bullets = bullets.filter((_, i) => !bad.has(i)); }
       if (bullets.length < 2) { errors.push(symbol + ": take contradicted the live numbers; kept the previous one"); continue; }
       const trend = parsed.windows?.trend ? fixArticles(cardScrub(String(parsed.windows.trend))) : null;
-      const windows = trend === null ? parsed.windows : lineOk(trend, liveFacts, dlvFacts) ? { ...parsed.windows, trend } : {};
+      // the summary line may not restate a bullet (round 4: "Off 7.6% over two months despite 5% one-year gain"
+      // under "Two-month 7.6% slide contrasts with 5% one-year gain" on every card)
+      const echoes = trend !== null && bullets.some((b) => overlap(b, trend) >= 0.6);
+      const windows = trend === null ? parsed.windows : lineOk(trend, liveFacts, dlvFacts) && !echoes ? { ...parsed.windows, trend } : {};
       const { error: upErr } = await admin.from("insights").insert({
         symbol, bullets, windows, model,
       });
