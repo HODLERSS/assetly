@@ -144,7 +144,7 @@ Deno.test("language: English in, English out, whatever the book holds (live smok
   assertFalse(chipInLanguage("테슬라 팔까요?", "What drives Tesla's margins?"));
   // the fixed opener never mixes with a body in the other language
   assert(withNoCallLine("• Tesla fell 2.1% today.", "Should I sell 삼성전자?").startsWith("I can't tell you"));
-  assert(withNoCallLine(koBody, "Rank my holdings from best to worst to own").startsWith("매매 여부는"));
+  assert(withNoCallLine(koBody, "Rank my holdings from best to worst to own").startsWith("무엇을 남길지는"));
   assert(withNoCallLine("• Tesla fell 2.1% today on EU news.", "테슬라 팔까요?").startsWith("I can't tell you"));
 });
 

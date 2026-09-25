@@ -180,6 +180,15 @@ export function nextEarningsEstimate(lastYmd: string, todayYmd: string, history:
   while (est < todayYmd) { est = addDays(est, 91); range = undefined; }
   return { est, due: false, ...(range ? { range } : {}) };
 }
+/** The Korean span ("11월 중순~하순", "10월 하순"), matching spanOfMonth (round 8: KR said "10월 21일~10월 28일" where EN
+ *  said "late October"). */
+export const spanOfMonthKo = (r: [string, string]): string => {
+  const part = (ymd: string) => { const d = Number(ymd.slice(8, 10)); return { m: Number(ymd.slice(5, 7)), p: d <= 10 ? "초" : d <= 20 ? "중순" : "하순" }; };
+  const a = part(r[0]), b = part(r[1]);
+  const pa = a.p === "초" ? "초순" : a.p;
+  if (a.m === b.m) return a.p === b.p ? `${a.m}월 ${pa}` : `${a.m}월 ${pa}~${b.p === "초" ? "초순" : b.p}`;
+  return `${a.m}월 ${pa}~${b.m}월 ${b.p === "초" ? "초순" : b.p}`;
+};
 /** "mid to late November" for a span, "late November" when both ends fall in the same part of the month. */
 export const spanOfMonth = (r: [string, string]): string => {
   const a = partOfMonth(r[0]), b = partOfMonth(r[1]);
@@ -300,7 +309,7 @@ export function valuationHits(text: string): string[] {
     if (s && /\b(?:could|would|will|should|might) (?:double|triple|quadruple)\b|\b(?:doubles?|triples?) (?:from here|in value)\b/i.test(s) && !namedSource) { hits.push(raw); continue; }
     // round 7 cards: reassurance and verdicts in the app's voice ("a cooldown after a 31.9% surge, not a thesis
     // break", "a legal headline, not a near-term financial hit", "makes Google Cloud the clear second growth engine")
-    if (s && /\bnot a thesis break\b|\bthesis (?:is |remains |stays )?(?:still )?(?:intact|unchanged|holds|on track)\b|\bnot a (?:near-term |real |material |lasting )?(?:financial )?hit\b|\bthe clear (?:second |next |new |main )?(?:growth )?(?:engine|winner|leader)\b|\bjust a (?:cooldown|breather|pause)\b|\ba (?:normal|healthy) (?:breather|pullback|cooldown)\b|\b(?:keeps?|keeping) (?:the |your )?(?:portfolio|book|plan|goals?) on track\b/i.test(s) && !namedSource) { hits.push(raw); continue; }
+    if (s && /\bnot a thesis break\b|\bthesis (?:is |remains |stays )?(?:still )?(?:intact|unchanged|holds|on track)\b|\bnot a (?:near-term |real |material |lasting )?(?:financial )?hit\b|\bthe clear (?:second |next |new |main )?(?:growth )?(?:engine|winner|leader)\b|\ba (?:credible|real|proven|clear) (?:second |next |new )?growth engine\b|\b(?:a )?(?:real |big |huge )?optionality story\b|\b(?:powerful|strong|healthy|intact) (?:longer-term |long-term )?uptrend\b|\batop a (?:powerful|strong|longer-term|long-term)\b|\b(?:stay|staying|remain|remaining|keep|keeping) (?:weighted|overweight|invested|exposed|heavy|concentrated)\b[^.]{0,50}\b(?:beneficial|pays? off|makes sense|wise|smart|the right)\b|\bremains? (?:significantly |very |highly )?beneficial\b|\bjust a (?:cooldown|breather|pause)\b|\ba (?:normal|healthy) (?:breather|pullback|cooldown)\b|\b(?:keeps?|keeping) (?:the |your )?(?:portfolio|book|plan|goals?) on track\b/i.test(s) && !namedSource) { hits.push(raw); continue; }
     if (!s || (ATTRIBUTED.test(s) && (!valuationWord || namedSource || debate))) continue;
     // round 4: "a hidden asset the market isn't fully pricing", "17x versus the S&P's 25x leaves cushion", "the
     // long-term story still looks solid" (to "is it on sale?"): verdicts in the app's voice
@@ -451,6 +460,8 @@ export function withNoCallLine(answer: string, question: string, _previousAnswer
   // "what's your top pick?", where "it" refers to nothing)
   const cashQ = /\b(?:cash|money|what (?:should|do) i buy|what to buy|where (?:should|do) i (?:put|invest))\b|\$\s?\d[\d,.]*\s?[kK]?\b|현금|돈으로|뭘 사|무엇을 사|어디에 (?:넣|투자)/i.test(question);
   const pickOnly = isPickQuestion(question) && !/\b(?:sell|trim|take profits?|dump|exit|cut|reduce|buy more|add to)\b|팔|매도|정리|더 살/i.test(question);
+  // round 8: "Rank my holdings" opened "I can't tell you whether to trade it"
+  if (isRankQuestion(question)) return (ko ? "무엇을 남길지는 정해드릴 수 없지만, 숫자로 본 순위는 이렇습니다." : "I can't tell you which to keep, but here's how your holdings rank by the numbers.") + "\n" + answer;
   const line = ko
     ? (cashQ ? "무엇을 살지는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다." : pickOnly ? "종목을 골라드릴 수는 없지만, 그 선택이 무엇에 달려 있는지는 이렇습니다." : "매매 여부는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다.")
     : (cashQ ? "I can't tell you what to buy, but here's what that decision rests on in your portfolio." : pickOnly ? "I can't pick a holding for you, but here's what that choice rests on." : "I can't tell you whether to trade it, but here's what the decision rests on.");
@@ -652,7 +663,7 @@ const NEG_MOVE = /^(down|fell|falls|falling|lost|loses|losing|slipped|slips|slid
 const MOVE_FWD = /\b(up|down|rose|rises|rising|fell|falls|falling|gained|gains|gaining|lost|loses|losing|slipped|slips|slid|slides|dropped|drops|dropping|climbed|climbs|jumped|jumps|sank|sinks|added|adds|shed|sheds|rallied|rallies|declined|declines|dipped|dips|edged (?:up|down|higher|lower)|higher|lower|off|advanced|surged|surges|tumbled|tumbles|plunged|plunges|popped|pops)\s+(?:by\s+|about\s+|nearly\s+|roughly\s+|almost\s+|another\s+)?(\d+(?:\.\d+)?)\s?%/gi;
 const MOVE_REV = /\b(\d+(?:\.\d+)?)\s?%\s+(gain|rise|jump|pop|rally|climb|advance|drop|decline|fall|slide|loss|dip|slump|selloff|sell-off)\b/gi;
 // a figure qualified by a window, a fundamental or a previous session is not today's move
-const NOT_TODAY = /(?:1주|일주일|한 주|주간|한 달|1개월|\d+개월|분기|1년|연간|올해)|\b(weeks?|weekly|months?|monthly|years?|yearly|annual|annually|quarters?|quarterly|YTD|since|over the|past|\d+-day|two-month|decade|all-time|from (?:its|the) (?:high|peak|low)|(?:below|off) (?:its|the) (?:high|peak)|record|drawdown|target|upside|downside|expected|forecast|guidance|revenue|sales|earnings|margins?|growth|share of|of assets|weight|stake|yields?|dividends?|rates?|inflation|index|yesterday|last session|overnight|premarket|pre-market|after-hours|(?:mon|tues|wednes|thurs|fri|satur|sun)day's|in (?:mon|tues|wednes|thurs|fri)day)\b/i;
+const NOT_TODAY = /(?:1주|일주일|한 주|주간|한 달|1개월|\d+개월|분기|1년|연간|올해)|\b(weeks?|weekly|months?|monthly|years?|yearly|annual|annually|quarters?|quarterly|YTD|since|over the|past|\d+-day|two-month|decade|all-time|from (?:its|the) (?:high|peak|low)|(?:below|off) (?:its|the) (?:high|peak)|record|drawdown|target|upside|downside|expected|forecast|guidance|revenue|sales|earnings|margins?|growth|share of|of assets|weight|stake|yields?|dividends?|rates?|inflation|index|yesterday|last session|overnight|premarket|pre-market|after-hours|(?:mon|tues|wednes|thurs|fri|satur|sun)day's|in (?:mon|tues|wednes|thurs|fri)day|of (?:your |the )?(?:portfolio|holdings|total|invested)|makes? up|made up|accounts? for|since (?:January|you bought|purchase)|year to date|this year|in 20\d\d|above (?:your|its) (?:cost|buy)|below (?:your|its) (?:cost|buy))\b/i;
 /** Sentences that state a holding's move as today's with a figure that is not its live session move.
  *  Caught 2026-09-25 (round 2): a VOO card said "VOO down 0.6% on GOOG drag" while VOO was +0.45% and never
  *  traded below its prior close. A sentence that qualifies its figure (a window, a fundamental, yesterday)
@@ -820,7 +831,7 @@ export function offLensIdea(idea: string, styles: string[]): boolean {
  *  "where would my cash go"). An answer to it that lists some of the holdings IS the pick. */
 export function isPickQuestion(q: string): boolean {
   const t = String(q ?? "");
-  return /\bthe one\b|\bwhich (?:of (?:my|your|the|these) )?(?:one|ones|stock|stocks|holding|holdings|name|names|position|positions)\b[^?.]{0,50}\b(?:buy|sell|dump|trim|keep|add|cut|ditch|drop|own|pick|choose|get rid|invest in|put|double down|load up|best|worst)\b|\bwhere (?:would|should|could)\b|\byou(?:'?d| would) (?:dump|sell|buy|keep|pick|choose|add|cut|ditch|drop)\b|\bwould you (?:dump|sell|buy|keep|pick|choose|add|cut|ditch|drop)\b|\b(?:top|best|your) pick\b|\bif you had\b|\bwhat (?:would|should|could|can) (?:you|i) (?:do|buy) with\b|\bwhat should i buy\b/i.test(t)
+  return /\bthe one\b|\bwhich (?:of (?:my|your|the|these) )?(?:one|ones|stock|stocks|holding|holdings|name|names|position|positions)\b[^?.]{0,50}\b(?:buy|sell|dump|trim|keep|add|cut|ditch|drop|own|pick|choose|get rid|invest in|put|double down|load up|best|worst)\b|\bwhere (?:would|should|could)\b|\byou(?:'?d| would) (?:dump|sell|buy|keep|pick|choose|add|cut|ditch|drop)\b|\bwould you (?:dump|sell|buy|keep|pick|choose|add|cut|ditch|drop)\b|\b(?:top|best|your) pick\b|\bif you had\b|\bwhat (?:would|should|could|can) (?:you|i) (?:do|buy) with\b|\bwhat should i buy\b|\b(?:\d+|two|three|four|five|a few|some) (?:best|top|good) (?:stocks?|picks?|names|holdings?|buys?)\b|\bbest (?:stocks?|picks?|names) to (?:buy|own|add)\b/i.test(t)
     || /(어떤 종목|어느 종목|하나만|어디에|뭘 사|무엇을 사|뭘 팔|무엇을 팔)/.test(t);
 }
 /** Lines of an answer that open on a holding's name, when they cover SOME but not all of the book: a curated
@@ -1049,7 +1060,10 @@ export function scriptProblems(script: string, sectionsText: string, todayYmd: s
     || /\b(?:falls?|drops?|slips?|dips?|rises?|climbs?)\s+(?:below|above|under|past)\s+(?:zero point \w+|0\.\d+|\d?\.\d+)\s?(?:%|percent)/i.test(s)
     || (/\bweight\b|\bstake\b|\bof your (?:holdings|portfolio)\b/i.test(s) && /\badded\b|\bgained\b/i.test(s) && numOf(s).some((n) => movePcts.has(n) && !weightPcts.has(n)))
     || brokenSentences(s).length > 0 || verblessList(s).length > 0
-    || historicalClaims(s, src, todayYmd).length > 0);
+    || historicalClaims(s, src, todayYmd).length > 0
+    // round 8 close script: a figure spoken for the wrong subject ("Oracle … more than five point one percent" was the
+    // VIX change), checked with spelled numbers read as digits
+    || misplacedScriptFigures(s, src).length > 0);
 }
 
 /** Calendar lines built from the computed estimates, never from the model's wording: "Microsoft earnings
@@ -1539,7 +1553,7 @@ export function buildHusk(inp: HuskInput, ko: boolean): string {
   if (ko) {
     if (top.length) out.push(top.length === 1 ? `• 집중도: 보유 종목은 ${top[0].name} 하나로 자산의 ${topShare.toFixed(0)}%입니다.` : `• 집중도: 상위 ${top.length}개 종목(${top.map((h) => `${h.name} ${pct1(h.usd / A * 100, true)}`).join(", ")})이 자산의 ${topShare.toFixed(0)}%입니다.`);
     out.push(`• 구성: ${[...topThemes.map(([t, v]) => `${THEME_KO[t] ?? t} ${pct1(v / A * 100, true)}`), ...(crypto > 0 && !cryptoListed ? [`암호화폐 ${pct1(crypto, true)}`] : []), `현금 ${pct1(cashPct, true)}(${usdText(inp.cashUsd)})`].join(", ")}입니다.`);
-    out.push(reports.length ? `• 45일 안에 예상되는 실적 발표(추정): ${reports.map((r) => `${r.name} ${r.range ? `${md(r.range[0])}~${md(r.range[1])}` : md(r.est!) + "경"}`).join(", ")}.` : "• 45일 안에 실적 발표가 예상되는 보유 종목은 없습니다.");
+    out.push(reports.length ? `• 45일 안에 예상되는 실적 발표(추정): ${reports.map((r) => `${r.name} ${r.range ? spanOfMonthKo(r.range) : md(r.est!) + "경"}`).join(", ")}.` : "• 45일 안에 실적 발표가 예상되는 보유 종목은 없습니다.");
     out.push(payers.length ? `• 배당: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` 외 ${payers.length - 4}개` : ""}에서 연 약 ${usdText(income)}이 나옵니다${payers.some((d) => d.current) ? "(현재 배당률 기준)" : ""}. ${soonEx.length ? `45일 안의 배당락(추정): ${soonEx.map((d) => `${d.name} ${md(d.nextEx!)}경`).join(", ")}.` : "45일 안에 배당락이 예상되는 종목은 없습니다."}` : "• 배당: 기록상 배당을 주는 보유 종목이 없습니다.");
     if (inp.mode === "sell") { out.push(`• 파는 쪽에서 보통 따지는 것: 차익에 붙는 세금, 한 종목(상위 ${top[0]?.name ?? ""} ${pct1((top[0]?.usd ?? 0) / A * 100, true)})에 원하는 것보다 많이 실려 있는지, 처음 산 이유가 아직 유효한지.`); return out.join("\n"); }
     out.push(`• 이런 결정에서 보통 따지는 것: 새 돈이 이미 ${topShare.toFixed(0)}%인 ${top.length === 1 ? top[0].name : "상위 종목"} 비중을 더 키우는지, ${crypto > 0 ? `포트폴리오가 암호화폐(현재 ${pct1(crypto)})에 얼마나 흔들리길 원하는지` : `현금(현재 ${pct1(cashPct)})을 얼마나 남겨둘지`}, 투자 기간과 세금.`);
@@ -1779,15 +1793,16 @@ function focusHusk(inp: HuskInput, ko: boolean): string {
 function rankHusk(inp: HuskInput, ko: boolean): string {
   const A = inp.assetsUsd || 1;
   const hs = [...inp.holdings].filter((h) => h.usd > 0).sort((a, b) => b.usd - a.usd);
-  const byW = hs.slice(0, 8).map((h) => `${h.name} ${pct1(h.usd / A * 100, ko)}`).join(", ");
+  // round 8: every holding is listed (AMZN, the weakest, fell off an 8-item cut)
+  const byW = hs.slice(0, 15).map((h) => `${h.name} ${pct1(h.usd / A * 100, ko)}`).join(", ");
   const r = inp.returns1m ?? {};
-  const byR = hs.filter((h) => typeof r[h.symbol] === "number").sort((a, b) => (r[b.symbol]! - r[a.symbol]!)).slice(0, 8).map((h) => `${h.name} ${signed1(r[h.symbol]!)}`).join(", ");
+  const byR = hs.filter((h) => typeof r[h.symbol] === "number").sort((a, b) => (r[b.symbol]! - r[a.symbol]!)).slice(0, 15).map((h) => `${h.name} ${signed1(r[h.symbol]!)}`).join(", ");
   if (ko) return [`• 비중 순: ${byW}.`, byR ? `• 1개월 수익률 순: ${byR}.` : "", "• 어떤 종목을 남기거나 뺄지는 순위가 아니라 목표, 기간, 세금에 달려 있습니다."].filter(Boolean).join("\n");
   return [`• By weight: ${byW}.`, byR ? `• By 1-month return: ${byR}.` : "", "• Which to keep or cut depends on your goals, horizon and taxes, not on the ranking itself."].filter(Boolean).join("\n");
 }
 
 /** A sell-side question ("should I sell TSLA", "which one would you trim", "dump"). */
-export const isSellQuestion = (q: string): boolean => /\b(?:sell|trim|dump|take profits?|get rid of|exit|cut|reduce|ditch|unload|offload|cash out|lighten)\b|팔|매도|정리|익절|손절|줄일/i.test(String(q ?? ""));
+export const isSellQuestion = (q: string): boolean => /\b(?:sell|trim|dump|take profits?|get rid of|exit|cut|reduce|ditch|unload|offload|cash out|lighten|rebalanc\w*)\b|팔|매도|정리|익절|손절|줄일/i.test(String(q ?? ""));
 /** "Rank my holdings (best to worst)". */
 export const isRankQuestion = (q: string): boolean => /\brank(?:ing|ed)?\b|\bbest to worst\b|\bworst to best\b|순위|순서대로/i.test(String(q ?? ""));
 
@@ -1958,11 +1973,148 @@ export function labelEstimatedDates(text: string, ymds: string[], ko = false): s
     for (const f of forms) {
       x = x.replace(new RegExp(`(~\\s*)?(${f})(\\s*\\([^)]{0,12}\\))?`, "g"), (m: string, tilde: string | undefined, date: string, paren: string | undefined, at: number, whole: string) => {
         const around = whole.slice(Math.max(0, at - 24), at + m.length + 14);
-        if (tilde || /\b(?:est|estimated|expected|around|about)\b|추정|예상|경\b|쯤/i.test(around)) return m;
+        const next = whole.slice(at + m.length, at + m.length + 3);
+        if (tilde || /^\s?(?:경|쯤|께)/.test(next) || /\b(?:est|estimated|expected|around|about)\b|추정|예상|쯤/i.test(around)) return m;
         const tag = ko ? " (추정)" : " (est)";
         return paren ? `${date}${tag}${paren}` : `${date}${tag}`;
       });
     }
   }
   return x;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 8 intelligence audit
+// ---------------------------------------------------------------------------------------------------------------
+/** Reader level from the stored quiz answers. Round 8: the showcase profile had level ["confident"], not a quiz value
+ *  (novice / intermediate / advanced / pro), and every function resolved it to NOVICE (beginner prompts and glosses).
+ *  An unknown value now reads as intermediate; an empty answer stays novice (the quiz default). */
+const LEVELS = ["novice", "intermediate", "advanced", "pro"];
+export function readerLevel(xs: unknown): string {
+  const arr = (Array.isArray(xs) ? xs : xs === undefined || xs === null || xs === "" ? [] : [xs]).map((x) => String(x).toLowerCase().trim()).filter(Boolean);
+  if (!arr.length) return "novice";
+  const known = arr.filter((x) => LEVELS.includes(x));
+  if (!known.length) return "intermediate";
+  return known.reduce((a, b) => (LEVELS.indexOf(b) > LEVELS.indexOf(a) ? b : a), known[0]);
+}
+
+/** Superlatives over a window ("the strongest gain in your portfolio" for NVDA's +20.7% YTD when AAPL is +25.5%).
+ *  The named holding must be the leader (or laggard) of that window. */
+export function superlativeClaims(text: string, facts: { names: string[]; windows: Record<number, number | null> }[]): string[] {
+  const WIN: [RegExp, number][] = [[/\b(?:year to date|YTD|this year|since January)\b|올해|연초/i, -1], [/\b(?:1-year|one-year|over (?:the )?(?:past |last )?year|12-month|1Y)\b|1년/i, 365],
+    [/\b(?:three months|3-month|3M|quarter)\b|3개월/i, 90], [/\b(?:this month|one-month|1-month|30-day|1M|past month)\b|한 달|1개월/i, 30], [/\b(?:this week|one-week|1-week|1W|past week)\b|이번 주|1주/i, 7]];
+  return sentencesOf(text).filter((s) => {
+    const up = /\b(?:strongest|best|biggest|top|largest|leading|highest)\s+(?:gain|gainer|performer|performance|return|returner|rise|winner|mover)s?\b|\b(?:leads|tops) (?:your|the) (?:portfolio|holdings|pack|book)\b|가장 (?:많이 오른|큰 상승|수익률이 높은)/i.test(s);
+    const down = /\b(?:weakest|worst|biggest|largest)\s+(?:loser|performer|performance|return|drop|decline|laggard)s?\b|\b(?:lags|trails) (?:your|the) (?:portfolio|holdings|pack|book)\b|가장 (?:많이 내린|부진한)/i.test(s);
+    if (!up && !down) return false;
+    const w = WIN.find(([re]) => re.test(s))?.[1];
+    if (w === undefined) return false;
+    const named = facts.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    if (named.length !== 1) return false;
+    const vals = facts.map((f) => f.windows[w]).filter((v): v is number => typeof v === "number");
+    const mine = named[0].windows[w];
+    if (typeof mine !== "number" || vals.length < 2) return false;
+    return up ? mine < Math.max(...vals) - 0.05 : mine > Math.min(...vals) + 0.05;
+  });
+}
+
+/** "below your buy price" / "underwater" for a holding that is ABOVE its cost (round 8: "Furthest below your buy price
+ *  over 1 year: TSLA -12.1%", TSLA is +50% over its $248.70 average cost; -12.1% was its 1Y price return). */
+export function costBasisClaims(text: string, facts: { names: string[]; gainPct: number | null }[]): string[] {
+  return sentencesOf(text).filter((s) => {
+    const below = /\b(?:below|under) (?:your|its|the) (?:buy|purchase|cost|average cost|entry|price you paid)(?: price| basis)?\b|\bunderwater\b|\bat a loss (?:on|since)\b|\blosing money on\b|매수가(?:보다)? 아래|손실 중/i.test(s);
+    const above = /\b(?:above|over) (?:your|its|the) (?:buy|purchase|cost|average cost|entry)(?: price| basis)?\b|\bin the green (?:on|since)\b/i.test(s);
+    if (!below && !above) return false;
+    const named = facts.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    return named.some((f) => typeof f.gainPct === "number" && (below ? f.gainPct >= 0 : f.gainPct < 0));
+  });
+}
+
+/** "Both sit inside your 12-20% yearly target" when one of them is 11.5% (round 8). Every figure the sentence places
+ *  inside / above / below the target band must be there. */
+export function targetBandClaims(text: string): string[] {
+  const all = sentencesOf(text);
+  return all.filter((s, idx) => {
+    // "Both sit inside your target" takes its figures from the sentence before
+    const prev = /^(?:both|they|these|those|it|that|each|all three|all two|the two)\b/i.test(bare(s)) && idx > 0 ? all[idx - 1] : "";
+    const band = /(\d+(?:\.\d+)?)\s?%?\s?(?:-|–|to)\s?(\d+(?:\.\d+)?)\s?%\s*(?:yearly |annual |a year |per year )?(?:return )?(?:target|goal)|목표[^.\d]{0,10}(\d+)\s?[~-]\s?(\d+)\s?%/i.exec(s);
+    if (!band) return false;
+    const lo = Number(band[1] ?? band[3]), hi = Number(band[2] ?? band[4]);
+    let figs = [...s.matchAll(/([+−-]?\d+(?:\.\d+)?)\s?%/g)].filter((m) => (m.index ?? 0) < (band.index ?? 0) || (m.index ?? 0) > (band.index ?? 0) + band[0].length)
+      .map((m) => Math.abs(Number(m[1].replace("−", "-"))));
+    if (!figs.length && prev) figs = [...prev.matchAll(/([+−-]?\d+(?:\.\d+)?)\s?%/g)].map((m) => Math.abs(Number(m[1].replace("−", "-"))));
+    if (!figs.length) return false;
+    if (/\b(?:inside|within|in line with|on pace with|meets?|meeting|hits?|in)\s+(?:your|the)\b[^.]{0,6}\d|안에|범위 안|부합|달성/i.test(s)) return figs.some((v) => v < lo || v > hi);
+    if (/\b(?:above|beats?|exceeds?|ahead of|over)\s+(?:your|the)\b/i.test(s)) return figs.some((v) => v <= hi);
+    if (/\b(?:below|under|short of|behind|misses?)\s+(?:your|the)\b/i.test(s)) return figs.some((v) => v >= lo);
+    return false;
+  });
+}
+
+/** A group share stated as a figure ("Tech makes up about 57% of assets" when it is ~97%) corrected to the computed
+ *  share. `groups` label a group and its share of assets. */
+export function fixGroupShares(text: string, groups: { label: RegExp; value: number }[], tolPp = 5): string {
+  return perLine(text, (line) => splitSentences(line).map((sent) => {
+    for (const g of groups) {
+      const re = new RegExp(`(${g.label.source}[^.%]{0,40}?\\b(?:makes? up|is|are|at|about|around|roughly|nearly|near|accounts? for|totals?)\\s+(?:about |around |roughly |nearly |near |~)?)(\\d+(?:\\.\\d+)?)(\\s?%)`, g.label.flags.replace("g", "") + "g");
+      sent = sent.replace(re, (m: string, pre: string, n: string, pct: string) => Math.abs(Number(n) - g.value) > tolPp ? `${pre}${g.value.toFixed(1)}${pct}` : m);
+    }
+    return sent;
+  }).join(" "));
+}
+
+/** A move's cause taken from ANOTHER holding's news ("META fell 3.3% after a director sale filing": the director sale
+ *  was Broadcom's, round 8), or "no clear news" for a holding that has a headline today. `facts` carry each holding's
+ *  own recent headlines. */
+export function misattributedCauses(text: string, facts: { names: string[]; headlines: string }[]): string[] {
+  const STOP = new Set(["after", "about", "their", "there", "which", "while", "shares", "stock", "stocks", "today", "report", "reports", "company", "market", "investors", "percent", "filing", "news", "since", "would", "could", "being"]);
+  return sentencesOf(text).filter((s) => {
+    const named = facts.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    if (named.length !== 1) return false;
+    const me = named[0];
+    if (/\bon no (?:clear |obvious )?news\b|\bno (?:clear |obvious )?(?:headline|news) (?:explains|behind)\b|뚜렷한 (?:뉴스|이유) 없이/i.test(s)) return me.headlines.trim().length > 0 && /\b(?:jump|rose|rise|climb|surg|fell|drop|slid|sank|gain|lost)/i.test(s);
+    const m = /\b(?:after|on|following|as|because of|due to|amid)\s+(?:a |an |the )?([^.,;]{6,80})/i.exec(s);
+    if (!m) return false;
+    const words = (m[1].toLowerCase().match(/[a-z][a-z-]{4,}/g) ?? []).filter((w) => !STOP.has(w) && !me.names.some((n) => n.toLowerCase().includes(w)));
+    if (!words.length) return false;
+    const mine = me.headlines.toLowerCase();
+    if (words.some((w) => mine.includes(w))) return false;
+    return facts.some((f) => f !== me && words.filter((w) => f.headlines.toLowerCase().includes(w)).length >= Math.min(2, words.length));
+  });
+}
+
+/** Signed figures in generated copy use the true minus sign (U+2212), as the client renders them ("META -3.3%" in a
+ *  fresh News card, round 8). A hyphen inside a range ("12-20%") or a word is left alone. */
+export const unicodeMinus = (t: string): string => String(t ?? "").replace(/(^|[\s(\[:,])-(?=\$?\d)/g, "$1−");
+
+/** A single-sentence field whose only sentence carries a verdict TAIL ("A $211 gain lifts today's book to $116,500,
+ *  keeping the portfolio on track.") loses the tail, not the sentence (round 8: the fresh close lede kept it because
+ *  dropping its only sentence would empty the field). */
+export const stripVerdictTails = (t: string): string => String(t ?? "")
+  .replace(/,?\s*(?:while |and |thereby )?(?:keeping|keeps) (?:the |your )?(?:portfolio|book|plan|goals?) on track\b/gi, "")
+  .replace(/,?\s*(?:while |and )?cushioning (?:the )?(?:volatility|swings|downside)\b/gi, "")
+  .replace(/,?\s*(?:while |and )?keeping (?:costs|fees|expenses) low\b/gi, "")
+  .replace(/\s+([.!?])/g, "$1");
+
+/** Spoken-script figures that belong to something else (round 8: "Oracle may cut data center spending by more than
+ *  five point one percent", where 5.1% was the VIX change). Each percent spoken (words or digits) must appear in a
+ *  sentence of the brief that names the same subject. */
+export function misplacedScriptFigures(script: string, sectionsText: string): string[] {
+  // the sections arrive as JSON: every string value is its own text, split into sentences
+  const src = String(sectionsText ?? "");
+  const values = src.trim().startsWith("{") ? (src.match(/"(?:[^"\\]|\\.)*"/g) ?? []).map((x) => x.slice(1, -1).replace(/\\n/g, " ")) : [src];
+  const briefSents = values.flatMap((v) => splitSentences(v));
+  const caps = (x: string) => new Set((x.match(/\b[A-Z][A-Za-z&.-]{2,}\b/g) ?? []).filter((w) => !/^(?:The|This|That|Your|It|They|But|And|Today|Friday|Monday|Tuesday|Wednesday|Thursday|Saturday|Sunday|Talk|That's)$/.test(w)));
+  return String(script ?? "").replace(/<break[^>]*\/>/g, " ").split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean).filter((sent) => {
+    const digits = digitsForWritten(sent);
+    const figs = [...digits.matchAll(/(\d+(?:\.\d+)?)\s?%/g)].map((m) => Number(m[1]));
+    if (!figs.length) return false;
+    const subj = caps(sent);
+    if (!subj.size) return false;
+    return figs.some((v) => {
+      const homes = briefSents.filter((b) => [...b.matchAll(/(\d+(?:\.\d+)?)\s?%/g)].some((m) => Math.abs(Number(m[1]) - v) < 0.06 || Math.abs(Math.round(Number(m[1])) - v) < 0.01));
+      if (!homes.length) return true;
+      return !homes.some((b) => [...subj].some((w) => b.includes(w)));
+    });
+  });
 }
