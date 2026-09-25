@@ -3,14 +3,21 @@ import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
 import { labelParts, timeAgo } from "../lib/format";
 import { decodeEntities, dedupeNews } from "../lib/news";
 import { InsightsCard } from "../components/InsightsCard";
+import { heldOnly, readRemovals } from "../lib/heldIntel";
 import { Icon } from "../components/Icon";
 import { PullToRefresh } from "../components/PullToRefresh";
 // headlines open in the in-app browser sheet (like Privacy and Terms), not by leaving for Safari
 import { openExternal } from "../lib/native";
 
+const NEWS_TIMEOUT_MS = 12_000;
+
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
-export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen, onRefreshSymbol, symbolRefreshing = {}, symbolFresh = {} }: {
+export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, intelPending = false, onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen, onRefreshSymbol, symbolRefreshing = {}, symbolFresh = {} }: {
   api: Api; rows: PortfolioRow[]; dispKr?: "USD" | "KRW";
+  /** whose removals to screen the portfolio card against (see lib/heldIntel) */
+  uid?: string | null;
+  /** a book-changed run is being written: the card says it is catching up */
+  intelPending?: boolean;
   onRefreshInsights?: () => void; insightsRefreshing?: boolean; freshInsights?: Insight | null; onInsightsSeen?: (generatedAt: string) => void;
   onRefreshSymbol?: (symbol: string) => void; symbolRefreshing?: Record<string, boolean>; symbolFresh?: Record<string, Insight>;
 }) {
@@ -50,7 +57,10 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
     else setState("loading");
     const held = newsRows.map((r) => r.symbol);
     const scope = filter ?? held;
-    const load = () => api.getNews(scope).then(dedupeNews);   // one copy per story (URL or headline), entities decoded
+    // one copy per story (URL or headline), entities decoded. Offline, a request can hang instead of failing,
+    // and a pull then spun and settled on nothing (r2 power-user audit): past the limit it is an error with Retry.
+    const load = () => Promise.race([api.getNews(scope),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), NEWS_TIMEOUT_MS))]).then(dedupeNews);
     load()
       .then(async (n) => {
         if (!live) return;
@@ -71,6 +81,10 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
     return () => { live = false; };
   }, [api, filter, rows, retryN]);
 
+  // only what is still held: bullets about a removed holding wait for the rerun instead of leading the card
+  const intel = top5 ? heldOnly(top5, rows, readRemovals(uid)) : null;
+  const catchingUp = !!intel && (intel.hidden > 0 || (intelPending && top5 !== null));
+
   return (
     <PullToRefresh onRefresh={refresh}>
       <h2 className="h1">News</h2>
@@ -83,7 +97,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
         ))}
       </div>
       {filter && <InsightsCard api={api} symbol={filter} onRefresh={onRefreshSymbol ? () => onRefreshSymbol(filter) : undefined} refreshing={!!symbolRefreshing[filter]} fresh={symbolFresh[filter] ?? null} />}
-      {!filter && ((top5?.bullets?.length ?? 0) > 0 || (top5?.news5?.length ?? 0) > 0) && (
+      {!filter && intel && (intel.bullets.length > 0 || intel.news5.length > 0 || catchingUp) && (
         <section className="card insights" data-testid="news-top5-card" aria-label="Portfolio intelligence">
           <div className="insights-head">
             <span className="insights-brand">Assetly Intelligence</span>
@@ -91,17 +105,22 @@ export function NewsScreen({ api, rows, dispKr = "KRW", onRefreshInsights, insig
               {insightsRefreshing ? <>Refreshing <Icon name="refresh" size={12} className="spin" /></> : <>{timeAgo(top5!.generated_at)} · <Icon name="refresh" size={12} /></>}
             </button>
           </div>
+          {catchingUp && (
+            <p className="sub" data-testid="intel-updating" style={{ margin: "0 2px 6px", display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="step-mark active" aria-hidden="true" />Updating for your latest changes…
+            </p>
+          )}
           {/* the portfolio read that used to live on the Holdings tab */}
-          {(top5?.bullets?.length ?? 0) > 0 && (
+          {intel.bullets.length > 0 && (
             <ul className="insights-list" data-testid="portfolio-insights-card">
-              {top5!.bullets.map((b, i) => <li key={i}>{decodeEntities(b)}</li>)}
+              {intel.bullets.map((b, i) => <li key={i}>{decodeEntities(b)}</li>)}
             </ul>
           )}
-          {(top5?.news5?.length ?? 0) > 0 && (
+          {intel.news5.length > 0 && (
             <>
-              {(top5?.bullets?.length ?? 0) > 0 && <p className="sub" style={{ margin: "10px 2px 4px", borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>This week across your holdings</p>}
+              {intel.bullets.length > 0 && <p className="sub" style={{ margin: "10px 2px 4px", borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>This week across your holdings</p>}
               <ul className="insights-list" data-testid="news-top5-list">
-                {top5!.news5!.map((b, i) => <li key={i}>{decodeEntities(b)}</li>)}
+                {intel.news5.map((b, i) => <li key={i}>{decodeEntities(b)}</li>)}
               </ul>
             </>
           )}

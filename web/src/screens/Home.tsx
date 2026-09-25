@@ -24,13 +24,15 @@ const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
 };
 
 export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone, loading = false,
-  assessment = null, onAssessRetry, onAssessDismiss, onOpenNews }: {
+  assessment = null, onAssessRetry, onAssessDismiss, onOpenNews, pricesAsOf = null }: {
   api: Api; rows: PortfolioRow[]; loading?: boolean;
   totals: { value: number; assets: number; debt: number; gl: number; cost: number; day: number; mixed: boolean; fx: FxRates | number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
   dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
   briefBanner?: { audio: boolean; edition?: string } | null; onBriefBannerDone?: () => void;
   assessment?: AssessState | null; onAssessRetry?: () => void; onAssessDismiss?: () => void; onOpenNews?: () => void;
+  /** set when the last refresh failed: the time of the prices on screen. Nothing reads as live then. */
+  pricesAsOf?: string | null;
 }) {
   // App already drops empty holdings; a 0-share row must never reach Movers or the list whoever renders Home
   const rows = book.filter(isHeld);
@@ -82,7 +84,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   if (rows.length === 0) {
     return (
       <div className="empty">
-        <p style={{ marginBottom: 14 }}>No runners on the track.</p>
+        <p style={{ marginBottom: 14 }}>Nothing here yet. Connect a brokerage or add what you own, and your brief starts today.</p>
         <button className="btn" style={{ marginBottom: 10 }} onClick={async () => {
           try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } catch { /* button stays */ }
         }}><Icon name="bolt" /> Connect your brokerage</button>
@@ -100,7 +102,13 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   const quietMovers = [...rows].filter((r) => r.change_pct !== null && marketOf(r) !== null)
     .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0)).slice(0, 3);
   const showPulse = mode.kind === "pulse" && pulse.length > 0;
-  const isLive = (r: PortfolioRow) => { const m = marketOf(r); return m !== null && r.change_pct !== null && isMarketOpen(m); };
+  // offline, nothing pulses: the dots say "live", and these prices are from the last good refresh
+  const isLive = (r: PortfolioRow) => { const m = marketOf(r); return !pricesAsOf && m !== null && r.change_pct !== null && isMarketOpen(m); };
+  // Movers ranks holdings against each other: with one stock (plus cash) it only repeated the position list
+  const showMovers = rows.filter((r) => r.kind !== "cash" && r.kind !== "debt").length >= 2;
+  const assessPending = !!assessment && (assessment.phase === "pending" || assessment.phase === "slow");
+  const liveDayPct = totals.assets - totals.day !== 0 ? (totals.day / (totals.assets - totals.day)) * 100 : null;
+  const heldSymbols = rows.filter((r) => r.kind !== "cash" && r.kind !== "debt").map((r) => r.symbol);
   const moverList = mode.kind === "pulse" && !showPulse ? quietMovers : movers;
   // The three supporting lines under the headline totals were the busiest thing on the screen and
   // none of them is what you open the app for. They fold away; the toggle only appears when there
@@ -167,37 +175,43 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           </button>
         )}
         {totals.unconverted > 0 && (
-          <div className="status-line" role="note">{totals.unconverted} position{totals.unconverted > 1 ? "s" : ""} awaiting FX rate — excluded from the total</div>
+          <div className="status-line" role="note">{totals.unconverted} position{totals.unconverted > 1 ? "s aren't" : " isn't"} in the total yet (waiting for an exchange rate).</div>
+        )}
+        {pricesAsOf && (
+          <div className="status-line" role="note" data-testid="prices-as-of">Prices as of {new Date(pricesAsOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</div>
         )}
         <div className="nw-rule" aria-hidden="true" />
       </section>
-      {briefBanner && (
+      {/* "ready" never shows over a newer run that is still being written (r2 newcomer N1) */}
+      {briefBanner && !(briefBanner.edition === "assessment" && assessPending) && (
         <div className="status-note ok" role="status" data-testid="brief-banner">
-          <span className="lead"><Icon name="check" />{briefBanner.edition === "assessment" ? "Your portfolio assessment is ready" : "Your brief is ready"}{briefBanner.audio ? <> · tap <Icon name="play" size={10} /> Listen below</> : ""}</span>
+          <span className="lead"><Icon name="check" />{briefBanner.edition === "assessment" ? "Your assessment is ready." : "Your brief is ready."}{briefBanner.audio ? <> Tap <Icon name="play" size={10} /> to listen.</> : ""}</span>
           <button className="chip" onClick={onBriefBannerDone} aria-label="Dismiss"><Icon name="close" size={12} /></button>
         </div>
       )}
       {assessment && <AssessmentCard state={assessment} onRetry={() => onAssessRetry?.()} onDismiss={() => onAssessDismiss?.()} onOpenNews={onOpenNews} />}
       {/* a fresh assessment remounts the brief card so it shows at once (its own look-up gave up after 4 min) */}
-      <BriefCard api={api} key={assessment?.readyAt ?? "brief"} />
+      <BriefCard api={api} key={assessment?.readyAt ?? "brief"} liveDayPct={liveDayPct} held={heldSymbols}
+        pendingSince={assessPending ? assessment!.startedAt : null} />
       {nextArmed && rows.filter((r) => r.kind !== "cash" && r.kind !== "debt").length < 3 && (
         // after the first adds: the obvious next moves, until the book looks like a portfolio or it is dismissed
         <section className="card next-steps" data-testid="next-steps" aria-label="Next steps">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <strong>Next: add the rest of your portfolio</strong>
+            <strong>Add the rest of your portfolio</strong>
             <button className="chip" onClick={setNextDone} aria-label="Dismiss next steps"><Icon name="close" size={12} /></button>
           </div>
-          <p className="sub" style={{ margin: "4px 0 0" }}>Your brief and assessment read the whole book, so they get sharper with every holding.</p>
+          <p className="sub" style={{ margin: "4px 0 0" }}>Your brief covers everything you own, so each holding you add makes it sharper.</p>
           <div className="next-steps-actions">
             <button className="chip" onClick={onAdd}>+ Add another</button>
             <button className="chip" onClick={async () => {
               try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } catch { /* the chip stays */ }
             }}><Icon name="bolt" size={12} /> Import from a brokerage</button>
-            {onOpenNews && <button className="chip" onClick={onOpenNews}>Read your Intelligence</button>}
+            {/* only once there is something to read: before the first intelligence lands, News is empty */}
+            {onOpenNews && !(assessPending && !assessment?.intelligenceReady) && <button className="chip" onClick={onOpenNews}>See today's news</button>}
           </div>
         </section>
       )}
-      <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {sessionLabel(new Date(), heldMkts, hasCrypto)}</span></h2>
+      {(showMovers || showPulse) && <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {sessionLabel(new Date(), heldMkts, hasCrypto)}</span></h2>}
       {showPulse && (
         <div className="card" style={{ marginBottom: 16 }} data-testid="pulse-card">
           {pulse.map((p) => (
@@ -212,13 +226,14 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           <p className="sub" style={{ margin: "6px 2px 2px" }}>Index futures ahead of the US open.</p>
         </div>
       )}
-      {!showPulse && <div className="card" style={{ marginBottom: 16 }} data-testid="movers-card">
+      {showMovers && !showPulse && <div className="card" style={{ marginBottom: 16 }} data-testid="movers-card">
         {moverList.map((r) => (
+          // the same grammar as a position row: coloured "±% (±$)"
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span></span>
-            <span className={`right ${glClass(r.change_pct)}`}>
-              {(() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <span className="num">{signedMoney(dv, dc)}</span>; })()}
-              <span className="num sub"> · {signedPct(r.change_pct)}{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span>
+            <span className={`right num ${glClass(r.change_pct)}`}>
+              {signedPct(r.change_pct)}{(() => { const [dv, dc] = show(dayChangeAmount(r.value, r.change_pct), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()}
+              {isLive(r) && <span className="live-dot" aria-hidden="true" />}
             </span>
           </button>
         ))}
@@ -237,7 +252,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           <button className="chip" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>All</button>
           {filterChips.map((k) => (
             <button key={k} className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>
-              {k === "US" ? "US" : k === "KR" ? "KR" : "Ret"}
+              {k === "US" ? "US" : k === "KR" ? "Korea" : "Retirement"}
             </button>
           ))}
         </div>
@@ -252,10 +267,14 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           value += sign * v; day += sign * d; gl += sign * g;
         }
         const dayPct = value - day !== 0 ? (day / (value - day)) * 100 : 0;
+        // a filter whose market is closed today says which session its move is from ("Wed close"), as the headline does
+        const moving = shown.filter((r) => r.kind !== "cash" && r.kind !== "debt" && r.change_pct !== null);
+        const sessions = [...new Set(moving.map((r) => moveSession(r).label))];
+        const dayWord = moving.length && moving.every((r) => !moveSession(r).today) && sessions.length === 1 ? sessions[0] : "today";
         const glPct = value - gl !== 0 ? (gl / (value - gl)) * 100 : 0;
         return (
           <div className="status-line num" data-testid="filter-totals" style={{ margin: "0 2px 8px" }}>
-            {money(value, baseCurrency)} · today <span className={moneyClass(day)}>{signedMoney(day, baseCurrency)} ({signedPct(dayPct)})</span> · total <span className={moneyClass(gl)}>{signedMoney(gl, baseCurrency)} ({signedPct(glPct)})</span>
+            {money(value, baseCurrency)} · {dayWord} <span className={moneyClass(day)}>{signedMoney(day, baseCurrency)} ({signedPct(dayPct)})</span> · total <span className={moneyClass(gl)}>{signedMoney(gl, baseCurrency)} ({signedPct(glPct)})</span>
           </div>
         );
       })()}
@@ -266,7 +285,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
             <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
               <span>
                 <span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span><br />
-                <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${formatQty(r.qty ?? 0)} ${r.kind === "crypto" ? r.symbol : "sh"}`}{accountTag(r.account) ? ` · ${accountTag(r.account)}` : ""}{r.source === "snaptrade" ? <> · <Icon name="bolt" size={10} /></> : ""}{r.kind === "cash" || r.kind === "debt" ? "" : r.price !== null ? ` · ${moneyExact(r.price, r.currency)}` : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
+                <span className="sub num">{r.kind === "cash" ? "cash balance" : r.kind === "debt" ? "debt balance" : `${formatQty(r.qty ?? 0)} ${r.kind === "crypto" ? r.symbol : "sh"}`}{accountTag(r.account) ? <span className="row-acct"> · {accountTag(r.account)}</span> : ""}{r.source === "snaptrade" ? <span className="row-acct"> · <Icon name="bolt" size={10} /></span> : ""}{r.kind === "cash" || r.kind === "debt" ? "" : r.price !== null ? ` · ${moneyExact(r.price, r.currency)}` : ` · avg ${moneyExact(r.avg_cost, r.currency)}`}</span>
               </span>
               <span className="right">
                 <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span>

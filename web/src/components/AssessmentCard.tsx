@@ -15,7 +15,9 @@ export function AssessmentCard({ state, onRetry, onDismiss, onOpenNews }: {
     return () => clearInterval(t);
   }, [state.phase]);
   if (state.phase === "idle" || state.phase === "ready") return null;
-  const title = state.first ? "Building your first Portfolio Assessment" : "Updating your Portfolio Assessment";
+  // short enough for one line at 393pt ("BUILDING YOUR FIRST PORTFOLIO ASSESSME…" was cut), and a run
+  // that failed never says "Building" above "didn't finish" (r2 design audit)
+  const title = state.phase === "error" ? "Assessment paused" : state.first ? "Your first assessment" : "Updating your assessment";
   const mins = state.startedAt ? Math.floor((Date.now() - +new Date(state.startedAt)) / 60_000) : 0;
   const started = mins < 1 ? "started just now" : `started ${mins} min ago`;
 
@@ -29,28 +31,34 @@ export function AssessmentCard({ state, onRetry, onDismiss, onOpenNews }: {
         )}
       </div>
       {state.phase === "error" ? (<>
-        <p style={{ margin: "6px 0 0" }} role="alert">{state.error ?? "Something went wrong."} Your holdings are saved; only the write-up is missing.</p>
+        <p style={{ margin: "6px 0 0" }} role="alert">{state.error ?? "We couldn't finish your assessment."} Your holdings are safe; only the write-up is missing.</p>
         <div className="assess-actions"><button className="btn" style={{ width: "auto" }} onClick={onRetry}>Try again</button></div>
       </>) : state.phase === "slow" ? (<>
-        <p style={{ margin: "6px 0 0" }}>This is taking longer than usual. It will appear here and on your brief card as soon as it's written.</p>
+        <p style={{ margin: "6px 0 0" }}>This is taking longer than usual. It'll show up here as soon as it's ready.</p>
         <div className="assess-actions">
           <button className="btn secondary" style={{ width: "auto" }} onClick={onRetry}>Try again</button>
-          {state.intelligenceReady && onOpenNews && <button className="chip" onClick={onOpenNews}>Read your Intelligence</button>}
+          {state.intelligenceReady && onOpenNews && <button className="chip" onClick={onOpenNews}>See today's news</button>}
         </div>
       </>) : (<>
         <ol className="assess-steps">
-          <li data-done={state.intelligenceReady}>
-            {state.intelligenceReady ? <Icon name="check" size={12} /> : <span className="progress-dot" aria-hidden="true" />}
-            Reading your holdings and their news
-            {state.intelligenceReady && onOpenNews && <button className="chip" onClick={onOpenNews}>Read it in News</button>}
+          {/* progress, not a bullet list: done = check, working = spinning ring, next = hollow circle */}
+          <li data-done={state.intelligenceReady} data-step={state.intelligenceReady ? "done" : "active"}>
+            <StepMark step={state.intelligenceReady ? "done" : "active"} />
+            Reading the news on your holdings
+            {state.intelligenceReady && onOpenNews && <button className="chip" onClick={onOpenNews}>See today's news</button>}
           </li>
-          <li data-done="false">
-            {state.intelligenceReady ? <span className="progress-dot" aria-hidden="true" /> : <span aria-hidden="true" style={{ width: 12 }} />}
-            Writing your Portfolio Assessment
+          <li data-done="false" data-step={state.intelligenceReady ? "active" : "next"}>
+            <StepMark step={state.intelligenceReady ? "active" : "next"} />
+            Writing your assessment
           </li>
         </ol>
-        <p className="assess-foot">Usually 2 to 4 minutes · {started}. You can leave this screen; it keeps going.</p>
+        <p className="assess-foot">Usually takes 2 to 4 minutes ({started}). Feel free to leave; we'll keep working.</p>
       </>)}
     </section>
   );
+}
+
+function StepMark({ step }: { step: "done" | "active" | "next" }) {
+  if (step === "done") return <span className="step-mark done" aria-label="Done"><Icon name="check" size={12} /></span>;
+  return <span className={`step-mark ${step}`} aria-label={step === "active" ? "In progress" : "Up next"} />;
 }

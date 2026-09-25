@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { convertCcy, dayChangeAmount, type FxRates } from "./lib/format";
 import { isHeld, sortByBaseValue } from "./lib/portfolio";
 import { useAssessmentWatch } from "./lib/assessment";
+import { noteRemoval } from "./lib/heldIntel";
+import { clearUserLocalState } from "./lib/localState";
 import type { Session } from "@supabase/supabase-js";
 import { completeNativeAuth, supabase } from "./lib/supabase";
 import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
@@ -205,6 +207,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   }, []);
 
   const lastLoadRef = useRef(0);
+  const [lastOkAt, setLastOkAt] = useState<string | null>(null);   // when the prices on screen were fetched
   const load = useCallback(async () => {
     lastLoadRef.current = Date.now();
     try {
@@ -215,6 +218,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       setRows(r);
       if (fxNow) setFx(fxNow);
       setError(null);
+      setLastOkAt(new Date().toISOString());
       if (uidRef.current && p) writeBookCache(uidRef.current, p, r, fxNow);
     } catch {
       setError("Couldn't refresh your prices. Tap Retry.");
@@ -273,7 +277,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
 
   useEffect(() => {
     if (!session) {
-      if (uidRef.current) { clearBookCache(uidRef.current); uidRef.current = null; }
+      // signed out: nothing this user left on the device (hints, a pending run, removals) greets the next one
+      if (uidRef.current) { clearBookCache(uidRef.current); clearUserLocalState(uidRef.current); uidRef.current = null; }
       setProfile(null); setRows([]); setBooted(false); return;
     }
     uidRef.current = session.user.id;
@@ -338,16 +343,34 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const scheduleBookChange = useCallback(() => {
     const b = bookChangeRef.current;
     const firstBook = heldCountRef.current === 0 && !b.pending;
+    // the first change of a run tells the server a run is coming, so the assessment it holds reads as
+    // superseded from now on, not only once the debounce fires (fix2-server: brokerage-connected {pending})
+    if (!b.pending) void api.markAssessmentPending();
     b.pending = true;
     if (b.timer) clearTimeout(b.timer);
     b.timer = window.setTimeout(runBookPipeline, firstBook ? 5000 : 25000);
-  }, [runBookPipeline]);
+  }, [api, runBookPipeline]);
   useEffect(() => { if (view.kind !== "add") runBookPipeline(); }, [view.kind, runBookPipeline]);   // leaving Add = the run is over
   useEffect(() => {
     const h = () => { if (document.visibilityState === "hidden") runBookPipeline(); };
     document.addEventListener("visibilitychange", h);
     return () => document.removeEventListener("visibilitychange", h);
   }, [runBookPipeline]);
+
+  // A view change starts at the top of the new screen. Opening a holding from a scrolled Home landed
+  // mid-page with the ticker, price and Back pill scrolled away (r2 native audit M2). Coming back to Home
+  // from a pushed screen puts the list where it was.
+  const homeScrollRef = useRef(0);
+  const prevViewRef = useRef<View>(view);
+  const viewKey = view.kind === "tab" ? `tab:${view.tab}` : view.kind === "position" ? "position" : "add";
+  useLayoutEffect(() => {
+    const prev = prevViewRef.current;
+    prevViewRef.current = view;
+    if (prev === view) return;
+    const backHome = view.kind === "tab" && view.tab === "home" && prev.kind !== "tab";
+    try { window.scrollTo({ top: backHome ? homeScrollRef.current : 0, left: 0 }); } catch { /* not a browser */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewKey]);
 
   const base = profile?.base_currency ?? "USD";
   // The book every screen sees: only rows that hold something, biggest first in the base currency.
@@ -374,7 +397,10 @@ export function App({ api = defaultApi }: { api?: Api }) {
     return <Onboarding api={api} onDone={load} snaptrade={obSnap} onBookChanged={() => { bookChangeRef.current.pending = true; runBookPipeline(); }} />;
   }
 
-  const go = (v: View) => { setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "news") setNewsAlert(false); if (v.kind === "tab" && v.tab === "home") setHomeAlert(false); setView(v); };
+  const go = (v: View) => {
+    const cur = viewRef.current;
+    if (cur.kind === "tab" && cur.tab === "home") homeScrollRef.current = window.scrollY;
+    setError(null); if (v.kind === "tab" && v.tab === "ask") setAskAlert(false); if (v.kind === "tab" && v.tab === "news") setNewsAlert(false); if (v.kind === "tab" && v.tab === "home") setHomeAlert(false); setView(v); };
   const tab = view.kind === "tab" ? view.tab : null;
 
   return (
@@ -409,7 +435,15 @@ export function App({ api = defaultApi }: { api?: Api }) {
         )}
         {view.kind === "position" && (
           <PositionScreen api={api} dispKr={profile?.display_kr ?? "KRW"} row={rows.find((r) => r.holding_id === view.holdingId) ?? null}
-            onChanged={load} onRemoved={async () => { await load(); go({ kind: "tab", tab: "home" }); }}
+            onChanged={load} onRemoved={async () => {
+              // a removal changes the book as much as an add: the assessment and the intelligence are rerun
+              // (leaving this screen flushes the run), and the removed name is remembered so the cards
+              // stop talking about it until the rerun lands (r2 power-user N2)
+              const gone = rows.find((r) => r.holding_id === view.holdingId);
+              if (gone) noteRemoval(session.user.id, gone);
+              if (gone && rows.length > 1) { bookChangeRef.current.pending = true; void api.markAssessmentPending(); }
+              await load(); go({ kind: "tab", tab: "home" });
+            }}
             onMoved={async (id) => { await load(); setView({ kind: "position", holdingId: id }); }}
             onBack={() => go({ kind: "tab", tab: "home" })} />
         )}
@@ -420,11 +454,13 @@ export function App({ api = defaultApi }: { api?: Api }) {
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
             briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)}
             assessment={assess.state} onAssessRetry={retryAssessment} onAssessDismiss={assess.dismiss}
-            onOpenNews={() => go({ kind: "tab", tab: "news" })} />
+            onOpenNews={() => go({ kind: "tab", tab: "news" })}
+            pricesAsOf={error ? (lastOkAt ?? rows.reduce<string | null>((m, r) => (r.as_of && (!m || r.as_of > m) ? r.as_of : m), null)) : null} />
           </PullToRefresh>
         )}
         {view.kind === "tab" && view.tab === "news" && (
-          <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"}
+          <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"} uid={session.user.id}
+            intelPending={assess.state.phase === "pending" || assess.state.phase === "slow"}
             onRefreshInsights={refreshInsights} insightsRefreshing={pinsRefreshing} freshInsights={pinsFresh}
             onInsightsSeen={(g) => { seenInsightRef.current = g; setNewsAlert(false); }}
             onRefreshSymbol={refreshSymbol} symbolRefreshing={symRefreshing} symbolFresh={symFresh} />
@@ -437,7 +473,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
           }} />
         </div>
         {view.kind === "tab" && view.tab === "settings" && (
-          <SettingsScreen api={api} profile={profile} rows={rows} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
+          <SettingsScreen api={api} profile={profile} rows={rows} email={session.user.email ?? null} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
         )}
       </main>
 

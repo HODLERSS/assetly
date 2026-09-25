@@ -22,6 +22,8 @@ export type PortfolioRow = {
 export type HistoryPoint = { ts: string; price: number };
 export type Insight = {
   bullets: string[]; windows: Record<string, string> | null; news5?: string[] | null; model: string; generated_at: string;
+  /** portfolio card only (migration 38; absent on older rows): the holdings each bullet is about, and the book it was written for */
+  bullet_symbols?: string[][] | null; news5_symbols?: string[][] | null; held_symbols?: string[] | null;
 };
 /** One earlier Ask exchange: the question and the answer the user saw. */
 export type AskTurn = { q: string; a: string };
@@ -31,6 +33,12 @@ export type BriefSections = {
   positions: { name: string; note: string; watch: string }[];
   desk_view: string; calendar: string[];
   horizon?: string; ideas?: string[];   // assessment only: "Next 3 months: ... Next 3 years: ..." + gaps worth researching
+  // What the brief was written against (daily-brief, 2026-09-25; absent on older rows). The client never
+  // presents a brief as current when the book has since moved the other way.
+  as_of?: string;                       // when the prices were read
+  day_sign?: -1 | 0 | 1;                // the book's day move at write time (0 under 0.05%)
+  day_pct?: number;
+  held?: string[];                      // the holdings the brief was written for
 };
 export type BriefEdition = "morning" | "midday" | "close" | "assessment" | "weekend" | "kr_open" | "kr_close";
 export type DailyBrief = { brief_date: string; edition: BriefEdition; sections: BriefSections; generated_at: string; audio_path?: string | null; script?: string | null };
@@ -253,12 +261,20 @@ export function makeApi(sb: SupabaseClient = supabase) {
     },
     /** Latest portfolio-level insight for the signed-in user. */
     async getPortfolioInsights(): Promise<Insight | null> {
-      const { data } = await sb.from("portfolio_insights").select("bullets,news5,model,generated_at")
+      const base = "bullets,news5,model,generated_at";
+      const q = (cols: string) => sb.from("portfolio_insights").select(cols)
         .order("generated_at", { ascending: false }).limit(1).maybeSingle();
-      if (!data) return null;
-      return { bullets: (data.bullets as string[]) ?? [], windows: null,
-               news5: Array.isArray(data.news5) ? (data.news5 as string[]) : null,
-               model: data.model, generated_at: String(data.generated_at) };
+      // the per-bullet symbols arrive with migration 38; before it, that select errors and the plain one answers
+      let { data, error } = await q(`${base},bullet_symbols,news5_symbols,held_symbols`);
+      if (error) ({ data } = await q(base));
+      const r = data as Record<string, unknown> | null;
+      if (!r) return null;
+      const tags = (v: unknown) => Array.isArray(v) && v.every(Array.isArray) ? (v as string[][]) : null;
+      return { bullets: (r.bullets as string[]) ?? [], windows: null,
+               news5: Array.isArray(r.news5) ? (r.news5 as string[]) : null,
+               model: String(r.model), generated_at: String(r.generated_at),
+               bullet_symbols: tags(r.bullet_symbols), news5_symbols: tags(r.news5_symbols),
+               held_symbols: Array.isArray(r.held_symbols) ? (r.held_symbols as string[]) : null };
     },
     async getNews(scope?: string | string[]): Promise<NewsItem[]> {
       let q = sb.from("news").select("id,symbol,title,url,source,published_at")
@@ -382,6 +398,11 @@ export function makeApi(sb: SupabaseClient = supabase) {
         catch { throw new Error("We couldn't start your assessment."); }
       }
     },
+    /** The book just changed and a run is coming (the client debounces a run of adds): the server marks the
+     *  assessment queued now, so an older run can't report "ready" over it. Best effort; nothing waits on it. */
+    async markAssessmentPending(): Promise<void> {
+      await sb.functions.invoke("brokerage-connected", { body: { pending: true } }).catch(() => null);
+    },
     /** Where the Portfolio Assessment stands for a run that started at `since` (ISO).
      *  Today readiness is read off the rows themselves: an assessment edition in daily_briefs newer than
      *  `since`, and the portfolio intelligence that the chain writes first. A server-side status (queued /
@@ -392,13 +413,17 @@ export function makeApi(sb: SupabaseClient = supabase) {
         sb.from("portfolio_insights").select("generated_at").order("generated_at", { ascending: false }).limit(1).maybeSingle(),
         // the server's own run record (queued -> running -> ready | failed); absent before migration 34,
         // in which case the rows above are the whole story
-        sb.from("assessment_status").select("state,updated_at").maybeSingle().then((r) => r, () => ({ data: null })),
+        sb.from("assessment_status").select("state,started_at,updated_at").maybeSingle().then((r) => r, () => ({ data: null })),
       ]);
       const at = a?.generated_at ? String(a.generated_at) : null;
       const pit = pi?.generated_at ? String(pi.generated_at) : null;
-      const fresh = (t: string | null) => !!t && +new Date(t) > +new Date(since);
+      const run = st as { state?: string; started_at?: string | null; updated_at?: string } | null;
+      // started_at is the server's run id: when a newer run is queued (more adds, a removal, another
+      // device), only an assessment written for THAT run counts as ready, never the one before it
+      const active = run?.state === "queued" || run?.state === "running";
+      const from = active && run?.started_at && +new Date(run.started_at) > +new Date(since) ? run.started_at : since;
+      const fresh = (t: string | null) => !!t && +new Date(t) > +new Date(from);
       // a run the server marked failed, or one that stopped reporting 15 min ago, is not coming
-      const run = st as { state?: string; updated_at?: string } | null;
       const dead = !!run && fresh(run.updated_at ?? null) && (run.state === "failed"
         || ((run.state === "queued" || run.state === "running") && Date.now() - +new Date(run.updated_at!) > 15 * 60_000));
       return { status: fresh(at) ? "ready" : dead ? "failed" : "pending", generatedAt: fresh(at) ? at : null,
