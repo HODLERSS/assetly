@@ -383,7 +383,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // primary model gets 20s, the fast lane (gpt-oss, same prompt and guards) whatever is left of ~29s, and the
   // corrective rewrite runs only when it can finish inside that budget; otherwise the code-side guards
   // (deletion, language-matched opener) stand alone.
-  const FAST = "gpt-oss-120b", BUDGET = 29000;
+  const FAST = "gpt-oss-120b", BUDGET = 40000;   // r3 live: a 20s primary miss left the fast lane 9s and the question 502ed
   const left = () => BUDGET - (Date.now() - t0);
   const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3") => {
     if (timeoutMs < 1500) return null;
@@ -400,8 +400,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   };
   const base = [{ role: "system", content: system }, { role: "user", content: prompt }];
   let parsedA: { answer: string; followups: string[] } | null = null;
-  parsedA = await ask(base, 0.2, Math.min(20000, left()));
-  if (!parsedA) parsedA = await ask(base, 0.3, Math.min(14000, left()), FAST);
+  parsedA = await ask(base, 0.2, Math.min(18000, left()));
+  if (!parsedA) parsedA = await ask(base, 0.3, Math.min(20000, left()), FAST);
   if (!parsedA && left() > 6000) parsedA = await ask(base, 0.4, left(), FAST);
   const deDash = (v: string) => v.trim().replace(/\s*—\s*/g, ": ").replace(/\s*–\s*/g, ": ");
   // one bullet per line before any check: a shortlist written "• A. • B." on one line reads as one line otherwise
