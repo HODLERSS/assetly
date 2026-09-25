@@ -7,7 +7,7 @@
 // slice stopped days short of today and the "latest" price was stale. Windows are now read point by point:
 // the latest price, and for each window the last price at or before its start.
 import { CLOSE_MIN, isTradingDay, type Mkt, marketOf, TZ, zonedEpoch, zonedParts } from "./calendar.ts";
-import { parseDividends, pctOver, type Pt, windowCutoff } from "./intel.ts";
+import { krxExDate, parseDividends, pctOver, type Pt, windowCutoff } from "./intel.ts";
 
 // deno-lint-ignore no-explicit-any
 type Db = any;   // the supabase-js client (typed loosely: the functions use the untyped builder)
@@ -25,6 +25,17 @@ export async function windowReturns(admin: Db, symbol: string, days: number[], n
   const pct: Record<number, number | null> = {};
   days.forEach((d, i) => { const b = bases[i]; pct[d] = b && last ? pctOver([b, last], d, now, mkt) : null; });
   return { last, pct };
+}
+
+/** The highest and lowest stored price (closes and live ticks) over the last `days` days, with the live price.
+ *  Round 7 native: "BTC surged past $87,000" when no price in the window reached it. */
+export async function hiLo(admin: Db, symbol: string, days = 30, livePrice: number | null = null, now = Date.now()): Promise<{ high: number | null; low: number | null }> {
+  const since = new Date(now - days * 86400000).toISOString();
+  const one = (asc: boolean) => admin.from("price_history").select("price").eq("symbol", symbol).gte("ts", since).order("price", { ascending: asc }).limit(1)
+    .then((r: { data: { price: number }[] | null }) => (r.data?.[0] ? Number(r.data[0].price) : null), () => null);
+  const [lo, hi] = await Promise.all([one(true), one(false)]);
+  const xs = [hi, lo, livePrice].filter((x): x is number => typeof x === "number" && x > 0);
+  return { high: xs.length ? Math.max(...xs) : null, low: xs.length ? Math.min(...xs) : null };
 }
 
 /** Does this symbol lack ~13 months of daily history (no point older than 400 days)? 400, not 365: the 1Y
@@ -269,7 +280,7 @@ export async function refreshDividends(admin: Db, symbols: string[], cap = 6): P
     const body = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(d.yahoo ?? d.symbol)}?range=2y&interval=1mo&events=div`,
       { headers: { "User-Agent": UA, Accept: "application/json" } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
     if (!body) return;
-    const info = parseDividends(body, priceOf.get(d.symbol) ?? null, today);
+    const info = parseDividends(body, priceOf.get(d.symbol) ?? null, today, d.symbol);
     const { error } = await admin.from("symbols").update({
       div_last: info?.last ?? null, div_last_ex: info?.lastEx ?? null, div_ttm: info?.ttm ?? null, div_freq_days: info?.freqDays ?? null,
       div_next_ex: info?.nextEx ?? null, div_yield: info?.yieldPct ?? null, div_as_of: new Date().toISOString(),
@@ -306,7 +317,10 @@ export function dividendLine(name: string, d: DivRow | undefined, shares: number
   const annualNative = shares * (current ? perYear : (ttm || perYear));
   // an ex-date estimated for today or earlier is not "next" (round 6: VOO "~Sep 25" on Sep 25)
   const todayYmd = new Date().toISOString().slice(0, 10);
-  const nextEx = d.div_next_ex && d.div_next_ex > todayYmd ? d.div_next_ex : null;
+  let nextEx = d.div_next_ex && d.div_next_ex > todayYmd ? d.div_next_ex : null;
+  // a KRX quarterly payer's ex-date is the session before the quarter-end record date (round 7: Samsung Sep 29, the
+  // stored year-ago estimate said Sep 28); corrected at read time until the next refresh rewrites it
+  if (nextEx && /\.(?:KS|KQ)$/.test(String(d.symbol ?? "")) && freq >= 80 && freq <= 100) nextEx = krxExDate(nextEx, todayYmd);
   const rate = perUsd > 0 ? perUsd : 1;
   const annual = annualNative / rate;
   const usdF = (v: number) => "$" + (v >= 100 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v < 1 ? 4 : 2));

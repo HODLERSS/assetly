@@ -636,7 +636,7 @@ export const EVIDENCE_LAW = `EVIDENCE LAW: a figure belongs to whoever the headl
 // Live-number checks for model-written takes (per-symbol cards, portfolio intelligence, warmup)
 // ---------------------------------------------------------------------------------------------
 /** What a take may say about a holding right now: its names, its session day move (%), its live share price. */
-export type LiveFact = { names: string[]; pct: number | null; price?: number | null };
+export type LiveFact = { names: string[]; pct: number | null; price?: number | null; high?: number | null; low?: number | null };
 // Hangul names match as substrings (a particle attaches: "자산은", "Nvidia는"); Latin names end at a Latin letter
 const nameIn = (s: string, n: string) => !!n && (/^[A-Z0-9.]{1,6}$/.test(n)
   ? new RegExp(`(?:^|[^A-Za-z0-9])\\$?${esc(n)}(?=$|[^A-Za-z0-9])`).test(s)
@@ -718,6 +718,34 @@ export function levelMismatches(text: string, facts: LiveFact[], tol = 0.06): st
       if (!px || !(px > 0)) continue;
       if (Math.abs(v / px - 1) > tol) { bad.push(raw); break; }
     }
+  }
+  for (const c of crossedLevelClaims(text, facts)) if (!bad.includes(c)) bad.push(c);
+  return bad;
+}
+
+/** A level the price is said to have CROSSED or HIT that it never reached (round 7 native: "BTC surged past $87,000"
+ *  when its highest close was $86,602.91 and it trades at $84,077). Checked against the holding's high / low over the
+ *  recent window (`high`/`low` on its fact: closes and live ticks). Conditions and targets ("if it breaks $90K",
+ *  "needs to reclaim $2,800", "support at $80K") are not claims and stay. */
+export function crossedLevelClaims(text: string, facts: LiveFact[], tolPct = 0.3): string[] {
+  const bad: string[] = [];
+  for (const raw of sentencesOf(text)) {
+    const s = bare(raw);
+    if (/\b(?:if|could|would|might|may|needs? to|must|target|targets|support|resistance|reclaim|fails? to|watch|tripwire|should|unless|a move (?:above|below)|break (?:above|below))\b/i.test(s)) continue;
+    const UP = /\b(?:surg\w*|rose|ris\w*|rallied|rall\w*|climb\w*|jump\w*|push\w*|broke|break\w*|topp?\w*|soar\w*|spik\w*|trad\w*|mov\w*|ran|run\w*|clear\w*)\s+(?:back\s+)?(?:past|above|over|through|beyond)\s+(\$\s?[\d,.]+\s?[kKmM]?)|\b(?:hit|hits|reached|reaches|touched|tagged|topped|set a (?:new )?high (?:of|at|near))\s+(?:a (?:new )?(?:high|record) (?:of|at|near)\s+)?(\$\s?[\d,.]+\s?[kKmM]?)/gi;
+    const DOWN = /\b(?:fell|fall\w*|dropp?\w*|slid|slump\w*|sank|sink\w*|tumbl\w*|plung\w*|dipp?\w*|broke|break\w*)\s+(?:back\s+)?(?:below|under|through)\s+(\$\s?[\d,.]+\s?[kKmM]?)/gi;
+    const val = (t: string) => { const m = /\$\s?([\d,.]+)\s?([kKmM]?)/.exec(t); if (!m) return NaN; const n = Number(m[1].replace(/,/g, "")); return m[2].toLowerCase() === "k" ? n * 1e3 : m[2].toLowerCase() === "m" ? n * 1e6 : n; };
+    const who = (at: number) => facts.map((f) => ({ f, i: firstIdx(s, f.names) })).filter((x) => x.i <= at).sort((a, b) => b.i - a.i)[0]?.f ?? (facts.length === 1 ? facts[0] : undefined);
+    let hit = false;
+    for (const m of s.matchAll(UP)) {
+      const v = val(m[1] ?? m[2] ?? ""), f = who(m.index ?? 0);
+      if (f && typeof f.high === "number" && f.high > 0 && v > f.high * (1 + tolPct / 100)) { hit = true; break; }
+    }
+    if (!hit) for (const m of s.matchAll(DOWN)) {
+      const v = val(m[1] ?? ""), f = who(m.index ?? 0);
+      if (f && typeof f.low === "number" && f.low > 0 && v < f.low * (1 - tolPct / 100)) { hit = true; break; }
+    }
+    if (hit) bad.push(raw);
   }
   return bad;
 }
@@ -929,6 +957,8 @@ export function brokenSentences(text: string): string[] {
       // "It offers exposure."
       || /\bhas (?:a |an )?(?:lasting |dominant |platform |real )*edge(?: (?:in|with) [A-Za-z]+)?,? (?:(?:sticky contracts|profit|cash|margins),? (?:and )?)+(?:a |an |solid |strong |net cash )?balance sheet\b/i.test(s)
       || /^(?:it|this|the fund)\s+(?:offers|gives|provides|adds)\s+exposure\s*[.!]?$/i.test(s)
+      // round 7: "It 13.9% of assets and gives a 0.16% dividend $11 yearly."
+      || /^(?:it|this|that|they|its)\s+[+\-−]?\$?\d/i.test(s)
       || verblessList(raw).length > 0;
   });
 }
@@ -942,6 +972,8 @@ export const fixGlossArticles = (t: string): string => String(t ?? "")
  *  jargon for a portfolio, "tape" for the market, "names" for stocks (round-3 native review). Words that only
  *  look alike are left alone ("book value", "the company's name"). */
 export const PORTFOLIO_PLAIN: [RegExp, string][] = [
+  // round 7: "artificial-intelligence" spelled out five times in one assessment; AI is the everyday word
+  [/\bartificial[- ]intelligence\b/gi, "AI"],
   [/\b(your|the|this|whole|entire|overall|a|their|my)\s+book(?!\s+(?:value|values|of business|to bill|ratio|keeping))\b/gi, "$1 portfolio"],
   [/\bbook-level\b/gi, "portfolio-level"], [/\bbook-wide\b/gi, "portfolio-wide"],
   [/\b(the|a|quiet|this|today's)\s+tape\b/gi, "$1 market"],
@@ -1098,12 +1130,17 @@ export const NOVICE_PLAIN: Gloss[] = [
   { re: /\b(?:basis points|bps)\b/gi, plain: "hundredths of a percent", sample: "basis points" },
   { re: /\bshort-duration\b/gi, plain: "shorter-term", sample: "short-duration" },
   { re: /\blong-duration\b/gi, plain: "longer-term", sample: "long-duration" },
-  { re: /\bnet inflows\b/gi, plain: "net new money", sample: "net inflows" },
-  { re: /\binflows\b/gi, plain: "new money", sample: "inflows" },
+  // round 7: "ETF inflows turn negative" became "ETF new money turn negative" (a plural verb on a singular gloss); a
+  // plural gloss keeps the verb right
+  { re: /\bnet inflows\b/gi, plain: "net purchases", sample: "net inflows" },
+  { re: /\binflows\b/gi, plain: "purchases", sample: "inflows" },
   { re: /\bnet outflows\b/gi, plain: "net withdrawals", sample: "net outflows" },
   { re: /\boutflows\b/gi, plain: "withdrawals", sample: "outflows" },
   { re: /\b(?:rotce|return on (?:tangible )?(?:common )?equity)\b/gi, plain: "bank profitability", sample: "ROTCE" },
   { re: /\broa\b/gi, plain: "profit on assets", sample: "ROA" },
+  // round 7: "Its ecosystem moat" / "a wide moat" became "Its ecosystem lasting edge over competitors": after a
+  // possessive, an adjective or a noun modifier, the one-word "edge" reads right
+  { re: /(?<=\b(?:its|their|his|her|wide|narrow|deep|strong|durable|real|big|ecosystem|brand|network|cost|scale|data|software|platform|switching-cost|economic)\s+)moat\b/gi, plain: "edge", sample: "wide moat" },
   { re: /\bmoat\b/gi, plain: "lasting edge over competitors", sample: "moat" },
   { re: /\bdrawdowns?\b/gi, plain: "drop from the top", sample: "drawdown" },
   { re: /\bDAU\b/g, plain: "daily users", sample: "DAU" },
@@ -1121,6 +1158,8 @@ export const NOVICE_PLAIN: Gloss[] = [
   { re: /\bcash drag\b/gi, plain: "idle cash", sample: "cash drag" },
   { re: /\brebalanc(?:e|ing)\b/gi, plain: "reshuffle", sample: "rebalancing" },
   { re: /\bgrowth premium\b/gi, plain: "high price tag", sample: "growth premium" },
+  // round 7: "guide valuation" became "guide price tag": after a verb the gloss takes its article
+  { re: /(?<=\b(?:guide|drive|drives|set|sets|support|supports|lift|lifts|pressure|pressures|cap|caps|justify|justifies|anchor|anchors|stretch|stretches|compress|compresses)\s+)valuations?\b/gi, plain: "the price tag", sample: "guide valuation" },
   { re: /\bvaluations?\b/gi, plain: "price tag", sample: "valuation" },
   // round 6: "the ₩1,862,000 print" (a price print) became "the ₩1,862,000 report": after a figure it is a price
   { re: /(?<=\d[\d,.]*\s)print\b/gi, plain: "price", sample: "1,862,000 print" },
@@ -1174,7 +1213,7 @@ export const strengthAsRisk = (t: string): boolean =>
 export type DividendInfo = { last: number | null; lastEx: string | null; ttm: number | null; perYear: number | null; freqDays: number | null; nextEx: string | null; yieldPct: number | null };
 /** Dividends from a Yahoo v8 chart response with events=div: the last amount and ex-date, the trailing 12-month
  *  sum, the payment rhythm, the next ex-date estimate (last + rhythm) and the yield on `price`. */
-export function parseDividends(body: { chart?: { result?: { events?: { dividends?: Record<string, { amount?: number; date?: number }> } }[] } }, price: number | null, todayYmd: string): DividendInfo | null {
+export function parseDividends(body: { chart?: { result?: { events?: { dividends?: Record<string, { amount?: number; date?: number }> } }[] } }, price: number | null, todayYmd: string, symbol = ""): DividendInfo | null {
   const ev = body?.chart?.result?.[0]?.events?.dividends ?? {};
   const pts = Object.values(ev).filter((d) => (d.amount ?? 0) > 0 && typeof d.date === "number")
     .map((d) => ({ ymd: new Date(d.date! * 1000).toISOString().slice(0, 10), amount: Number(d.amount) })).sort((a, b) => (a.ymd < b.ymd ? -1 : 1));
@@ -1197,6 +1236,9 @@ export function parseDividends(body: { chart?: { result?: { events?: { dividends
     const yearAgo = pts.map((p) => Date.parse(p.ymd + "T12:00:00Z")).filter((x) => Math.abs(x - want) <= 25 * 86400000).sort((a, b) => Math.abs(a - want) - Math.abs(b - want))[0];
     if (yearAgo && yearAgo + 364 * 86400000 > Date.parse(todayYmd + "T12:00:00Z")) nextEx = new Date(yearAgo + 364 * 86400000).toISOString().slice(0, 10);
   }
+  // Round 7: a KRX quarterly payer's record date is the quarter's last day and its ex-date the KRX session before
+  // it (T+2): Samsung's Q3 2026 ex-date is Tue Sep 29 (record Wed Sep 30), not the year-ago date + 364 (Sep 28)
+  if (nextEx && /\.(?:KS|KQ)$/.test(symbol) && freqDays && freqDays >= 80 && freqDays <= 100) nextEx = krxExDate(nextEx, todayYmd);
   const perYear = freqDays ? last.amount * Math.max(1, Math.round(365 / freqDays)) : null;
   return { last: last.amount, lastEx: last.ymd, ttm: ttm > 0 ? Number(ttm.toFixed(4)) : null, perYear, freqDays, nextEx, yieldPct: price && ttm > 0 ? Number((ttm / price * 100).toFixed(2)) : null };
 }
@@ -1225,12 +1267,12 @@ export function wrongDividendAmounts(text: string, facts: { names: string[]; amo
 export function periodReturnMismatches(text: string, facts: { names: string[]; windows: Record<number, number | null> }[], tolPp = 1): string[] {
   const WINDOW_WORDS: [RegExp, number][] = [
     // year to date first: "231.6% year to date" for Samsung was its 1Y figure (YTD +138.1%), round 5
-    [/\b(?:year[- ]to[- ]date|YTD|so far this year|this year|since (?:the start of the year|January))\b/i, YTD],
-    [/\b(?:in a year|one-year|1-year|1Y|12-month|twelve-month|over the (?:past|last) year|year-over-year run|on the year|past 12 months|in the past year|a year ago)\b/i, 365],
+    [/\b(?:year[- ]to[- ]date|YTD|so far this year|this year|since (?:the start of the year|January))\b|올해|연초\s?(?:대비|이후)/i, YTD],
+    [/\b(?:in a year|one-year|1-year|1Y|12-month|twelve-month|over the (?:past|last) year|year-over-year run|on the year|past 12 months|in the past year|a year ago)\b|1년(?:\s?(?:간|동안|새|수익률))?|지난\s?1년/i, 365],
     [/\b(?:two-year|2-year|2Y|over (?:the )?(?:past |last )?two years|in two years)\b/i, 730],
     [/\b(?:two-month|2-month|60-day|over (?:the )?(?:past |last )?two months)\b/i, 60],
-    [/\b(?:one-month|1-month|30-day|this month|over the (?:past|last) month|in a month)\b/i, 30],
-    [/\b(?:one-week|1-week|this week|over the (?:past|last) week|in a week|five-day|5-day)\b/i, 7],
+    [/\b(?:one-month|1-month|30-day|this month|over the (?:past|last) month|in a month)\b|한\s?달|1개월/i, 30],
+    [/\b(?:one-week|1-week|this week|over the (?:past|last) week|in a week|five-day|5-day)\b|이번\s?주|1주(?:일)?(?:\s?(?:간|동안))?/i, 7],
   ];
   const bad: string[] = [];
   for (const raw of sentencesOf(text)) {
@@ -1376,6 +1418,8 @@ export function fixWeights(text: string, holdings: { names: string[]; weight: nu
       if (!/^\s*(?:\)|,)?\s*(?:[A-Z][\w.&'-]*\s+){0,2}(?:of (?:assets|the portfolio|your portfolio|the book|holdings|total)|(?:portfolio |position |book )?(?:weight|weighting|stake|allocation|share)\b|in (?:the |your )?(?:portfolio|book))/i.test(after)
         && !/\b(?:weight(?:ing)?|stake|allocation|position|share|makes? up|accounts? for|represents?|is|at)\b[^.%\d]{0,16}$/i.test(before)) return m;
       if (groups.some((g) => g.label.test(near) && Math.abs(g.value - v) <= tolPp)) return m;
+      // round 7 newcomer: a theme value named anywhere in the sentence wins over any single holding
+      if (groups.some((g) => g.value >= 0 && new RegExp(g.label.source, g.label.flags.replace("g", "")).test(s) && Math.abs(g.value - v) <= tolPp)) return m;
       // a weight of something INSIDE a holding ("VOO's tech weight at 38%", "sector weight", "exposure to chips")
       // describes the fund, not the portfolio (round 6: rewritten to VOO's 21.1% portfolio weight)
       if (/\b(?:tech|technology|sector|industry|semiconductors?|chips?|software|financials?|energy|health ?care|top[- ](?:ten|10|five|5)|mega-?caps?|magnificent|category|index|the index's|fund's)\s+(?:weight(?:ing)?|share|exposure|concentration|allocation)\b|\bexposure to\b|\bweight(?:ing)? (?:in|of) (?:tech|technology|the index|the fund|the S&P)\b/i.test(near)) return m;
@@ -1384,6 +1428,18 @@ export function fixWeights(text: string, holdings: { names: string[]; weight: nu
         const i = h.names.map((nm) => { const k = firstIdx(s, [nm]); return k === Infinity ? Infinity : Math.abs(k - at); }).reduce((a, b) => Math.min(a, b), Infinity);
         return { h, i };
       }).filter((x) => x.i <= 40).sort((a, b) => a.i - b.i);
+      // Round 7 newcomer: "17.2% of assets in AAPL and MSFT" (27.7%, the pair) became AAPL's 17.2%; "Mega-cap platforms
+      // (AAPL, MSFT) occupy 27.7%" became MSFT's 10.4%. With two or more holdings named by the figure it is their SUM
+      // or a group share: it is checked against the sum and is never rewritten to one member's weight.
+      if (cands.length >= 2) {
+        const sum = cands.reduce((a, c) => a + c.h.weight, 0);
+        if (Math.abs(sum - v) > Math.max(tolPp, 1) && !groups.some((g) => Math.abs(g.value - v) <= tolPp)) {
+          const inSentence = holdings.filter((h) => h.names.some((nm) => firstIdx(s, [nm]) !== Infinity));
+          const total = inSentence.reduce((a, h) => a + h.weight, 0);
+          if (inSentence.length >= 2 && Math.abs(total - v) > Math.max(tolPp, 1) && Math.abs(sum - total) < 0.05) return `${sum.toFixed(1)}%`;
+        }
+        return m;
+      }
       const who = cands[0]?.h;
       if (!who || Math.abs(who.weight - v) <= tolPp) return m;
       if (holdings.some((h) => Math.abs(h.weight - v) <= 0.05 && h !== who)) return m;   // another holding's weight: leave to the reader
@@ -1640,7 +1696,8 @@ export function mergeChecked<T extends Draftish>(draft: T, checked: T, data: str
     positions: draft.positions.map((p) => {
       const c = checked.positions.find((q) => String(q.name).toLowerCase() === String(p.name).toLowerCase());
       // a watch must stay MEASURABLE: the checker swapped "Nasdaq-100 drawdown >20%" for "Top-heavy in mega-cap tech"
-      const watchOk = !c || !figs(p.watch).length || figs(c.watch).length > 0;
+      const wc = (t: string) => String(t ?? "").split(/\s+/).filter(Boolean).length;
+      const watchOk = !c || ((!figs(p.watch).length || figs(c.watch).length > 0) && wc(c.watch) >= Math.min(4, wc(p.watch)));
       return c ? { ...p, note: pick(p.note, c.note), watch: watchOk ? pick(p.watch, c.watch) : p.watch } : p;
     }).filter((p) => checked.positions.some((q) => String(q.name).toLowerCase() === String(p.name).toLowerCase()) || draft.positions.length <= 2),
   };
@@ -1740,6 +1797,7 @@ const KO_NAMES: Record<string, string[]> = {
   AAPL: ["애플"], MSFT: ["마이크로소프트", "마소"], NVDA: ["엔비디아"], META: ["메타"], GOOGL: ["구글", "알파벳"], GOOG: ["구글", "알파벳"],
   AMZN: ["아마존"], AVGO: ["브로드컴"], TSLA: ["테슬라"], NFLX: ["넷플릭스"], AMD: ["AMD"], PLTR: ["팔란티어"], QQQ: ["나스닥"], QQQM: ["나스닥"],
   VOO: ["S&P 500", "S&P500"], SPY: ["S&P 500"], KO: ["코카콜라"], JNJ: ["존슨앤드존슨"], SCHD: ["SCHD"], BTC: ["비트코인"], "BTC-USD": ["비트코인"], ETH: ["이더리움"], "ETH-USD": ["이더리움"],
+  "005930.KS": ["삼성전자", "삼성"], "005935.KS": ["삼성전자우"], "000660.KS": ["SK하이닉스", "하이닉스"], "035420.KS": ["네이버", "NAVER"], "035720.KS": ["카카오"], "005380.KS": ["현대차"],
   SOFI: ["소파이"], INTC: ["인텔"], ORCL: ["오라클"], CRM: ["세일즈포스"], COIN: ["코인베이스"], MSTR: ["마이크로스트래티지"],
 };
 export const koNamesFor = (sym: string): string[] => KO_NAMES[sym] ?? [];
@@ -1823,4 +1881,88 @@ export function labelLiveFigures(text: string, figures: number[], label: string)
     }
     return lastEnd < 0 ? sent : `${sent.slice(0, lastEnd)} (${label})${sent.slice(lastEnd)}`;
   }).join(" "));
+}
+
+const KR_HOL = HOL.KR;
+const krTrading = (ymd: string) => { const d = new Date(ymd + "T12:00:00Z").getUTCDay(); return d >= 1 && d <= 5 && !KR_HOL.has(ymd); };
+const ymdAdd = (ymd: string, n: number) => new Date(Date.parse(ymd + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+/** The KRX ex-date for the quarter an estimate falls in: record date = the quarter's last day (the last KRX session
+ *  on or before it), ex-date = the session before that. Rolls to the next quarter when that is not after today. */
+export function krxExDate(estimate: string, todayYmd: string): string {
+  let y = Number(estimate.slice(0, 4)), q = Math.floor((Number(estimate.slice(5, 7)) - 1) / 3);
+  for (let i = 0; i < 5; i++) {
+    const end = new Date(Date.UTC(y, q * 3 + 3, 0)).toISOString().slice(0, 10);
+    let rec = end; while (!krTrading(rec)) rec = ymdAdd(rec, -1);
+    let ex = ymdAdd(rec, -1); while (!krTrading(ex)) ex = ymdAdd(ex, -1);
+    if (ex > todayYmd) return ex;
+    q++; if (q > 3) { q = 0; y++; }
+  }
+  return estimate;
+}
+
+/** "(est)" belongs next to a DATE (round 7: "ETF inflows turn negative two months (est)", "CXMT DRAM shipments to
+ *  hyperscaler (est)"). A tag with no date in front of it is removed. */
+export function stripStrayEst(text: string): string {
+  return String(text ?? "").replace(/\s*\((?:est|estimate|est\.)\)/gi, (m: string, at: number, whole: string) => {
+    const before = whole.slice(Math.max(0, at - 32), at);
+    return /(?:~|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s*\d{0,2}|\b(?:early|mid|late)[a-z -]*\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*|\d{4}-\d{2}-\d{2}|\b\d{1,2}\/\d{1,2}|\bQ[1-4](?:\s+\d{4})?|\d+월(?:\s*\d+일)?)\s*$/i.test(before) ? m : "";
+  });
+}
+
+/** Month names and brand names a lower-casing step left lower case ("The risk: december quarter", "siri settlement"). */
+const PROPER_FIX: [RegExp, string][] = [
+  ...["january", "february", "april", "june", "july", "august", "september", "october", "november", "december"].map((mo) => [new RegExp(`\\b${mo}\\b`, "g"), mo[0].toUpperCase() + mo.slice(1)] as [RegExp, string]),
+  [/\bsiri\b/g, "Siri"], [/\biphone(s?)\b/g, "iPhone$1"], [/\bipad(s?)\b/g, "iPad$1"], [/\bazure\b/g, "Azure"], [/\bchatgpt\b/g, "ChatGPT"],
+  [/\byoutube\b/g, "YouTube"], [/\bopenai\b/g, "OpenAI"], [/\bcopilot\b/g, "Copilot"], [/\bnvidia\b/g, "Nvidia"], [/\bnasdaq\b/g, "Nasdaq"], [/\bs&p\b/g, "S&P"],
+];
+export const fixProperCase = (t: string): string => PROPER_FIX.reduce((x, [re, to]) => x.replace(re, to), String(t ?? ""));
+
+/** Promotional or unsupported characterisations in the app's voice (round 7 newcomer: "while cushioning volatility",
+ *  "crypto hedge", "a speculative macro hedge"). */
+export function promoCharacterisations(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\bcushion(?:s|ing|ed)? (?:the )?(?:volatility|swings|downside|drops?|the ride)\b|\bsmooth(?:s|ing|ed)? (?:out )?(?:the )?(?:ride|volatility|swings)\b|\b(?:crypto|macro|inflation|recession|dollar) hedge\b|\b(?:acts?|serves?|works?) as an? (?:\w+ )?hedge\b|\bas an? (?:\w+ )?hedge (?:against|for)\b/i.test(s));
+}
+
+/** "…delivering most of its dividend yield" about holdings that pay a small share of the income (round 7: AAPL + MSFT
+ *  pay 26% of it, SCHD 53%). `payers` carries each holding's share of the portfolio's dividend income (0..100). */
+export function dividendShareClaims(text: string, payers: { names: string[]; share: number }[]): string[] {
+  return sentencesOf(text).filter((s) => {
+    if (!/\b(?:most|the bulk|the majority|nearly all|almost all|the lion's share|most of) (?:of )?(?:its |the |your |the portfolio's )?(?:dividends?|income|dividend yield|yield|payouts?)\b|배당[^.]{0,10}(?:대부분|절반 이상)/i.test(s)) return false;
+    const named = payers.filter((p) => p.names.some((n) => n && nameIn(s, n)));
+    if (!named.length) return false;
+    return named.reduce((a, p) => a + p.share, 0) < 50;
+  });
+}
+
+/** A window's return compared with the yearly target ("+7.2% this month, on pace with your 8-12% annual target",
+ *  round 7): a month is not a year. */
+export function targetPaceClaims(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\b(?:this|past|last|a|one|the)\s+(?:week|month|quarter)\b|\b(?:1W|1M|3M|30-day|7-day|90-day)\b|이번 (?:주|달)|한 달|1개월|3개월/i.test(s)
+    && /\b(?:on pace|on track|in line|ahead of|behind|keeping pace|pace with|already (?:hit|met|beat))\b[^.]{0,50}\b(?:target|goal)\b|\b(?:annual|yearly|a year|per year|\/yr)\s*(?:return )?(?:target|goal)\b[^.]{0,30}\b(?:on pace|on track|in line|met|hit|beat)\b|목표[^.]{0,15}(?:달성|부합|페이스|순항)/i.test(s));
+}
+
+/** When the cash arrives is not in the data ("실제 입금은 보통 2-4주 뒤", round 7: wrong for Korean dividends, paid
+ *  about 7 weeks after the record date). */
+export function paymentLagClaims(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\b(?:paid|payment|cash|deposit(?:ed)?|arrives?|hits? your account)\b[^.]{0,40}\b\d+\s?(?:[–-]|to)\s?\d+\s?(?:weeks?|days?)\b[^.]{0,20}\b(?:after|later|following)\b|(?:입금|지급|들어오)[^.]{0,20}\d+\s?[–~-]\s?\d+\s?(?:주|일)\s?(?:뒤|후)/i.test(s));
+}
+
+/** A dividend or report date we ESTIMATED, written without its label ("2026-09-28 (3일 뒤)" with no 추정 in a Korean
+ *  answer, round 7): the label is added next to the date. `ymds` are the estimated dates (YYYY-MM-DD). */
+export function labelEstimatedDates(text: string, ymds: string[], ko = false): string {
+  let x = String(text ?? "");
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  for (const ymd of [...new Set(ymds.filter(Boolean))]) {
+    const mo = Number(ymd.slice(5, 7)), d = Number(ymd.slice(8, 10));
+    const forms = [ymd.replace(/-/g, "\\-"), `${MON[mo - 1]}[a-z]*\\.? ${d}(?!\\d)`, `${mo}월\\s?${d}일`];
+    for (const f of forms) {
+      x = x.replace(new RegExp(`(~\\s*)?(${f})(\\s*\\([^)]{0,12}\\))?`, "g"), (m: string, tilde: string | undefined, date: string, paren: string | undefined, at: number, whole: string) => {
+        const around = whole.slice(Math.max(0, at - 24), at + m.length + 14);
+        if (tilde || /\b(?:est|estimated|expected|around|about)\b|추정|예상|경\b|쯤/i.test(around)) return m;
+        const tag = ko ? " (추정)" : " (est)";
+        return paren ? `${date}${tag}${paren}` : `${date}${tag}`;
+      });
+    }
+  }
+  return x;
 }
