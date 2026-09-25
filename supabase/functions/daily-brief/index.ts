@@ -13,7 +13,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
   aliasesFor, booksKorean, brokenSentences, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
-  overlap, pctText, plainScrub, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
+  historicalClaims, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
 } from "../_shared/intel.ts";
 import { windowReturns } from "../_shared/history.ts";
 import { userIdFrom } from "../_shared/auth.ts";
@@ -517,8 +517,10 @@ Deno.serve(async (req) => {
       }).filter(Boolean);
       const earnLine = nextEarn.length ? "\n" + nextEarn.map((x) => "- " + x).join("\n") : "(none on file)";
       // the same estimates as data, so a calendar or watch item that dates a holding's report elsewhere is dropped
-      const earnEsts = holdings.map((h) => ({ names: [krName(h.symbol, h.nickname, h.name), ...aliasesFor(h.symbol, h.name)],
-        est: earnSyms.includes(h.symbol) ? earningsEstimate(((filDates ?? []) as (FilingLite & { symbol: string })[]).filter((f) => f.symbol === h.symbol), (trDates ?? []).filter((t) => t.symbol === h.symbol), briefDate)?.est ?? null : null }));
+      const earnEsts = holdings.map((h) => {
+        const e = earnSyms.includes(h.symbol) ? earningsEstimate(((filDates ?? []) as (FilingLite & { symbol: string })[]).filter((f) => f.symbol === h.symbol), (trDates ?? []).filter((t) => t.symbol === h.symbol), briefDate) : null;
+        return { names: [krName(h.symbol, h.nickname, h.name), ...aliasesFor(h.symbol, h.name)], est: e?.est ?? null, ...(e?.range ? { range: e.range } : {}) };
+      });
       const dateLaw = `TODAY is ${briefDate}. Anything dated before today is the PAST and must NOT appear in calendar or watch. Earnings dates may come ONLY from NEXT EARNINGS ESTIMATES: a "last reported" date is history, and a next date is an ESTIMATE: in prose say "expected around late November", in calendar write it as "~Nov 25 (est)"; never state an estimate as a confirmed day and never invent a date.`;
       const krHeldAny = holdings.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"));
       const sessionLaw = `SESSIONS (deterministic; obey over any instinct):\n${sessionLine("US")}${krHeldAny ? "\n" + sessionLine("KR") : ""}\nDAY-CHANGE LAW: a holding's "day" figure belongs to ITS market's session above. Only a market that is OPEN or closed under 3 hours ago is today's tape. Anything older is past tense with the session named ("in Friday's Korean session"), mentioned at most once, and never in the lede unless it moved over 3% or has fresh news. Never add a "today" gain or loss across markets whose sessions ended more than 3 hours apart: keep them apart ("US names +$X in today's session; the Korean names were flat in Friday's").`;
@@ -1401,6 +1403,23 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         if (st?.started_at && +new Date(String(st.started_at)) > +new Date(body.run) + 1000) { superseded = true; continue; }
       }
 
+      // PLAIN WORDS AND NO INVENTED HISTORY (round-3 native review): "your book" -> "your portfolio", "tape" ->
+      // "market", "names" -> "stocks" for every reader; a sentence comparing with a past year or an all-time /
+      // record level the writers were never given ("Tech concentration at 1965 highs") is dropped.
+      if (!backfillOnly) {
+        const hsrc = [...SOURCES, JSON.stringify(memosOut)].join("\n");
+        const clean = (t: string) => {
+          const x = plainScrub(String(t ?? ""), PORTFOLIO_PLAIN);
+          const bad = historicalClaims(x, hsrc, briefDate);
+          if (!bad.length) return x;
+          const kept = x.split(/(?<=[.!?])\s+/).filter((s) => !bad.some((b) => b.includes(s.trim()) || s.includes(b)));
+          return kept.length ? kept.join(" ") : x;
+        };
+        sections.lede = clean(sections.lede); sections.overnight = clean(sections.overnight); sections.desk_view = clean(sections.desk_view);
+        if (sections.horizon) sections.horizon = clean(sections.horizon);
+        sections.positions = sections.positions.map((p) => ({ ...p, note: clean(p.note), watch: plainScrub(p.watch, PORTFOLIO_PLAIN) }));
+        sections.ideas = (sections.ideas ?? []).map(clean); sections.calendar = (sections.calendar ?? []).map((c) => plainScrub(c, PORTFOLIO_PLAIN));
+      }
       // GRAMMAR PASS (round 3 newcomer: "Watch QQQ on sustained a shrinking price tag relative.", "Total assets
       // $26,600 cash $2,500"): broken sentences get one rewrite on the fast model; a sentence still broken
       // after it is dropped, unless it is all its field holds.

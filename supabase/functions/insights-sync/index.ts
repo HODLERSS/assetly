@@ -6,7 +6,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } from "../_shared/calendar.ts";
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
-  isEarningsCallTitle, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, type PosFact, usableNews, wrongDeliveriesDates,
+  historicalClaims, isEarningsCallTitle, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
 } from "../_shared/intel.ts";
 import { ensureHistory, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
@@ -133,8 +133,22 @@ function takeProblems(lines: string[], facts: LiveFact[], dlv: DlvFact[] = []): 
 const lineOk = (l: string, facts: LiveFact[], dlv: DlvFact[] = []) => !dayMoveMismatches(l, facts).length && !levelMismatches(l, facts).length && !adviceHits(l).length
   && !wrongDeliveriesDates(l, dlv, todayEt()).length && !cardCopyHits(l).length;
 // the shared cards are read by every tier, so desk slang is translated for everyone ("show-me tape", "ripping")
-const cardScrub = (t: string) => plainScrub(t, [...CARD_PLAIN, ...NOVICE_MAP]);
-const VALUE_LAW = `VERDICT LAW: information, never a verdict. Never call the stock cheap, expensive, undervalued, overvalued, a bargain or a buying opportunity (no "undervaluation framing" either, unless a named source says it), never say a drop "sets up well" or offers "downside protection", never call anything "a clear catalyst" or "a catalyst for upside", never "top pick", never tell anyone to buy, sell, hold or add. State the metric (a P/E against its own history, a target and who set it) and what would change the picture. Day moves and prices come ONLY from the data above, with its session label. Returns come ONLY from the windows given, never measured from a high or a low. Never mention missing data, price history or what is "on file": if a window has no figure, leave it out. A deliveries report is not an earnings report; state a deliveries date only if the data gives one. Plain words: no desk slang ("tape", "ripping", "show-me", "bid", "bulls/bears").`;
+const cardScrub = (t: string) => plainScrub(t, [...PORTFOLIO_PLAIN, ...CARD_PLAIN, ...NOVICE_MAP]);
+
+/** A second read of a finished card by the fast model, for what patterns cannot see: a bullet that is garbled
+ *  (two headlines compressed into nonsense, round 3: "TSLA leads 2,500 electric trucks backed by Microsoft and
+ *  PepsiCo") or claims something no headline or number given supports. Dropping beats garbling; a card keeps
+ *  at least two bullets, and a failed or slow check changes nothing. */
+async function incoherent(key: string, lines: string[], source: string): Promise<Set<number>> {
+  if (!key || lines.length < 3) return new Set();
+  const res = await askMara(key, FAST_MODEL, `SOURCE (the only facts available):\n${source.slice(0, 6000)}\n\nBULLETS:\n${lines.map((l, i) => `${i}. ${l}`).join("\n")}\n\nReturn STRICT JSON {"bad": [indexes]} listing only the bullets that are ungrammatical or garbled (a subject doing something that makes no sense, two stories merged into one), or that state a fact, number, date or historical comparison the SOURCE does not contain. Return {"bad": []} when all are fine.`, 800, 9000).catch(() => null);
+  try {
+    const o = JSON.parse(String(res ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").slice(String(res ?? "").indexOf("{")));
+    const bad = new Set<number>((Array.isArray(o.bad) ? o.bad : []).map(Number).filter((n: number) => Number.isInteger(n) && n >= 0 && n < lines.length));
+    return lines.length - bad.size >= 2 ? bad : new Set();
+  } catch { return new Set(); }
+}
+const VALUE_LAW = `VERDICT LAW: information, never a verdict. Never call the stock cheap, expensive, undervalued, overvalued, a bargain or a buying opportunity (no "undervaluation framing" either, unless a named source says it), never say a drop "sets up well" or offers "downside protection", never call anything "a clear catalyst" or "a catalyst for upside", never "top pick", never tell anyone to buy, sell, hold or add. State the metric (a P/E against its own history, a target and who set it) and what would change the picture. Day moves and prices come ONLY from the data above, with its session label. Returns come ONLY from the windows given, never measured from a high or a low. Never mention missing data, price history or what is "on file": if a window has no figure, leave it out. A deliveries report is not an earnings report; state a deliveries date only if the data gives one. Plain words: no desk slang ("tape", "ripping", "show-me", "bid", "bulls/bears", "book" for portfolio, "names" for stocks). Each bullet is ONE grammatical sentence about ONE story; never merge two headlines into one claim. No historical comparison (a past year, "since 2008", "all-time", "record") unless a headline states it.`;
 
 
 // ---- reader profile: the 6 sign-up answers steer VOICE, EMPHASIS and PURPOSE, never the facts ----
@@ -356,6 +370,7 @@ Deno.serve(async (req) => {
       const dlvFacts = [{ names: [symbol, ...aka], est: dlv?.est ?? null }];
 
       let content: string | null;
+      let sourceText = "";
       if (fixture) {
         content = JSON.stringify(body.canned ?? { bullets: ["fixture bullet one", "fixture bullet two", "fixture bullet three"], windows: { d7: "flat week", d30: "quiet month", d60: "range-bound", y1: "recovering", y2: "volatile" } });
       } else {
@@ -376,6 +391,7 @@ ${VALUE_LAW}
 Return STRICT JSON: {"bullets": [3-4 strings], "trend": str}.
 bullets: the sharpest takes on what matters RIGHT NOW, synthesizing news, the earnings call, and price action. Respect the call's age above: a call older than a week is context for a take, never the news itself. DAY-CHANGE LAW: a day figure is today's tape only while the market is open or closed under 3 hours; otherwise it is past tense with the session named, and on a day the market is closed the takes are about the week and the news, never a move. Each 10-15 words MAX. Interpret, never restate headlines. Refer to the company by NAME, never numeric KRX codes.${korean ? " Write won amounts with the \u20a9 sign." : " Money is US dollars; never write won."} Plain punchy language. Never use em dashes or semicolons.
 trend: ONE sentence, max 20 words, covering the recent move and the longer-term picture together.`;
+        sourceText = prompt;
         content = await askMaraFb(key, model, prompt);
         // one corrective rewrite when a line contradicts the live numbers or passes a verdict
         const first = content ? parseInsight(content) : null;
@@ -392,7 +408,10 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const trAge = callAgeDays(latestTr?.published_at);
       // whatever still contradicts the numbers (or passes a verdict) is dropped, never stored
       const liveFacts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price) }];
-      const bullets = parsed.bullets.map((b) => fixArticles(cardScrub(deJust(b, trAge)))).filter((b) => lineOk(b, liveFacts, dlvFacts));
+      // no historical comparison the data does not hold ("Tech concentration at 1965 highs", round 3)
+      let bullets = parsed.bullets.map((b) => fixArticles(cardScrub(deJust(b, trAge))))
+        .filter((b) => lineOk(b, liveFacts, dlvFacts) && !(sourceText && historicalClaims(b, sourceText, today).length));
+      if (!fixture) { const bad = await incoherent(key, bullets, sourceText); bullets = bullets.filter((_, i) => !bad.has(i)); }
       if (bullets.length < 2) { errors.push(symbol + ": take contradicted the live numbers; kept the previous one"); continue; }
       const trend = parsed.windows?.trend ? fixArticles(cardScrub(String(parsed.windows.trend))) : null;
       const windows = trend === null ? parsed.windows : lineOk(trend, liveFacts, dlvFacts) ? { ...parsed.windows, trend } : {};
@@ -527,16 +546,21 @@ ${VALUE_LAW}`;
       const pAge = Number.isFinite(freshestCall) ? freshestCall : null;
       const isNovice = ["novice", "intermediate"].includes(topLevel(toArr((invRow?.investor as Investor | null | undefined)?.level, ["novice"])));
       // a position value quoted as a share price is corrected from the same data block the model was given
-      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => fixArticles(fixPriceConfusions(deJust(isNovice ? noviceScrub(x) : x, pAge), posFacts)));
+      const scrubB = (xs: string[] | null | undefined) => (xs ?? []).map((x) => fixArticles(plainScrub(fixPriceConfusions(deJust(isNovice ? noviceScrub(x) : x, pAge), posFacts), PORTFOLIO_PLAIN)));
       // The book may have changed while the model wrote (round 2: PEP and F were removed at 12:18 and a card
       // stamped 12:20 still led with "Pepsi near yearly lows"): a line about a symbol that has left the book is
       // dropped, and so is a line that contradicts the live numbers or passes a verdict.
       const { data: nowRows } = await admin.from("portfolio").select("symbol").eq("user_id", uid);
       const heldNow = new Set((nowRows ?? []).map((r) => String(r.symbol)));
       const gone = new Set(bookNames.map((b) => b.symbol).filter((sy) => !heldNow.has(sy)));
-      const keep = (x: string) => lineOk(x, liveFacts) && !mentionedSymbols(x, bookNames).some((sy) => gone.has(sy));
-      const bullets = scrubB(parsed.bullets).filter(keep).slice(0, 3);
-      const news5 = parsed.news5 ? scrubB(parsed.news5).filter(keep) : parsed.news5;
+      const keep = (x: string) => lineOk(x, liveFacts) && !mentionedSymbols(x, bookNames).some((sy) => gone.has(sy)) && !(prompt && historicalClaims(x, prompt, todayEt).length);
+      let bullets = scrubB(parsed.bullets).filter(keep).slice(0, 3);
+      let news5 = parsed.news5 ? scrubB(parsed.news5).filter(keep) : parsed.news5;
+      if (!fixture) {
+        const bad = await incoherent(key, bullets, prompt);
+        bullets = bullets.filter((_, i) => !bad.has(i));
+        if (news5) { const badN = await incoherent(key, news5, prompt); news5 = news5.filter((_, i) => !badN.has(i)); }
+      }
       if (bullets.length < 2) { errors.push("user " + uid.slice(0, 8) + ": take contradicted the live book; kept the previous one"); continue; }
       const heldBook = bookNames.map((b) => b.symbol).filter((sy) => !gone.has(sy));
       const tagged = { bullet_symbols: bullets.map((b) => mentionedSymbols(b, bookNames)), news5_symbols: news5 ? news5.map((b) => mentionedSymbols(b, bookNames)) : null, held_symbols: heldBook };

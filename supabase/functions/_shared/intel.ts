@@ -153,18 +153,31 @@ const addDays = (ymd: string, n: number) => { const d = new Date(ymd + "T12:00:0
  *  said ~Oct 28. When the same quarter a year earlier is on file (a report 52 weeks before a date 8-18 weeks
  *  after the last one), the estimate is that report + 364 days (same weekday); otherwise last + 91 (13 weeks).
  *  When the date has just passed with nothing newer on file, the report is due, not a quarter away. */
-export function nextEarningsEstimate(lastYmd: string, todayYmd: string, history: string[] = []): { est: string; due: boolean } {
+export function nextEarningsEstimate(lastYmd: string, todayYmd: string, history: string[] = []): { est: string; due: boolean; range?: [string, string] } {
   // the one nearest a quarter after the last report (never simply the earliest: a stray year-ago date must not win)
   const yearAgo = history.map((d) => addDays(d, 364)).filter((d) => dayDiff(d, lastYmd) >= 56 && dayDiff(d, lastYmd) <= 126)
     .sort((a, b) => Math.abs(dayDiff(a, lastYmd) - 91) - Math.abs(dayDiff(b, lastYmd) - 91))[0];
-  let est = yearAgo ?? addDays(lastYmd, 91);
-  if (est < todayYmd && dayDiff(todayYmd, est) <= 21) return { est, due: true };
-  while (est < todayYmd) est = addDays(est, 91);
-  return { est, due: false };
+  const quarterOn = addDays(lastYmd, 91);
+  let est = yearAgo ?? quarterOn;
+  // When the year-ago rhythm and "a quarter after the last report" disagree by more than 5 days, neither is a
+  // date: the estimate is a span of the month, never a day (NVDA: Nov 18 by last year, Nov 25 by the last
+  // report, and calendars say ~Nov 25; round 3 printed "~Nov 18" as if it were known).
+  let range: [string, string] | undefined = yearAgo && Math.abs(dayDiff(yearAgo, quarterOn)) > 5
+    ? (yearAgo < quarterOn ? [yearAgo, quarterOn] : [quarterOn, yearAgo]) : undefined;
+  if (est < todayYmd && dayDiff(todayYmd, est) <= 21) return { est, due: true, ...(range ? { range } : {}) };
+  while (est < todayYmd) { est = addDays(est, 91); range = undefined; }
+  return { est, due: false, ...(range ? { range } : {}) };
 }
+/** "mid to late November" for a span, "late November" when both ends fall in the same part of the month. */
+export const spanOfMonth = (r: [string, string]): string => {
+  const a = partOfMonth(r[0]), b = partOfMonth(r[1]);
+  if (a === b) return a;
+  const [pa, ma] = [a.split(" ")[0], a.split(" ").slice(1).join(" ")], [pb, mb] = [b.split(" ")[0], b.split(" ").slice(1).join(" ")];
+  return ma === mb ? `${pa} to ${pb} ${mb}` : `${a} to ${b}`;
+};
 
 /** The last report and the next estimate from everything on file (null = nothing that dates a report). */
-export function earningsEstimate(filings: FilingLite[], transcripts: TranscriptLite[], todayYmd: string): { last: string; source: EarningsSource; est: string; due: boolean } | null {
+export function earningsEstimate(filings: FilingLite[], transcripts: TranscriptLite[], todayYmd: string): { last: string; source: EarningsSource; est: string; due: boolean; range?: [string, string] } | null {
   const all = reportDates(filings, transcripts, todayYmd);
   if (!all.length) return null;
   const nx = nextEarningsEstimate(all[0].date, todayYmd, all.slice(1).map((r) => r.date));
@@ -177,6 +190,7 @@ export function earningsLine(name: string, filings: FilingLite[], transcripts: T
   const e = earningsEstimate(filings, transcripts, todayYmd);
   if (!e) return null;
   const when = e.due ? `due any day now (was expected ~${shortDate(e.est)} (est), not yet on file)`
+    : e.range ? `expected in ${spanOfMonth(e.range)} (est; the exact day is not known, so never state one)`
     : `expected around ${partOfMonth(e.est)}, ~${shortDate(e.est)} (est, not confirmed)`;
   return `${name}: last reported ${shortDate(e.last)} (${e.source}); next report ${when}`;
 }
@@ -186,7 +200,7 @@ const MON_IDX: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5
  *  computed estimate. Caught 2026-09-25: a midday brief listed "Microsoft earnings call Sep 28" (it reports
  *  late October, ~Oct 28); the only earnings dates a brief may carry are the ones in its NEXT EARNINGS block.
  *  An item within 7 days of the estimate passes; an earnings date for a holding with no estimate is dropped. */
-export function wrongEarningsDates(items: string[], ests: { names: string[]; est: string | null }[], todayYmd: string): string[] {
+export function wrongEarningsDates(items: string[], ests: { names: string[]; est: string | null; range?: [string, string] }[], todayYmd: string): string[] {
   const bad: string[] = [];
   for (const raw of items) {
     const t = String(raw ?? "");
@@ -199,7 +213,8 @@ export function wrongEarningsDates(items: string[], ests: { names: string[]; est
     const mo = MON_IDX[m[1].toLowerCase()], dd = Number(m[2]);
     const y = Number(todayYmd.slice(0, 4)) + (mo < Number(todayYmd.slice(5, 7)) - 2 ? 1 : 0);
     const ymd = `${y}-${String(mo).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
-    if (Math.abs(dayDiff(ymd, who.est)) > 7) bad.push(raw);
+    const [lo, hi] = who.range ?? [who.est, who.est];
+    if (dayDiff(lo, ymd) > 7 || dayDiff(ymd, hi) > 7) bad.push(raw);
   }
   return bad;
 }
@@ -788,3 +803,28 @@ export function brokenSentences(text: string): string[] {
 export const fixGlossArticles = (t: string): string => String(t ?? "")
   .replace(/\b(sustained|continued|further|ongoing|persistent|renewed|steady|heavy|deeper|more|less)\s+an?\s+/gi, "$1 ")
   .replace(/\b(the|a|an)\s+(?=(?:the|a|an)\s)/gi, "");
+
+/** Everyday words for the portfolio in every reader-facing text (Ask, briefs, cards): "your book" is desk
+ *  jargon for a portfolio, "tape" for the market, "names" for stocks (round-3 native review). Words that only
+ *  look alike are left alone ("book value", "the company's name"). */
+export const PORTFOLIO_PLAIN: [RegExp, string][] = [
+  [/\b(your|the|this|whole|entire|overall|a|their|my)\s+book(?!\s+(?:value|values|of business|to bill|ratio|keeping))\b/gi, "$1 portfolio"],
+  [/\bbook-level\b/gi, "portfolio-level"], [/\bbook-wide\b/gi, "portfolio-wide"],
+  [/\b(the|a|quiet|this|today's)\s+tape\b/gi, "$1 market"],
+  [/\b(your|these|those|the|other|single|one|each|every|US|Korean|tech|chip|growth|AI|megacap|big|biggest|largest|top|two|three|four|five|several|many|few|both|held|such)\s+names\b/gi, "$1 stocks"],
+  [/\b(single|one|each|every|any)\s+name\b(?!\s+(?:of|for|change))/gi, "$1 stock"],
+];
+
+const YEAR_RE = /\b(19\d{2}|20\d{2})\b/g;
+/** Historical comparisons the data does not contain ("Tech concentration at 1965 highs", "the worst week since
+ *  2008", "all-time high"): dropped unless the same year or phrase is in what the writer was given. */
+export function historicalClaims(text: string, sourceText: string, todayYmd: string): string[] {
+  const src = String(sourceText ?? "").toLowerCase();
+  const thisYear = Number(todayYmd.slice(0, 4));
+  return sentencesOf(text).filter((s) => {
+    const years = [...s.matchAll(YEAR_RE)].map((m) => Number(m[1])).filter((y) => y <= thisYear - 2);
+    if (years.some((y) => !src.includes(String(y)))) return true;
+    const phrase = s.match(/\b(all-time (?:high|low)s?|record (?:high|low)s?|(?:highest|lowest|most|least|biggest|largest|worst|best|strongest|weakest|first) (?:level |close |week |month |quarter |year )?since)\b/i)?.[1];
+    return !!phrase && !src.includes(phrase.toLowerCase().split(" ")[0] === "all-time" ? "all-time" : phrase.toLowerCase().includes("record") ? "record" : "since");
+  });
+}
