@@ -23,9 +23,22 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Chivo+Mono:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- The UI face is self-hosted (theme.css @font-face, public/fonts): nothing render-blocking leaves the
+       device, and the app paints offline. The Latin file is preloaded so the first frame is already set in it. -->
+  <link rel="preload" href="/fonts/schibsted-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <script>
+    /* Korean glyphs: Noto Sans KR on the web only, and never render-blocking (it is megabytes of CJK and
+       the page must not wait on it). The iOS app skips it: Apple SD Gothic Neo is already on the device. */
+    (function () {
+      if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return;
+      var l = document.createElement("link");
+      l.rel = "stylesheet";
+      l.href = "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap";
+      l.media = "print";
+      l.onload = function () { l.media = "all"; };
+      document.head.appendChild(l);
+    })();
+  </script>
   <meta name="description" content="Assetly tracks what you own across US and Korean markets and crypto, and writes you a short brief on what moved and why. Read it in two minutes or listen in ninety seconds.">
   <meta property="og:title" content="Assetly: Portfolio Brief">
   <meta property="og:description" content="Your holdings, priced live, explained in a two-minute brief you can read or listen to.">
