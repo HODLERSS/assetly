@@ -2,6 +2,8 @@ import { openConnectPortal, platformTag } from "../lib/native";
 import { useEffect, useState } from "react";
 import type { Api, PortfolioRow } from "../lib/api";
 import { BriefCard } from "../components/BriefCard";
+import { AssessmentCard } from "../components/AssessmentCard";
+import type { AssessState } from "../lib/assessment";
 import { isMarketOpen, marketOf, moveSession, moverEligible, moverMode, sessionLabel } from "../lib/markets";
 import { convertCcy, dayChangeAmount, glClass, labelParts, money, moneyClass, moneyExact, signedMoney, signedMoneyCompact, signedPct, type FxRates } from "../lib/format";
 import { Icon } from "../components/Icon";
@@ -11,6 +13,8 @@ import { dayGroups, isHeld } from "../lib/portfolio";
 
 // Canvas 2a: net worth, movers, market pulse.
 const DETAIL_KEY = "assetly-nw-detail";
+// The one-time "what next" hint: armed by the first run of adds (App), "done" once dismissed.
+export const NEXT_KEY = "assetly-next-steps";
 // crypto files under a market by its denomination, exactly as the old Holdings filter did:
 // a USD coin belongs with the US book, a KRW-quoted one with the Korean book
 const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
@@ -19,12 +23,14 @@ const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
   return m;
 };
 
-export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone, loading = false }: {
+export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone, loading = false,
+  assessment = null, onAssessRetry, onAssessDismiss, onOpenNews }: {
   api: Api; rows: PortfolioRow[]; loading?: boolean;
   totals: { value: number; assets: number; debt: number; gl: number; cost: number; day: number; mixed: boolean; fx: FxRates | number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
   dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
   briefBanner?: { audio: boolean; edition?: string } | null; onBriefBannerDone?: () => void;
+  assessment?: AssessState | null; onAssessRetry?: () => void; onAssessDismiss?: () => void; onOpenNews?: () => void;
 }) {
   // App already drops empty holdings; a 0-share row must never reach Movers or the list whoever renders Home
   const rows = book.filter(isHeld);
@@ -37,6 +43,9 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   // collapsed by default; whoever wants the split gets it back on every visit
   const [detail, setDetailState] = useState(() => { try { return localStorage.getItem(DETAIL_KEY) === "1"; } catch { return false; } });
   const setDetail = (v: boolean) => { setDetailState(v); try { localStorage.setItem(DETAIL_KEY, v ? "1" : "0"); } catch { /* private mode */ } };
+  const [nextArmed, setNextArmed] = useState(() => { try { return localStorage.getItem(NEXT_KEY) === "armed"; } catch { return false; } });
+  useEffect(() => { try { if (localStorage.getItem(NEXT_KEY) === "armed") setNextArmed(true); } catch { /* private mode */ } }, [assessment?.startedAt]);
+  const setNextDone = () => { setNextArmed(false); try { localStorage.setItem(NEXT_KEY, "done"); } catch { /* private mode */ } };
   useEffect(() => {
     let live = true;
     if (mode.kind === "pulse") api.getPulse().then((p) => { if (live) setPulse(p); }).catch(() => {});
@@ -168,7 +177,26 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           <button className="chip" onClick={onBriefBannerDone} aria-label="Dismiss"><Icon name="close" size={12} /></button>
         </div>
       )}
-      <BriefCard api={api} />
+      {assessment && <AssessmentCard state={assessment} onRetry={() => onAssessRetry?.()} onDismiss={() => onAssessDismiss?.()} onOpenNews={onOpenNews} />}
+      {/* a fresh assessment remounts the brief card so it shows at once (its own look-up gave up after 4 min) */}
+      <BriefCard api={api} key={assessment?.readyAt ?? "brief"} />
+      {nextArmed && rows.filter((r) => r.kind !== "cash" && r.kind !== "debt").length < 3 && (
+        // after the first adds: the obvious next moves, until the book looks like a portfolio or it is dismissed
+        <section className="card next-steps" data-testid="next-steps" aria-label="Next steps">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <strong>Next: add the rest of your portfolio</strong>
+            <button className="chip" onClick={setNextDone} aria-label="Dismiss next steps"><Icon name="close" size={12} /></button>
+          </div>
+          <p className="sub" style={{ margin: "4px 0 0" }}>Your brief and assessment read the whole book, so they get sharper with every holding.</p>
+          <div className="next-steps-actions">
+            <button className="chip" onClick={onAdd}>+ Add another</button>
+            <button className="chip" onClick={async () => {
+              try { const r = await api.snaptrade("connect", { platform: platformTag() }); if (r.url) await openConnectPortal(r.url); } catch { /* the chip stays */ }
+            }}><Icon name="bolt" size={12} /> Import from a brokerage</button>
+            {onOpenNews && <button className="chip" onClick={onOpenNews}>Read your Intelligence</button>}
+          </div>
+        </section>
+      )}
       <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {sessionLabel(new Date(), heldMkts, hasCrypto)}</span></h2>
       {showPulse && (
         <div className="card" style={{ marginBottom: 16 }} data-testid="pulse-card">

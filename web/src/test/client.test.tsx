@@ -329,9 +329,156 @@ describe("C6 today never mixes sessions", () => {
     await openPosition(stubApi({ getPortfolio: vi.fn().mockResolvedValue(mixed()) }), /005930/);
     expect(await screen.findByText(/since last close · Wed close/)).toBeTruthy();
   });
-  it("a single-session book keeps the plain 'today' headline", async () => {
+  it("a single-session book keeps the plain 'today' headline (C6)", async () => {
     render(<App api={stubApi()} />);
     expect((await screen.findByTestId("total-day")).textContent).toMatch(/\+\$240 \(\+5\.26%\) today$/);
     expect(screen.queryByTestId("total-day-other")).toBeNull();
+  });
+});
+
+describe("C7 first run: the assessment wait is visible and honest", () => {
+  async function addRun(api: Api) {
+    await openAdd(api);
+    await pickMara();
+    await userEvent.type(screen.getByLabelText(/^shares$/i), "5");
+    await userEvent.type(screen.getByLabelText(/cost per share/i), "15");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await screen.findByTestId("added-strip");
+    await userEvent.click(screen.getByRole("button", { name: /done/i }));
+  }
+  it("after a run of adds Home keeps a 'Building your first Portfolio Assessment' card (no toast), polling for it", async () => {
+    const api = stubApi();
+    await addRun(api);
+    const card = await screen.findByTestId("assessment-card");
+    expect(card.textContent).toMatch(/Building your first Portfolio Assessment/);
+    expect(card.textContent).toMatch(/Usually 2 to 4 minutes/);
+    await waitFor(() => expect(api.getAssessmentStatus).toHaveBeenCalled());
+    expect(localStorage.getItem("assetly-assess:u-test")).toBeTruthy();   // survives a reload
+  });
+  it("the intelligence step ticks when it lands, and the card links to it", async () => {
+    const api = stubApi({ getAssessmentStatus: vi.fn().mockResolvedValue({ status: "pending", generatedAt: null, intelligenceAt: new Date().toISOString(), hadEarlier: false }) });
+    await addRun(api);
+    const card = await screen.findByTestId("assessment-card");
+    await within(card).findByRole("button", { name: /read it in news/i });
+    expect(card.querySelector('li[data-done="true"]')).toBeTruthy();
+  });
+  it("an earlier assessment makes it an update, not a first", async () => {
+    const api = stubApi({ getAssessmentStatus: vi.fn().mockResolvedValue({ status: "pending", generatedAt: null, intelligenceAt: null, hadEarlier: true }) });
+    await addRun(api);
+    await waitFor(() => expect(screen.getByTestId("assessment-card").textContent).toMatch(/Updating your Portfolio Assessment/));
+  });
+  it("when it lands the card goes and the stored run is cleared", async () => {
+    const at = new Date(Date.now() + 1000).toISOString();
+    const getDailyBriefs = vi.fn().mockResolvedValue([]);
+    const api = stubApi({ getDailyBriefs, getAssessmentStatus: vi.fn().mockResolvedValue({ status: "ready", generatedAt: at, intelligenceAt: at, hadEarlier: false }) });
+    await addRun(api);
+    await waitFor(() => expect(screen.queryByTestId("assessment-card")).toBeNull());
+    expect(localStorage.getItem("assetly-assess:u-test")).toBeNull();
+  });
+  it("a chain that could not start shows an error with Try again, which kicks it again", async () => {
+    const brokerageConnected = vi.fn().mockRejectedValueOnce(new Error("We couldn't start your assessment.")).mockResolvedValue(undefined);
+    const api = stubApi({ brokerageConnected });
+    await addRun(api);
+    const card = await screen.findByTestId("assessment-card");
+    await within(card).findByText(/couldn't start your assessment/i);
+    await userEvent.click(within(card).getByRole("button", { name: /try again/i }));
+    await waitFor(() => expect(brokerageConnected).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId("assessment-card").textContent).toMatch(/Usually 2 to 4 minutes/));
+  });
+  it("a run in flight resumes after a reload; one past the long timeout says so and offers a retry", async () => {
+    localStorage.setItem("assetly-assess:u-test", JSON.stringify({ startedAt: new Date(Date.now() - 90_000).toISOString(), first: true }));
+    const { unmount } = render(<App api={stubApi()} />);
+    expect((await screen.findByTestId("assessment-card")).textContent).toMatch(/started 1 min ago/);
+    unmount();
+    localStorage.setItem("assetly-assess:u-test", JSON.stringify({ startedAt: new Date(Date.now() - 25 * 60_000).toISOString(), first: true }));
+    render(<App api={stubApi()} />);
+    const card = await screen.findByTestId("assessment-card");
+    await within(card).findByText(/taking longer than usual/i);
+    expect(within(card).getByRole("button", { name: /try again/i })).toBeTruthy();
+    await userEvent.click(within(card).getByRole("button", { name: /dismiss/i }));
+    expect(screen.queryByTestId("assessment-card")).toBeNull();
+    expect(localStorage.getItem("assetly-assess:u-test")).toBeNull();
+  });
+  it("the first run arms a next-step hint that leads to the obvious moves, and it can be put away", async () => {
+    const api = stubApi();
+    await addRun(api);
+    const hint = await screen.findByTestId("next-steps");
+    expect(within(hint).getByRole("button", { name: /add another/i })).toBeTruthy();
+    await userEvent.click(within(hint).getByRole("button", { name: /dismiss next steps/i }));
+    expect(screen.queryByTestId("next-steps")).toBeNull();
+    expect(localStorage.getItem("assetly-next-steps")).toBe("done");
+  });
+  it("existing users never see the next-step hint unasked", async () => {
+    render(<App api={stubApi()} />);
+    await screen.findByTestId("net-worth");
+    expect(screen.queryByTestId("next-steps")).toBeNull();
+  });
+});
+
+describe("C8 onboarding keeps what you gave it", () => {
+  const fresh = () => stubApi({ getProfile: vi.fn().mockResolvedValue({ ...profile, onboarded_at: null }), getPortfolio: vi.fn().mockResolvedValue([]) });
+  it("says Step 1 of 3 and 'about a minute' for the six questions", async () => {
+    render(<App api={fresh()} />);
+    await screen.findByTestId("investor-quiz");
+    expect(screen.getByTestId("ob-step").textContent).toMatch(/^Step 1 of 3 · About a minute/);
+    expect(screen.getByText(/Question 1 of 6/)).toBeTruthy();
+  });
+  it("Skip keeps the answers already given and defaults only the rest", async () => {
+    const api = fresh();
+    render(<App api={api} />);
+    await screen.findByTestId("investor-quiz");
+    await userEvent.click(screen.getByRole("button", { name: "AI & tech" }));
+    await userEvent.click(screen.getByRole("button", { name: "Crypto" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Stay on top of what I own" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await userEvent.click(screen.getByTestId("quiz-skip"));
+    await userEvent.click(await screen.findByTestId("ob-skip"));
+    await waitFor(() => expect(api.completeOnboarding).toHaveBeenCalledWith(["US"], "USD",
+      { styles: ["ai_tech", "crypto"], purpose: ["watch"], horizon: ["3-10y"], target: ["8-12%"], risk: ["hold"], level: ["novice"] }));
+  });
+  it("every step after the first has Back, and the quiz comes back where it was left", async () => {
+    render(<App api={fresh()} />);
+    await screen.findByTestId("investor-quiz");
+    await userEvent.click(screen.getByRole("button", { name: "Growth" }));
+    await userEvent.click(screen.getByTestId("quiz-skip"));
+    await screen.findByTestId("ob-connect");
+    expect(screen.getByTestId("ob-step").textContent).toBe("Step 2 of 3");
+    await userEvent.type(screen.getByLabelText(/find your first position/i), "MARA");
+    await userEvent.click(await screen.findByRole("button", { name: /MARA Holdings/i }));
+    expect((await screen.findByTestId("ob-step")).textContent).toBe("Step 3 of 3");
+    await userEvent.click(screen.getByRole("button", { name: /← back/i }));
+    await screen.findByTestId("ob-connect");
+    await userEvent.click(screen.getByRole("button", { name: /← back/i }));
+    await screen.findByTestId("investor-quiz");
+    expect(screen.getByRole("button", { name: "Growth" }).getAttribute("aria-pressed")).toBe("true");
+  });
+  it("a reload (or the web round trip through the brokerage portal) resumes the quiz mid-way", async () => {
+    const { unmount } = render(<App api={fresh()} />);
+    await screen.findByTestId("investor-quiz");
+    await userEvent.click(screen.getByRole("button", { name: "Growth" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByText(/Question 2 of 6/);
+    unmount();
+    render(<App api={fresh()} />);
+    await screen.findByText(/Question 2 of 6/);
+    await userEvent.click(screen.getByRole("button", { name: /← back/i }));
+    expect(screen.getByRole("button", { name: "Growth" }).getAttribute("aria-pressed")).toBe("true");
+  });
+  it("coming back from a declined connect lands on the holdings step with the answers kept", async () => {
+    const { unmount } = render(<App api={fresh()} />);
+    await screen.findByTestId("investor-quiz");
+    await userEvent.click(screen.getByRole("button", { name: "Growth" }));
+    await userEvent.click(screen.getByTestId("quiz-skip"));
+    await screen.findByTestId("ob-connect");
+    unmount();
+    window.history.replaceState({}, "", "/?snaptrade=denied");
+    const api = fresh();
+    render(<App api={api} />);
+    await screen.findByTestId("ob-connect");
+    expect(screen.queryByTestId("investor-quiz")).toBeNull();
+    await userEvent.click(screen.getByTestId("ob-skip"));
+    await waitFor(() => expect(vi.mocked(api.completeOnboarding).mock.calls[0][2]).toMatchObject({ styles: ["growth"] }));
+    window.history.replaceState({}, "", "/");
   });
 });

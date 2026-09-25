@@ -361,7 +361,35 @@ export function makeApi(sb: SupabaseClient = supabase) {
     },
     /** The book-changed moment (brokerage connect, or a run of manual adds): sync -> news -> all intelligence -> Portfolio Assessment. */
     async brokerageConnected(): Promise<void> {
-      await sb.functions.invoke("brokerage-connected", { body: {} }).catch(() => null);
+      // It used to swallow every failure while the UI said "on the way": manual-add runs hit a 401 here
+      // (a stale access token after the app sat in the background) and the assessment never came. One
+      // retry on a freshly refreshed session; if that fails too, the caller shows it and offers Retry.
+      const call = async () => {
+        const { data, error } = await sb.functions.invoke("brokerage-connected", { body: {} });
+        if (error) throw error;
+        if (data && typeof data === "object" && "ok" in data && !data.ok) throw new Error(String(data.error ?? "brokerage-connected failed"));
+      };
+      try { await call(); }
+      catch {
+        await withTimeout(sb.auth.refreshSession(), 8000, null).catch(() => null);
+        try { await call(); }
+        catch { throw new Error("We couldn't start your assessment."); }
+      }
+    },
+    /** Where the Portfolio Assessment stands for a run that started at `since` (ISO).
+     *  Today readiness is read off the rows themselves: an assessment edition in daily_briefs newer than
+     *  `since`, and the portfolio intelligence that the chain writes first. A server-side status (queued /
+     *  failed) plugs in here without the UI changing: map it onto `status`. */
+    async getAssessmentStatus(since: string): Promise<{ status: "pending" | "ready" | "failed"; generatedAt: string | null; intelligenceAt: string | null; hadEarlier: boolean }> {
+      const [{ data: a }, { data: pi }] = await Promise.all([
+        sb.from("daily_briefs").select("generated_at").eq("edition", "assessment").order("generated_at", { ascending: false }).limit(1).maybeSingle(),
+        sb.from("portfolio_insights").select("generated_at").order("generated_at", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      const at = a?.generated_at ? String(a.generated_at) : null;
+      const pit = pi?.generated_at ? String(pi.generated_at) : null;
+      const fresh = (t: string | null) => !!t && +new Date(t) > +new Date(since);
+      return { status: fresh(at) ? "ready" : "pending", generatedAt: fresh(at) ? at : null,
+               intelligenceAt: fresh(pit) ? pit : null, hadEarlier: !!at && !fresh(at) };
     },
     /** ASK: grounded portfolio Q&A. Returns the analyst answer plus 2-3 follow-up questions. */
     async ask(question: string): Promise<{ answer: string; followups: string[] }> {

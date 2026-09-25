@@ -1302,7 +1302,7 @@ describe("U47 series of manual adds", () => {
     await userEvent.click(screen.getByRole("button", { name: /done/i }));
     await waitFor(() => expect(api.brokerageConnected).toHaveBeenCalledTimes(1));
     expect(sessionStorage.getItem("assetly-connect-at")).toBeTruthy();   // lights + auto-ask arm exactly like a connect
-    expect((await screen.findByTestId("brokerage-notice")).textContent).toMatch(/assessment/i);
+    expect((await screen.findByTestId("assessment-card")).textContent).toMatch(/assessment/i);   // a card that stays, not a toast
   });
 });
 

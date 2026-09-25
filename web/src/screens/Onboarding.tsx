@@ -12,21 +12,37 @@ import { ccySymbol } from "../lib/format";
 // Long enough for a slow phone network, short enough that nobody thinks the app has died.
 const SETUP_TIMEOUT_MS = 12000;
 
+// Setup survives a reload and the round trip through the brokerage portal (on the web that is a full
+// page load): quiz answers, where the reader was, and a half-filled first position. Before this, backing
+// out of the portal meant answering six questions again, and a connected return saved default answers.
+const OB_KEY = "assetly-onboarding";
+type ObSaved = { draft?: Investor; qi?: number; inv?: Investor | null; quizDone?: boolean; step?: number; picked?: SymbolRow | null; qty?: string; cost?: string };
+function readOb(): ObSaved {
+  try { return JSON.parse(sessionStorage.getItem(OB_KEY) ?? "{}") as ObSaved; } catch { return {}; }
+}
+function writeOb(v: ObSaved) { try { sessionStorage.setItem(OB_KEY, JSON.stringify(v)); } catch { /* storage unavailable */ } }
+export function clearOnboardingDraft() { try { sessionStorage.removeItem(OB_KEY); } catch { /* storage unavailable */ } }
+
 // Setup: connect a brokerage (positions import in seconds) OR add the first
 // position manually. After the OAuth return, this screen shows the live import
 // and finishes onboarding in one tap — markets are inferred, never asked.
 export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   api: Api; onDone: () => Promise<void> | void; snaptrade?: string | null; onBookChanged?: () => void;
 }) {
-  const [step, setStep] = useState(1);
-  // the 5-question tap quiz answered (or skipped) before holdings; a brokerage return skips straight to the import
-  const [inv, setInv] = useState<Investor | null>(null);
-  const [quizDone, setQuizDone] = useState(snaptrade === "connected");
+  const [saved] = useState(readOb);
+  const [step, setStep] = useState(saved.step === 2 && saved.picked ? 2 : 1);
+  // the six-question tap quiz answered (or skipped) before holdings; a brokerage return skips straight to the import
+  const [inv, setInv] = useState<Investor | null>(saved.inv ?? null);
+  const [quizDone, setQuizDone] = useState(snaptrade === "connected" || !!saved.quizDone);
+  const [draft, setDraft] = useState<{ raw: Investor; i: number } | null>(saved.draft ? { raw: saved.draft, i: saved.qi ?? 0 } : null);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SymbolRow[]>([]);
-  const [picked, setPicked] = useState<SymbolRow | null>(null);
-  const [qty, setQty] = useState("");
-  const [cost, setCost] = useState("");
+  const [picked, setPicked] = useState<SymbolRow | null>(saved.picked ?? null);
+  const [qty, setQty] = useState(saved.qty ?? "");
+  const [cost, setCost] = useState(saved.cost ?? "");
+  useEffect(() => {
+    writeOb({ draft: draft?.raw, qi: draft?.i, inv, quizDone, step, picked, qty, cost });
+  }, [draft, inv, quizDone, step, picked, qty, cost]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
@@ -74,6 +90,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
     setBusy(true); setErr(null);
     try {
       await guard(api.completeOnboarding(marketsOf(imported ?? []), "USD", inv ?? INVESTOR_DEFAULT));
+      clearOnboardingDraft();
       // the connect callback already queued the book-changed chain (sync -> news -> intelligence -> assessment)
       await guard(Promise.resolve(onDone()));
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not save. Try again."); }
@@ -93,6 +110,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
     setBusy(true); setErr(null);
     try {
       await guard(api.completeOnboarding(["US"], "USD", inv ?? INVESTOR_DEFAULT));
+      clearOnboardingDraft();
       await guard(Promise.resolve(onDone()));
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not save. Try again."); }
     finally { setBusy(false); }
@@ -119,6 +137,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
       void api.refreshNews([picked.symbol]);                // stories land while the user looks around
       const m = marketOf({ symbol: picked.symbol, kind: picked.kind });   // inferred, never asked
       await api.completeOnboarding([m === "KR" ? "KR" : m === "CRYPTO" ? "Crypto" : "US"], "USD", inv ?? INVESTOR_DEFAULT);
+      clearOnboardingDraft();
       onBookChanged?.();   // same pipeline as a brokerage connect: intelligence + Portfolio Assessment within minutes
       await onDone();
     } catch (e) {
@@ -170,10 +189,11 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
     return (
       <main className="screen" style={{ paddingTop: 28 }}>
         <h1 className="h1">Set up Assetly</h1>
-        <p className="mutedc" style={{ marginBottom: 18 }}>30 seconds, all taps — it shapes every insight you get</p>
-        <InvestorQuiz
+        <p className="mutedc" style={{ marginBottom: 18 }} data-testid="ob-step">Step 1 of 3 · About a minute, all taps. It shapes every insight you get.</p>
+        <InvestorQuiz draft={draft?.raw} startAt={draft?.i ?? 0}
+          onProgress={(raw, i) => setDraft({ raw, i })}
           onDone={(v) => { setInv(v); setQuizDone(true); }}
-          onSkip={() => { setInv(INVESTOR_DEFAULT); setQuizDone(true); }} />
+          onSkip={(v) => { setInv(v); setQuizDone(true); }} />
       </main>
     );
   }
@@ -181,7 +201,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   return (
     <main className="screen" style={{ paddingTop: 28 }}>
       <h1 className="h1">Set up Assetly</h1>
-      <p className="mutedc" style={{ marginBottom: 18 }}>Step {step + 1} of 3</p>
+      <p className="mutedc" style={{ marginBottom: 18 }} data-testid="ob-step">Step {step + 1} of 3</p>
 
       {step === 1 && (
         <section aria-label="Add your holdings">
@@ -230,12 +250,14 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
           <button className="linky" data-testid="ob-skip" disabled={busy} onClick={skipForNow} style={{ marginTop: 6 }}>
             Skip for now — add holdings later
           </button>
+          <button className="chip" disabled={busy} onClick={() => setQuizDone(false)} style={{ marginTop: 6 }}>← Back</button>
         </section>
       )}
 
       {step === 2 && picked && (
         <section aria-label="Shares and cost">
-          <p style={{ marginBottom: 12 }}><span className="sym">{picked.symbol}</span> · {picked.name}</p>
+          <p style={{ marginBottom: 12 }}><span className="sym">{picked.symbol}</span> · {picked.name}
+            <button className="chip" style={{ marginLeft: 10 }} disabled={busy} onClick={() => { setStep(1); setPicked(null); setFieldErr({}); setErr(null); }}>Change</button></p>
           <AmountField id="ob-qty" label={picked.kind === "crypto" ? "Quantity" : "Shares"} value={qty} placeholder="e.g. 10"
             onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} />
           <AmountField id="ob-cost" label={`Cost per ${picked.kind === "crypto" ? "coin" : "share"} (${ccySymbol(picked.currency).trim()})`} value={cost}
@@ -244,6 +266,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
           <p className="mutedc" style={{ fontSize: 12.5, marginBottom: 12 }}>Don't know your cost? Use today's price and fix it later from the position. Purchase date is optional too.</p>
           {err && <div className="error-note" role="alert">{err}</div>}
           <button className="btn" disabled={busy} onClick={finish}>{busy ? "Saving…" : "Add position"}</button>
+          <button className="chip" disabled={busy} onClick={() => { setStep(1); setFieldErr({}); setErr(null); }} style={{ marginTop: 10 }}>← Back</button>
         </section>
       )}
     </main>

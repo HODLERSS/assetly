@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertCcy, dayChangeAmount, type FxRates } from "./lib/format";
 import { isHeld, sortByBaseValue } from "./lib/portfolio";
+import { useAssessmentWatch } from "./lib/assessment";
 import type { Session } from "@supabase/supabase-js";
 import { completeNativeAuth, supabase } from "./lib/supabase";
 import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
 import { AuthScreen } from "./screens/Auth";
 import { Onboarding } from "./screens/Onboarding";
-import { Home } from "./screens/Home";
+import { Home, NEXT_KEY } from "./screens/Home";
 import { TabIcon } from "./components/TabIcon";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { applyTheme, getTheme, watchSystemTheme } from "./lib/theme";
@@ -72,6 +73,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const [homeAlert, setHomeAlert] = useState(false);
   const [briefBanner, setBriefBanner] = useState<{ audio: boolean; edition: BriefEdition } | null>(null);   // first-arrival banner on Home
   const [autoAsk, setAutoAsk] = useState<{ question: string; key: string } | null>(null);
+  // the Portfolio Assessment a connect / onboarding / run of adds is waiting on: Home shows it until it lands
+  const assess = useAssessmentWatch(api, session?.user.id ?? null);
   const connectPendingRef = useRef<string | null>(null);   // set at the connect moment; consumed when fresh intelligence lands
   const seenBriefRef = useRef<string | null>(null);   // latest brief generated_at the user has seen
   // brief watcher: a new brief (first brief, or the next edition) lights Home when the user is elsewhere
@@ -235,6 +238,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       // kick the chain again as a belt-and-braces (idempotent: the per-user lock makes a duplicate sync yield)
       connectPendingRef.current = String(Date.now());
       try { sessionStorage.setItem("assetly-connect-at", new Date().toISOString()); } catch { /* storage unavailable */ }
+      assess.start();
       // Imported rows land over several seconds (callback sync + webhook syncs). Poll the book quickly
       // until it stops growing so Home shows the new stocks immediately, not on the next 60s tick.
       let lastCount = -1, stable = 0, ticks = 0;
@@ -249,8 +253,10 @@ export function App({ api = defaultApi }: { api?: Api }) {
       };
       void settle();
       api.snaptradeSync().then(async () => {
-        await load(); void api.brokerageConnected();
-        setNoticeKind("ok"); setNotice("Import complete · fresh intelligence and your brief are on the way"); setTimeout(() => setNotice(null), 8000);
+        await load();
+        // the callback queued the chain already, so a failed belt-and-braces kick is not an error to show
+        void api.brokerageConnected().catch(() => {});
+        setNoticeKind("ok"); setNotice("Import complete"); setTimeout(() => setNotice(null), 8000);
       }).catch(() => { setNoticeKind("ok"); setNotice("Connected · import finishing in the background"); setTimeout(() => setNotice(null), 8000); });
     } else {
       setNoticeKind("warn");
@@ -305,11 +311,12 @@ export function App({ api = defaultApi }: { api?: Api }) {
     b.pending = false;
     connectPendingRef.current = String(Date.now());
     try { sessionStorage.setItem("assetly-connect-at", new Date().toISOString()); } catch { /* storage unavailable */ }
-    setNoticeKind("busy"); setNotice("Updating your intelligence and portfolio assessment");
-    void api.brokerageConnected().finally(() => {
-      setNoticeKind("ok"); setNotice("Fresh intelligence and your assessment are on the way"); setTimeout(() => setNotice(null), 7000);
-    });
-  }, [api]);
+    // Home's assessment card carries the wait (and a failure, with Retry), not a 7-second toast
+    try { if (!localStorage.getItem(NEXT_KEY)) localStorage.setItem(NEXT_KEY, "armed"); } catch { /* private mode */ }   // first adds: arm the next-step hint
+    assess.start();
+    api.brokerageConnected().catch((e) => assess.fail(e instanceof Error ? e.message : "We couldn't start your assessment."));
+  }, [api, assess.start, assess.fail]);
+  const retryAssessment = useCallback(() => { bookChangeRef.current.pending = true; runBookPipeline(); }, [runBookPipeline]);
   const scheduleBookChange = useCallback(() => {
     const b = bookChangeRef.current;
     b.pending = true;
@@ -390,7 +397,9 @@ export function App({ api = defaultApi }: { api?: Api }) {
           <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"} loading={!booted}
             dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"}
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
-            briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)} />
+            briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)}
+            assessment={assess.state} onAssessRetry={retryAssessment} onAssessDismiss={assess.dismiss}
+            onOpenNews={() => go({ kind: "tab", tab: "news" })} />
         )}
         {view.kind === "tab" && view.tab === "news" && (
           <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"}
