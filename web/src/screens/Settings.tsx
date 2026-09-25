@@ -6,9 +6,9 @@ import { timeAgo } from "../lib/format";
 import { getTheme, setTheme, THEME_CHOICES, type ThemeChoice } from "../lib/theme";
 import { isNative, openConnectPortal, openExternal, platformTag } from "../lib/native";
 import { pushEnabled, registerPush, setPushEnabled } from "../lib/push";
+import { LEGAL_BASE } from "../lib/legal";
 
 const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? "1.0";
-const LEGAL_BASE = "https://hodlerss.github.io/assetly";
 
 // Gap screen g2: account, currency matrix, markets, sign out. The matrix (totals / US assets /
 // KR assets, each USD or KRW) appears once the book actually holds KRW — no clutter before that.

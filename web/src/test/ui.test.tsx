@@ -879,20 +879,20 @@ describe("U18 labels + bank accounts", () => {
     await userEvent.click(await screen.findByRole("button", { name: /add a cash balance/i }));
     expect(screen.getByRole("button", { name: "Bank" }).getAttribute("aria-pressed")).toBe("true");
     await userEvent.type(screen.getByLabelText(/amount \(\$\)/i), "2500");
-    await userEvent.type(screen.getByLabelText(/label \(optional\)/i), "Cash (Yeonhwa)");
+    await userEvent.type(screen.getByLabelText(/label \(optional\)/i), "Emergency fund");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 2500, 1, undefined, "bank", "Cash (Yeonhwa)", ""));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("$CASH", 2500, 1, undefined, "bank", "Emergency fund", ""));
   });
   it("rows show the label instead of the generic name, with a Bank tag", async () => {
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue([
-      row({ holding_id: "c1", symbol: "$CASH", name: "Cash (USD)", nickname: "Cash (Yeonhwa)", kind: "cash", account: "bank", qty: 2500, price: 1, value: 2500, cost_basis: 2500, total_gl: 0, change_pct: 0 }),
-      row({ holding_id: "c2", symbol: "$CASH", name: "Cash (USD)", nickname: "Cash (Minjae)", kind: "cash", account: "bank", qty: 4000, price: 1, value: 4000, cost_basis: 4000, total_gl: 0, change_pct: 0 }),
+      row({ holding_id: "c1", symbol: "$CASH", name: "Cash (USD)", nickname: "Emergency fund", kind: "cash", account: "bank", qty: 2500, price: 1, value: 2500, cost_basis: 2500, total_gl: 0, change_pct: 0 }),
+      row({ holding_id: "c2", symbol: "$CASH", name: "Cash (USD)", nickname: "Travel fund", kind: "cash", account: "bank", qty: 4000, price: 1, value: 4000, cost_basis: 4000, total_gl: 0, change_pct: 0 }),
     ]) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
-    await screen.findByText("Cash (Yeonhwa)");
-    await screen.findByText("Cash (Minjae)");
+    await screen.findByText("Emergency fund");
+    await screen.findByText("Travel fund");
     expect(screen.getAllByText(/cash balance · Bank/).length).toBe(2);
   });
 });
