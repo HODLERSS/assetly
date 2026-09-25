@@ -1,4 +1,7 @@
 // Money and percent formatting. Sign always travels with color (never color alone).
+// Negatives use the true minus (U+2212): it is as wide as "+" in the tabular number face, so a column
+// of gains and losses keeps one right edge. The ASCII hyphen was 7.0px against 9.4px (r2 design audit).
+export const MINUS = "\u2212";
 export type FxRates = Record<string, number>;   // units of currency per USD (USD: 1, KRW: 1380, CAD: 1.36 ...)
 const SYM: Record<string, string> = { USD: "$", KRW: "₩", CAD: "C$", GBP: "£", EUR: "€", JPY: "¥", AUD: "A$", HKD: "HK$", INR: "₹", CHF: "CHF ", SGD: "S$", NZD: "NZ$", SEK: "kr ", NOK: "kr ", DKK: "kr ", MXN: "MX$", BRL: "R$", ZAR: "R ", TWD: "NT$", CNY: "¥" };
 const ZERO_DP = new Set(["KRW", "JPY", "TWD"]);   // currencies quoted without decimals
@@ -27,15 +30,14 @@ export function moneyExact(v: number | null | undefined, currency: string = "USD
 export function signedMoney(v: number | null | undefined, currency: string = "USD"): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
   if (Math.round(Math.abs(v)) === 0) return money(0, currency);
-  const sign = v > 0 ? "+" : "-";
+  const sign = v > 0 ? "+" : MINUS;
   return sign + money(Math.abs(v), currency);
 }
 
 export function signedPct(v: number | null | undefined, dp = 2): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
   if (Number(v.toFixed(dp)) === 0) return `${(0).toFixed(dp)}%`;   // never "-0.00%"
-  const sign = v > 0 ? "+" : "";
-  return `${sign}${v.toFixed(dp)}%`;
+  return `${v > 0 ? "+" : MINUS}${Math.abs(v).toFixed(dp)}%`;
 }
 
 export function glClass(v: number | null | undefined): string {
@@ -85,11 +87,37 @@ export function dayChangeAmount(value: number | null, changePct: number | null):
   return value - value / f;
 }
 
+/** Cash and debt rows are stored under internal symbols ("$CASH", "$CASH.KRW", "$DEBT"). People never see
+ *  those: "Cash", "Cash (KRW)", "Debt". Anything else is returned as is. */
+export function cashName(symbol: string): string | null {
+  const m = /^\$(CASH|DEBT)(?:\.([A-Z]{3}))?$/.exec(symbol);
+  if (!m) return null;
+  const base = m[1] === "CASH" ? "Cash" : "Debt";
+  return m[2] && m[2] !== "USD" ? `${base} (${m[2]})` : base;
+}
+
+/** The one name for a holding in sentences ("Remove Cash (KRW)?", "Remove NVDA?"). */
+export function displayName(r: { symbol: string; nickname?: string | null }): string {
+  const c = cashName(r.symbol);
+  if (c) return r.nickname ? `${c} · ${r.nickname}` : c;
+  return r.symbol;
+}
+
+/** A calendar date as people write it: "Jun 14, 2024". The ISO day is a date, not an instant: read it at noon UTC. */
+export function formatDate(isoDay: string): string {
+  const d = new Date(`${isoDay.slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(+d)) return isoDay;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
 /** KR tickers are opaque numbers (000660.KS); people know the company name.
  *  main = what to show big, sub = the secondary line. US keeps ticker-first. */
 export function labelParts(r: { symbol: string; name?: string | null; name_kr?: string | null; nickname?: string | null }, korean = false): { main: string; sub: string } {
+  const cash = cashName(r.symbol);
+  if (cash) return { main: cash, sub: r.nickname || "" };   // "$CASH Cash (USD)" was a raw key and a repeat
   const kr = r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ");
-  if (!kr) return { main: r.symbol, sub: r.nickname || r.name || "" };
+  // a name that only repeats the ticker ("AVGO AVGO") is dropped
+  if (!kr) return { main: r.symbol, sub: r.nickname || (r.name && r.name.trim().toUpperCase() !== r.symbol.toUpperCase() ? r.name : "") };
   if (r.nickname) return { main: r.nickname, sub: r.symbol };
   if (korean && r.name_kr) return { main: r.name_kr, sub: r.symbol };
   const nm = (r.name || r.symbol)
@@ -102,7 +130,7 @@ export function signedMoneyCompact(v: number | null, ccy: string): string {
   if (v === null) return "\u2014";
   const sym = ccySymbol(ccy);
   if (Math.round(Math.abs(v)) === 0) return `${sym}0`;
-  const sign = v > 0 ? "+" : "-";
+  const sign = v > 0 ? "+" : MINUS;
   const num = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: Math.abs(v) < 1000 ? 0 : 1 }).format(Math.abs(v));
   return `${sign}${sym}${num}`;
 }

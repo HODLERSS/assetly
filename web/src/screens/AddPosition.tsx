@@ -6,7 +6,8 @@ import { Icon } from "../components/Icon";
 import { AmountField, EntryPreview } from "../components/AmountField";
 import { ACCOUNTS, accountLabel, defaultAccount } from "../lib/accounts";
 import { entryPreview, readAmount } from "../lib/numbers";
-import { ccySymbol } from "../lib/format";
+import { ccySymbol, displayName } from "../lib/format";
+import { useInFlight } from "../lib/inflight";
 import { useSymbolSearch } from "../lib/search";
 
 // Canvas 3c/3d applied post-onboarding: search, then the two required fields.
@@ -31,6 +32,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
+  const [, once] = useInFlight();   // the save's re-entry guard; `busy` above is what the screen shows
 
   // Everything about the form is derived from what was picked, never inherited from the previous add:
   // a Cash add used to leave "Bank" selected, and the next stock saved into it.
@@ -96,12 +98,13 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
             {busy && <p className="empty">Adding to Assetly…</p>}
             {err && <div className="error-note" role="alert">{err}</div>}
             {searchErr && <div className="error-note" role="alert">{searchErr}</div>}
+            {q.trim() && searching && results.length === 0 && <p className="empty" aria-busy="true" data-testid="searching">Searching…</p>}
             {q.trim() && !searching && !searchErr && results.length === 0 && <p className="empty">No match for “{q.trim()}”. Try a ticker (AAPL) or a company name.</p>}
           </div>
           {added.length > 0 && (
             <div data-testid="added-strip" style={{ marginTop: 14 }}>
               <p className="sub" style={{ margin: "0 2px 6px" }}>
-                Added: {added.join(" · ")} — keep going, or tap <strong>Done</strong>.
+                Added {added.map((sy) => displayName({ symbol: sy })).join(" · ")}. Add another, or tap <strong>Done</strong>.
               </p>
               {(() => { const latest = added.find((sy) => !sy.startsWith("$")); return latest ? <InsightsCard api={api} symbol={latest} /> : null; })()}
             </div>
@@ -149,10 +152,10 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
           <div className="field"><label htmlFor="add-note">Note (optional)</label>
             <input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Earnings dip buy" enterKeyHint="done" /></div>
           {err && <div className="error-note" role="alert">{err}</div>}
-          <button className="btn" disabled={busy} onClick={async () => {
+          <button className="btn" disabled={busy} onClick={() => once(async () => {
             const isCash = picked.kind === "cash" || picked.kind === "debt";
-            const q = readAmount(qty, isCash ? (picked.kind === "debt" ? "debt" : "cash") : picked.kind === "crypto" ? "units" : "shares");
-            const c = isCash ? { value: 1, error: null } : readAmount(cost, "cost");
+            const q = readAmount(qty, isCash ? (picked.kind === "debt" ? "debt" : "cash") : picked.kind === "crypto" ? "units" : "shares", isCash ? ccy : picked.currency);
+            const c = isCash ? { value: 1, error: null } : readAmount(cost, "cost", picked.currency);
             setFieldErr({ qty: q.error ?? undefined, cost: c.error ?? undefined });
             if (q.value === null || c.value === null) return;
             const nq = q.value, nc = c.value;
@@ -173,7 +176,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
             }
             catch (e) { setErr(e instanceof Error ? e.message : "Could not add position."); }
             finally { setBusy(false); }
-          }}>{busy ? "Adding…" : "Add position"}</button>
+          })}>{busy ? "Adding…" : "Add position"}</button>
         </>
       )}
     </>

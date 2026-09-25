@@ -2,7 +2,7 @@
 // brokerage statements ("1,000", "$1,250.50", "₩1,500,000"), and parseFloat("1,000") is 1 —
 // a book silently wrong by 1000x (launch audit, 2026-09-25). Every number field reads through
 // here: a clean number comes back, anything else becomes a plain, field-specific error.
-import { moneyExact } from "./format";
+import { ccySymbol, moneyExact } from "./format";
 
 export type AmountField = "shares" | "units" | "cost" | "cash" | "debt";
 export type Parsed = { ok: true; value: number } | { ok: false; reason: "empty" | "invalid" | "negative" };
@@ -43,13 +43,34 @@ const MSG: Record<AmountField, { empty: string; invalid: string; low: string }> 
   debt: { empty: "Enter the amount owed.", invalid: "Amount must be a number, like 1,500 or 250.75.", low: "Amount owed must be more than zero." },
 };
 
-/** Parse one form field. Quantities must be > 0; a cost may be 0 (gifted or granted shares) but never negative. */
-export function readAmount(raw: string, field: AmountField): { value: number; error: null } | { value: null; error: string } {
+// The currency a typed mark names, when it names one unambiguously. A bare "$" fits any dollar currency.
+const MARKS: [RegExp, string][] = [[/^(?:KRW|₩)/i, "KRW"], [/^(?:USD|US\$)/i, "USD"], [/^€/, "EUR"], [/^£/, "GBP"], [/^¥/, "JPY"], [/^₹/, "INR"]];
+export function typedCurrency(raw: string): string | "$" | null {
+  const s = raw.replace(/[\s\u00a0\u2009\u202f]/g, "").replace(/^[-−]/, "");
+  for (const [re, c] of MARKS) if (re.test(s)) return c;
+  return /^[A-Z]{0,2}\$/i.test(s) ? "$" : null;
+}
+
+/** Parse one form field. Quantities must be > 0; a cost may be 0 (gifted or granted shares) but never negative.
+ *  With `currency`, an amount typed with another currency's mark ("₩1,000" on a dollar stock) is refused:
+ *  it used to save as $1,000 without a word (r2 power-user audit). */
+export function readAmount(raw: string, field: AmountField, currency?: string): { value: number; error: null } | { value: null; error: string } {
   const p = parseAmount(raw);
   const m = MSG[field];
+  const typed = currency && field !== "shares" && field !== "units" ? typedCurrency(raw) : null;
+  if (typed && currency) {
+    const fits = typed === "$" ? ccySymbol(currency).includes("$") : typed === currency;
+    const mark = (c: string) => ccySymbol(c).trim();
+    if (!fits) return { value: null, error: `That's a ${typed === "$" ? "$" : mark(typed)} amount, but this is priced in ${currency}. Enter it in ${mark(currency)}.` };
+  }
   if (!p.ok) return { value: null, error: p.reason === "empty" ? m.empty : p.reason === "invalid" ? m.invalid : m.low };
   if (field !== "cost" && p.value <= 0) return { value: null, error: m.low };
   return { value: p.value, error: null };
+}
+
+/** A stored number put back into a field the way it would have been typed: 3000 -> "3,000", 12.5 -> "12.5". */
+export function formatAmountInput(v: number): string {
+  return v.toLocaleString("en-US", { maximumFractionDigits: 8, useGrouping: true });
 }
 
 /** Quantities as people write them: 1,000 · 0.0123 · 12.5 (no float noise, no forced decimals). */

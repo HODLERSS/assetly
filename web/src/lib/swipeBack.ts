@@ -43,7 +43,8 @@ export function useEdgeSwipeBack(target: RefObject<HTMLElement>, active: boolean
 
     const onStart = (e: TouchEvent) => {
       const t = e.touches[0];
-      start = e.touches.length === 1 && t.clientX <= EDGE && !keyboardOpen() ? { x: t.clientX, y: t.clientY, t: Date.now() } : null;
+      // an open sheet (a lot being edited, a confirm) owns the screen: popping the page would discard it
+      start = e.touches.length === 1 && t.clientX <= EDGE && !keyboardOpen() && !document.querySelector(".sheet-back") ? { x: t.clientX, y: t.clientY, t: Date.now() } : null;
       engaged = false; dx = 0;
     };
     const onMove = (e: TouchEvent) => {
