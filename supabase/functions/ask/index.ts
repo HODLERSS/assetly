@@ -227,11 +227,14 @@ Deno.serve(async (req) => {
   // DIVIDENDS, keyed by symbol (round 4: "SCHD paid $0.96 quarterly" was VTI's figure, and "how much income does
   // my portfolio make" had nothing to answer from). Stale or missing data is refreshed after the answer ships.
   const divRows = await dividendRows(admin, held.map((r) => r.symbol));
-  if (held.some((r) => !divRows.get(r.symbol))) {
+  // refresh when a held symbol was never checked or is older than 3 days (every symbol already has a row, so
+  // "no row" was never true and the refresh never ran)
+  if (held.some((r) => { if (r.kind === "crypto") return false; const d = divRows.get(r.symbol); return !d?.div_as_of || Date.now() - +new Date(d.div_as_of) > 3 * 86400000; })) {
     try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(refreshDividends(admin, held.map((r) => r.symbol), 8).catch(() => [])); } catch { /* the insights lap refreshes them */ }
   }
-  const divLines = held.map((r) => ({ r, d: dividendLine(nameOf(r), divRows.get(r.symbol), Number(r.qty ?? 0)) }));
+  const divLines = held.map((r) => ({ r, d: dividendLine(nameOf(r), divRows.get(r.symbol), Number(r.qty ?? 0), r.currency ?? "USD", fxMap.get(r.currency ?? "USD") ?? 1) }));
   const divIncome = divLines.reduce((a, x) => a + x.d.annual, 0);
+  const divPending = held.filter((r) => r.kind !== "crypto" && !divRows.get(r.symbol)?.div_as_of).length;   // coins are never checked
   const divFacts = divLines.map((x) => ({ names: [nameOf(x.r), ...aliasesFor(x.r.symbol, x.r.name)], amounts: x.d.amounts }));
 
   const stats: string[] = [];
@@ -403,7 +406,7 @@ Portfolio total: ${money(totNow)} · TODAY (this session only): ${signedUsd(book
 Window figures that read "${NO_HISTORY}" have no data: say so plainly for that window; never reuse another window's number in its place.
 DIVIDENDS per holding (the ONLY dividend figures you may state, each for its own holding; an estimate is labelled "(est)"):
 ${divLines.map((x) => "- " + x.d.line).join("\n")}
-Portfolio dividend income ≈ ${money(divIncome)} a year (shares × last 12 months' payments per holding)${assetsUsd > 0 ? `, ${(divIncome / assetsUsd * 100).toFixed(2)}% of assets` : ""}.
+${divPending ? `Portfolio dividend income: still loading for ${divPending} holding(s); say the figures are being fetched and to ask again in a minute, never state $0 or a partial total as the portfolio's income.` : `Portfolio dividend income ≈ ${money(divIncome)} a year (shares × last 12 months' payments per holding)${assetsUsd > 0 ? `, ${(divIncome / assetsUsd * 100).toFixed(2)}% of assets` : ""}.`}
 Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
 ${context}
 

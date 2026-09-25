@@ -520,7 +520,7 @@ Deno.serve(async (req) => {
       // same tag keeps "AMD rose 2.5%" from reading as live.
       // DIVIDENDS, keyed by symbol (round 4 newcomer, an income investor, was told nothing about SCHD's payouts)
       const divRows = await dividendRows(admin, holdings.map((r) => r.symbol));
-      const divData = holdings.map((r) => ({ r, d: dividendLine(krName(r.symbol, r.nickname, r.name), divRows.get(r.symbol), Number(r.qty ?? 0)) }));
+      const divData = holdings.map((r) => ({ r, d: dividendLine(krName(r.symbol, r.nickname, r.name), divRows.get(r.symbol), Number(r.qty ?? 0), r.currency ?? "USD", fxMap.get(r.currency ?? "USD") ?? 1) }));
       const divIncome = divData.reduce((a, x) => a + x.d.annual, 0);
       const divBlock = divData.some((x) => x.d.amounts.length)
         ? `DIVIDENDS (per holding; the ONLY dividend figures you may state):\n${divData.filter((x) => x.d.amounts.length).map((x) => "- " + x.d.line).join("\n")}\nPortfolio dividend income ≈ $${Math.round(divIncome).toLocaleString("en-US")} a year (${(divIncome / total * 100).toFixed(2)}% of assets).`

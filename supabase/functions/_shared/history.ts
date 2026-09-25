@@ -230,26 +230,34 @@ export async function refreshDividends(admin: Db, symbols: string[], cap = 6): P
   return done;
 }
 
-export type DivRow = { symbol: string; div_last: number | null; div_last_ex: string | null; div_ttm: number | null; div_freq_days: number | null; div_next_ex: string | null; div_yield: number | null };
+export type DivRow = { symbol: string; div_as_of?: string | null; div_last: number | null; div_last_ex: string | null; div_ttm: number | null; div_freq_days: number | null; div_next_ex: string | null; div_yield: number | null };
 /** The stored dividend rows for some symbols (empty before migration 40). */
 export async function dividendRows(admin: Db, symbols: string[]): Promise<Map<string, DivRow>> {
   if (!symbols.length) return new Map();
-  const r = await admin.from("symbols").select("symbol, div_last, div_last_ex, div_ttm, div_freq_days, div_next_ex, div_yield").in("symbol", symbols);
+  const r = await admin.from("symbols").select("symbol, div_as_of, div_last, div_last_ex, div_ttm, div_freq_days, div_next_ex, div_yield").in("symbol", symbols);
   if (r.error) return new Map();
   return new Map(((r.data ?? []) as DivRow[]).map((x) => [x.symbol, x]));
 }
 /** One labelled, symbol-keyed line of dividend facts for a prompt, and the amounts a stated figure may use. */
-export function dividendLine(name: string, d: DivRow | undefined, shares: number): { line: string; amounts: number[]; annual: number } {
-  if (!d || !(Number(d.div_last) > 0)) return { line: `${name}: no dividend on record`, amounts: [], annual: 0 };
+/** `ccy` is the holding's currency and `perUsd` how many units of it buy one dollar (1 for USD). Per-share and
+ *  per-holding figures stay in the holding's currency; `annual` is always US dollars, so a portfolio total can sum
+ *  it (Samsung's ₩50,460 a year was summed as $50,460 into a "$65,824 income, 56% of assets" answer, 2026-09-25). */
+export function dividendLine(name: string, d: DivRow | undefined, shares: number, ccy = "USD", perUsd = 1): { line: string; amounts: number[]; annual: number } {
+  // never checked yet (div_as_of null) is "unknown", not "pays nothing": a $0.00 income answer was shown live
+  if (!d || !d.div_as_of) return { line: `${name}: dividend data not loaded yet (unknown, do not state an amount or $0)`, amounts: [], annual: 0 };
+  if (!(Number(d.div_last) > 0)) return { line: `${name}: pays no dividend`, amounts: [], annual: 0 };
   const last = Number(d.div_last), ttm = Number(d.div_ttm ?? 0), freq = Number(d.div_freq_days ?? 0);
   const perYear = freq ? last * Math.max(1, Math.round(365 / freq)) : ttm;
   const rhythm = freq ? (freq < 45 ? "monthly" : freq < 120 ? "quarterly" : freq < 250 ? "twice a year" : "yearly") : "irregular";
-  const annual = shares * (ttm || perYear);
-  const f = (v: number) => "$" + (v >= 100 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v < 1 ? 4 : 2));
+  const annualNative = shares * (ttm || perYear);
+  const rate = perUsd > 0 ? perUsd : 1;
+  const annual = annualNative / rate;
+  const usdF = (v: number) => "$" + (v >= 100 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v < 1 ? 4 : 2));
+  const f = ccy === "USD" ? usdF : ccy === "KRW" ? (v: number) => "₩" + Math.round(v).toLocaleString("en-US") : (v: number) => `${v.toFixed(2)} ${ccy}`;
   return {
     line: `${name}: last dividend ${f(last)} per share (ex-date ${d.div_last_ex}), paid ${rhythm}; last 12 months ${f(ttm)} per share${d.div_yield ? ` (yield ${d.div_yield}%)` : ""}; `
-      + `your ${shares} shares ≈ ${f(annual)} a year, ≈ ${f(shares * last)} per payment${d.div_next_ex ? `; next ex-date expected around ${d.div_next_ex} (est)` : ""}`,
-    amounts: [last, ttm, perYear, annual, shares * last].filter((x) => x > 0),
+      + `your ${shares} shares ≈ ${f(annualNative)} a year${ccy === "USD" ? "" : ` (≈ ${usdF(annual)})`}, ≈ ${f(shares * last)} per payment${d.div_next_ex ? `; next ex-date expected around ${d.div_next_ex} (est)` : ""}`,
+    amounts: [last, ttm, perYear, annualNative, shares * last, ...(ccy === "USD" ? [] : [annual])].filter((x) => x > 0),
     annual,
   };
 }
