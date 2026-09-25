@@ -23,3 +23,14 @@ export class OfflineError extends Error {
  *  slowest single page a live backend was seen to take (~8.5s at a bad moment, r5 power-user), so it only
  *  catches a request that hangs, never a slow answer. */
 export const FAIL_FAST_MS = 10_000;
+
+/** The book-changed calls outlive the page. A run of adds tells the server a run is coming (brokerage-connected
+ *  {pending}) and leaving the page starts it (visibilitychange); a navigation cancelled both mid-flight, WebKit
+ *  logged "brokerage-connected due to access control checks" (r6 power-user m7) and the server never heard.
+ *  `keepalive` lets the browser finish them after the page is gone. Only these small POSTs (keepalive caps a
+ *  body at 64KB): Ask and the rest are the page's own business. */
+export function keepaliveInit(input: RequestInfo | URL, init?: RequestInit): RequestInit | undefined {
+  const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  if (!/\/functions\/v1\/brokerage-connected(\?|$)/.test(href) || (init?.method ?? "GET").toUpperCase() !== "POST") return init;
+  return { ...init, keepalive: true };
+}

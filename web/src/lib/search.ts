@@ -47,6 +47,13 @@ function notHoldable(r: SymbolRow): boolean {
 function asksForMarketData(q: string): boolean {
   return /^\^/.test(q) || q.includes("=") || /^usd\s*\/?\s*[a-z]{3}$/i.test(q);
 }
+/** A crypto token posing as a stock: Yahoo lists "005930 Samsung Electronics Co Ltd (Derivatives)" as a coin,
+ *  and it came second for "005930", where a new user could add it for Samsung (r6 power-user m5). Named
+ *  "(Derivatives)", or a coin whose ticker is a KRX stock code. */
+const stockToken = (r: SymbolRow) =>
+  (r.kind === "crypto" || /^(CCC|CRYPTO)$/i.test(r.exchange ?? "")) && (/\(derivatives?\)/i.test(r.name ?? "") || /^\d{6}(-[A-Z]{3,4})?$/i.test(r.symbol));
+/** The query asks for crypto by name: "samsung token", "005930 crypto", "005930-usd". */
+const asksForCrypto = (q: string) => /\b(crypto|coin|token)\b|-usd\b/i.test(q);
 /** Names shared by several listings, where the one people mean is not the first alphabetically:
  *  "coca-cola" matched COKE, KOF and CCEP before KO; "vanguard s&p" put a London UCITS line above VOO. */
 const MEANT: Record<string, string> = {
@@ -93,8 +100,10 @@ export function rankSymbols(q: string, rows: SymbolRow[], preferCcy = "USD"): Sy
     }
     return s;
   };
+  const tokens = asksForCrypto(q);
   return rows
     .filter((r) => explicit || !notHoldable(r))
+    .filter((r) => tokens || !stockToken(r))
     .map((r, i) => ({ r: { ...r, exchange: exchangeLabel(r.exchange) }, i, s: score(r) }))
     .sort((a, b) => a.s - b.s || a.i - b.i)
     .map((x) => x.r);

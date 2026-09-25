@@ -57,15 +57,42 @@ export function fetchHours(range: Exclude<RangeKey, "1D">, now: Date, timeZone: 
   return Math.ceil((now.getTime() - start) / 3600e3) + 24 * BASE_MARGIN_DAYS;
 }
 
+const weekParts = new Map<string, Intl.DateTimeFormat>();
+/** A legacy weekly row, re-dated to the close it carries. Register-time history stored Yahoo's weekly bars at
+ *  the week's start (Monday 00:00 in the market's zone) holding the week's LAST close (Friday's; a coin's
+ *  Sunday's). A symbol the server's daily backfill has not healed yet, and rows just before the backfill's span,
+ *  still have them: NVDA's 5Y base read "Sep 20, 2021" over the Sep 24 close (r6 power-user m4). Dated at its
+ *  Friday, the row says what it holds, the same stamp the server now writes (parseYahooWeekly). Any other
+ *  point comes back as it is. */
+export function weeklyAtClose(p: HistoryPoint, timeZone: string): HistoryPoint {
+  const t = Date.parse(p.ts);
+  if (Number.isNaN(t)) return p;
+  let f = weekParts.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+    weekParts.set(timeZone, f);
+  }
+  const part: Record<string, string> = {};
+  for (const x of f.formatToParts(new Date(t))) part[x.type] = x.value;
+  if (part.weekday !== "Mon" || Number(part.hour) % 24 !== 0 || part.minute !== "00" || part.second !== "00" || t % 1000) return p;
+  return { ts: new Date(t + (timeZone === "UTC" ? 6 : 4) * 86400e3).toISOString(), price: p.price };
+}
+
 /** One point per trading day (dated in `timeZone`): the last stored print of each day is its close, and today's
- *  point is the LIVE price. Input ascending. */
+ *  point is the LIVE price. Input ascending. A legacy weekly row counts on the day of the close it carries, and
+ *  a real close of that day (later in the input) wins over it. */
 export function dailyCloses(pts: HistoryPoint[], timeZone: string, livePrice: number | null, liveAsOf: string | null): HistoryPoint[] {
   const byDay = new Map<string, HistoryPoint>();
-  for (const p of pts) byDay.set(ymdIn(p.ts, timeZone), p);        // ascending input: last print wins
+  for (const raw of pts) {
+    const p = weeklyAtClose(raw, timeZone);
+    const day = ymdIn(p.ts, timeZone);
+    if (p !== raw && byDay.has(day)) continue;
+    byDay.set(day, p);                                              // ascending input: last print wins
+  }
   if (livePrice !== null && liveAsOf) {
     byDay.set(ymdIn(liveAsOf, timeZone), { ts: liveAsOf, price: livePrice });
   }
-  return [...byDay.values()].sort((a, b) => a.ts.localeCompare(b.ts));
+  return [...byDay.values()].sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
 }
 
 /** A coin's week is drawn by the hour, not by the day: eight daily points of a market that never closes read

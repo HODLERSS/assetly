@@ -5,8 +5,8 @@ import { InsightsCard } from "../components/InsightsCard";
 import { Icon } from "../components/Icon";
 import { AmountField, DateField, EntryPreview } from "../components/AmountField";
 import { ACCOUNTS, accountLabel, defaultAccount } from "../lib/accounts";
-import { entryPreview, quoteInput, readAmount, todayYmd } from "../lib/numbers";
-import { ccySymbol, companyName, displayName, moneyExact, qtyUnit } from "../lib/format";
+import { entryPreview, quoteChoice, quoteInput, readAmount } from "../lib/numbers";
+import { ccySymbol, companyName, displayName, qtyUnit } from "../lib/format";
 import { useInFlight } from "../lib/inflight";
 import { useSymbolSearch } from "../lib/search";
 
@@ -36,7 +36,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
-  const [quote, setQuote] = useState<{ symbol: string; price: number } | null>(null);   // today's price, for "Use today's price"
+  const [quote, setQuote] = useState<{ symbol: string; price: number; asOf: string | null } | null>(null);   // for "Use today's price"
   const [, once] = useInFlight();   // the save's re-entry guard; `busy` above is what the screen shows
 
   // Everything about the form is derived from what was picked, never inherited from the previous add:
@@ -51,7 +51,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
     setQuote(null);
     if (r.kind !== "cash" && r.kind !== "debt") {
       void Promise.resolve().then(() => api.getQuote(r.symbol))
-        .then((p) => { if (p) setQuote((q) => q ?? { symbol: r.symbol, price: p }); }).catch(() => {});
+        .then((p) => { if (p) setQuote((q) => q ?? { symbol: r.symbol, ...p }); }).catch(() => {});
     }
   };
 
@@ -157,14 +157,17 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
             onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} autoFocus />
           <AmountField id="add-cost" label={`Cost per ${picked.kind === "crypto" ? "coin" : "share"} (${ccySymbol(picked.currency).trim()})`} value={cost}
             onChange={(v) => { setCost(v); setFieldErr((f) => ({ ...f, cost: undefined })); }} error={fieldErr.cost} placeholder="What you paid" />
-          {quote && quote.symbol === picked.symbol && (
-            // today's price is a purchase today: the date comes with it unless one was already set (the lot was
-            // saved "no date" beside a price that said today; r5 power-user)
-            <button type="button" className="chip use-quote" data-testid="use-quote"
-              onClick={() => { setCost(quoteInput(quote.price, picked.currency)); setDate((d) => d || todayYmd()); setFieldErr((f) => ({ ...f, cost: undefined })); }}>
-              Use today's price ({moneyExact(quote.price, picked.currency)})
-            </button>
-          )}
+          {quote && quote.symbol === picked.symbol && (() => {
+            // the quote's session comes with it as the date unless one was already set (the lot was saved "no
+            // date" beside a price that said today; r5 power-user): today, or a closed market's last close day
+            const use = quoteChoice(quote, picked);
+            return (
+              <button type="button" className="chip use-quote" data-testid="use-quote"
+                onClick={() => { setCost(quoteInput(quote.price, picked.currency)); setDate((d) => d || use.ymd); setFieldErr((f) => ({ ...f, cost: undefined })); }}>
+                {use.label}
+              </button>
+            );
+          })()}
           <DateField id="add-date" label="Purchase date (optional)" value={date} onChange={setDate} />
           </>)}
           {!fieldErr.qty && !fieldErr.cost && <EntryPreview text={entryPreview({ kind: picked.kind, qty, cost, currency: picked.kind === "cash" || picked.kind === "debt" ? ccy : picked.currency,

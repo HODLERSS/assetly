@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Browser } from "@capacitor/browser";
 import { isNative } from "./native";
+import { keepaliveInit } from "./net";
 
 // Local supabase-start defaults (the CLI's public demo keys) keep dev zero-config;
 // production values come from Vite env at build time.
@@ -13,6 +14,7 @@ const anon = import.meta.env.VITE_SUPABASE_ANON_KEY ??
 export const NATIVE_REDIRECT = "assetly://auth-callback";
 export const supabase: SupabaseClient = createClient(url, anon, {
   auth: { persistSession: true, autoRefreshToken: true, flowType: isNative() ? "pkce" : "implicit", detectSessionInUrl: !isNative() },
+  global: { fetch: (input, init) => fetch(input, keepaliveInit(input, init)) },
 });
 
 export type OAuthProvider = "github" | "google";

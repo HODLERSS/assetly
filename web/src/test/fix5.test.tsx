@@ -32,10 +32,11 @@ import { PriceChart } from "../components/PriceChart";
 import { AmountField, DateField } from "../components/AmountField";
 import { makeApi, type Api, type DailyBrief, type HistoryPoint, type NewsItem } from "../lib/api";
 import { OfflineError, setPricesDown } from "../lib/net";
-import { quoteInput, todayYmd } from "../lib/numbers";
+import { quoteInput } from "../lib/numbers";
 import { companyName, moneyExact } from "../lib/format";
 import { dayGroups } from "../lib/portfolio";
-import { hourlyCloses, hourlyRecentHours } from "../lib/chartRange";
+import { hourlyCloses, hourlyRecentHours, ymdIn } from "../lib/chartRange";
+const nyToday = () => ymdIn(new Date(), "America/New_York");   // a US stock's session is dated in New York
 import { startConnect } from "../lib/native";
 import { clearUserLocalState } from "../lib/localState";
 import { profile, row, stubApi } from "./fixtures";
@@ -187,7 +188,7 @@ describe("K4 Use today's price (r5 designer m-2, power-user, newcomer m7)", () =
     expect(quoteInput(285_499.6, "KRW")).toBe("285,500");
   });
   it("on Add position it fills the shown price and dates the lot today", async () => {
-    const api = stubApi({ getQuote: vi.fn().mockResolvedValue(922.765000001) } as Partial<Api>);
+    const api = stubApi({ getQuote: vi.fn().mockResolvedValue({ price: 922.765000001, asOf: null }) } as Partial<Api>);
     render(<App api={api} />);
     await screen.findByTestId("positions-card");
     await userEvent.click(screen.getByRole("button", { name: "Add position" }));
@@ -198,14 +199,14 @@ describe("K4 Use today's price (r5 designer m-2, power-user, newcomer m7)", () =
     expect(screen.getByText("No date")).toBeTruthy();                      // empty, not a grey date that looks filled
     await userEvent.click(use);
     expect((screen.getByLabelText(/cost per share/i) as HTMLInputElement).value).toBe("922.77");
-    expect((screen.getByLabelText(/purchase date/i) as HTMLInputElement).value).toBe(todayYmd());
+    expect((screen.getByLabelText(/purchase date/i) as HTMLInputElement).value).toBe(nyToday());
     expect(screen.queryByText("No date")).toBeNull();
     await userEvent.type(screen.getByLabelText(/^shares$/i), "10");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 10, 922.77, todayYmd(), "brokerage", "", ""));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 10, 922.77, nyToday(), "brokerage", "", ""));
   });
   it("keeps a date already chosen", async () => {
-    const api = stubApi({ getQuote: vi.fn().mockResolvedValue(15) } as Partial<Api>);
+    const api = stubApi({ getQuote: vi.fn().mockResolvedValue({ price: 15, asOf: null }) } as Partial<Api>);
     render(<App api={api} />);
     await screen.findByTestId("positions-card");
     await userEvent.click(screen.getByRole("button", { name: "Add position" }));
@@ -217,7 +218,7 @@ describe("K4 Use today's price (r5 designer m-2, power-user, newcomer m7)", () =
   });
   it("onboarding's first add has the button too; saved unchanged, the lot is dated today", async () => {
     const api = stubApi({ getProfile: vi.fn().mockResolvedValueOnce({ ...profile, onboarded_at: null }).mockResolvedValue(profile),
-      getQuote: vi.fn().mockResolvedValue(15.004) } as Partial<Api>);
+      getQuote: vi.fn().mockResolvedValue({ price: 15.004, asOf: null }) } as Partial<Api>);
     render(<App api={api} />);
     await screen.findByTestId("investor-quiz");
     await userEvent.click(screen.getByTestId("quiz-skip"));
@@ -229,7 +230,7 @@ describe("K4 Use today's price (r5 designer m-2, power-user, newcomer m7)", () =
     await userEvent.click(use);
     expect((screen.getByLabelText(/cost per share/i) as HTMLInputElement).value).toBe("15.00");
     await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
-    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 1200, 15, todayYmd()));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalledWith("MARA", 1200, 15, nyToday()));
   });
 });
 

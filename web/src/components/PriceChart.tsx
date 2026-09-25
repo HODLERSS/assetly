@@ -132,11 +132,17 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
 
   const series = useMemo(() => {
     if (!raw) return null;
-    if (range === "1D") return { pts: latestSession(withLiveTick(raw, livePrice, liveAsOf)), partial: false };
-    const points = hourlyRange(range, crypto) ? hourlyCloses(raw, livePrice, liveAsOf) : dailyCloses(raw, zone, livePrice, liveAsOf);
-    return anchorRange(points, rangeStartYmd(range, new Date(), zone), zone);
+    if (range === "1D") { const pts = latestSession(withLiveTick(raw, livePrice, liveAsOf)); return { pts, partial: false, closes: pts }; }
+    const start = rangeStartYmd(range, new Date(), zone);
+    const daily = anchorRange(dailyCloses(raw, zone, livePrice, liveAsOf), start, zone);
+    if (!hourlyRange(range, crypto)) return { ...daily, closes: daily.pts };
+    // A coin's week draws by the hour, but its high and low stay closing ones, the basis of every other range:
+    // from the hourly prints they jumped when the fine line landed ($86,602.91 to $87,164.81) and the 1W high
+    // sat above the 1M high (r6 designer m-2, the r2 2Y-vs-1Y trust break again).
+    return { ...anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone), closes: daily.pts };
   }, [raw, range, zone, crypto, livePrice, liveAsOf]);
   const pts = series?.pts ?? null;
+  const closes = series?.closes ?? null;
 
   const view = useMemo(() => {
     if (!pts || pts.length < 2) return null;
@@ -144,7 +150,9 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
     // high and low from every stored point: the drawn line is thinned, and a thinned 2Y used to report a
     // lower high than the 1Y (r2 power-user audit)
     const prices = pts.map((p) => p.price);
-    const lo = Math.min(...prices), hi = Math.max(...prices);
+    const lo = Math.min(...prices), hi = Math.max(...prices);   // the drawn line's extent: the y scale
+    const hl = closes?.length ? closes.map((p) => p.price) : prices;
+    const low = Math.min(...hl), high = Math.max(...hl);       // the L and H shown: closes on every daily range
     const drawn = thin(pts);
     const span = hi - lo || hi * 0.001 || 1;
     const t0 = +new Date(drawn[0].ts), t1 = +new Date(drawn[drawn.length - 1].ts);
@@ -154,8 +162,8 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
     const chg = ((pts[pts.length - 1].price / pts[0].price) - 1) * 100;
     const spanDays = (t1 - t0) / 86400000;
     const avgY = avgCost != null && avgCost >= lo && avgCost <= hi ? y(avgCost) : null;
-    return { d, lo, hi, chg, W, H, spanDays, avgY, drawn, x, y };
-  }, [pts, avgCost]);
+    return { d, lo, hi, low, high, chg, W, H, spanDays, avgY, drawn, x, y };
+  }, [pts, closes, avgCost]);
 
   // 1D: the page's day move (vs the previous close), not first-print-to-last-print of the session
   const headPct = intraday && dayPct !== null ? dayPct : view?.chg ?? 0;
@@ -176,6 +184,11 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
     setScrub(best);
   };
   const sp = view && scrub !== null ? view.drawn[scrub] : null;
+  // A time of day reads in the reader's own zone (as 1D does). A coin's week is bucketed by the UTC day, but its
+  // hours read in UTC with no zone said "Fri 9 PM" at 2:43 PM Pacific (r6 power-user m1). Whole days keep the
+  // zone their sessions are dated in.
+  const hourly = hourlyRange(range, crypto);
+  const labelZone = intraday || hourly ? tz : zone;
 
   return (
     <section className="card" aria-label={`${symbol} price chart`} style={{ padding: "12px 14px", margin: "12px 0" }}>
@@ -183,7 +196,7 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
         {sp ? (
           // the scrub readout replaces the header while a finger is on the line
           <span className="sub num" data-testid="scrub-readout" aria-live="polite">
-            <strong className="num" style={{ color: "var(--as-ink)" }}>{moneyExact(sp.price, currency)}</strong> · {scrubLabel(sp.ts, range, intraday ? tz : zone, hourlyRange(range, crypto))}
+            <strong className="num" style={{ color: "var(--as-ink)" }}>{moneyExact(sp.price, currency)}</strong> · {scrubLabel(sp.ts, range, labelZone, hourly)}
           </span>
         ) : (
           <span className="sub">Price · {notToday && last ? `last session, ${last.toLocaleDateString("en-US", { weekday: "short", timeZone: tz })}` : range}</span>
@@ -236,8 +249,8 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
             <div className="sub num" style={{ textAlign: "right", marginTop: 1 }}>avg {moneyExact(avgCost, currency)}</div>
           )}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
-            <span className="sub num" data-testid="range-low">L {moneyExact(view.lo, currency)}</span>
-            <span className="sub num" data-testid="range-high">H {moneyExact(view.hi, currency)}</span>
+            <span className="sub num" data-testid="range-low">L {moneyExact(view.low, currency)}</span>
+            <span className="sub num" data-testid="range-high">H {moneyExact(view.high, currency)}</span>
           </div>
           {partial && (
             <div className="sub" data-testid="partial-note" style={{ textAlign: "center", marginTop: 1 }}>
