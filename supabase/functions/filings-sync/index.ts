@@ -1,6 +1,9 @@
 // Assetly filings-sync — daily: ~9 months of SEC filings (8-K, 10-K, 10-Q, proxies)
 // per held US company from EDGAR. Major forms float into news as "SEC Filing";
 // the list feeds insights-sync and ASK.
+// 8-K item numbers are kept (`items`, e.g. "2.02,9.01"): item 2.02 "Results of Operations" IS the earnings
+// release, which dates the last report exactly and anchors every next-earnings estimate (see
+// _shared/intel.ts lastEarnings). Until migration 35 adds the column, rows are written without it.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const UA = "Assetly/1.0 (contact: minjae.m.lee@gmail.com)";
@@ -33,11 +36,21 @@ Deno.serve(async (req) => {
 
   let wrote = 0;
   const errors: string[] = [];
+  let hasItems = true;   // flips off once if the column is not there yet
+  const upsertFiling = async (row: Record<string, unknown>) => {
+    if (hasItems) {
+      const r = await admin.from("filings").upsert(row, { onConflict: "symbol,accession" });
+      if (!r.error || !/items/.test(r.error.message)) return r;
+      hasItems = false;
+    }
+    const { items: _drop, ...rest } = row;
+    return await admin.from("filings").upsert(rest, { onConflict: "symbol,accession" });
+  };
   for (const symbol of targets) {
     try {
       if (fixture) {
         const f = body.filing ?? { accession: "0001628280-26-000001", form: "10-Q", title: `${symbol} quarterly report`, filed: "2026-08-01", url: `https://www.sec.gov/fixture/${symbol}` };
-        await admin.from("filings").upsert({ symbol, accession: f.accession, form: f.form, title: f.title, filed_at: f.filed, url: f.url }, { onConflict: "symbol,accession" });
+        await upsertFiling({ symbol, accession: f.accession, form: f.form, title: f.title, filed_at: f.filed, url: f.url, items: f.items ?? null });
         await admin.from("news").upsert({ symbol, title: `${f.form}: ${f.title}`, url: f.url, source: "SEC Filing", published_at: f.filed + "T12:00:00Z" }, { onConflict: "symbol,url", ignoreDuplicates: true });
         wrote++; continue;
       }
@@ -57,7 +70,8 @@ Deno.serve(async (req) => {
         const doc = rec.primaryDocument?.[i] ?? "";
         const title = (rec.primaryDocDescription?.[i] || `${form} filing`).slice(0, 300);
         const furl = `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replace(/-/g, "")}/${doc}`;
-        const { error: fErr } = await admin.from("filings").upsert({ symbol, accession, form, title, filed_at: filed, url: furl }, { onConflict: "symbol,accession" });
+        const items = String(rec.items?.[i] ?? "").trim() || null;
+        const { error: fErr } = await upsertFiling({ symbol, accession, form, title, filed_at: filed, url: furl, items });
         if (fErr) { errors.push(symbol + ": " + fErr.message); break; }
         wrote++;
         if (["8-K", "10-K", "10-Q"].includes(form)) {

@@ -1,7 +1,15 @@
 // Assetly price-sync — refreshes public.prices for every active symbol.
 // Runs on a 1-minute schedule in production (see migrations/..._cron.sql); callable ad hoc.
 // Sources: Yahoo v7 batch quote first, per-symbol v8 chart as fallback. Server-side only.
+//
+// BACKFILL (?backfill=1, or body.backfill): two years of DAILY closes for held symbols whose stored history
+// does not reach back ~11 months. The minute ticks only start the day a symbol is first held, so a new
+// holding had 1W == 1M == "since I added it" (TSLA "+3.7% on the week" and "+3.7% on the month", 2026-09-25).
+// Idempotent and cheap when nothing is short. The orchestrator and warmup run the same backfill in-process
+// (_shared/history.ts) for the symbols they touch; this route is the operator's sweep over every held symbol.
+// ?symbols=A,B limits it; force=1 (internal token only) refetches even when history looks long enough.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { backfillShort } from "../_shared/history.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
@@ -73,11 +81,32 @@ async function yahooChart(symbol: string, yahoo: string): Promise<Quote | null> 
   });
 }
 
+// deno-lint-ignore no-explicit-any
+async function backfill(admin: any, req: Request, url: URL): Promise<Response> {
+  const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+  let itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
+  if (!itok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itok = data ?? ""; }
+  const force = (url.searchParams.get("force") === "1" || body.force === true) && !!itok && req.headers.get("x-internal-token") === itok;
+  const asked = url.searchParams.get("symbols")?.split(",") ?? (Array.isArray(body.symbols) ? body.symbols.map(String) : null);
+  // only symbols somebody holds: this endpoint is reachable with the publishable key
+  const { data: heldRows, error: hErr } = await admin.from("holdings").select("symbol");
+  if (hErr) return Response.json({ ok: false, error: hErr.message }, { status: 500 });
+  const held: string[] = [...new Set<string>((heldRows ?? []).map((h: { symbol: string }) => String(h.symbol)))].filter((sy) => !asked || asked.includes(sy));
+  const res = await backfillShort(admin, held, { force });
+  return Response.json({ ok: true, checked: held.length, ...res });
+}
+
 Deno.serve(async (req) => {
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+  {
+    const u0 = new URL(req.url);
+    if (u0.searchParams.get("backfill") === "1") return backfill(admin, req, u0);
+    const peek = req.method === "POST" ? await req.clone().json().catch(() => ({})) : {};
+    if (peek?.backfill === true) return backfill(admin, req, u0);
+  }
   // Track what matters: symbols someone holds, plus anything registered in the last 36h
   // (a just-added ticker stays live while the user finishes setting it up).
   const cutoff = new Date(Date.now() - 36 * 3600 * 1000).toISOString();
