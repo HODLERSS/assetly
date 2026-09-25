@@ -116,6 +116,14 @@
    title wraps instead of "CLOSING NOTE · SEP…" (r5 native m2) */
 .text-large .row > span:first-child:has(> .sym) { white-space: normal; overflow-wrap: anywhere; }
 .text-large .row .right .row-session { display: block; }
+/* The hero total under large text: text-size-adjust multiplies whatever size is set, so it is sized by the
+   screen's width here and still fits after the 1.6x (AX5 at 320 clipped "$3,519,23…"; r8 designer m-6). */
+.text-large .net { font-size: min(38px, 7vw); overflow-wrap: anywhere; }
+/* 320 wide (iPhone SE 1st gen, narrow Slide Over): a row's name line wraps instead of "Meta Plat…" and the
+   long fund names cut short (r8 designer m-6) */
+@media (max-width: 340px) {
+  .row > span:first-child:has(> .sym) { white-space: normal; overflow-wrap: break-word; }
+}
 .text-large .insights-head .insights-brand { white-space: normal; line-height: 1.25; }
 /* Brief header: the date never truncates. The title ellipsizes first on a narrow phone or an iPad window
    ("PORTFOLIO ASSESSMENT · SE…" lost the part that says whether it is today's; r7 native m3). Large text

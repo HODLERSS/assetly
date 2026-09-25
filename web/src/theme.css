@@ -390,6 +390,10 @@ button, a, input, select, [role="button"] { touch-action: manipulation; }
 .btn.google { background: #fff; color: #1F1F1F; border: 1px solid #747775; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.google { background: #131314; color: #E3E3E3; border-color: #8E918F; } }
 :root[data-theme="dark"] .btn.google { background: #131314; color: #E3E3E3; border-color: #8E918F; }
+/* Dark sign-in: the other outline buttons (GitHub, email) take Google's own fill, so the stack reads as one set
+   instead of Google as a slightly darker tile (#131314 vs #161A21; r8 designer m-7) */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .auth-screen .btn.secondary { background: #131314; } }
+:root[data-theme="dark"] .auth-screen .btn.secondary { background: #131314; }
 
 /* ---------- native feel ---------- */
 

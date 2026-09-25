@@ -356,7 +356,7 @@ describe("K7 saved copy, Ask, copy (r5 designer m-6, m-f, m-g, m-7)", () => {
     goOffline();
     act(() => { window.dispatchEvent(new Event("offline")); });
     expect((await screen.findByTestId("prices-as-of")).textContent)
-      .toBe(`Prices as of ${new Date(asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`);
+      .toBe(`Prices as of ${new Date(asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET`);
   });
   it("names and labels: 'Coca-Cola', markets in one order, 'Cash balance'", async () => {
     expect(companyName("The Coca-Cola Company")).toBe("Coca-Cola");

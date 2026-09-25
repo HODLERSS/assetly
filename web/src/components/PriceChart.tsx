@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Api, HistoryPoint } from "../lib/api";
 import { glClass, moneyExact, signedPct } from "../lib/format";
-import { anchorRange, dailyCloses, fetchHours, hourlyCloses, hourlyRange, hourlyRecentHours, RANGE_KEYS, rangeStartYmd, seriesZone, type RangeKey } from "../lib/chartRange";
+import { anchorRange, dailyCloses, fetchHours, hourlyCloses, hourlyRange, hourlyRecentHours, RANGE_KEYS, rangeStartYmd, seriesZone, ymdIn, type RangeKey } from "../lib/chartRange";
 import { onForeground } from "../lib/native";
 export type { RangeKey };
 
@@ -147,14 +147,24 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
     if (range === "1D") { const pts = latestSession(withLiveTick(raw, livePrice, liveAsOf)); return { pts, partial: false, closes: pts }; }
     const start = rangeStartYmd(range, new Date(), zone);
     const daily = anchorRange(dailyCloses(raw, zone, livePrice, liveAsOf), start, zone);
-    if (!hourlyRange(range, crypto)) return { ...daily, closes: daily.pts };
+    if (!hourlyRange(range, crypto)) {
+      // a longer range's L/H are never narrower than a shorter range's: the hourly week this session already
+      // drew (1W's H is an hourly print) is folded into every range whose window holds it. 1W H $87,164.81 sat
+      // above 1M H $86,602.91 when 1M read daily closes only (r8 designer).
+      const extra: HistoryPoint[] = [];
+      for (const [k, p] of memoFor(api)) {
+        if (!k.startsWith(`${symbol}:`) || !fineFor(api).has(k)) continue;
+        for (const pt of p) if (ymdIn(pt.ts, zone) > start) extra.push(pt);
+      }
+      return { ...daily, closes: extra.length ? [...daily.pts, ...extra] : daily.pts };
+    }
     // A coin's week draws by the hour, and its L and H come from that same hourly line: closing ones let the
     // drawn line dip below the "L" it printed (r7 design n-5). They show only once the hourly line is the one
     // drawn, so they never jump when it replaces the daily first pass (r6 designer m-2).
     if (res !== "hourly") return { ...anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone), closes: daily.pts, hlReady: res === "daily" };
     const hourly = anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone);
     return { ...hourly, closes: hourly.pts };
-  }, [raw, range, zone, crypto, livePrice, liveAsOf, res]);
+  }, [raw, range, zone, crypto, livePrice, liveAsOf, res, api, symbol]);
   const hlReady = !(series && "hlReady" in series && series.hlReady === false);
   const pts = series?.pts ?? null;
   const closes = series?.closes ?? null;

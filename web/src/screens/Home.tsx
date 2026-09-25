@@ -15,7 +15,10 @@ import { dayGroups, isHeld, rowDayChange, rowDayPct } from "../lib/portfolio";
 
 // Canvas 2a: net worth, movers, market pulse.
 const DETAIL_KEY = "assetly-nw-detail";
-const asOfClock = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+// Market times read in ET with the zone, as the brief states them ("as of 7:31 PM ET"): the device's own clock
+// with no zone ("as of 3:00 PM", Central) sat beside the brief's ET stamp (r8 designer).
+export const asOfClock = (iso: string) =>
+  `${new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET`;
 // The one-time "what next" hint: armed by the first run of adds (App), "done" once dismissed.
 export const NEXT_KEY = "assetly-next-steps";
 // crypto files under a market by its denomination, exactly as the old Holdings filter did:
@@ -27,8 +30,10 @@ const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
 };
 
 export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone, loading = false,
-  assessment = null, onAssessRetry, onAssessDismiss, onOpenNews, pricesAsOf = null, briefRev = 0 }: {
+  assessment = null, onAssessRetry, onAssessDismiss, onOpenNews, pricesAsOf = null, briefRev = 0, loadFailed = false }: {
   api: Api; rows: PortfolioRow[]; loading?: boolean;
+  /** no book has loaded for this user and the last load failed */
+  loadFailed?: boolean;
   totals: { value: number; assets: number; debt: number; gl: number; cost: number; day: number; mixed: boolean; fx: FxRates | number | null; unconverted: number };
   baseCurrency: "USD" | "KRW"; onOpen: (id: string) => void; onAdd: () => void;
   dispUs?: "USD" | "KRW"; dispKr?: "USD" | "KRW";
@@ -98,6 +103,11 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
       </div>
     );
   }
+  // the book never loaded (the banner above says so, with Retry): an empty list here is unknown, not "no
+  // positions", so no Connect call to action for a user who has holdings (r8 power-user m2)
+  if (rows.length === 0 && loadFailed) {
+    return <p className="empty" data-testid="home-load-failed">Your holdings show here once they load.</p>;
+  }
   if (rows.length === 0) {
     return (
       <div className="empty">
@@ -117,10 +127,15 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   const hasRet = rows.some((r) => isRetirement(r.account));
   const filterChips: (Market | "ret")[] = [...(marketsHeld.length > 1 ? marketsHeld : []), ...(hasRet ? ["ret" as const] : [])];
   const shown = rows.filter((r) => (filter === "all" ? true : filter === "ret" ? isRetirement(r.account) : marketOf(r) === filter));
-  const movers = [...rows].filter((r) => r.change_pct !== null && moverEligible(r, new Date(), heldMkts))
-    .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0)).slice(0, 3);
-  const quietMovers = [...rows].filter((r) => r.change_pct !== null && marketOf(r) !== null)
-    .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0)).slice(0, 3);
+  // ranked by the same % each mover line prints (rowDayPct): ranking by the price move left NVDA at +2.46%
+  // (a same-day lot) out while TSLA at -1.54% was listed (r8 power-user m3)
+  const byShownMove = (a: PortfolioRow, b: PortfolioRow) => Math.abs(rowDayPct(b) ?? 0) - Math.abs(rowDayPct(a) ?? 0);
+  // a position bought in full today has not moved for its owner ("0.00% ($0)"): not a mover (r8 newcomer)
+  const hasMoved = (r: PortfolioRow) => !(r.day_change !== undefined && rowDayPct(r) === 0);
+  const movers = [...rows].filter((r) => r.change_pct !== null && hasMoved(r) && moverEligible(r, new Date(), heldMkts))
+    .sort(byShownMove).slice(0, 3);
+  const quietMovers = [...rows].filter((r) => r.change_pct !== null && hasMoved(r) && marketOf(r) !== null)
+    .sort(byShownMove).slice(0, 3);
   const showPulse = mode.kind === "pulse" && pulse.length > 0;
   // offline, nothing pulses: the dots say "live", and these prices are from the last good refresh
   const isLive = (r: PortfolioRow) => { const m = marketOf(r); return !pricesAsOf && m !== null && r.change_pct !== null && isMarketOpen(m); };
@@ -259,9 +274,10 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           </button>
         ))}
       </div>}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      {/* wraps its chips under the title when they don't fit (AX5 at 320: "+ Add" ran 11px past the screen) */}
+      <div className="positions-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", columnGap: 8 }}>
         <h2 className="h1" style={{ fontSize: 16 }}>Positions</h2>
-        <span style={{ display: "flex", gap: 8 }}>
+        <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button className="chip" aria-label="Import from brokerage" disabled={connecting} aria-busy={connecting || undefined} onClick={connect}>
             <Icon name="bolt" size={12} /> {connecting ? "Opening…" : "Import"}</button>
           <button className="chip" onClick={onAdd} aria-label="Add position">+ Add</button>
@@ -279,20 +295,21 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
         </div>
       )}
       {filter !== "all" && shown.length > 0 && (() => {
-        let value = 0, day = 0, gl = 0;
+        let value = 0, day = 0, gl = 0, invested = 0;   // invested: the all-time % base, cash and debt left out
         for (const r of shown) {
           const sign = r.kind === "debt" ? -1 : 1;
           const v = convertCcy(r.value ?? 0, r.currency, baseCurrency, totals.fx) ?? 0;
           const d = convertCcy(rowDayChange(r) ?? 0, r.currency, baseCurrency, totals.fx) ?? 0;
           const g = convertCcy(r.total_gl ?? 0, r.currency, baseCurrency, totals.fx) ?? 0;
           value += sign * v; day += sign * d; gl += sign * g;
+          if (r.kind !== "cash" && r.kind !== "debt") invested += v;
         }
         const dayPct = value - day !== 0 ? (day / (value - day)) * 100 : 0;
         // a filter whose market is closed today says which session its move is from ("Wed close"), as the headline does
         const moving = shown.filter((r) => r.kind !== "cash" && r.kind !== "debt" && r.change_pct !== null);
         const sessions = [...new Set(moving.map((r) => moveSession(r).label))];
         const dayWord = moving.length && moving.every((r) => !moveSession(r).today) && sessions.length === 1 ? sessions[0] : "today";
-        const glPct = value - gl !== 0 ? (gl / (value - gl)) * 100 : 0;
+        const glPct = invested - gl !== 0 ? (gl / (invested - gl)) * 100 : 0;
         return (
           <div className="status-line num" data-testid="filter-totals" style={{ margin: "0 2px 8px" }}>
             {money(value, baseCurrency)} · {dayWord} <span className={moneyClass(day)}>{signedMoney(day, baseCurrency)} ({signedPct(dayPct)})</span> · total <span className={moneyClass(gl)}>{signedMoney(gl, baseCurrency)} ({signedPct(glPct)})</span>

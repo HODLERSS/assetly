@@ -82,7 +82,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
                 catch (e) { setConnMsg(connectMsg(e)); setBusy(false); }
               }}>
                 {/* short enough for one line at 375 ("positions land i\u2026" was cut; r3 design m6) */}
-                <span><span className="sym"><Icon name="bolt" size={13} /> Import</span> <span className="sub">Connect a brokerage, read-only</span></span>
+                <span><span className="sym"><Icon name="bolt" size={13} /> Import</span> <span className="sub">Read-only brokerage link</span></span>
                 <span className="sub">→</span>
               </button>
               <button className="row" disabled={busy} onClick={() => pick({ symbol: "$CASH", name: "Cash (USD)", exchange: "CASH", currency: "USD", kind: "cash" })}>

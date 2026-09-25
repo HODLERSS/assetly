@@ -119,6 +119,19 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
     return () => { live = false; };
   }, [api, reload]);
 
+  // Narration lands minutes after its row. The App watcher re-reads when the LATEST edition gets it; an older
+  // edition picked here was left without ▶ until Home was left (r8 native). While any edition written in the last
+  // 30 minutes still has neither audio nor script, look again once a minute; the card updates in place.
+  const waitingAudio = !savedCopy && !!briefs?.some((b) => !b.audio_path && !b.script && Date.now() - Date.parse(b.generated_at) < 30 * 60_000);
+  useEffect(() => {
+    if (!waitingAudio) return;
+    let live = true;
+    const t = setInterval(() => {
+      api.getDailyBriefs().then((b) => { if (live && b.length) { memo.set(api, b); setBriefs(b); } }).catch(() => {});
+    }, 60_000);
+    return () => { live = false; clearInterval(t); };
+  }, [api, waitingAudio]);
+
   // Reserve the card's footprint while the first fetch is in flight: a card that pops in above "Movers"
   // after paint shoves the whole screen down (measured 0.18 CLS on an iPhone SE).
   if (briefs === undefined) return (

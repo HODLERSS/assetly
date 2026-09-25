@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Account, Api, Lot, PortfolioRow } from "../lib/api";
+import { mutatedSince, mutationMark } from "../lib/mutations";
 import { ccySymbol, displayName, formatDate, glClass, labelParts, money, moneyExact, priceAsOf, qtyUnit, signedMoney, signedPct } from "../lib/format";
 import { ACCOUNTS, accountHeading, accountLabel, shownAccount } from "../lib/accounts";
 import { moveSession } from "../lib/markets";
@@ -60,8 +61,11 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
     const memo = lotsFor(api).get(holdingId);
     setLots(memo ?? []);
     setLotsLoaded(!!memo);
+    // a read that started before a lot was added, edited or deleted answers with the lots as they were: dropped
+    // (a deleted lot came back for a moment on a slow backend; r8 power-user). The write's reload paints.
+    const mark = mutationMark();
     api.getLots(holdingId)
-      .then((l) => { if (live) { lotsFor(api).set(holdingId, l); setLots(l); setLotsLoaded(true); setLotsFailed(false); } })
+      .then((l) => { if (live && !mutatedSince(mark)) { lotsFor(api).set(holdingId, l); setLots(l); setLotsLoaded(true); setLotsFailed(false); } })
       .catch(() => { if (live) setLotsFailed(true); });   // keep what is shown; with nothing shown, say so with Retry
     return () => { live = false; };
   }, [api, holdingId, lotsAttempt]);
@@ -79,9 +83,12 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   if (!row) return <p className="empty">Position not found. <button className="chip" onClick={onBack}>Back</button></p>;
 
   const reload = async () => {
+    const mark = mutationMark();
     const l = await api.getLots(row.holding_id);
-    lotsFor(api).set(row.holding_id, l);
-    setLots(l); setLotsLoaded(true); setLotsFailed(false);
+    if (!mutatedSince(mark)) {   // another write went out meanwhile: its own reload paints
+      lotsFor(api).set(row.holding_id, l);
+      setLots(l); setLotsLoaded(true); setLotsFailed(false);
+    }
     await onChanged();
   };
   const cashish = row.kind === "cash" || row.kind === "debt";

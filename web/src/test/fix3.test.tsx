@@ -370,7 +370,7 @@ describe("G8 offline Home keeps its brief and says when prices are from", () => 
     const banner = await screen.findByTestId("prices-error");
     expect(banner.closest("main")).not.toBeNull();
     expect(banner.textContent).toBe("Couldn't refresh prices. Retry");
-    expect(screen.getByTestId("session-label").textContent).toMatch(/^· as of \d{1,2}:\d{2} [AP]M$/);
+    expect(screen.getByTestId("session-label").textContent).toMatch(/^· as of \d{1,2}:\d{2} [AP]M ET$/);
   });
 });
 

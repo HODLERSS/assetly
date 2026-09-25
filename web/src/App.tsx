@@ -7,6 +7,7 @@ import { foreignBrief } from "./lib/briefBasis";
 import { clearUserLocalState } from "./lib/localState";
 import { offlineNow, setPricesDown } from "./lib/net";
 import { useKeepScrollAnchor } from "./lib/scrollAnchor";
+import { guardWrites, mutatedSince, mutationMark } from "./lib/mutations";
 import type { Session } from "@supabase/supabase-js";
 import { completeNativeAuth, supabase } from "./lib/supabase";
 import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
@@ -37,7 +38,8 @@ const REFRESH_MS = 60_000;
 const STALE_ON_RETURN_MS = 30_000;
 const LOAD_TIMEOUT_MS = 8_000;      // a refresh this slow reads "Updating prices…" and keeps waiting
 const LOAD_GIVE_UP_MS = 30_000;     // one with no answer by now counts as failed
-export const PRICES_FAILED = "Couldn't refresh prices.";   // back from the background with a book older than this: refresh now
+export const PRICES_FAILED = "Couldn't refresh prices.";
+export const BOOK_FAILED = "Couldn't load your portfolio.";   // nothing has painted yet: it is the book, not prices   // back from the background with a book older than this: refresh now
 
 // Last-known book per user, so a cold open paints holdings instead of a blank or an empty-state
 // flash. Only an onboarded profile is cached: a null onboarded_at would route a returning user
@@ -65,7 +67,9 @@ function writeBookCache(uid: string, profile: Profile, rows: PortfolioRow[], fx:
 }
 function clearBookCache(uid: string) { try { localStorage.removeItem(BOOK_KEY(uid)); } catch { /* ignore */ } }
 
-export function App({ api = defaultApi }: { api?: Api }) {
+export function App({ api: rawApi = defaultApi }: { api?: Api }) {
+  // book writes bump the mutation counter, so reads that started before them are recognised as stale
+  const api = guardWrites(rawApi);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -73,6 +77,11 @@ export function App({ api = defaultApi }: { api?: Api }) {
   // The book starts empty and Home reads an empty book as "connect your brokerage". Until the first
   // load (server or the cached copy below) has answered, Home shows a skeleton instead of that prompt.
   const [booted, setBooted] = useState(false);
+  // a book has painted for this user (a load answered, or the cached copy): until then an empty `rows` is unknown,
+  // never "Nothing here yet" (r8 power-user m2: a failed load showed the empty-book CTA to a user with holdings)
+  const [hasBook, setHasBook] = useState(false);
+  const hasBookRef = useRef(false);
+  hasBookRef.current = hasBook;
   const uidRef = useRef<string | null>(null);   // whose cached book to clear at sign-out
   const [fx, setFx] = useState<FxRates | null>(null);   // units per USD, every currency the price pipeline tracks
   const fxRef = useRef<FxRates | null>(null);
@@ -87,8 +96,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
   // the Portfolio Assessment a connect / onboarding / run of adds is waiting on: Home shows it until it lands
   const assess = useAssessmentWatch(api, session?.user.id ?? null);
   const connectPendingRef = useRef<string | null>(null);   // set at the connect moment; consumed when fresh intelligence lands
-  const seenBriefRef = useRef<string | null>(null);
-  const seenMediaRef = useRef<string | null>(null);   // that brief plus whether its narration/script exist yet   // latest brief generated_at the user has seen
+  const seenBriefRef = useRef<string | null>(null);   // latest brief generated_at the user has seen
+  const seenMediaRef = useRef<string | null>(null);   // that brief plus whether its narration/script exist yet
   // the book the brief watcher judges against (null until the first load): a brief about other holdings is
   // never announced as "Your brief is ready" (r4 newcomer)
   const briefBookRef = useRef<PortfolioRow[] | null>(null);
@@ -247,6 +256,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const load = useCallback(async () => {
     lastLoadRef.current = Date.now();
     const seq = ++loadSeqRef.current;
+    const mark = mutationMark();   // a book write that starts after this makes the reply stale (lib/mutations)
     // rates travel with the book: rows valued in one currency never paint without the other's rate
     // the recent lots only refine the day move of a position bought in the session: never a reason to fail
     const book = Promise.all([api.getProfile(), api.getPortfolio(), api.getFxRates().catch(() => null),
@@ -263,6 +273,14 @@ export function App({ api = defaultApi }: { api?: Api }) {
       // read, under row-level rules, with an empty book. Painting that left a signed-in Home with 0 rows and
       // "Nothing here yet" until the next minute's poll (r7 power-user m5). Hold the skeleton and read again.
       if (uid !== uidRef.current || !uidRef.current) { dropped = true; return; }
+      // read before a delete / add / move, answered after it: the book as it was. Painting it put a removed
+      // position back on Home for a moment (r8 power-user). The write's own reload paints; if none is running,
+      // read again.
+      // (With nothing painted yet there is nothing to protect: it paints and the next read corrects it.)
+      if (mutatedSince(mark) && hasBookRef.current) {
+        if (seq === loadSeqRef.current) setTimeout(() => void load(), 0);
+        return;
+      }
       if (!p) {
         dropped = true;
         if (authMissRef.current++ < 4) { setTimeout(() => { if (uidRef.current === uid) void load(); }, 1500); return; }
@@ -274,7 +292,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
       appliedSeqRef.current = seq;
       const fxNow = rates && Object.keys(rates).length > 1 ? rates : fxRef.current;   // a failed FX read keeps the last good rates
       setProfile(p);
-      setRows(r);
+      setRows(r); setHasBook(true);
       if (fxNow) setFx(fxNow);
       setError(null);
       setSlow(false);
@@ -359,13 +377,13 @@ export function App({ api = defaultApi }: { api?: Api }) {
       // signed out: nothing this user left on the device (hints, a pending run, removals) greets the next one
       if (uidRef.current) { clearBookCache(uidRef.current); clearUserLocalState(uidRef.current); uidRef.current = null; }
       setPricesDown(false);
-      setProfile(null); setRows([]); setBooted(false); return;
+      setProfile(null); setRows([]); setBooted(false); setHasBook(false); return;
     }
     uidRef.current = session.user.id;
     // Last known book first (stale-while-revalidate): a returning user sees their holdings on the
     // first frame, and the server copy replaces it a moment later.
     const cached = readBookCache(session.user.id);
-    if (cached) { setProfile(cached.profile); setRows(cached.rows); if (cached.fx) setFx(cached.fx); setBooted(true); }
+    if (cached) { setProfile(cached.profile); setRows(cached.rows); if (cached.fx) setFx(cached.fx); setBooted(true); setHasBook(true); }
     load();
     // brokerage auto-sync deltas: greet returning users with what arrived while they were away
     api.snaptradeEvents().then(async (evs) => {
@@ -457,6 +475,9 @@ export function App({ api = defaultApi }: { api?: Api }) {
   const homeScrollRef = useRef(0);
   const prevViewRef = useRef<View>(view);
   const holdStopRef = useRef<(() => void) | null>(null);   // the Home scroll hold still running, if any
+  // unmounting (sign-out, or a test's cleanup) stops the hold: left running, its frames kept calling scrollTo
+  // for up to 600ms after the app was gone (the F2 "tab switch starts at the top" flake under suite load)
+  useEffect(() => () => { holdStopRef.current?.(); holdStopRef.current = null; }, []);
   const viewKey = view.kind === "tab" ? `tab:${view.tab}` : view.kind === "position" ? "position" : "add";
   useLayoutEffect(() => {
     const prev = prevViewRef.current;
@@ -491,18 +512,23 @@ export function App({ api = defaultApi }: { api?: Api }) {
   briefBookRef.current = booted ? rows : null;
   heldCountRef.current = rows.length;
   const totals = useMemo(() => {
-    let assets = 0, debt = 0, cost = 0, day = 0, unconverted = 0, mixed = false;
+    // cost = INVESTED cost basis: cash is a balance, not an investment, so it is in the net worth but not in the
+    // all-time base. With cash in it the base read +19.76% where the brokerage convention (and the positions'
+    // own cost) gives +22.3% (r8 newcomer).
+    let assets = 0, debt = 0, cost = 0, invested = 0, day = 0, unconverted = 0, mixed = false;
     for (const r of rows) {
       if (r.currency !== base) mixed = true;
       const v = convertCcy(r.value ?? 0, r.currency, base, fx);
       if (v === null) { unconverted += 1; continue; }   // no FX rate yet: exclude, never mislabel
       if (r.kind === "debt") { debt += v; continue; }   // debt reduces net worth only; it has no cost basis, G/L, or day move
-      const c = convertCcy(r.cost_basis ?? 0, r.currency, base, fx) ?? 0;
       const d = convertCcy(rowDayChange(r) ?? 0, r.currency, base, fx) ?? 0;
-      assets += v; cost += c; day += d;
+      assets += v; day += d;
+      if (r.kind === "cash") continue;
+      invested += v;
+      cost += convertCcy(r.cost_basis ?? 0, r.currency, base, fx) ?? 0;
     }
     const value = assets - debt;
-    return { value, assets, debt, gl: assets - cost, cost, day, mixed, fx, unconverted };
+    return { value, assets, debt, gl: invested - cost, cost, day, mixed, fx, unconverted };
   }, [rows, fx, base]);
 
   if (!authReady) return <div className="screen" aria-busy="true" />;
@@ -549,7 +575,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         {/* inset in the gutter like every other card, one message and its one action (r3 design m2) */}
         {error && (
           <div className="error-note inline-note" role="alert" data-testid="prices-error" style={{ marginTop: 0 }}>
-            <span>{error}</span> <button className="chip" onClick={() => void load()}>Retry</button>
+            <span>{hasBook ? error : BOOK_FAILED}</span> <button className="chip" onClick={() => { authMissRef.current = 0; void load(); }}>Retry</button>
           </div>
         )}
         {view.kind === "add" && (
@@ -574,7 +600,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
         )}
         {view.kind === "tab" && view.tab === "home" && (
           <PullToRefresh onRefresh={load}>
-          <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"} loading={!booted}
+          <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"} loading={!booted} loadFailed={!hasBook && !!error}
             dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"}
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
             briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)} briefRev={briefRev}

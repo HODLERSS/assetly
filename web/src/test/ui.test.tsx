@@ -1285,7 +1285,7 @@ describe("U8 error + retry", () => {
       .mockResolvedValue([row({})]);
     render(<App api={api} />);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toMatch(/^Couldn't refresh prices\. ?Retry$/);   // one message, one action (r3 design m2)
+    expect(alert.textContent).toMatch(/^Couldn't load your portfolio\. ?Retry$/);   // one message, one action (r3 design m2); nothing painted yet, so it is the portfolio (r8)
     expect(alert.textContent).not.toMatch(/pull/i);                  // the copy matches the real control
     expect(alert.textContent).not.toMatch(/failed to fetch/i);       // no raw transport errors
     await userEvent.click(within(alert).getByRole("button", { name: /retry/i }));
