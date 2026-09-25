@@ -10,7 +10,7 @@
 //  2. EVERY NUMBER CARRIES ITS LABEL. Share price vs position value, the session a day move belongs to,
 //     the currency, and "not enough price history yet" instead of a window that silently reused a shorter one.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { dayTag, marketOf, marketState } from "../_shared/calendar.ts";
+import { dayTag, marketOf, marketState, weekdayOf } from "../_shared/calendar.ts";
 import { dividendLine, dividendRows, ensureHistory, refreshDividends, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
@@ -18,7 +18,8 @@ import {
   adviceHits, aliasesFor, booksKorean, chipInLanguage, cleanFollowups, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, isEarningsCallTitle, questionIsKorean,
   isTradeQuestion, NO_HISTORY, pctText, priceConfusions, stripAdvice, usableNews, withNoCallLine, wrongLanguage, type PosFact,
   curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, plainScrub, PORTFOLIO_PLAIN, wrongDeliveriesDates,
-  dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, spanOfMonth, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
+  dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
+  buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -379,25 +380,24 @@ Deno.serve(async (req) => {
   ];
   const causeSource = `${digest}\n${context}`;
   /** The informational answer built from the stats when the model's is a husk: what the decision rests on. */
-  const defaultInfo = (): string => {
-    const invested = [...held].sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
-    const top = invested.slice(0, 3);
-    const share = (rs: typeof held) => rs.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
-    const cashUsd = book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
-    const reports = askEsts.slice(0, 4).map((e) => `${e.names[0]} ${e.range ? spanOfMonth(e.range) : "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`);
-    if (ko) return [
-      top.length ? `• 상위 ${top.length}개 종목(${top.map((r) => `${nameOf(r)} ${weight(usd(Number(r.value ?? 0), r.currency)).replace("under 0.1%", "0.1% 미만")}`).join(", ")})이 자산의 ${share(top).toFixed(0)}%입니다.` : "",
-      `• 현금은 자산의 ${(cashUsd / (assetsUsd || 1) * 100).toFixed(1)}%(${money(cashUsd)})입니다.`,
-      reports.length ? `• 다가오는 실적(추정): ${reports.join(", ")}.` : "",
-      "• 보통 따져보는 것: 한 테마가 이미 포트폴리오를 얼마나 움직이는지, 투자 기간, 차익에 대한 세금.",
-    ].filter(Boolean).join("\n");
-    return [
-      top.length ? `• Your ${top.length} largest holdings (${top.map((r) => `${nameOf(r)} ${weight(usd(Number(r.value ?? 0), r.currency))}`).join(", ")}) are ${share(top).toFixed(0)}% of your portfolio.` : "",
-      `• Cash is ${(cashUsd / (assetsUsd || 1) * 100).toFixed(1)}% of your portfolio (${money(cashUsd)}).`,
-      reports.length ? `• Reports coming up (estimates): ${reports.join(", ")}.` : "",
-      "• What people usually weigh: how much one theme already drives the portfolio, their time horizon, and taxes on gains.",
-    ].filter(Boolean).join("\n");
-  };
+  // Round 6: the code-built answer was 2-3 thin bullets. It is now 4-5, specific to this book: concentration,
+  // theme mix with crypto and cash, reports in the next 45 days, dividend payers with income and ex-dates in the
+  // next 45 days (div_next_ex), and what a buyer would weigh.
+  const defaultInfo = (): string => buildHusk({
+    holdings: held.map((r) => ({ name: nameOf(r), symbol: r.symbol, kind: r.kind, usd: usd(Number(r.value ?? 0), r.currency) })),
+    cashUsd: book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0),
+    assetsUsd, today,
+    reports: askEsts.map((e) => ({ name: e.names[0], est: e.est, ...(e.range ? { range: e.range } : {}) })),
+    dividends: divLines.map((x) => ({ name: nameOf(x.r), annualUsd: x.d.annual, nextEx: divRows.get(x.r.symbol)?.div_next_ex ?? null })),
+  }, ko);
+  // a day move of a market closed today carries its session ("SK hynix up 1.2% (Wed)" during a KRX holiday)
+  const KO_DAY = ["일", "월", "화", "수", "목", "금", "토"];
+  const closedFacts = held.filter((r) => !tradesToday(r)).map((r) => {
+    const mk = marketOf(r.symbol, r.kind, r.currency);
+    const last = mk ? marketState(mk).lastSessionDate : today;
+    return { names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], label: ko ? `${KO_DAY[new Date(last + "T12:00:00Z").getUTCDay()]}요일` : weekdayOf(last).slice(0, 3) };
+  });
+  const divTiming = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], nextEx: divRows.get(r.symbol)?.div_next_ex ?? null }));
   const pickQ = isPickQuestion(question);
   const bookNames = held.map((r) => ({ symbol: r.symbol, names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] }));
   const dlvFacts = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], est: deliveriesEstimate(r.symbol, today)?.est ?? null }));
@@ -447,7 +447,10 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // Now the fast lane is HEDGED: it starts at 7s if the primary has not answered (or at once if the primary
   // failed), and the first valid answer wins; the rewrite and the husk re-ask run only while they fit, so an
   // answer ships inside ~29s.
-  const FAST = "gpt-oss-120b", BUDGET = 29000;
+  // Round 6: a trade or pick question ends in the code-built answer whenever the models are slow, so it stops
+  // waiting on them at 10s (fast lane from 3s) and its whole budget is 15s.
+  const decisionQ = tradeQ || pickQ;
+  const FAST = "gpt-oss-120b", BUDGET = decisionQ ? 15000 : 29000;
   const left = () => BUDGET - (Date.now() - t0);
   const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3") => {
     if (timeoutMs < 1500) return null;
@@ -476,10 +479,11 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     const startFast = () => {
       if (fastStarted || settled) return;
       fastStarted = true; open++;
-      ask(base, 0.3, Math.min(20000, left() - 1500), FAST).then(finish, () => finish(null));
+      ask(base, 0.3, Math.min(decisionQ ? 7000 : 20000, left() - 1500), FAST).then(finish, () => finish(null));
     };
-    ask(base, 0.2, Math.min(20000, left() - 1500)).then(finish, () => finish(null));
-    setTimeout(startFast, 7000);
+    ask(base, 0.2, Math.min(decisionQ ? 10000 : 20000, left() - 1500)).then(finish, () => finish(null));
+    setTimeout(startFast, decisionQ ? 3000 : 7000);
+    if (decisionQ) setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, 10000);
   });
   const deDash = (v: string) => v.trim().replace(/\s*—\s*/g, ": ").replace(/\s*–\s*/g, ": ");
   // one bullet per line before any check: a shortlist written "• A. • B." on one line reads as one line otherwise
@@ -498,9 +502,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...wrongDividendAmounts(a, divFacts).map((s) => `"${s.slice(0, 120)}" states a dividend figure that is not that holding's (see DIVIDENDS).`),
   ];
   const found = answer ? problems(answer) : [];
-  if (found.length && left() > 8000) {
+  if (found.length && left() > (decisionQ ? 5500 : 8000)) {
     const fixed = await ask([...base, { role: "assistant", content: JSON.stringify({ answer, followups: parsedA?.followups ?? [] }) },
-      { role: "user", content: `Your answer broke the rules:\n- ${found.join("\n- ")}\nReturn the corrected JSON in the same shape. Keep everything else that was right.` }], 0.2, Math.min(9000, left() - 1500), FAST);
+      { role: "user", content: `Your answer broke the rules:\n- ${found.join("\n- ")}\nReturn the corrected JSON in the same shape. Keep everything else that was right.` }], 0.2, Math.min(decisionQ ? 4500 : 9000, left() - 1500), FAST);
     if (fixed && problems(normalizeBullets(deDash(fixed.answer))).length < found.length) { parsedA = fixed; answer = normalizeBullets(deDash(fixed.answer)); }
   }
   // ...and whatever survives the rewrite is removed or corrected in code
@@ -510,40 +514,37 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // code-side guards, on EVERY answer (whether or not an opener is added): verdicts and valuation calls, a
   // shortlist answering a pick question, a deliveries date that is not in the data
   const dropLines = new Set([...(pickQ ? curatedListHits(answer, bookNames) : []), ...wrongDeliveriesDates(answer, dlvFacts, today),
-    ...dayMoveMismatches(answer, moveFacts, 0.15), ...wrongEarningsMonths(answer, askEsts), ...unsupportedCauses(answer, causeSource), ...wrongDividendAmounts(answer, divFacts)]);
+    ...dayMoveMismatches(answer, moveFacts, 0.15), ...wrongEarningsMonths(answer, askEsts), ...unsupportedCauses(answer, causeSource), ...wrongDividendAmounts(answer, divFacts),
+    ...wrongDividendTiming(answer, divTiming, today)]);
   const pruned = answer.split("\n").map((l) => (dropLines.has(l.trim()) ? "" : [...dropLines].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
-  const guardAll = (a: string) => {
-    const drop = new Set([...(pickQ ? curatedListHits(a, bookNames) : []), ...wrongDeliveriesDates(a, dlvFacts, today),
-      ...dayMoveMismatches(a, moveFacts, 0.15), ...wrongEarningsMonths(a, askEsts), ...unsupportedCauses(a, causeSource), ...wrongDividendAmounts(a, divFacts)]);
-    const kept = a.split("\n").map((l) => (drop.has(l.trim()) ? "" : [...drop].reduce((x, d) => x.replace(d, ""), l))).filter((l) => l.trim()).join("\n");
-    return fixPriceConfusions(stripAdvice(normalizeBullets(kept), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
-  };
+
   let guarded = fixPriceConfusions(stripAdvice(normalizeBullets(pruned), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
   // Round 4: after the guards, "What should I buy with $10K?" was left with one unrelated line and "top pick"
   // with a ten-holding dump. When the guards took most of an answer to a trade or pick question, the model
   // gets ONE informational re-ask, and if that is thin too, the answer is built in code from the stats.
   const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
-  const husk = (g: string) => (tradeQ || pickQ) && (words(g) < 25 || words(g) < words(answer) * 0.45);
-  // the answer built in code is ready first; the model's informational re-ask runs only with 12s to spare
-  if (husk(guarded) && left() > 12000) {
-    const frame = ko
-      ? "이 질문에는 무엇을 사고팔지 말하지 말고, 이 포트폴리오에서 그 결정이 무엇에 달려 있는지 3-5개 불릿으로 답하세요: 집중도(상위 보유 종목과 비중), 현금 비중, 다가오는 실적 일정(추정치로 표시), 위험 구성. 특정 종목을 고르지 마세요."
-      : "Answer WITHOUT naming anything to buy, sell or pick: in 3-5 bullets, say what that decision rests on for THIS portfolio: concentration (the top holdings and their weights), the cash share, the reports coming up (as estimates), and the risk mix. One bullet per line.";
-    const re = await ask([...base, { role: "user", content: frame }], 0.2, Math.min(10000, left() - 1500), FAST);
-    const g2 = re ? guardAll(normalizeBullets(deDash(re.answer))) : "";
-    if (g2 && !husk(g2) && !wrongLanguage(question, g2)) { guarded = g2; parsedA = { answer: re!.answer, followups: re!.followups.length ? re!.followups : parsedA?.followups ?? [] }; }
-  }
+  const moveNames = held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] }));
+  // round 6: "top pick?" was answered with 11 day moves joined by semicolons: not an answer to the question
+  const husk = (g: string) => (tradeQ || pickQ) && (words(g) < 25 || words(g) < words(answer) * 0.45 || dayMoveDump(g, moveNames));
+  // Round 6: no model re-ask for a husk any more. husk() applies only to trade and pick questions, and the
+  // answer built in code from this portfolio (below) is richer than the re-ask was and costs no time.
+  let builtInCode = false;
   if (husk(guarded) || !guarded) {
+    builtInCode = true;
     // a data question whose every sentence failed the number checks gets the verified figures instead
     const day = ko ? `• 오늘 포트폴리오는 ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%(${signedUsd(bookDayUsd)})입니다.`
       : `• Today your portfolio is ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}% (${signedUsd(bookDayUsd)}).`;
     guarded = tradeQ || pickQ ? defaultInfo() : [day, defaultInfo().split("\n")[0]].join("\n");
   }
+  // a closed market's day move is labelled with its session, or dropped when it is called today's (round 6)
+  guarded = labelClosedMoves(guarded, closedFacts) || guarded;
   // the husk text is held to the same report dates as everything else (round 5: "NVDA … late October")
   { const bad = new Set(wrongEarningsMonths(guarded, askEsts)); if (bad.size) guarded = guarded.split("\n").filter((l) => ![...bad].some((b) => l.includes(b))).join("\n") || defaultInfo(); }
   // "on file" is pipeline language (round 5: "BTC: no dividend data on file")
   answer = plainDataWords(tidyNumbers(withNoCallLine(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), question, lastA, turns.length ? turns[turns.length - 1].q : "")));
-  answer = trimAnswer(answer, cap + 10);
+  // the code-built answer is 4-5 checked bullets (~100 words with the opener): the phone cap must not cut its
+  // last bullet, which is the one about what a buyer weighs
+  answer = trimAnswer(answer, builtInCode ? 150 : cap + 10);
   const focus = (mentioned.length ? mentioned : held.slice(0, 1).map((r) => r.symbol)).map((s) => nameOf(held.find((h) => h.symbol === s)!));
   const fallbacks = ko ? [
     ...(focus[0] ? [`${focus[0]}을(를) 움직이는 요인은 뭔가요?`, `${focus[0]} 전망을 바꿀 변수는 뭔가요?`] : []),
