@@ -6,8 +6,8 @@
 // market trades, 1,440 a day for crypto) and PostgREST caps a response at 1,000 rows, so the ascending
 // slice stopped days short of today and the "latest" price was stale. Windows are now read point by point:
 // the latest price, and for each window the last price at or before its start.
-import { CLOSE_MIN, type Mkt, zonedEpoch, zonedParts } from "./calendar.ts";
-import { pctOver, type Pt } from "./intel.ts";
+import { CLOSE_MIN, isTradingDay, type Mkt, marketOf, TZ, zonedEpoch, zonedParts } from "./calendar.ts";
+import { pctOver, type Pt, windowCutoff } from "./intel.ts";
 
 // deno-lint-ignore no-explicit-any
 type Db = any;   // the supabase-js client (typed loosely: the functions use the untyped builder)
@@ -19,12 +19,8 @@ export async function windowReturns(admin: Db, symbol: string, days: number[], n
   const tbl = () => admin.from("price_history").select("ts,price").eq("symbol", symbol);
   const [last, ...bases] = await Promise.all([
     one(tbl().order("ts", { ascending: false })),
-    ...days.map(async (d) => {
-      const cutoff = new Date(now - d * 86400000).toISOString();
-      // the price AS OF the window start; failing that, the first price after it (pctOver judges the gap)
-      return (await one(tbl().lte("ts", cutoff).order("ts", { ascending: false })))
-        ?? (await one(tbl().gt("ts", cutoff).order("ts", { ascending: true })));
-    }),
+    // the price AS OF the end of the window's target date (never a later one: pctOver judges how stale it is)
+    ...days.map((d) => one(tbl().lte("ts", new Date(windowCutoff(d, now, mkt)).toISOString()).order("ts", { ascending: false }))),
   ]);
   const pct: Record<number, number | null> = {};
   days.forEach((d, i) => { const b = bases[i]; pct[d] = b && last ? pctOver([b, last], d, now, mkt) : null; });
@@ -71,6 +67,50 @@ export function parseYahooDaily(body: YahooChart, now = Date.now()): Pt[] {
   return out;
 }
 
+/** Weekly closes from a Yahoo v8 weekly chart, each stamped at the week's LAST session close (Friday's close
+ *  time). Yahoo stamps a weekly bar at the week's start (Monday 00:00 local), so a stored weekly row used to
+ *  carry Friday's close four days early; symbol-search wrote them that way at register time. Weeks that have
+ *  not finished are skipped. `before` keeps only bars older than an instant (the daily series covers the rest). */
+export function parseYahooWeekly(body: YahooChart, now = Date.now(), before = Infinity): Pt[] {
+  const res = body?.chart?.result?.[0];
+  const ts = res?.timestamp ?? [];
+  const close = res?.indicators?.quote?.[0]?.close ?? [];
+  const meta = (res?.meta ?? {}) as { exchangeTimezoneName?: string; instrumentType?: string; currency?: string };
+  const tz = meta.exchangeTimezoneName || "America/New_York";
+  const crypto = meta.instrumentType === "CRYPTOCURRENCY" || tz === "UTC";
+  const minor = ["GBp", "GBX", "ZAc", "ZAC", "ILA"].includes(String(meta.currency ?? ""));
+  const closeMin = tz === "Asia/Seoul" ? CLOSE_MIN.KR : CLOSE_MIN.US;
+  const out: Pt[] = [];
+  for (let i = 0; i < ts.length; i++) {
+    const c = close[i];
+    if (c === null || c === undefined || !(c > 0)) continue;
+    const startYmd = zonedParts(new Date(ts[i] * 1000), crypto ? "UTC" : tz).ymd;
+    const end = new Date(startYmd + "T12:00:00Z"); end.setUTCDate(end.getUTCDate() + (crypto ? 6 : 4));
+    const endYmd = end.toISOString().slice(0, 10);
+    const at = crypto ? Date.parse(endYmd + "T23:59:59Z") : zonedEpoch(endYmd, closeMin, tz);
+    if (at > now || at >= before) continue;
+    out.push({ ts: new Date(at).toISOString(), price: Number((minor ? c / 100 : c).toFixed(6)) });
+  }
+  return out;
+}
+
+/** Does a held symbol's daily history have holes? Over the last 60 days (the minute ticks own the last 7),
+ *  more than 2 of its market's sessions without a stored price. Price-sync outages and register-time gaps left
+ *  such holes, and a window whose target date falls in one reads a stale base or none at all. */
+export async function historyHasGaps(admin: Db, symbol: string, mkt: Mkt | null, now = Date.now()): Promise<boolean> {
+  const from = now - 60 * 86400000, to = now - 7 * 86400000;
+  const { data } = await admin.from("price_history").select("ts").eq("symbol", symbol)
+    .gte("ts", new Date(from).toISOString()).lte("ts", new Date(to).toISOString()).order("ts", { ascending: true }).limit(1000);
+  const tz = mkt ? TZ[mkt] : "UTC";
+  const have = new Set(((data ?? []) as { ts: string }[]).map((r) => zonedParts(new Date(r.ts), tz).ymd));
+  let missing = 0;
+  for (let t = from + 86400000; t < to; t += 86400000) {
+    const ymd = zonedParts(new Date(t), tz).ymd;
+    if ((mkt ? isTradingDay(mkt, ymd) : true) && !have.has(ymd)) missing++;
+  }
+  return missing > 2;
+}
+
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 /** Fetch ~`range` of daily closes for one symbol and upsert them into price_history. Idempotent: rows are
  *  keyed (symbol, ts), and a re-run writes the same close timestamps. Returns the number of days written. */
@@ -99,18 +139,21 @@ const RETRY_MS = 7 * 86400000;
  *  as Yahoo has it). Returns days written per symbol and how many were left for a re-run. */
 export async function backfillShort(admin: Db, symbols: string[], opts: { force?: boolean; cap?: number } = {}): Promise<{ backfilled: Record<string, number>; remaining: number }> {
   const want = [...new Set(symbols.filter((s) => s && !s.startsWith("$")))]
-    .filter((s) => opts.force || Date.now() - (tried.get(s) ?? 0) > RETRY_MS);
+    .filter((s) => opts.force || Date.now() - (tried.get(s) ?? 0) > 86400000);   // looked at in this worker today: skip
   if (!want.length) return { backfilled: {}, remaining: 0 };
   // the stamp column arrives with migration 37; until then the read falls back to the old shape
-  const withStamp = await admin.from("symbols").select("symbol, yahoo, kind, history_backfilled_at").in("symbol", want).not("kind", "in", "(cash,debt)");
+  const withStamp = await admin.from("symbols").select("symbol, yahoo, kind, currency, history_backfilled_at").in("symbol", want).not("kind", "in", "(cash,debt)");
   const { data: syms } = withStamp.error
-    ? await admin.from("symbols").select("symbol, yahoo, kind").in("symbol", want).not("kind", "in", "(cash,debt)")
+    ? await admin.from("symbols").select("symbol, yahoo, kind, currency").in("symbol", want).not("kind", "in", "(cash,debt)")
     : withStamp;
   const todo: { symbol: string; yahoo: string }[] = [];
-  for (const sy of (syms ?? []) as { symbol: string; yahoo: string | null; history_backfilled_at?: string | null }[]) {
-    const stamped = sy.history_backfilled_at ? Date.now() - +new Date(sy.history_backfilled_at) < RETRY_MS : false;
-    if (opts.force || (!stamped && await historyIsShort(admin, sy.symbol))) todo.push({ symbol: sy.symbol, yahoo: sy.yahoo ?? sy.symbol });
-    else tried.set(sy.symbol, Date.now());   // long enough (or recently done): no need to look again this week
+  for (const sy of (syms ?? []) as { symbol: string; yahoo: string | null; kind: string | null; currency: string | null; history_backfilled_at?: string | null }[]) {
+    const age = sy.history_backfilled_at ? Date.now() - +new Date(sy.history_backfilled_at) : Infinity;
+    // short history: once a week at most; holes in a long history: once a day at most (the refill is idempotent)
+    const due = opts.force || (age >= RETRY_MS && await historyIsShort(admin, sy.symbol))
+      || (age >= 86400000 && await historyHasGaps(admin, sy.symbol, marketOf(sy.symbol, sy.kind, sy.currency)));
+    if (due) todo.push({ symbol: sy.symbol, yahoo: sy.yahoo ?? sy.symbol });
+    else tried.set(sy.symbol, Date.now());   // whole and gap-free (or recently done): no need to look again for a while
   }
   const batch = todo.slice(0, opts.cap ?? 60);
   const backfilled: Record<string, number> = {};

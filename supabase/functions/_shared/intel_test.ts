@@ -22,8 +22,9 @@ Deno.test("pctOver: the base is the price AS OF the window start, not the first 
   const h = [{ ts: day(40), price: 50 }, { ts: day(31), price: 80 }, { ts: day(29), price: 90 }, { ts: day(0), price: 100 }];
   assertEquals(pctOver(h, 30, NOW)?.toFixed(1), "25.0");   // from 80 (day -31), never 90 (day -29)
 });
-Deno.test("pctOver: a window starting on a weekend still resolves; a 3-week gap does not", () => {
-  assertEquals(pctOver([{ ts: day(5), price: 100 }, { ts: day(0), price: 110 }], 7, NOW)?.toFixed(1), "10.0");
+Deno.test("pctOver: no price on or before the window's start means no figure; a 3-week gap does not resolve", () => {
+  assertEquals(pctOver([{ ts: day(5), price: 100 }, { ts: day(0), price: 110 }], 7, NOW), null);   // never a later base (round 2)
+  assertEquals(pctOver([{ ts: day(8), price: 100 }, { ts: day(0), price: 110 }], 7, NOW)?.toFixed(1), "10.0");
   assertEquals(pctOver([{ ts: day(9), price: 100 }, { ts: day(0), price: 110 }], 30, NOW), null);
   assertEquals(pctOver([{ ts: day(0), price: 110 }], 7, NOW), null);
 });
@@ -47,7 +48,7 @@ Deno.test("earnings: NVDA last reported Aug 26 (8-K + 10-Q), next ~Nov 25, never
   assertStringIncludes(line, "~Nov 25 (est");
 });
 Deno.test("earnings: item 2.02 wins; a call transcript for the same quarter defers to the filing", () => {
-  const filings = [{ form: "8-K", filed_at: "2026-07-29", items: "2.02,9.01" }, { form: "8-K", filed_at: "2026-08-10", items: "5.02" }];
+  const filings = [{ form: "8-K", filed_at: "2026-07-29", items: "2.02,9.01" }, { form: "10-K", filed_at: "2026-07-29" }, { form: "8-K", filed_at: "2026-08-10", items: "5.02" }];
   const tr = [{ title: "Microsoft (MSFT) Q4 2026 Earnings Call Transcript", published_at: "2026-07-30T01:00:00Z" }];
   assertEquals(lastEarnings(filings, tr, "2026-09-25")?.date, "2026-07-29");
   assertEquals(lastEarnings([], tr, "2026-09-25"), { date: "2026-07-30", source: "earnings call" });

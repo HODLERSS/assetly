@@ -4,6 +4,7 @@
 //                + ~3 months of daily price history, so a brand-new ticker is live instantly.
 // The 1-min price cron then keeps it fresh (held or recently-created symbols).
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { parseYahooDaily, parseYahooWeekly } from "../_shared/history.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
@@ -157,9 +158,13 @@ async function yahooChart(yahoo: string): Promise<ChartData | null> {
       if (daily[i].ts.slice(0, 10) !== lastDay) { prevClose = daily[i].price; break; }
     }
   }
-  const history = [...daily];
+  // Stored history is stamped at each bar's CLOSE (a daily bar at its session close, a weekly bar at its
+  // Friday close). Yahoo stamps both at the bar's START, and storing that put the Aug 25 close at 13:30 UTC
+  // and a week's Friday close on its Monday. Weekly bars only fill what the daily year does not cover.
+  const dailyClosed = parseYahooDaily({ chart: { result: [res!] } });
+  const history = [...dailyClosed];
   const [weekly, intra] = await Promise.all([fetchChart(yahoo, "5y", "1wk"), fetchChart(yahoo, "5d", "15m")]);
-  if (weekly) history.push(...chartPoints(weekly));
+  if (weekly) history.push(...parseYahooWeekly({ chart: { result: [weekly] } }, Date.now(), dailyClosed.length ? Date.parse(dailyClosed[0].ts) : Infinity));
   if (intra) history.push(...chartPoints(intra));
   history.sort((a, b) => a.ts.localeCompare(b.ts));
   return {

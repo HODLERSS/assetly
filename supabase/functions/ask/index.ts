@@ -14,7 +14,7 @@ import { dayTag, marketOf } from "../_shared/calendar.ts";
 import { ensureHistory, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import {
-  adviceHits, aliasesFor, booksKorean, cleanFollowups, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, hasHangul, isEarningsCallTitle,
+  adviceHits, aliasesFor, booksKorean, chipInLanguage, cleanFollowups, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, isEarningsCallTitle, questionIsKorean,
   isTradeQuestion, NO_HISTORY, pctText, priceConfusions, stripAdvice, usableNews, withNoCallLine, wrongLanguage, type PosFact,
 } from "../_shared/intel.ts";
 
@@ -323,7 +323,7 @@ Deno.serve(async (req) => {
   const tradeQ = isTradeQuestion(question) || (turns.length > 0 && /\bshould (i|we)\b|(할까|될까|해야)/i.test(question) && isTradeQuestion(turns[turns.length - 1].q));
   // the language of the QUESTION decides the answer's language, trade questions included (round 2: "테슬라
   // 팔까요?" came back in English because the example opener below was English and the model copied it)
-  const ko = hasHangul(question);
+  const ko = questionIsKorean(question);
   const lastA = turns.length ? turns[turns.length - 1].a : "";
   const saidNoCall = tradeQ && /can'?t tell you|not my call|your call|정해드릴 수 없|말씀드릴 수 없/i.test(lastA);
   const opener = ko ? `"매도 여부는 제가 정해드릴 수 없지만, 판단의 근거는 이렇습니다."` : `"I can't tell you whether to sell, but here's what it hinges on."`;
@@ -347,7 +347,7 @@ ${convoBlock}Question: "${question}"
 ${READER}
 Answer as THEIR analyst (see the reader profile): direct, specific, tight. Ground qualitative answers in the signals, headlines, filings and earnings material above, not just prices. Numbers come only from the stats block.
 ANSWER LAW (above everything else): you give INFORMATION, never a trade instruction or a verdict on their own holdings. Never tell them to buy, sell, hold, add, trim, swap, rotate or take profits, never give a verdict ("Verdict: hold", "a buy here", "top pick", "the one I'd dump"), never rank their holdings by which is best or worst to own or keep (a ranking by a stated metric over a stated window, like 1-month return, is fine), never call a holding cheap, expensive, undervalued, overvalued, a bargain or a buying opportunity (state the metric instead: its P/E versus its own history), and never size a position ("put $X into", "buy N shares"). Instead explain what is driving it, the risks, the scenarios, what to watch next (a date or a level), and what a buy case or a sell case would rest on.${tradeQ ? (saidNoCall ? ` This question asks what to trade or which holding wins; your previous answer already said the call is theirs, so do not repeat that line: go straight to the balanced considerations on both sides.` : ` This question asks what to trade or which holding wins: open with ONE short, natural line in your own words that the decision is theirs to make (the sense of ${opener}), then give the balanced considerations on both sides. One line, never a wall of disclaimer.`) : ""}
-LANGUAGE: ${ko ? "the question is in KOREAN: write the entire answer AND every followup in natural Korean (tickers and US company names may stay as written)." : "answer in the language of the question."}
+LANGUAGE (decided by the CURRENT question only, never by the holdings' names or the conversation so far): ${ko ? "the question is in KOREAN: write the entire answer AND every followup in natural Korean (tickers and US company names may stay as written)." : "the question is in ENGLISH: write the entire answer AND every followup in English, even when earlier turns or Korean holdings' names are in Korean (use a Korean company's English name)."}
 ${EVIDENCE_LAW}
 If the question is not about investing, their portfolio or markets, answer in one friendly line that you stick to their portfolio and markets, and suggest one thing you can help with.
 HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each part a short bold header and a direct answer" : "80 words total, 3-5 short bullets max, readable on a phone in under 20 seconds"}. No preamble, no repetition. If the question needs data you truly don't have, one line saying exactly what's missing.`;
@@ -357,7 +357,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   let key = Deno.env.get("MARA_API_KEY") ?? "";
   if (!key) { const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" }); key = data ?? ""; }
   if (!key) return json({ ok: false, error: "not configured" }, 500);
-  const system = `You are a direct, analytical portfolio assistant. You explain and inform; you never tell the user what to buy or sell. Respond ONLY with strict JSON: {"answer": "...", "followups": ["...", "..."]}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, ${complex ? "170" : "80"} words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no boilerplate disclaimers.${korean ? " Refer to Korean companies by name, never numeric KRX codes; write won amounts with the ₩ sign." : " All money is US dollars; never write won."} The followups value: AFTER writing the answer, reread it and offer 2-3 natural next questions this user would ask, each under 12 words, ending with ?, starting with Why, What or How (in a Korean conversation: in Korean, asking 왜, 무엇 or 어떻게), answerable from their portfolio stats, news, SEC filings, or earnings data, never repeating the question just answered, and NEVER asking whether or how much to buy, sell, add or trim.`;
+  const system = `You are a direct, analytical portfolio assistant. You explain and inform; you never tell the user what to buy or sell. Respond ONLY with strict JSON: {"answer": "...", "followups": ["...", "..."]}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, ${complex ? "170" : "80"} words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no boilerplate disclaimers.${korean ? " Refer to Korean companies by name, never numeric KRX codes; write won amounts with the ₩ sign." : " All money is US dollars; never write won."} The followups value: AFTER writing the answer, reread it and offer 2-3 natural next questions this user would ask, each under 12 words, ending with ?, starting with Why, What or How, written in the language of the CURRENT question (a Korean question: in Korean, asking 왜, 무엇 or 어떻게), answerable from their portfolio stats, news, SEC filings, or earnings data, never repeating the question just answered, and NEVER asking whether or how much to buy, sell, add or trim.`;
   const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number) => {
     const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), timeoutMs);
     const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {   // base overridable for local fixture runs
@@ -385,7 +385,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const problems = (a: string) => [
     ...adviceHits(a, { verdictQuestion: tradeQ }).map((s) => `It tells the user what to trade or passes a verdict (a ranking of what to keep or dump, or a cheap/expensive call): "${s.slice(0, 120)}". Rewrite it as information (drivers, risks, the metric itself, what a buy or sell case would rest on).`),
     ...priceConfusions(a, posFacts).map((h) => `It quotes ${h.match} as a share price, but that is the user's POSITION VALUE; the share price is in the stats.`),
-    ...(wrongLanguage(question, a) ? ["It is written in English but the question is in Korean: write the whole answer and the followups in Korean."] : []),
+    ...(wrongLanguage(question, a) ? [ko ? "It is written in English but the question is in Korean: write the whole answer and the followups in Korean."
+      : "It is written in Korean but the question is in English: write the whole answer and the followups in English."] : []),
   ];
   const found = answer ? problems(answer) : [];
   if (found.length && Date.now() - t0 < 75000) {
@@ -409,6 +410,6 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     "How concentrated is my portfolio?", "What are the biggest risks in my portfolio?",
   ];
   // chips follow the question's language too
-  const followups = cleanFollowups((parsedA?.followups ?? []).map(deDash).filter((f) => !ko || hasHangul(f)), fallbacks);
+  const followups = cleanFollowups((parsedA?.followups ?? []).map(deDash).filter((f) => chipInLanguage(question, f)), fallbacks);
   return json({ ok: true, answer, followups, mentioned });
 });

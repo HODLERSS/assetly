@@ -4,10 +4,11 @@
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1";
 import {
   adviceHits, cleanFollowups, closesBetween, dayMoveMismatches, dropEcho, earningsEstimate, fixArticles, hangulShare, isTradeQuestion,
-  levelMismatches, mentionedSymbols, nextEarningsEstimate, offLensIdea, pctOver, stripAdvice, valuationHits, verdictRankHits, withNoCallLine,
+  chipInLanguage, levelMismatches, mentionedSymbols, questionIsKorean, nextEarningsEstimate, offLensIdea, pctOver, stripAdvice, valuationHits, verdictRankHits, windowTargetYmd, withNoCallLine,
   wrongEarningsDates, wrongLanguage,
 } from "./intel.ts";
 import { isJunkNews, publisherFor, usableNews, aliasesFor } from "./news_rules.ts";
+import { parseYahooWeekly } from "./history.ts";
 
 // ---- 1. advice: indirect phrasings (EN + KO) vs data questions that must stay allowed ----
 const MUST_GUARD = [
@@ -123,6 +124,28 @@ Deno.test("language: a Korean question with an English answer is flagged; ticker
   assertFalse(wrongLanguage("should I sell TSLA?", "Tesla fell 2.1%."));
   assert(hangulShare("NVDA $224 AI 반도체 수요") > 0.9);
 });
+Deno.test("language: English in, English out, whatever the book holds (live smoke on a Samsung/SK hynix book)", () => {
+  const koBody = "삼성전자와 SK하이닉스가 반도체 사이클의 핵심입니다. 메모리 가격이 관건입니다.";
+  // the three live cases: every English question with a Korean body is flagged
+  for (const q of ["Rank my holdings from best to worst to own", "What's the one stock you'd dump?", "What was TSLA's 1-month return?"]) {
+    assertFalse(questionIsKorean(q));
+    assert(wrongLanguage(q, koBody), q);
+  }
+  // an English answer that names a Korean company in Hangul is still English
+  assertFalse(wrongLanguage("How is Samsung doing?", "Samsung Electronics (삼성전자) rose 1.2% in Friday's Korean session on memory pricing."));
+  // a question that only names a Korean company is English; a Hangul-majority one is Korean
+  assertFalse(questionIsKorean("Should I sell 삼성전자?"));
+  assert(questionIsKorean("삼성전자 팔까요?"));
+  // chips follow the current question
+  assert(chipInLanguage("What was TSLA's 1-month return?", "What drives Tesla's margins?"));
+  assertFalse(chipInLanguage("What was TSLA's 1-month return?", "테슬라 마진을 움직이는 요인은?"));
+  assert(chipInLanguage("테슬라 팔까요?", "테슬라 마진을 움직이는 요인은?"));
+  assertFalse(chipInLanguage("테슬라 팔까요?", "What drives Tesla's margins?"));
+  // the fixed opener never mixes with a body in the other language
+  assert(withNoCallLine("• Tesla fell 2.1% today.", "Should I sell 삼성전자?").startsWith("I can't tell you"));
+  assert(withNoCallLine(koBody, "Rank my holdings from best to worst to own").startsWith("매매 여부는"));
+  assert(withNoCallLine("• Tesla fell 2.1% today on EU news.", "테슬라 팔까요?").startsWith("I can't tell you"));
+});
 
 // ---- 3. windows: a base must sit on the window's start ----
 const at = (iso: string, price: number) => ({ ts: iso, price });
@@ -134,15 +157,29 @@ Deno.test("pctOver: AMZN's history from Aug 28 has NO 1M on Sep 25 (was a 28-day
   const full = [at("2026-08-25T20:00:00Z", 259.9), ...h];
   assertEquals(pctOver(full, 30, now)?.toFixed(1), "-3.7");
 });
+Deno.test("pctOver: TSLA 1M is from the Aug 25 close (+6.6%), never the later Aug 26 close (+8.0%)", () => {
+  const now = Date.parse("2026-09-25T17:19:00Z");
+  const h = [at("2026-08-24T20:00:00Z", 348.95), at("2026-08-25T20:00:00Z", 350.25), at("2026-08-26T20:00:00Z", 345.82), at("2026-09-25T17:19:00Z", 373.34)];
+  assertEquals(pctOver(h, 30, now)?.toFixed(1), "6.6");
+  // after today's close the target date is still Aug 25 (1M = same date last month)
+  assertEquals(pctOver([...h.slice(0, 3), at("2026-09-25T20:00:00Z", 373.34)], 30, Date.parse("2026-09-25T21:30:00Z"))?.toFixed(1), "6.6");
+  // the Aug 25 row missing: the Aug 24 close (one session earlier) is the base, never Aug 26
+  assertEquals(pctOver([h[0], h[2], h[3]], 30, now)?.toFixed(1), "7.0");
+  assertEquals(windowTargetYmd(30, now), "2026-08-25");
+  assertEquals(windowTargetYmd(90, Date.parse("2026-05-31T15:00:00Z")), "2026-02-28");
+  assertEquals(windowTargetYmd(7, now), "2026-09-18");
+});
 Deno.test("pctOver: tolerance is counted in the holding's own sessions", () => {
-  const now = Date.parse("2026-09-28T15:00:00Z");   // Monday
-  // a 7-day window opening on Monday Sep 21 during the session; a base from Friday Sep 18's close is 0 closes stale
+  const now = Date.parse("2026-09-28T15:00:00Z");   // Monday; 1W target = Monday Sep 21
+  // the last close on or before Sep 21 is Friday Sep 18 (a weekend is not a gap)
   assertEquals(pctOver([at("2026-09-18T20:00:00Z", 100), at("2026-09-28T15:00:00Z", 105)], 7, now)?.toFixed(1), "5.0");
-  // a base three sessions before the window is too stale for a 1W figure
+  // a base three sessions before the target date is too stale for a 1W figure
   assertEquals(pctOver([at("2026-09-15T20:00:00Z", 100), at("2026-09-28T15:00:00Z", 105)], 7, now), null);
-  // crypto has no sessions: a first point one day after the start passes, three days does not
-  assertEquals(pctOver([at("2026-08-30T00:00:00Z", 100), at("2026-09-28T15:00:00Z", 90)], 30, now, null)?.toFixed(1), "-10.0");
-  assertEquals(pctOver([at("2026-09-01T00:00:00Z", 100), at("2026-09-28T15:00:00Z", 90)], 30, now, null), null);
+  // a first point after the target date is never used
+  assertEquals(pctOver([at("2026-09-22T20:00:00Z", 100), at("2026-09-28T15:00:00Z", 105)], 7, now), null);
+  // crypto: one day before the target date passes, four days does not (1M target = Aug 28 UTC)
+  assertEquals(pctOver([at("2026-08-27T23:59:59Z", 100), at("2026-09-28T15:00:00Z", 90)], 30, now, null)?.toFixed(1), "-10.0");
+  assertEquals(pctOver([at("2026-08-24T23:59:59Z", 100), at("2026-09-28T15:00:00Z", 90)], 30, now, null), null);
   // Labor Day (Sep 7) is not a missed close
   assertEquals(closesBetween("US", Date.parse("2026-09-04T21:00:00Z"), Date.parse("2026-09-08T19:00:00Z")), 0);
 });
@@ -201,8 +238,35 @@ Deno.test("earnings: the year-ago quarter sets the date (GOOGL ~Oct 28, not Oct 
   assertEquals(earningsEstimate(googl, [], "2026-09-25")?.est, "2026-10-28");
   // without the year-ago report: 13 weeks after the last one
   assertEquals(nextEarningsEstimate("2026-07-22", "2026-09-25"), { est: "2026-10-21", due: false });
-  // TSLA from its Jul 22 8-K item 2.02 alone
-  assertEquals(earningsEstimate([{ form: "8-K", filed_at: "2026-07-22", items: "2.02,9.01" }], [], "2026-09-25")?.est, "2026-10-21");
+  // a lone item 2.02 with no periodic report after it is not a report date
+  assertEquals(earningsEstimate([{ form: "8-K", filed_at: "2026-07-22", items: "2.02,9.01" }], [], "2026-09-25"), null);
+});
+
+// EDGAR submissions, fetched 2026-09-25: 8-Ks with item 2.02 and the 10-Q/10-K filings, Jun 2025 -> now
+const f8 = (d: string) => ({ form: "8-K", filed_at: d, items: "2.02,9.01" });
+const q = (d: string, form = "10-Q") => ({ form, filed_at: d });
+const REAL: Record<string, { filings: { form: string; filed_at: string; items?: string }[]; last: string; est: string }> = {
+  // Tesla files quarterly DELIVERIES under item 2.02 in the first days of each quarter, ~3 weeks before earnings
+  TSLA: { filings: [q("2026-07-23"), f8("2026-07-22"), f8("2026-07-02"), q("2026-04-23"), f8("2026-04-22"), f8("2026-04-02"), q("2026-01-29", "10-K"), f8("2026-01-28"), f8("2026-01-02"),
+    q("2025-10-23"), f8("2025-10-22"), f8("2025-10-02"), q("2025-07-24"), f8("2025-07-23"), f8("2025-07-02")], last: "2026-07-22", est: "2026-10-21" },
+  NVDA: { filings: [q("2026-08-26"), f8("2026-08-26"), q("2026-05-20"), f8("2026-05-20"), q("2026-02-25", "10-K"), f8("2026-02-25"), q("2025-11-19"), f8("2025-11-19"), q("2025-08-27"), f8("2025-08-27")], last: "2026-08-26", est: "2026-11-18" },
+  GOOGL: { filings: [q("2026-07-23"), f8("2026-07-22"), q("2026-04-30"), f8("2026-04-29"), q("2026-02-05", "10-K"), f8("2026-02-04"), q("2025-10-30"), f8("2025-10-29"), q("2025-07-24"), f8("2025-07-23")], last: "2026-07-22", est: "2026-10-28" },
+  MSFT: { filings: [q("2026-07-29", "10-K"), f8("2026-07-29"), q("2026-04-29"), f8("2026-04-29"), q("2026-01-28"), f8("2026-01-28"), q("2025-10-29"), f8("2025-10-29"), q("2025-07-30", "10-K"), f8("2025-07-30")], last: "2026-07-29", est: "2026-10-28" },
+  AAPL: { filings: [q("2026-07-31"), f8("2026-07-30"), q("2026-05-01"), f8("2026-04-30"), q("2026-01-30"), f8("2026-01-29"), q("2025-10-31", "10-K"), f8("2025-10-30"), q("2025-08-01"), f8("2025-07-31")], last: "2026-07-30", est: "2026-10-29" },
+};
+Deno.test("earnings: real EDGAR patterns (TSLA deliveries 8-Ks are not reports; next = the same quarter a year on)", () => {
+  for (const [sym, c] of Object.entries(REAL)) {
+    const e = earningsEstimate(c.filings, [], "2026-09-25");
+    assertEquals([e?.last, e?.est], [c.last, c.est], sym);
+  }
+  // Tesla on Oct 3, the day after its Q3 deliveries 8-K: still reported Jul 22, next ~Oct 21 (never "~early January")
+  const oct3 = earningsEstimate([f8("2026-10-02"), ...REAL.TSLA.filings], [], "2026-10-03");
+  assertEquals([oct3?.last, oct3?.est], ["2026-07-22", "2026-10-21"]);
+  // an amendment (10-K/A) filed after the deliveries 8-K does not turn it into a report
+  const jul15 = earningsEstimate([q("2026-07-10", "10-K/A"), ...REAL.TSLA.filings.filter((f) => f.filed_at <= "2026-07-02")], [], "2026-07-15");
+  assertEquals(jul15?.last, "2026-04-22");
+  // a bank files its 10-Q weeks after the release: the release still dates the report
+  assertEquals(earningsEstimate([q("2026-08-01"), f8("2026-07-14")], [], "2026-09-25")?.last, "2026-07-14");
 });
 Deno.test("earnings: a calendar item off the estimate is dropped (Microsoft 'Sep 28')", () => {
   const ests = [{ names: ["Microsoft", "MSFT"], est: "2026-10-28" }, { names: ["Tesla", "TSLA"], est: null }];
@@ -222,4 +286,10 @@ Deno.test("copy: a/an, the risk line that echoes its tripwire, off-lens ideas", 
   assert(offLensIdea("Short-term bond fund to reduce overall volatility", ["growth"]));
   assertFalse(offLensIdea("No bond or international exposure: every dollar rides on US growth", ["growth"]));
   assertFalse(offLensIdea("Dividend growth names for steadier income", ["income"]));
+});
+
+Deno.test("history: a weekly bar is stamped at its Friday close, never its Monday start", () => {
+  // Yahoo stamps the week of Aug 24, 2026 at Monday 00:00 ET; its close (348.75) is Friday Aug 28's
+  const body = { chart: { result: [{ meta: { exchangeTimezoneName: "America/New_York" }, timestamp: [Date.parse("2026-08-24T04:00:00Z") / 1000, Date.parse("2026-09-21T04:00:00Z") / 1000], indicators: { quote: [{ close: [348.75, 370] }] } }] } };
+  assertEquals(parseYahooWeekly(body, Date.parse("2026-09-25T17:00:00Z")), [{ ts: "2026-08-28T20:00:00.000Z", price: 348.75 }]);   // the unfinished week is skipped
 });
