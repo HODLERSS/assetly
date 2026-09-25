@@ -7,6 +7,12 @@ import { act, fireEvent, render, screen, within, waitFor } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+// the app shell (Capacitor) or a browser: the keypad Done is app-only (r7 newcomer m8)
+const nativeFlag = vi.hoisted(() => ({ on: false }));
+vi.mock("../lib/native", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../lib/native")>();
+  return { ...real, isNative: () => nativeFlag.on || real.isNative() };
+});
 const authState = vi.hoisted(() => ({ session: { user: { id: "u-test", email: "first.run@example.com" } } as { user: { id: string; email?: string } } | null }));
 vi.mock("../lib/supabase", () => ({
   supabase: {
@@ -235,15 +241,25 @@ describe("K4 Use today's price (r5 designer m-2, power-user, newcomer m7)", () =
 });
 
 describe("K5 the keypad has a Done on every number field (r5 native m1)", () => {
-  it("while the keyboard is up, a focused amount field carries Done, and Done closes the keypad", async () => {
+  it("in the app, while the keyboard is up, a focused amount field carries Done, and Done closes the keypad", async () => {
+    nativeFlag.on = true;
+    try {
+      render(<AmountField id="q" label="Shares" value="" onChange={() => {}} />);
+      const input = screen.getByLabelText("Shares");
+      document.documentElement.classList.add("kb-open");
+      act(() => { input.focus(); });
+      const done = screen.getByTestId("kb-done");
+      fireEvent.click(done);
+      expect(document.activeElement).not.toBe(input);
+      expect(screen.queryByTestId("kb-done")).toBeNull();
+    } finally { nativeFlag.on = false; document.documentElement.classList.remove("kb-open"); }
+  });
+  it("on the web there is no extra Done: the browser's keyboard has its own (r7 newcomer m8)", () => {
     render(<AmountField id="q" label="Shares" value="" onChange={() => {}} />);
-    const input = screen.getByLabelText("Shares");
     document.documentElement.classList.add("kb-open");
-    act(() => { input.focus(); });
-    const done = screen.getByTestId("kb-done");
-    fireEvent.click(done);
-    expect(document.activeElement).not.toBe(input);
+    act(() => { screen.getByLabelText("Shares").focus(); });
     expect(screen.queryByTestId("kb-done")).toBeNull();
+    document.documentElement.classList.remove("kb-open");
   });
   it("inside a sheet the sheet's own Done is the one (no second bar)", () => {
     render(<div className="sheet"><AmountField id="q" label="Shares" value="" onChange={() => {}} /></div>);

@@ -87,7 +87,8 @@ export function App({ api = defaultApi }: { api?: Api }) {
   // the Portfolio Assessment a connect / onboarding / run of adds is waiting on: Home shows it until it lands
   const assess = useAssessmentWatch(api, session?.user.id ?? null);
   const connectPendingRef = useRef<string | null>(null);   // set at the connect moment; consumed when fresh intelligence lands
-  const seenBriefRef = useRef<string | null>(null);   // latest brief generated_at the user has seen
+  const seenBriefRef = useRef<string | null>(null);
+  const seenMediaRef = useRef<string | null>(null);   // that brief plus whether its narration/script exist yet   // latest brief generated_at the user has seen
   // the book the brief watcher judges against (null until the first load): a brief about other holdings is
   // never announced as "Your brief is ready" (r4 newcomer)
   const briefBookRef = useRef<PortfolioRow[] | null>(null);
@@ -113,7 +114,15 @@ export function App({ api = defaultApi }: { api?: Api }) {
         if (!bs.length) { if (seenBriefRef.current === null) seenBriefRef.current = "none"; return; }
         const latest = bs[bs.length - 1];
         const key = `${latest.brief_date}:${latest.edition}:${latest.generated_at}`;
-        if (seenBriefRef.current === null) { seenBriefRef.current = key; return; }
+        // the narration and its script are attached to the row after it first appears: when they land, the card
+        // on Home reads its editions again (quietly: no new banner) so ▶ shows without leaving Home (r7 native m1)
+        const media = `${key}:${latest.audio_path ? 1 : 0}${latest.script ? 1 : 0}`;
+        if (seenBriefRef.current === null) { seenBriefRef.current = key; seenMediaRef.current = media; return; }
+        if (key === seenBriefRef.current && media !== seenMediaRef.current) {
+          seenMediaRef.current = media;
+          setBriefRev((n) => n + 1);
+          setBriefBanner((b) => (b && b.edition === latest.edition ? { ...b, audio: !!latest.audio_path } : b));
+        }
         if (key !== seenBriefRef.current) {
           const onHome = viewRef.current.kind === "tab" && viewRef.current.tab === "home";
           // the card on Home loaded its editions when it mounted: reload it, or the banner announces a brief
@@ -122,6 +131,7 @@ export function App({ api = defaultApi }: { api?: Api }) {
           // and re-armed the banner every 20s tick while the user was elsewhere, and brought a dismissed banner
           // back for the same brief (r7 design n-4). Off Home the card mounts fresh on return anyway.
           seenBriefRef.current = key;
+          seenMediaRef.current = media;
           setBriefRev((n) => n + 1);
           setBriefBanner({ audio: !!latest.audio_path, edition: latest.edition });
           if (!onHome) setHomeAlert(true);

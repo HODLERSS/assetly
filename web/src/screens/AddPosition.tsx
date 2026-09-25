@@ -130,7 +130,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
       {picked && (
         <>
           <p style={{ marginBottom: 12 }}><span className="sym">{displayName(picked)}</span>{picked.kind === "cash" || picked.kind === "debt" ? "" : ` · ${shortName(picked)}`}
-            <button className="chip" style={{ marginLeft: 10 }} onClick={() => pick(null)}>Change</button></p>
+            <button className="chip" style={{ marginLeft: 10 }} onClick={() => { pick(null); resetSearch(); }}>Change</button></p>
           <div className="field">
             <label>Account</label>
             <div className="chips" style={{ padding: 0 }} role="group" aria-label="Account">

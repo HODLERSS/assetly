@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { isNative } from "../lib/native";
 
 /** The keyboard's Done, for a field whose keypad has none. The decimal pad has no return key and the WebKit
  *  accessory bar is off app-wide (lib/shell.ts), so without this the only way out of the keypad was a tap on
@@ -23,7 +24,9 @@ export function AmountField({ id, label, value, onChange, error, placeholder, au
   const errId = `${id}-err`;
   const box = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(false);
-  const ownDone = focused && !box.current?.closest(".sheet");
+  // app only: a browser's keyboard brings its own Done (and the WebKit bar), so a second one was noise on the
+  // web form ("Cost per share | Done | Use today's price" beside the header's Done; r7 newcomer m8)
+  const ownDone = focused && isNative() && !box.current?.closest(".sheet");
   return (
     <div className="field" ref={box}>
       <label htmlFor={id}>{label}</label>

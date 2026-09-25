@@ -118,8 +118,19 @@ export function formatDate(isoDay: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
+/** The reader's first language is Korean (device or browser locale). */
+export function prefersKoreanNames(): boolean {
+  try {
+    const nav = typeof navigator !== "undefined" ? navigator : null;
+    const lang = nav?.languages?.[0] ?? nav?.language ?? "";
+    return /^ko\b/i.test(lang);
+  } catch { return false; }
+}
+
 /** KR tickers are opaque numbers (000660.KS); people know the company name.
- *  main = what to show big, sub = the secondary line. US keeps ticker-first. */
+ *  main = what to show big, sub = the secondary line. US keeps ticker-first.
+ *  The Korean name (삼성전자) leads only for a Korean-locale reader with KR assets shown in won: an en-US
+ *  session read "Samsung Electronics" in the brief and Ask but "삼성전자" on Home and News (r7 newcomer m5). */
 export function labelParts(r: { symbol: string; name?: string | null; name_kr?: string | null; nickname?: string | null }, korean = false): { main: string; sub: string } {
   const cash = cashName(r.symbol);
   if (cash) return { main: cash, sub: r.nickname || "" };   // "$CASH Cash (USD)" was a raw key and a repeat
@@ -130,7 +141,7 @@ export function labelParts(r: { symbol: string; name?: string | null; name_kr?: 
     return { main: r.symbol, sub: r.nickname || (nm && nm.toUpperCase() !== r.symbol.toUpperCase() ? nm : "") };
   }
   if (r.nickname) return { main: r.nickname, sub: r.symbol };
-  if (korean && r.name_kr) return { main: r.name_kr, sub: r.symbol };
+  if (korean && r.name_kr && prefersKoreanNames()) return { main: r.name_kr, sub: r.symbol };
   const nm = (r.name || r.symbol)
     .replace(/\s*(Co\.?,?\s*Ltd\.?|Inc\.?|Corp(?:oration)?\.?|Company|Ltd\.?)\s*$/i, "").trim();
   return { main: nm || r.symbol, sub: r.symbol };

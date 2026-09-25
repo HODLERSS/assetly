@@ -1,7 +1,7 @@
 // UI flow battery — jsdom + Testing Library with a stubbed data layer and mocked auth.
 // Covers the end-to-end user experience surface: auth, onboarding, add/edit/remove,
 // prices, news filter, errors, empty states, settings.
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
 import { cleanup, render, screen, within, waitFor } from "@testing-library/react";
 import { __resetPlayer } from "../lib/player";
 import userEvent from "@testing-library/user-event";
@@ -491,7 +491,9 @@ describe("U34 KR names over codes", () => {
     row({ holding_id: "hk", symbol: "000660.KS", name: "SK hynix Inc.", name_kr: "SK하이닉스",
       currency: "KRW", price: 250000, value: 13800000, cost_basis: 13800000, total_gl: 0, change_pct: 0 }),
   ];
-  it("KRW view: the Korean name leads; the code drops to the sub line", async () => {
+  it("Korean locale, KRW view: the Korean name leads; the code drops to the sub line", async () => {
+    const langs = vi.spyOn(navigator, "languages", "get").mockReturnValue(["ko-KR", "en-US"]);
+    onTestFinished(() => langs.mockRestore());
     const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(krRows()) });
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
@@ -501,6 +503,17 @@ describe("U34 KR names over codes", () => {
     await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
     expect(await screen.findByRole("button", { name: "SK하이닉스" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "000660.KS" })).toBeNull();
+  });
+  it("en-US session, KRW view: the English name leads on Home and News (r7 newcomer m5)", async () => {
+    const api = stubApi({ getPortfolio: vi.fn().mockResolvedValue(krRows()) });
+    render(<App api={api} />);
+    await screen.findByTestId("net-worth");
+    await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
+    expect(await screen.findByText("SK hynix")).toBeTruthy();
+    expect(screen.queryByText("SK하이닉스")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^news$/i }));
+    expect(await screen.findByRole("button", { name: "SK hynix" })).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/SK하이닉스/);
   });
   it("KR assets toggled to USD: the English name leads instead", async () => {
     const api = stubApi({
