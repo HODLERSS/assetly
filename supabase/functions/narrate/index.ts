@@ -6,6 +6,7 @@
 //   - callers: daily-brief (fire-and-forget after every write), the backfill sweep (rows missing audio),
 //     and the orchestrator. Auth: internal token, service role, or the owning user.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { scriptProblems } from "../_shared/intel.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -476,10 +477,24 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
         }
       }
       let usedFallback = false;
+      // The SAME guards as the written brief, on what will be SPOKEN (round 4: the midday script promised
+      // "boosting future returns", read Microsoft's 3.7% rise as "added three point seven percent weight", and
+      // said "if NVIDIA falls below zero point two percent"). The script may only restate the guarded sections:
+      // an offending sentence is deleted; a script that loses too much becomes the template built from them.
+      if (spoken) {
+        const bad = scriptProblems(spoken, JSON.stringify(s), String(row.brief_date));
+        if (bad.length) {
+          const kept = spoken.split(/(?<=[.!?])\s+/).filter((x) => !bad.some((b) => x.replace(/<break[^>]*\/>/g, " ").includes(b)));
+          const heard = kept.join(" ").replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+          console.log(`narrate: ${bad.length} script sentence(s) failed the brief guards; ${heard} words left`);
+          spoken = heard >= Math.round(spec.floor * 0.7) ? kept.join(" ") : null;
+          if (savedScript && spoken) await admin.from("daily_briefs").update({ script: spoken }).eq("id", row.id);
+        }
+      }
       if (!spoken) { spoken = fallbackScript(s, dayLine, ed); usedFallback = true; }
       // normalize, round, name the companies, then guarantee the sign-off BEFORE the script_only return,
       // so the script an operator inspects is exactly the one a listener hears
-      if (!savedScript) {
+      if (!savedScript || usedFallback) {
         spoken = roundEar(spoken);
         spoken = sayNames(earNumbers(spoken.replace(/(\d+(?:\.\d+)?)\s?percent/gi, "$1%").replace(/(\d[\d,]*(?:\.\d+)?)\s?dollars/gi, "$$$1")), names);   // normalize then round: every spoken number comes out rounded, tickers come out as company names
         if (!/(talk soon|see you|that's your|that’s your)/i.test(spoken.slice(-120))) spoken += ` <break time="0.6s" /> ${isAssess ? "That's your assessment." : "That's your brief."} Talk soon.`;
