@@ -159,17 +159,28 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
     <>
       <section aria-label="Net worth" style={{ margin: "8px 0 18px" }}>
         <div className="net num" data-testid="net-worth">{money(totals.value, baseCurrency)}</div>
-        {/* Two calm lines (owner, home-calm): "Today" is every market's latest session added up, "All time" the
-            positions' gain. On a weekend or holiday the line still says Today; which sessions it adds is in its
-            aria-label and, per market, in the Breakdown below. */}
+        {/* Two calm lines (owner, home-calm / home-today): "Today" adds only the markets whose latest session IS
+            today on their own exchange's calendar (a coin always counts); sessions from other days are never
+            summed into it. Nothing traded today (a US-only book on a Saturday): "Today · markets closed", and the
+            Breakdown below carries each market's last session. "All time" is the positions' gain. */}
         {(() => {
           const fig = (d: number, b: number) => `${signedMoney(d, baseCurrency)} (${signedPct(b !== 0 ? (d / b) * 100 : 0)})`;
-          const older = groups.filter((g) => !g.today).map((g) => `${g.markets.join(" + ")} ${g.label}`);
-          const todayFig = fig(totals.day, totals.value - totals.day);
+          const todays = groups.filter((g) => g.today);
+          if (!todays.length) {
+            const last = groups.map((g) => `${g.markets.join(" + ")} ${g.label}`);
+            return (
+              <div className="day num mutedc" data-testid="total-day" data-closed="true"
+                aria-label={`Today: markets closed${last.length ? `. Last sessions: ${last.join(", ")}` : ""}`}>
+                <span className="day-label">Today</span> · markets closed
+              </div>
+            );
+          }
+          const day = todays.reduce((a, g) => a + g.day, 0), basis = todays.reduce((a, g) => a + g.basis, 0);
+          const which = [...new Set(todays.flatMap((g) => g.markets))];
+          const names = which.length > 1 ? `${which.slice(0, -1).join(", ")} and ${which[which.length - 1]}` : which[0];
           return (
-            <div className={`day num ${dayTone(totals.day, totals.value - totals.day)}`} data-testid="total-day"
-              aria-label={`Today ${todayFig}${older.length ? `, latest sessions: ${older.join(", ")}` : ""}`}>
-              <span className="day-label">Today</span> {todayFig}
+            <div className={`day num ${dayTone(day, basis)}`} data-testid="total-day" aria-label={`Today: ${names} ${fig(day, basis)}`}>
+              <span className="day-label">Today</span> {fig(day, basis)}
             </div>
           );
         })()}

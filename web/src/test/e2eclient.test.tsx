@@ -75,9 +75,11 @@ describe("1 (p07) the Breakdown uses the header's buckets, names and math", () =
     const lines = screen.getAllByTestId("market-line").map((el) => el.textContent!);
     expect(lines).toEqual(["US +$11 (+1.09%) · today", "Korea +$291 (+3.00%) · Wed close"]);
     const dollars = (s: string) => { const m = /([+−-])\$([\d,]+)/.exec(s)!; return (m[1] === "+" ? 1 : -1) * Number(m[2].replace(/,/g, "")); };
+    // Today = the sum of only today's sessions in the Breakdown (the US line); Korea's Wednesday stays its own line
     const today = screen.getByTestId("total-day").textContent!;
-    expect(today).toMatch(/^Today \+\$302 \(/);
-    expect(dollars(today)).toBe(lines.reduce((a, l) => a + dollars(l), 0));
+    expect(today).toBe("Today +$11 (+1.09%)");
+    expect(dollars(today)).toBe(lines.filter((l) => / · today$/.test(l)).reduce((a, l) => a + dollars(l), 0));
+    expect(document.body.textContent).not.toMatch(/\+\$302/);
     expect(screen.getByTestId("market-breakdown").textContent).not.toMatch(/KRX/);
   });
 });
@@ -93,8 +95,11 @@ describe("2 (p02 F7) a move rounding to 0.00% is grey; the bigger move leads", (
     render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue(rows) })} />);
     await screen.findByTestId("net-worth");
     const first = screen.getByTestId("total-day");
-    expect(first.textContent).toMatch(/^Today \+\$41[45] \(/);   // Friday's US session plus a flat coin
-    expect(first.getAttribute("aria-label")).toMatch(/latest sessions: US Fri close$/);
+    // on a Saturday only the coin traded today: Today is its flat move, grey; Friday's US session is not added in
+    expect(first.textContent).toBe("Today −$1 (0.00%)");
+    expect(first.className).toMatch(/\bmutedc\b/);
+    expect(first.getAttribute("aria-label")).toBe("Today: Crypto −$1 (0.00%)");
+    expect(document.body.textContent).not.toMatch(/\+\$41[45]/);
     await userEvent.click(screen.getByTestId("nw-detail-toggle"));
     const coin = screen.getAllByTestId("market-line").find((el) => el.getAttribute("data-market") === "CRYPTO")!;
     expect(coin.textContent).toBe("Crypto −$1 (0.00%) · today");
@@ -106,6 +111,18 @@ describe("2 (p02 F7) a move rounding to 0.00% is grey; the bigger move leads", (
     expect(dots.map((d) => d.getAttribute("aria-label"))).toEqual(["Closed, Fri close", "Live"]);
     expect(dots[1].className).toMatch(/\blive\b/);
     expect(card.textContent).not.toMatch(/Fri close|today|live/);
+  });
+  it("nothing traded today (a US-only book on Saturday): 'Today · markets closed', and the Breakdown has Friday", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-09-26T15:00:00Z"));
+    render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue([row({ value: 40_000, cost_basis: 30_000, total_gl: 10_000, change_pct: 1.05, as_of: "2026-09-25T20:00:00Z" })]) })} />);
+    await screen.findByTestId("net-worth");
+    const today = screen.getByTestId("total-day");
+    expect(today.textContent).toBe("Today · markets closed");
+    expect(today.className).toMatch(/\bmutedc\b/);
+    expect(today.getAttribute("aria-label")).toBe("Today: markets closed. Last sessions: US Fri close");
+    expect(today.textContent).not.toMatch(/\$/);
+    await userEvent.click(screen.getByTestId("nw-detail-toggle"));
+    expect(screen.getAllByTestId("market-line").map((el) => el.textContent)).toEqual(["US +$416 (+1.05%) · Fri close"]);
   });
 });
 
