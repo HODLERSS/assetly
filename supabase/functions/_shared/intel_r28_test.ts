@@ -24,3 +24,22 @@ Deno.test("r28 P4: date gaps, company size, group shares, points, product genera
   assertEquals(rankPositionClaims("TSLA was the drag this month.", f).length, 1);
   assertEquals(rankPositionClaims("AVGO was the drag this month.", f), []);
 });
+
+Deno.test("r28 P5/P6: routing, lexicon, income is not a projection", async () => {
+  const { isDecisionFrame, isForecastQuestion, softVerdicts } = await import("./intel.ts");
+  for (const q of ["Where is support for TSLA?", "Has NVDA bottomed out?", "테슬라 바닥은 어디야?", "Should I sell covered calls on AAPL?", "Is buying on margin a good idea?", "Does TSLA deserve its premium?", "Is NVDA overvalued?", "Is AAPL cheap here?", "Roast my portfolio", "Be brutal: how bad is my book?"])
+    if (!isDecisionFrame(q)) throw new Error(q);
+  for (const q of ["What's my cost basis?", "How much cash do I have?", "When does NVDA report?"]) if (isDecisionFrame(q)) throw new Error(q);
+  for (const s of ["That's priced in.", "The dip adds a floor under the stock.", "NVDA is in a recovery phase.", "Compounding is intact.", "Momentum has stalled.", "The story is still intact.", "The opportunity cost is real.", "The risk is meaningful but not extreme."]) assertEquals(softVerdicts(s).length, 1, s);
+  assertEquals(isForecastQuestion("How much will I get in dividends each year?"), false);
+  assertEquals(isForecastQuestion("How much will my portfolio be worth in 5 years?"), true);
+});
+
+Deno.test("r28 P7: escaped breaks and share-class facts", async () => {
+  const { unescapeBreaks, dualClassFacts, dualClassClaims } = await import("./intel.ts");
+  assertEquals(unescapeBreaks("• BRK.B is 12%.\\n• BRK.A is 0%."), "• BRK.B is 12%.\n• BRK.A is 0%.");
+  assertEquals(dualClassFacts("BRK.B vs BRK.A").length, 1);
+  assertEquals(dualClassClaims("One BRK.A share equals 1,000 Class B shares.").length, 1);
+  assertEquals(dualClassClaims("One BRK.A share equals 1,500 Class B shares.").length, 0);
+  assertEquals(dualClassClaims("A BRK.B share has 1/200 of the vote of an A share.").length, 1);
+});

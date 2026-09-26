@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -690,7 +690,8 @@ ${divUnknown ? "- (couldn't be loaded just now)" : divLines.map((x) => "- " + x.
 ${divUnknown ? `DIVIDEND DATA COULDN'T BE LOADED JUST NOW: state no dividend figure and never say a holding pays none; say the dividend figures couldn't be loaded and to ask again in a moment.` : divPending ? `Portfolio dividend income: still loading for ${divPending} holding(s); say the figures are being fetched and to ask again in a minute, never state $0 or a partial total as the portfolio's income.` : `Portfolio dividend income ≈ ${money(divIncome)} a year (shares × last 12 months' payments per holding)${assetsUsd > 0 ? `, ${(divIncome / assetsUsd * 100).toFixed(2)}% of assets` : ""}.`}
 ${newsReadOk ? "" : "HEADLINES COULDN'T BE LOADED JUST NOW: never say there are no headlines or that none explains a move; say the news couldn't be loaded.\n"}${unknownWin.length ? `LONGER-WINDOW RETURNS COULDN'T BE LOADED JUST NOW for ${unknownWin.join(", ")}: never call them missing history; say they couldn't be loaded and to ask again.\n` : ""}Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
 ${context}
-${dataLead ? `\nCOMPUTED ANSWER (from the stats; open the answer with exactly these figures, then add context):\n${dataLead}\n` : ""}OTHER LISTINGS: a price or target for a Korean holding quoted in dollars in a headline belongs to another listing (a US ADR or OTC line), not the KRX share the user holds: never state it as their holding's price or target; if it matters, say "its US-listed shares".
+${dataLead ? `\nCOMPUTED ANSWER (from the stats; open the answer with exactly these figures, then add context):\n${dataLead}\n` : ""}${dualClassFacts([question, ...held.map((r) => r.symbol)].join(" ")).map((f) => "SHARE CLASSES (facts; use these, never other conversion or vote figures): " + f).join("\n")}
+OTHER LISTINGS: a price or target for a Korean holding quoted in dollars in a headline belongs to another listing (a US ADR or OTC line), not the KRX share the user holds: never state it as their holding's price or target; if it matters, say "its US-listed shares".
 USER STATEMENTS: what the user says about their own money, plans or life ("I have ₩100M in cash", "we're buying a house in 2 years") is context to use, never a claim about the portfolio to correct.
 CAUSES: when a holding's 7d headlines give a reason for its move, name it and its source; the cause of TODAY's move is a headline dated today that explains it, not an older story about something else; never say no headline explains a move when its headlines are listed above.
 
@@ -835,7 +836,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // minus sign; only a spaced dash between words is punctuation.
   const deDash = (v: string) => v.trim().replace(/([\s(:,]|^)[\u2013\u2014](?=\$?\d)/g, "$1\u2212").replace(/\s*\u2014\s*/g, ": ").replace(/\s+\u2013\s+/g, ": ");
   // one bullet per line before any check: a shortlist written "• A. • B." on one line reads as one line otherwise
-  let answer = normalizeBullets(deDash(parsedA?.answer ?? ""));
+  // r11 P7: an escaped "\n•" in the model's JSON string was rendered literally
+  let answer = normalizeBullets(deDash(unescapeBreaks(parsedA?.answer ?? "")));
   // ---- verifier: a trade instruction or a position value quoted as a share price gets ONE rewrite ----
   const problems = (a: string) => [
     ...adviceHits(a, { verdictQuestion: tradeQ || pickQ }).map((s) => `It tells the user what to trade or passes a verdict (a ranking of what to keep or dump, or a cheap/expensive call): "${s.slice(0, 120)}". Rewrite it as information (drivers, risks, the metric itself, what a buy or sell case would rest on).`),
@@ -894,7 +896,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...companySizeClaims(answer, held.map((r) => { const so = sharesOut.get(r.symbol); return { names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], mcap: so && r.price !== null ? so.n * usd(Number(r.price), r.currency) : null }; })),
     ...groupShareFirstClaims(answer, [{ label: /(?:mega[- ]?cap )?tech(?:nology)?(?: stocks| names| holdings| exposure)?/, value: techShareA }]),
     ...pointContributionClaims(answer, perfRows.map((r) => ({ names: r.names, weight: r.usd / (assetsUsd || 1) * 100, pct: r.pct }))),
-    ...productVersionClaims(answer, causeSource), ...directionCauseClaims(answer),
+    ...productVersionClaims(answer, causeSource), ...directionCauseClaims(answer), ...dualClassClaims(answer),
     // r10: "Portfolio up $70 today" (whole-book base, Korea's move left out): the book's day dollars must be today's figure
     ...splitSentences(answer).filter((sen) => /\b(?:portfolio|book|account|holdings)\b/i.test(sen) && /\btoday\b|오늘/i.test(sen) && !/\bKorea|한국/i.test(sen)
       && [...sen.matchAll(/([+\u2212-])?\$\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)/g)].some((m) => { const v = Number(m[2].replace(/,/g, "")); return Math.abs(v - Math.abs(bookDayUsd)) > Math.max(5, Math.abs(bookDayUsd) * 0.05) && Math.abs(v - totNow) > totNow * 0.01; })),
@@ -1013,8 +1015,10 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     "How concentrated is my portfolio?", "What are the biggest risks in my portfolio?",
   ];
   // chips follow the question's language too
+  // r11 P5: chips that invite a verdict or a forecast ("What's the bull case?", "모멘텀이 계속 갈까?")
+  const VERDICT_CHIP = /\bbull(?:ish)? case\b|\bbear(?:ish)? case\b|\bupside\b|\bcheap\b|\bexpensive\b|\bstill a good\b|\bworth (?:it|buying|owning)\b|\bwill (?:it|\w+) (?:keep|continue|recover|rebound)\b|모멘텀[^?]{0,15}(?:갈까|이어질까|계속)|오를까|반등할까|저평가|고평가/i;
   const PRODUCT_CHIP = /\b(?:which|what)\b[^?]{0,20}\b(?:etfs?|funds?|bonds?|treasur(?:y|ies)|money[- ]market|index funds?)\b|\blowest fees\b|\b(?:candidates?|alternatives?) (?:worth|to)\b|채권 ?ETF|어떤 ETF|어떤 채권|어떤 펀드|후보/i;
-  const modelChips = (builtInCode || !parsedA ? [] : (judgedChips ?? (parsedA?.followups ?? []).map(deDash))).filter((c) => !PRODUCT_CHIP.test(c));
+  const modelChips = (builtInCode || !parsedA ? [] : (judgedChips ?? (parsedA?.followups ?? []).map(deDash))).filter((c) => !PRODUCT_CHIP.test(c) && !VERDICT_CHIP.test(c));
   const followups = cleanFollowups(modelChips.filter((f) => chipInLanguage(question, f)), fallbacks);
   return json({ ok: true, answer, followups, mentioned, meta: { judge: judgeStatus } });
 }
