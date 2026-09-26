@@ -67,18 +67,18 @@ describe("1 (p07) the Breakdown uses the header's buckets, names and math", () =
     // all time on invested cost
     expect(withCoin[0].gl).toBe(111); expect(withCoin[0].cost).toBe(900);
   });
-  it("on Home the two agree to the printed figure, and Korea is 'Korea', not 'KRX'", async () => {
+  it("on Home the Today line is the sum of the Breakdown's lines, each with its own session; Korea is 'Korea', not 'KRX'", async () => {
     vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(FRI);
     render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue([us, kr, cash]) })} />);
     await screen.findByTestId("net-worth");
     await userEvent.click(await screen.findByTestId("nw-detail-toggle"));
-    const bd = (await screen.findByTestId("market-breakdown-day")).textContent!;
-    const header = [screen.getByTestId("total-day"), ...screen.queryAllByTestId("total-day-other")]
-      .map((el) => el.textContent!.replace(/ (?:today|· .+)$/, ""));   // "Korea +$291 (+3.00%)"
-    expect(header).toHaveLength(2);
-    for (const line of header) expect(bd).toContain(line);
-    expect(bd).not.toMatch(/KRX/);
-    expect(bd).toMatch(/^latest sessions: /);
+    const lines = screen.getAllByTestId("market-line").map((el) => el.textContent!);
+    expect(lines).toEqual(["US +$11 (+1.09%) · today", "Korea +$291 (+3.00%) · Wed close"]);
+    const dollars = (s: string) => { const m = /([+−-])\$([\d,]+)/.exec(s)!; return (m[1] === "+" ? 1 : -1) * Number(m[2].replace(/,/g, "")); };
+    const today = screen.getByTestId("total-day").textContent!;
+    expect(today).toMatch(/^Today \+\$302 \(/);
+    expect(dollars(today)).toBe(lines.reduce((a, l) => a + dollars(l), 0));
+    expect(screen.getByTestId("market-breakdown").textContent).not.toMatch(/KRX/);
   });
 });
 
@@ -93,11 +93,19 @@ describe("2 (p02 F7) a move rounding to 0.00% is grey; the bigger move leads", (
     render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue(rows) })} />);
     await screen.findByTestId("net-worth");
     const first = screen.getByTestId("total-day");
-    expect(first.textContent).toMatch(/^US \+\$41[56] \(\+1\.05%\) · Fri close$/);
-    const coin = screen.getByTestId("total-day-other");
-    expect(coin.textContent).toMatch(/^Crypto −\$1 \(0\.00%\) today$/);
+    expect(first.textContent).toMatch(/^Today \+\$41[45] \(/);   // Friday's US session plus a flat coin
+    expect(first.getAttribute("aria-label")).toMatch(/latest sessions: US Fri close$/);
+    await userEvent.click(screen.getByTestId("nw-detail-toggle"));
+    const coin = screen.getAllByTestId("market-line").find((el) => el.getAttribute("data-market") === "CRYPTO")!;
+    expect(coin.textContent).toBe("Crypto −$1 (0.00%) · today");
     expect(coin.className).toMatch(/\bmutedc\b/);
     expect(coin.className).not.toMatch(/\bloss\b/);
+    // the rows: a grey dot on the closed stock, a green one on the coin, no session text
+    const card = screen.getByTestId("positions-card");
+    const dots = [...card.querySelectorAll(".session-dot")];
+    expect(dots.map((d) => d.getAttribute("aria-label"))).toEqual(["Closed, Fri close", "Live"]);
+    expect(dots[1].className).toMatch(/\blive\b/);
+    expect(card.textContent).not.toMatch(/Fri close|today|live/);
   });
 });
 

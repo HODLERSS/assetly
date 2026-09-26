@@ -470,7 +470,7 @@ describe("F10 Home, Settings, Ask, sign-out", () => {
     const api = stubApi({ getPortfolio: vi.fn().mockRejectedValue(new Error("offline")) });
     render(<App api={api} />);
     await screen.findByRole("alert");
-    expect(document.querySelectorAll(".live-dot").length).toBe(0);
+    expect(document.querySelectorAll(".session-dot.live").length).toBe(0);
     expect(screen.getByTestId("prices-as-of").textContent).toBe(`Prices as of ${new Date(asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET`);
   });
   it("Settings shows the build's version, the account email, and the markets actually held", async () => {

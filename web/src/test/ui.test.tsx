@@ -210,7 +210,7 @@ describe("U36 compact day dollars", () => {
     await userEvent.click(screen.getByRole("button", { name: /^home$/i }));
     await within(await screen.findByTestId("positions-card")).findByText("RDDT");
     // value 4800 at +5.26% -> day move ~= $240
-    expect(document.body.textContent).toMatch(/\+5\.26% \(\+\$240\) today/);
+    expect(document.body.textContent).toMatch(/\+5\.26% \(\+\$240\)/);
   });
 });
 
@@ -228,8 +228,11 @@ describe("U35 live-session dot", () => {
     const rowsEls = [...document.querySelectorAll(".card .row")];
     const usRow = rowsEls.find((e) => e.textContent!.includes("RDDT"))!;
     const krRow = rowsEls.find((e) => e.textContent!.includes("000660.KS"))!;
-    expect(usRow.querySelector(".live-dot")).toBeTruthy();
-    expect(krRow.querySelector(".live-dot")).toBeNull();
+    // one dot per row: green and named "Live" for the open market, grey and named by its session for the closed one
+    expect(usRow.querySelector(".session-dot.live")).toBeTruthy();
+    expect(usRow.querySelector(".session-dot")!.getAttribute("aria-label")).toBe("Live");
+    expect(krRow.querySelector(".session-dot.live")).toBeNull();
+    expect(krRow.querySelector(".session-dot")!.getAttribute("aria-label")).toMatch(/^Closed, /);
   });
 });
 
@@ -1068,7 +1071,7 @@ describe("U13 persona-fleet fixes", () => {
   it("home shows today's move in dollars and per-row day %", async () => {
     render(<App api={stubApi()} />);
     const day = await screen.findByTestId("total-day");
-    expect(day.textContent).toMatch(/\+\$240 \(\+5\.26%\) today/);        // 4800 - 4800/1.0526
+    expect(day.textContent).toBe("Today +$240 (+5.26%)");        // 4800 - 4800/1.0526
     expect(day.className).toContain("gain");
     expect((document.body.textContent ?? "").match(/\+5\.26%/g)!.length).toBeGreaterThan(0);
     expect((document.body.textContent ?? "").match(/\+\$240/g)!.length).toBeGreaterThan(1);   // header + mover $

@@ -53,9 +53,12 @@ describe("1 a move the same-day rule zeroed is labelled, not left as 0.00%", () 
     });
     render(<App api={api} />);
     const card = await screen.findByTestId("positions-card");
-    const line = await within(card).findByText(/since your buy \(Fri\)/);
-    expect(line.closest("button")!.textContent).toMatch(/0\.00% \(\$0\) since your buy \(Fri\)/);
-    await userEvent.click(within(card).getByRole("button", { name: /Apple/ }));
+    // the row keeps to the figure and its dot (owner, home-calm); the words are on the position screen
+    const aaplRow = await within(card).findByRole("button", { name: /Apple/ });
+    await waitFor(() => expect(aaplRow.textContent).toMatch(/0\.00% \(\$0\)/));
+    expect(aaplRow.textContent).not.toMatch(/since your buy/);
+    expect(aaplRow.querySelector(".session-dot")!.getAttribute("aria-label")).toBe("Closed, Fri close");
+    await userEvent.click(aaplRow);
     const head = await screen.findByTestId("position-headline");
     expect(head.nextElementSibling!.textContent).toMatch(/^0\.00% · since your buy \(Fri\) · closed 4:00 PM ET$/);
   });

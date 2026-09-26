@@ -220,10 +220,12 @@ describe("H3 minors", () => {
     unmount();
   });
 
-  it("KR rows keep the session tag in its own element (it takes a line of its own under 360pt)", async () => {
+  it("KR rows carry their session in the dot's name (the text tag is gone; owner, home-calm)", async () => {
     render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue([row({ holding_id: "k", symbol: "005930.KS", name: "Samsung Electronics", currency: "KRW", price: 285500, qty: 30, value: 8565000 })]) })} />);
     const card = await screen.findByTestId("positions-card");
-    await waitFor(() => expect(card.querySelector(".right .row-session")).not.toBeNull());
+    await waitFor(() => expect(card.querySelector(".right .session-dot")).not.toBeNull());
+    expect(card.querySelector(".right .session-dot")!.getAttribute("aria-label")).toMatch(/^(Live|Closed, .+)$/);
+    expect(card.querySelector(".row-session")).toBeNull();
   });
 });
 

@@ -111,7 +111,6 @@
 @media (max-width: 359px) { .px-full { display: none; } .px-compact { display: inline; } }
 /* and the session tag ("Wed close") takes its own line under the move: at 320pt the value column held
    "+1.20% (+₩110.0K) Wed close" on one line and left "SK하이…" / "5 sh · ₩1.8…" for the name side (r4 power-user) */
-@media (max-width: 359px) { .row .right .row-session { display: block; } }
 
 /* Settings at large text (AX5 = 1.6x): the Appearance chips drop under their label instead of clipping
    "Dark" to "D", and a long email ellipsizes in place */
@@ -127,7 +126,6 @@
    cutting the price ("1,000 sh · $…"), the session tag takes its own line as it does under 360pt, and a brief's
    title wraps instead of "CLOSING NOTE · SEP…" (r5 native m2) */
 .text-large .row > span:first-child:has(> .sym) { white-space: normal; overflow-wrap: anywhere; }
-.text-large .row .right .row-session { display: block; }
 /* The hero total under large text: text-size-adjust multiplies whatever size is set, so it is sized by the
    screen's width here and still fits after the 1.6x (AX5 at 320 clipped "$3,519,23…"; r8 designer m-6). */
 .text-large .net { font-size: min(38px, 7vw); overflow-wrap: anywhere; }

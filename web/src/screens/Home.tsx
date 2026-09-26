@@ -11,7 +11,7 @@ import { convertCcy, glClass, labelParts, money, moneyClass, moneyExact, priceCo
 import { Icon } from "../components/Icon";
 import { accountTag, isRetirement } from "../lib/accounts";
 import { formatQty } from "../lib/numbers";
-import { dayGroups, isHeld, marketBreakdown, rowDayChange, rowDayPct, sinceBuyLabel } from "../lib/portfolio";
+import { dayGroups, isHeld, marketBreakdown, rowDayChange, rowDayPct } from "../lib/portfolio";
 
 // Canvas 2a: net worth, movers, market pulse.
 const DETAIL_KEY = "assetly-nw-detail";
@@ -148,27 +148,33 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   const groups = dayGroups(rows, baseCurrency, fxRates);
   // the same rows and math as the headline, by market (lib/portfolio marketBreakdown): header and Breakdown agree
   const marketLines = totals.fx ? marketBreakdown(rows, baseCurrency, fxRates) : [];
-  const twoMarkets = marketLines.length > 1;
-  const hasDetail = totals.debt > 0 || twoMarkets;
+  const hasDetail = totals.debt > 0 || marketLines.length > 0;
+  // one small dot per row, before the day figure: green and pulsing while that market is open, grey when closed;
+  // the words stay for assistive tech (owner, home-calm: the per-row "Fri close" / "today" text is gone)
+  const sessionDot = (r: PortfolioRow) => {
+    const live = isLive(r);
+    return <span className={`session-dot${live ? " live" : ""}`} role="img" data-testid="session-dot" aria-label={live ? "Live" : `Closed, ${moveSession(r).label}`} />;
+  };
   return (
     <>
       <section aria-label="Net worth" style={{ margin: "8px 0 18px" }}>
         <div className="net num" data-testid="net-worth">{money(totals.value, baseCurrency)}</div>
-        {groups.length <= 1 ? (
-          <div className={`day num ${dayTone(totals.day, totals.value - totals.day)}`} data-testid="total-day">
-            {signedMoney(totals.day, baseCurrency)} ({signedPct(totals.value - totals.day !== 0 ? (totals.day / (totals.value - totals.day)) * 100 : 0)}) {groups[0] && !groups[0].today ? `· ${groups[0].label}` : "today"}
-          </div>
-        ) : (
-          // moves from different sessions are never summed into one "today": each market says which session it is
-          groups.map((g, i) => (
-            <div key={g.label} className={`day num ${dayTone(g.day, g.basis)}${i ? " day-split" : ""}`} data-testid={i ? "total-day-other" : "total-day"}
-              style={i ? { fontSize: 13.5 } : undefined}>
-              {g.markets.join(" + ")} {signedMoney(g.day, baseCurrency)} ({signedPct(g.basis !== 0 ? (g.day / g.basis) * 100 : 0)}) {g.today ? "today" : `· ${g.label}`}
+        {/* Two calm lines (owner, home-calm): "Today" is every market's latest session added up, "All time" the
+            positions' gain. On a weekend or holiday the line still says Today; which sessions it adds is in its
+            aria-label and, per market, in the Breakdown below. */}
+        {(() => {
+          const fig = (d: number, b: number) => `${signedMoney(d, baseCurrency)} (${signedPct(b !== 0 ? (d / b) * 100 : 0)})`;
+          const older = groups.filter((g) => !g.today).map((g) => `${g.markets.join(" + ")} ${g.label}`);
+          const todayFig = fig(totals.day, totals.value - totals.day);
+          return (
+            <div className={`day num ${dayTone(totals.day, totals.value - totals.day)}`} data-testid="total-day"
+              aria-label={`Today ${todayFig}${older.length ? `, latest sessions: ${older.join(", ")}` : ""}`}>
+              <span className="day-label">Today</span> {todayFig}
             </div>
-          ))
-        )}
+          );
+        })()}
         <div className={`day num ${moneyClass(totals.gl)}`} data-testid="total-gl" style={{ fontSize: 13.5 }}>
-          {signedMoney(totals.gl, baseCurrency)} ({signedPct(totals.cost !== 0 ? (totals.gl / totals.cost) * 100 : 0)}) all time
+          <span className="day-label">All time</span> {signedMoney(totals.gl, baseCurrency)} ({signedPct(totals.cost !== 0 ? (totals.gl / totals.cost) * 100 : 0)})
         </div>
         <div className="nw-detail" id="nw-detail" hidden={!detail}>
         {totals.debt > 0 && (
@@ -176,12 +182,20 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
             assets {money(totals.assets, baseCurrency)} · debt {signedMoney(-totals.debt, baseCurrency)}
           </div>
         )}
-        {twoMarkets && (() => {
-          // one line per market, the headline's own figures and names (US / Korea / Crypto)
+        {marketLines.length > 0 && (() => {
+          // one line per market (US / Korea / Crypto), the headline's own figures, each with its session
           const fig = (d: number, b: number) => `${signedMoney(d, baseCurrency)} (${signedPct(b !== 0 ? (d / b) * 100 : 0)})`;
+          const sessionOf = (m: Market) => {
+            const r = rows.filter((x) => marketOf(x) === m && x.change_pct !== null).sort((a, b) => (b.as_of ?? "").localeCompare(a.as_of ?? ""))[0];
+            return r ? moveSession(r).label : null;
+          };
           return (
             <div data-testid="market-breakdown">
-              <div className="status-line num" data-testid="market-breakdown-day">{groups.length > 1 ? "latest sessions" : "today"}: {marketLines.map((m) => `${m.label} ${fig(m.day, m.basis)}`).join(" · ")}</div>
+              {marketLines.map((m) => (
+                <div key={m.market} className={`status-line num ${dayTone(m.day, m.basis)}`} data-testid="market-line" data-market={m.market}>
+                  {m.label} {fig(m.day, m.basis)}{sessionOf(m.market) ? ` · ${sessionOf(m.market)}` : ""}
+                </div>
+              ))}
               <div className="status-line num" data-testid="market-breakdown-all">all time: {marketLines.map((m) => `${m.label} ${fig(m.gl, m.cost)}`).join(" · ")}</div>
             </div>
           );
@@ -253,8 +267,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           <button key={r.holding_id} className="row" onClick={() => onOpen(r.holding_id)}>
             <span><span className="sym">{labelParts(r, dispKr === "KRW").main}</span> <span className="sub">{labelParts(r, dispKr === "KRW").sub}</span></span>
             <span className={`right num ${glClass(rowDayPct(r))}`}>
-              {signedPct(rowDayPct(r))}{(() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()}
-              {isLive(r) && <span className="live-dot" aria-hidden="true" />}
+              {sessionDot(r)}{signedPct(rowDayPct(r))}{(() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()}
             </span>
           </button>
         ))}
@@ -318,7 +331,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
                 <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span>
                 {/* a balance has no daily move: "0.00% ($0) today" on cash was noise */}
                 {r.kind !== "cash" && r.kind !== "debt" && (<><br />
-                <span className={`num sub ${glClass(rowDayPct(r))}`}>{signedPct(rowDayPct(r))}{r.change_pct !== null && (() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} <span className="row-session">{sinceBuyLabel(r) ?? moveSession(r).label}</span>{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
+                <span className={`num sub ${glClass(rowDayPct(r))}`}>{sessionDot(r)}{signedPct(rowDayPct(r))}{r.change_pct !== null && (() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()}</span></>)}
               </span>
             </button>
           );

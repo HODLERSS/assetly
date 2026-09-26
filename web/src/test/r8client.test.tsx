@@ -238,6 +238,6 @@ describe("12 the all-time % is on invested cost, not cash", () => {
     ];
     render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue(rows) })} />);
     expect((await screen.findByTestId("net-worth")).textContent).toBe("$9,800");
-    expect(screen.getByTestId("total-gl").textContent).toMatch(/\+\$779 \(\+19\.37%\) all time/);
+    expect(screen.getByTestId("total-gl").textContent).toBe("All time +$779 (+19.37%)");
   });
 });

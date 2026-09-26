@@ -44,9 +44,13 @@ describe("theme tokens", () => {
     for (const block of [light, dark]) expect(ratio(token(block, "field-border"), token(block, "surface"))).toBeGreaterThanOrEqual(3);
   });
 
-  it("the live dot is neutral, not the gain colour", () => {
-    const rule = css.match(/\.live-dot \{[^}]*\}/)![0];
-    expect(rule).not.toMatch(/--as-gain|--as-loss/);
+  it("the session dot: grey closed, green and pulsing live, still under reduced motion", () => {
+    const closed = css.match(/\.session-dot \{[^}]*\}/)![0];
+    expect(closed).not.toMatch(/--as-gain|--as-loss|animation/);
+    const live = css.match(/\.session-dot\.live \{[^}]*\}/)![0];
+    expect(live).toMatch(/--as-gain/);
+    expect(live).toMatch(/animation: livepulse 2s/);
+    expect(css).toMatch(/prefers-reduced-motion: reduce\) \{ \.session-dot\.live \{ animation: none; \}/);
   });
 
   it(".sub is styled everywhere, not only inside a row", () => {

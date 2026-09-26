@@ -289,7 +289,7 @@ describe("C5 zero and cash", () => {
     render(<App api={api} />);
     const day = await screen.findByTestId("total-day");
     expect(day.textContent).not.toMatch(/-\$0/);
-    expect(day.textContent).toMatch(/^\$0 /);
+    expect(day.textContent).toMatch(/^Today \$0 /);
     expect(day.className).not.toMatch(/loss|gain/);
     expect(document.body.textContent).not.toMatch(/-\$0\b/);
   });
@@ -326,13 +326,19 @@ describe("C6 today never mixes sessions", () => {
     vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(FRI);   // the session label also reads the wall clock
     onTestFinished(() => { vi.useRealTimers(); });
     render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue(mixed()) })} />);
-    // the bigger move leads (e2e p02 F7); each line still names its own session
-    await waitFor(() => expect(screen.getByTestId("total-day").textContent).toBe("Korea +$291 (+3.00%) · Wed close"));
-    expect(screen.getByTestId("total-day-other").textContent).toBe("US +$11 (+1.09%) today");
-    expect(document.body.textContent).not.toMatch(/\+\$302/);   // the blended sum is gone
+    // one calm "Today" line adds every market's latest session (owner, home-calm); which sessions is in its
+    // aria-label, and per market, with its own session, inside the Breakdown
+    const today = await screen.findByTestId("total-day");
+    await waitFor(() => expect(today.textContent).toMatch(/^Today \+\$302 \(/));
+    expect(today.getAttribute("aria-label")).toMatch(/latest sessions: Korea Wed close$/);
+    expect(screen.queryByTestId("total-day-other")).toBeNull();
+    await userEvent.click(screen.getByTestId("nw-detail-toggle"));
+    const lines = screen.getAllByTestId("market-line").map((el) => el.textContent);
+    expect(lines).toEqual(["US +$11 (+1.09%) · today", "Korea +$291 (+3.00%) · Wed close"]);
+    // the row carries its session in the dot's name, not as text
     const krRow = within(screen.getByTestId("positions-card")).getAllByRole("button").find((b) => /005930/.test(b.textContent ?? ""))!;
-    expect(krRow.textContent).toMatch(/Wed close/);
-    expect(krRow.textContent).not.toMatch(/today/);
+    expect(krRow.textContent).not.toMatch(/Wed close|today/);
+    expect(krRow.querySelector(".session-dot")!.getAttribute("aria-label")).toBe("Closed, Wed close");
   });
   it("the position detail dates a KRX close in Seoul time", async () => {
     sessionNow.at = FRI;
@@ -341,7 +347,7 @@ describe("C6 today never mixes sessions", () => {
   });
   it("a single-session book keeps the plain 'today' headline (C6)", async () => {
     render(<App api={stubApi()} />);
-    expect((await screen.findByTestId("total-day")).textContent).toMatch(/\+\$240 \(\+5\.26%\) today$/);
+    expect((await screen.findByTestId("total-day")).textContent).toBe("Today +$240 (+5.26%)");
     expect(screen.queryByTestId("total-day-other")).toBeNull();
   });
 });

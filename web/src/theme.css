@@ -284,11 +284,14 @@ body.has-miniplayer .ask-composer { bottom: calc(var(--as-tabbar-h) + var(--as-t
 /* clear tap affordance on lot rows */
 .edit-pill { border: 1.5px solid var(--as-primary); color: var(--as-primary); border-radius: 999px; font: 600 11px/1 var(--as-font-ui); padding: 5px 12px; white-space: nowrap; }
 
-/* live-session pulse: the market for this row is open and ticking. Neutral on purpose: it sits beside
-   gains and losses alike, and a green dot next to a red loss read as "up" at a glance. */
-.live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--as-muted); margin-left: 6px; vertical-align: middle; animation: livepulse 2.4s ease-in-out infinite; }
-@keyframes livepulse { 0%, 100% { opacity: .35; } 50% { opacity: .9; } }
-@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; opacity: .7; } }
+/* The session dot, before a row's day figure (owner, home-calm): grey while that market is closed, green with a
+   gentle pulse while it is open and ticking. The words ("Live" / "Closed, Fri close") are its aria-label. */
+.session-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--as-muted); opacity: .55; margin-right: 6px; vertical-align: middle; }
+.session-dot.live { background: var(--as-gain); opacity: 1; animation: livepulse 2s ease-in-out infinite; }
+@keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .session-dot.live { animation: none; } }
+/* the header's two lines: a quiet label before the figure */
+.day .day-label { font-weight: 400; color: var(--as-muted); }
 
 /* intelligence cards arrive, they don't just appear */
 .card.insights { animation: fadeUp .45s ease; }
