@@ -2385,7 +2385,7 @@ export function cleanNote(note: string): { note: string; needsRisk: boolean } {
     .replace(/(^|\s)>\s?(?=[A-Za-z$\d])/g, "$1above ").replace(/(^|\s)<\s?(?=[A-Za-z$\d])/g, "$1below ").replace(/\s+([.,;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
   const seen: string[] = [];
   const NEG = /\b(?:risk|below|declin\w*|slow\w*|cut\w*|weak\w*|loss\w*|lose|debt|leverage\w*|competit\w*|depend\w*|concentrat\w*|regulat\w*|cyclical|volatil\w*|stretch\w*|expensive|uncertain\w*|pressure\w*|dilut\w*|custody|export|miss\w*|fall\w*|drop\w*|shrink\w*|lawsuit|litigation|probe|tariff\w*|headwind\w*|exposure to|could|if|fails?|erod\w*|squeeze\w*|slump\w*|downgrad\w*|trail\w*|underperform\w*|lag\w*|behind|erosion|erod\w*|biosimilar\w*|miss\w*)\b/i;
-  const sents = splitSentences(x).filter((sen) => {
+  const sents = splitSentences(x).filter((sen) => !/\bgiving (?:it |you )?an edge\b|\bbacked by an edge\b|\bexposure to companies\b/i.test(sen)).filter((sen) => {
     const k = sen.toLowerCase().replace(/[^a-z0-9%.]+/g, " ").trim();
     if (seen.some((p) => p === k || overlap(p, k) >= 0.9)) return false;
     seen.push(k);
@@ -2403,7 +2403,8 @@ export function cleanNote(note: string): { note: string; needsRisk: boolean } {
     return !(items.length >= 2 && items.filter((x) => POS.test(x)).length * 2 >= items.length);
   });
   x = sents.join(" ");
-  const needsRisk = !/\b(?:the risk:|but|however|though|yet)\b/i.test(x) && !/\brisk\b/i.test(x);
+  // r11 P8: a note without an explicit "The risk:" clause needs one (ETH's "self-custody risk" in passing was not a risk line)
+  const needsRisk = !/\bthe risk:/i.test(x);
   return { note: x, needsRisk };
 }
 
@@ -2953,7 +2954,11 @@ export function fixNoteOpener(note: string): string {
 export function wordWatch(w: string): string {
   return String(w ?? "")
     .replace(/\s*\b(?:(?:weekly|daily|monthly) )?(?:alert signal|alert|trigger|tripwire|signal)\b\s*/gi, " ")
+    // r11: "Price drop >20%" reads "Price falls more than 20%", not "drop rises above"
+    .replace(/\b(?:drop|decline|fall|loss|drawdown|selloff|sell-off)\s*>=?\s*(?=[$\d₩])/gi, "falls more than ")
     .replace(/\s*<=?\s*(?=[$\d₩])/g, " falls below ").replace(/\s*>=?\s*(?=[$\d₩])/g, " rises above ")
+    // a plural subject takes a plural verb ("Outflows rise above")
+    .replace(/\b([A-Za-z]+(?<!ss|us|is|ys))s (rises|falls) (above|below|more than)\b/g, (_m, w, v, p) => `${w}s ${v === "rises" ? "rise" : "fall"} ${p}`)
     .replace(/\s{2,}/g, " ").trim();
 }
 
@@ -2962,6 +2967,8 @@ export function codeRisk(kind: string | null | undefined, theme: string, ko = fa
   const k = String(kind ?? "").toLowerCase();
   if (k === "crypto" || /^crypto/.test(theme)) return ko ? "위험: 가격이 1년에 50% 넘게 떨어질 수 있습니다." : "The risk: its price can fall 50% or more in a year.";
   if (theme === "bonds") return ko ? "위험: 금리가 오르면 가격이 내립니다." : "The risk: rising rates push its price down.";
+  if (theme === "financials") return ko ? "위험: 신용 경기나 보험 손실이 이익을 끌어내릴 수 있습니다." : "The risk: a credit downturn or large insurance losses weigh on its earnings.";
+  if (/leveraged/.test(theme) || /leveraged/.test(k)) return ko ? "위험: 매일 배율을 다시 맞추는 구조라 급락이나 횡보장에서 손실이 커집니다." : "The risk: it resets its leverage every day, so a sharp drop or a choppy market can wipe out most of its value.";
   if (theme === "international index") return ko ? "위험: 시장 전체의 하락과 환율 변동에 함께 움직입니다." : "The risk: a broad market drawdown and currency swings move it with the whole market.";
   if (/index/.test(theme) || /\bindex\b/.test(k)) return ko ? "위험: 시장 전체가 하락하면 함께 떨어집니다." : "The risk: a broad market drawdown takes it down with the whole market.";
   if (/dividend|income/.test(theme)) return ko ? "위험: 성장주가 시장을 이끌 때 뒤처질 수 있습니다." : "The risk: it lags the broad market when growth stocks lead.";
@@ -3067,6 +3074,8 @@ export function fixFragments(text: string): string {
     .replace(/([a-z0-9%)])\s+(The risk:|What would change it:)/g, "$1. $2")
     .replace(/\bcosts ((?:about |roughly |under )?\d+(?:\.\d+)?%) of (?:assets|the portfolio|your portfolio)\b/g, "is $1 of assets")
     .replace(/\bS&P500\b/g, "S&P 500");
+  // r11: "…must persist across market cycles for the portfolio." (a clause cut away before it)
+  t = t.replace(/\s+for the portfolio\.(?=\s|$)/g, ".");
   t = perLine(t, (line) => splitSentences(line).filter((s) => !/^\s*(?:•\s*)?[A-Z][\w'.-]*(?:\s+[\w'.-]+){0,3}\s+(?:adds|provides|offers|gives|brings|delivers|includes|holds|supports|creates)\s*[.!]$/.test(s)).join(" "));
   return t;
 }
@@ -3189,4 +3198,16 @@ export function dualClassClaims(text: string): string[] {
     if (vote) { const n = Number(String(vote[1] ?? vote[2]).replace(/,/g, "")); if (n !== 10000) return true; }
     return false;
   });
+}
+
+/** Beginner wording for leveraged-fund jargon ("daily reset decay risk"). */
+export const plainLeverage = (t: string): string => String(t ?? "")
+  .replace(/\bdaily[- ]reset (?:decay|drag)(?: risk)?\b/gi, "the losses that build up because the fund resets its leverage every day")
+  .replace(/\bvolatility (?:decay|drag)\b/gi, "the losses that build up in a choppy market")
+  .replace(/\bbeta (?:slippage|decay)\b/gi, "the gap between the fund and three times the index over time");
+
+/** "It pays income" / "adds income" for a holding that yields under 2%: that is not what it is for. */
+export function lowYieldIncomeClaims(text: string, yieldPct: number | null): string[] {
+  if (yieldPct === null || yieldPct >= 2) return [];
+  return sentencesOf(text).filter((s) => /\b(?:it |which )?pays? (?:income|a dividend income)\b|\badds? (?:steady |some )?income\b|\bincome (?:stream|payer|engine|source)\b|\bprovides? income\b/i.test(s));
 }

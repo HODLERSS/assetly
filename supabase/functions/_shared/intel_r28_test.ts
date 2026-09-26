@@ -50,3 +50,16 @@ Deno.test("r28 P5: information about a held leveraged ETF is answered; a leverag
   for (const q of ["What is SOXL and why does it move so much?", "How does SOXL's daily reset work?", "What did SOXL do this week?", "What is a covered call?"]) if (decision(q)) throw new Error("routed: " + q);
   for (const q of ["Should I buy a 3x fund?", "Is leverage a good idea for me?", "Should I sell covered calls on AAPL?", "Is buying on margin a good idea?", "Should I use options to hedge?"]) if (!decision(q)) throw new Error("not routed: " + q);
 });
+
+Deno.test("r28 P8: quality-read wording", async () => {
+  const { cleanNote, codeRisk, wordWatch, plainLeverage, lowYieldIncomeClaims, fixFragments } = await import("./intel.ts");
+  if (!cleanNote("Ether is the base asset of Ethereum, with self-custody risk in passing.").needsRisk) throw new Error("ETH needs a risk line");
+  if (!/credit|insurance/.test(codeRisk("equity", "financials"))) throw new Error("financials fallback");
+  assertEquals(wordWatch("Price drop >20%"), "Price falls more than 20%");
+  assertEquals(wordWatch("Outflows >$1B weekly"), "Outflows rise above $1B weekly");
+  assertEquals(cleanNote("SOXL tracks chips, giving an edge. The risk: a drop.").note, "The risk: a drop.");
+  if (/decay/.test(plainLeverage("The risk: daily reset decay risk."))) throw new Error("gloss");
+  assertEquals(lowYieldIncomeClaims("It pays income. It holds 500 stocks.", 0.42).length, 1);
+  assertEquals(lowYieldIncomeClaims("It pays income.", 3.4), []);
+  assertEquals(fixFragments("Demand must persist across market cycles for the portfolio."), "Demand must persist across market cycles.");
+});
