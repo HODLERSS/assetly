@@ -10,9 +10,9 @@
 //   3 editor synthesis (memos + rebuttals + market context + yesterday's brief -> the note)
 //   4 fact-check       (every number verified against the deterministic stats, or cut)
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
+import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  fixBookMove, fixWhatItMeans, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -310,11 +310,18 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
   // edition of a day) Home shows the last trading day's rows, and a repair keyed to today's date never reached them: the
   // App Review showcase still read "(as of 7:31 PM ET)" and "META -3.3%" after GEN 10 shipped. Each user's latest brief
   // date (within the last week) is repaired along with today's, eagerly, on the next run.
-  const r = await admin.from("daily_briefs").select("id, edition, sections, gen_version, brief_date").eq("user_id", uid)
+  const r = await admin.from("daily_briefs").select("id, edition, sections, gen_version, brief_date, generated_at").eq("user_id", uid)
     .lte("brief_date", briefDate).gte("brief_date", ymdShift(briefDate, -7)).order("brief_date", { ascending: false }).limit(20);
   if (r.error) return [];   // before migration 39
-  const all = (r.data ?? []) as { id: number; edition: string; sections: unknown; gen_version: number | null; brief_date: string }[];
+  let all = (r.data ?? []) as { id: number; edition: string; sections: unknown; gen_version: number | null; brief_date: string; generated_at?: string | null }[];
   const latestPast = all.map((o) => String(o.brief_date)).filter((d) => d < briefDate).sort().pop();
+  // Round 9 intelligence: a row written outside its window (the showcase's "Morning brief · Written at 7:32 PM", a
+  // compact backfill after the Close) is DELETED, so Home falls back to the edition that belongs there. New ones
+  // cannot be written (editionWindow); this clears the ones already stored.
+  const stranded = all.filter((o) => (o.brief_date === briefDate || o.brief_date === latestPast)
+    && strandedEdition(o.edition, String(o.brief_date), o.generated_at ?? null, all.filter((x) => x.brief_date === o.brief_date)));
+  for (const o of stranded) await admin.from("daily_briefs").delete().eq("id", o.id).then(() => {}, () => {});
+  if (stranded.length) all = all.filter((o) => !stranded.includes(o));
   const stale = all.filter((o) => (o.brief_date === briefDate || o.brief_date === latestPast)
     // a live edition of TODAY is regenerated, never patched; the latest past day's rows are all past-window
     && !(o.brief_date === briefDate && live.includes(o.edition)) && Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
@@ -365,7 +372,8 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     const mins = (Number(h) % 12 + (ap === "PM" ? 12 : 0)) * 60 + Number(mi);
     return edition === "close" || edition === "kr_close" || mins >= 16 * 60 ? "(as of the 4:00 PM ET close)" : m;
   });
-  const text = (t: string) => closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))));
+  const bookPct = typeof (src as unknown as { day_pct?: number }).day_pct === "number" && edition !== "assessment" && edition !== "weekend" ? (src as unknown as { day_pct: number }).day_pct : null;
+  const text = (t: string) => fixBookMove(fixWhatItMeans(closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))))), bookPct);
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
@@ -1705,7 +1713,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const clean = (t: string) => {
           // round 8: a verdict TAIL leaves a one-sentence lede as a clause ("…, keeping the portfolio on track"), and a
           // tech share is held to the computed one ("Tech makes up about 57%" at ~97%)
-          const x = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup);
+          // round 9: the compact morning read "Portfolio up 0.5%" (+0.27%) and "What it means the AI chip rally adds..."
+          const x0 = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup);
+          const x = fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB);
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
@@ -1822,8 +1832,16 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections = um(sections) as Sections; }
       snap("YOUR PORTFOLIO (code)", sections);
       if (TRACE) { const tf = Deno.env.get("BRIEF_TRACE_FILE"); if (tf) Deno.writeTextFileSync(tf, JSON.stringify(TRACE)); else console.log("TRACE_JSON " + JSON.stringify(TRACE)); }
+      // round 9 native: a regeneration (or the rewrite of an outdated row) must not bump generated_at: the client opens
+      // on the latest generated_at, and a night-time regen of the morning put it in front of the Close
+      let keepAt: string | null = null;
+      if (!backfillOnly && edition !== "assessment") {
+        const { data: prior } = await admin.from("daily_briefs").select("generated_at, gen_version").eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle()
+          .then((x: { data: unknown }) => x, () => ({ data: null })) as { data: { generated_at?: string | null; gen_version?: number | null } | null };
+        if (prior?.generated_at && (isRegen || Number(prior.gen_version ?? 0) < GEN_VERSION)) keepAt = String(prior.generated_at);
+      }
       const briefRow = {
-        user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
+        user_id: uid, brief_date: briefDate, edition, sections, memos: memosOut.slice(0, 8), generated_at: keepAt ?? new Date().toISOString(), model: fixture ? "fixture" : usedCompact ? model + " compact" : model,
         audio_path: null,   // new text => stale audio; narrate re-runs for this row
         script: null,       // ...and re-composes the spoken script
       };

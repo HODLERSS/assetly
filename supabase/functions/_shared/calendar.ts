@@ -121,3 +121,23 @@ export function clockEdition(now = new Date()): "morning" | "midday" | "close" |
   if (z.minutes >= 8 * 60 && z.minutes < OPEN_MIN.US) return "morning";
   return null;
 }
+
+const ED_ORDER: Record<string, number> = { morning: 0, midday: 1, close: 2, kr_open: 0, kr_close: 1 };
+/** A stored edition row that must not be shown (round 9 intelligence: the App Review showcase opened on a "Morning brief
+ *  · Written at 7:32 PM", a compact backfill written after the Close). A row is stranded when it was written after its
+ *  own window ended AND either after the close of its market that day, or after a LATER edition of the same day was
+ *  already written (Home opens on the newest row). A morning written at 10:01 ET before the midday is not stranded.
+ *  Assessment and weekend rows never are. */
+export function strandedEdition(edition: string, briefDate: string, generatedAt: string | null, siblings: { edition: string; generated_at?: string | null }[] = []): boolean {
+  if (!(edition in ED_ORDER) || !generatedAt) return false;
+  const t = Date.parse(generatedAt);
+  if (!Number.isFinite(t)) return false;
+  const kr = edition.startsWith("kr_");
+  const mkt: Mkt = kr ? "KR" : "US";
+  const openAt = zonedEpoch(briefDate, OPEN_MIN[mkt], TZ[mkt]), closeAt = zonedEpoch(briefDate, CLOSE_MIN[mkt], TZ[mkt]);
+  const windowEnd = edition === "morning" ? openAt : edition === "midday" || edition === "kr_open" ? closeAt : Infinity;
+  if (t < windowEnd) return false;
+  if (t >= closeAt && edition !== "close" && edition !== "kr_close") return true;
+  return siblings.some((o) => o.edition !== edition && ED_ORDER[o.edition] !== undefined && o.edition.startsWith("kr_") === kr
+    && ED_ORDER[o.edition] > ED_ORDER[edition] && !!o.generated_at && Date.parse(o.generated_at) < t);
+}

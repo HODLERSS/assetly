@@ -1430,7 +1430,7 @@ export function buildPortfolioParagraph(holdings: { name: string; usd: number }[
  *  sentence labels it as a group ("crypto 30.1%") and it equals that group's share. Corrected from the book. */
 export function fixWeights(text: string, holdings: { names: string[]; weight: number }[], groups: { label: RegExp; value: number }[] = [], tolPp = 0.6): string {
   return perLine(text, (line) => splitSentences(line).map((s) => {
-    if (!/\b(?:weight(?:ing)?|of (?:assets|the portfolio|your portfolio|the book|holdings)|stake|allocation|position|share)\b/i.test(s)) return s;
+    if (!/\b(?:weight(?:ing)?|of (?:assets|the portfolio|your portfolio|the book|holdings)|stake|allocation|position|share)\b|\d\s?%\s+(?:in|into|is in|sits in)\s+[A-Z]/i.test(s)) return s;
     return s.replace(/(\d+(?:\.\d+)?)\s?%/g, (m: string, n: string, at: number) => {
       const v = Number(n);
       const near = s.slice(Math.max(0, at - 40), at + m.length + 30);
@@ -1438,16 +1438,19 @@ export function fixWeights(text: string, holdings: { names: string[]; weight: nu
       // verb or a sign is a MOVE, and only a figure with a weight word right beside it is a weight
       const before = s.slice(Math.max(0, at - 28), at), after = s.slice(at + m.length, at + m.length + 36);
       if (/\b(?:rose|fell|dropped|drops?|climbed|climbs?|gained|gains?|slipped|slips?|jumped|jumps?|surged|sank|tumbled|rallied|declined|lost|added|adds|up|down|higher|lower|increased|decreased|advanced|eased|dipped|slid|soared|plunged|moved)\b[^.%\d]{0,14}$|[+\-−]\s?$/i.test(before)) return m;
-      if (!/^\s*(?:\)|,)?\s*(?:[A-Z][\w.&'-]*\s+){0,2}(?:of (?:assets|the portfolio|your portfolio|the book|holdings|total)|(?:portfolio |position |book )?(?:weight|weighting|stake|allocation|share)\b|in (?:the |your )?(?:portfolio|book))/i.test(after)
+      // round 9: "96.6% in NVDA" (19.2%): a figure followed by "in <holding>" is that holding's weight
+      const inHolding = /^\s*(?:in|into)\s+(\S+(?:\s+\S+)?)/.exec(after);
+      const inNamed = !!inHolding && holdings.some((h) => h.names.some((nm) => nm && nameIn(inHolding[1], nm)));
+      if (!inNamed && !/^\s*(?:\)|,)?\s*(?:[A-Z][\w.&'-]*\s+){0,2}(?:of (?:assets|the portfolio|your portfolio|the book|holdings|total)|(?:portfolio |position |book )?(?:weight|weighting|stake|allocation|share)\b|in (?:the |your )?(?:portfolio|book))/i.test(after)
         && !/\b(?:weight(?:ing)?|stake|allocation|position|share|makes? up|accounts? for|represents?|is|at)\b[^.%\d]{0,16}$/i.test(before)) return m;
-      if (groups.some((g) => g.label.test(near) && Math.abs(g.value - v) <= tolPp)) return m;
+      if (!inNamed && groups.some((g) => g.label.test(near) && Math.abs(g.value - v) <= tolPp)) return m;
       // round 7 newcomer: a theme value named anywhere in the sentence wins over any single holding
-      if (groups.some((g) => g.value >= 0 && new RegExp(g.label.source, g.label.flags.replace("g", "")).test(s) && Math.abs(g.value - v) <= tolPp)) return m;
+      if (!inNamed && groups.some((g) => g.value >= 0 && new RegExp(g.label.source, g.label.flags.replace("g", "")).test(s) && Math.abs(g.value - v) <= tolPp)) return m;
       // a weight of something INSIDE a holding ("VOO's tech weight at 38%", "sector weight", "exposure to chips")
       // describes the fund, not the portfolio (round 6: rewritten to VOO's 21.1% portfolio weight)
       if (/\b(?:tech|technology|sector|industry|semiconductors?|chips?|software|financials?|energy|health ?care|top[- ](?:ten|10|five|5)|mega-?caps?|magnificent|category|index|the index's|fund's)\s+(?:weight(?:ing)?|share|exposure|concentration|allocation)\b|\bexposure to\b|\bweight(?:ing)? (?:in|of) (?:tech|technology|the index|the fund|the S&P)\b/i.test(near)) return m;
       // the holding named closest to the figure (before it, or right after: "30.1% Bitcoin weight")
-      const cands = holdings.map((h) => {
+      const cands = inNamed ? holdings.filter((h) => h.names.some((nm) => nm && nameIn(inHolding![1], nm))).map((h) => ({ h, i: 0 })).slice(0, 1) : holdings.map((h) => {
         const i = h.names.map((nm) => { const k = firstIdx(s, [nm]); return k === Infinity ? Infinity : Math.abs(k - at); }).reduce((a, b) => Math.min(a, b), Infinity);
         return { h, i };
       }).filter((x) => x.i <= 40).sort((a, b) => a.i - b.i);
@@ -2281,4 +2284,31 @@ export function cleanNote(note: string): { note: string; needsRisk: boolean } {
   x = sents.join(" ");
   const needsRisk = !/\b(?:the risk:|but|however|though|yet)\b/i.test(x) && !/\brisk\b/i.test(x);
   return { note: x, needsRisk };
+}
+
+/** The book's own day move, as the note states it ("Portfolio up 0.5%" when the book was +0.27%: round 9 intelligence,
+ *  the compact morning). A stated figure off by more than 0.1 point after rounding becomes the computed one; a stated
+ *  DIRECTION that is wrong removes the sentence. `dayPct` is the book's day move in percent. */
+export function fixBookMove(text: string, dayPct: number | null | undefined): string {
+  if (typeof dayPct !== "number" || !Number.isFinite(dayPct)) return String(text ?? "");
+  const UP = /^(?:up|rose|rises|gained|gains|climbed|climbs|added|adds|higher|advanced|rallied|edged up|ticked up)$/i;
+  const re = /\b((?:the |your |this )?(?:portfolio|book|account|holdings)(?:'s value)?)\b([^.%\d]{0,24}?)\b(up|down|rose|rises|fell|falls|gained|gains|lost|loses|slipped|slips|climbed|climbs|added|adds|dropped|drops|higher|lower|advanced|declined|rallied|eased|dipped|edged up|edged down|ticked up|ticked down)\s+(?:about |roughly |nearly |almost |around |by )?(\d+(?:\.\d+)?)\s?%/gi;
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => {
+    let drop = false;
+    const out = sen.replace(re, (m, subj, mid, verb, num) => {
+      if (/\b(?:week|month|year|ytd|since|over the|this (?:week|month|year))\b/i.test(mid)) return m;
+      const up = UP.test(verb.trim());
+      if (Math.abs(dayPct) >= 0.05 && up !== dayPct > 0) { drop = true; return m; }
+      const want = Math.abs(dayPct);
+      if (Math.abs(Number(num) - want) <= 0.1 || Number(want.toFixed(1)) === Number(num)) return m;
+      return `${subj}${mid}${verb} ${want < 0.1 ? want.toFixed(2) : want.toFixed(1)}%`;
+    });
+    return drop ? "" : out;
+  }).filter(Boolean).join(" "));
+}
+
+/** "What it means the AI chip rally adds $320k." A note opener the model ran into its sentence: the label goes. */
+export function fixWhatItMeans(text: string): string {
+  return String(text ?? "").replace(/(^|[.!?]\s+)What (?:it|this) means(?:\s*[:,-]\s*|\s+)(?=[A-Za-z])/g, (_m, lead) => lead)
+    .replace(/(^|[.!?]\s+)([a-z])/g, (_m, lead, c) => lead + c.toUpperCase());
 }
