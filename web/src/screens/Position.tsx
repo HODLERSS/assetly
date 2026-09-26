@@ -47,6 +47,14 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   const [lotsAttempt, setLotsAttempt] = useState(0);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState<Lot | null>(null);
+  // For ~400ms after a lot sheet closes, the page's own "Remove position" takes no taps: it sits right under the
+  // sheet's confirm button, and a fast second tap on "Delete lot" passed through to it (r10 native, data loss).
+  const [tapGuard, setTapGuard] = useState(false);
+  const closeSheet = () => {
+    setEditing(null); setAdding(false);
+    setTapGuard(true);
+    setTimeout(() => setTapGuard(false), 400);
+  };
   const [adding, setAdding] = useState(false);
   const [movingAcct, setMovingAcct] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -207,7 +215,8 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
           {cashish ? "Edit amount" : "Edit position"}
         </button>
       )}
-      <button className="btn danger-quiet" style={{ marginBottom: 20 }} onClick={() => setConfirming(true)}>
+      <button className="btn danger-quiet" style={{ marginBottom: 20 }} disabled={tapGuard} data-testid="remove-position"
+        onClick={() => { if (!tapGuard) setConfirming(true); }}>
         {row.kind === "cash" ? "Remove cash balance" : row.kind === "debt" ? "Remove debt" : "Remove position"}</button>
 
       {mergeInto && (
@@ -256,24 +265,37 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
           unit={qtyUnit(row)}
           name={name}
           lot={editing}
+          holdingId={row.holding_id}
           lastLot={!!editing && lots.length === 1}
           account={editing && lots.length === 1 && canMove ? row.account : undefined}
-          onClose={() => { setEditing(null); setAdding(false); }}
+          onClose={closeSheet}
           onSave={async (qty, cost, date, note, account) => {
             try {
               if (editing) await api.updateLot(editing.id, { qty, cost_per_share: cost, acquired_on: date || null, note: note || null });
               else await api.addLot(row.holding_id, qty, cost, date || undefined, note);
-              setEditing(null); setAdding(false);
+              closeSheet();
               if (account && account !== row.account) { await reload(); await requestMove(account); }
               else await reload();
             } catch (e) { setErr(writeError(e, "Could not save lot.")); }
           }}
-          onDelete={editing ? async () => {
+          onDelete={editing ? async (target) => {
+            // `target` was frozen when the confirm opened: a read that lands while it is open cannot change which
+            // lot (or holding) this deletes. The lot leaves the list at once, so a ghost row can't be tapped again.
+            setLots((ls) => ls.filter((l) => l.id !== target.lotId));
             try {
-              // The last lot IS the position: deleting it removes the holding, never a 0-share row.
-              if (lots.length === 1) { await api.removeHolding(row.holding_id); setEditing(null); await onRemoved(); return; }
-              await api.deleteLot(editing.id); setEditing(null); await reload();
-            } catch (e) { setErr(writeError(e, "Could not delete lot.")); }
+              // The holding goes only when the SERVER says this lot is its one lot, right now. A delete of a stale or
+              // ghost lot, or a lot count read before another lot landed, used to turn "Delete lot" into "Remove
+              // position" and wiped a 1,000-share VOO (r10 native, data loss).
+              const now = await api.getLots(target.holdingId);
+              if (now.length === 1 && now[0].id === target.lotId) {
+                await api.removeHolding(target.holdingId); closeSheet(); await onRemoved(); return;
+              }
+              if (now.some((l) => l.id === target.lotId)) await api.deleteLot(target.lotId);
+              closeSheet(); await reload();
+            } catch (e) {
+              setErr(writeError(e, "Could not delete lot."));
+              void reload().catch(() => {});   // put back what is really there
+            }
           } : undefined}
         />
       )}
@@ -281,14 +303,17 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   );
 }
 
-function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", name, lot, lastLot = false, account, onClose, onSave, onDelete }: {
+function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", name, lot, holdingId, lastLot = false, account, onClose, onSave, onDelete }: {
   currency: string; cashish?: boolean; crypto?: boolean; name: string; lot: Lot | null; lastLot?: boolean;
   /** a coin's own unit ("ETH") for the echo */
   unit?: string;
   /** Present when this sheet edits the whole (single-lot) position: the account is editable here too. */
   account?: Account;
   onClose: () => void;
-  onSave: (qty: number, cost: number, date: string, note: string, account?: Account) => Promise<void>; onDelete?: () => Promise<void>;
+  onSave: (qty: number, cost: number, date: string, note: string, account?: Account) => Promise<void>;
+  /** the holding the lot belongs to (frozen with the lot id when the delete confirm opens) */
+  holdingId?: string;
+  onDelete?: (target: { lotId: string; holdingId: string }) => Promise<void>;
 }) {
   // prefilled the way the Add form shows a typed amount ("3,000", not "3000")
   const [qty, setQty] = useState(lot ? formatAmountInput(lot.qty) : "");
@@ -297,23 +322,27 @@ function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", n
   const [note, setNote] = useState(lot?.note ?? "");
   const [acct, setAcct] = useState<Account | undefined>(account);
   const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  // the delete confirm, with its target frozen as it opened: which lot, which holding, and whether it read as the
+  // last lot. Nothing that lands while it is open (a fresh read, a ghost row) changes what the button does.
+  const [confirmDelete, setConfirmDelete] = useState<{ lotId: string; holdingId: string; last: boolean } | null>(null);
   const [busy, run] = useInFlight();
   const sym = ccySymbol(currency).trim();
 
   if (confirmDelete && onDelete) {
+    const last = confirmDelete.last;
+    const target = { lotId: confirmDelete.lotId, holdingId: confirmDelete.holdingId };
     return (
       <div className="sheet-back" role="dialog" aria-modal="true" aria-label="Confirm delete">
         <div className="sheet" aria-busy={busy}>
-          <h2>{lastLot ? `Remove ${name}?` : "Delete this lot?"}</h2>
+          <h2>{last ? `Remove ${name}?` : "Delete this lot?"}</h2>
           <p className="mutedc sheet-confirm">
-            {lastLot
+            {last
               ? `This is the only ${cashish ? "balance" : "lot"}, so deleting it removes ${name} from your portfolio.`
               : "The position's shares and average cost update without it. This can't be undone."}
           </p>
-          <button className="btn danger" disabled={busy} onClick={() => run(onDelete)}>
-            {busy ? (lastLot ? "Removing…" : "Deleting…") : lastLot ? "Remove position" : "Delete lot"}</button>
-          <button className="btn secondary" style={{ marginTop: 8 }} disabled={busy} onClick={() => setConfirmDelete(false)}>Keep it</button>
+          <button className="btn danger" disabled={busy} data-testid="confirm-delete-lot" onClick={() => run(() => onDelete(target))}>
+            {busy ? (last ? "Removing…" : "Deleting…") : last ? "Remove position" : "Delete lot"}</button>
+          <button className="btn secondary" style={{ marginTop: 8 }} disabled={busy} onClick={() => setConfirmDelete(null)}>Keep it</button>
         </div>
       </div>
     );
@@ -359,7 +388,7 @@ function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", n
         <div className="field"><label htmlFor="lot-note">Note (optional)</label>
           <input id="lot-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. DCA week 3" enterKeyHint="done" onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} /></div>
         <button className="btn" disabled={busy} onClick={save}>{busy ? "Saving…" : lot ? "Save changes" : "Add lot"}</button>
-        {onDelete && <button className="btn danger-quiet" style={{ marginTop: 8 }} disabled={busy} onClick={() => setConfirmDelete(true)}>{lastLot ? "Delete lot and position" : "Delete this lot"}</button>}
+        {onDelete && <button className="btn danger-quiet" style={{ marginTop: 8 }} disabled={busy} onClick={() => { if (lot && holdingId) setConfirmDelete({ lotId: lot.id, holdingId, last: lastLot }); }}>{lastLot ? "Delete lot and position" : "Delete this lot"}</button>}
         <button className="btn secondary" style={{ marginTop: 8 }} disabled={busy} onClick={onClose}>Cancel</button>
       </div>
     </div>
