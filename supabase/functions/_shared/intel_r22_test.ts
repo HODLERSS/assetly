@@ -35,7 +35,9 @@ Deno.test("r22 newcomer 4: the quality note", () => {
   const schd = cleanNote("SCHD holds 100 dividend payers. The risk: SCHD trails the S&P 500 over any three-year period. The risk: SCHD trails the S&P 500 over any three-year period.");
   assertEquals((schd.note.match(/The risk:/g) ?? []).length, 1);
   assert(cleanNote("JNJ has a deep pharma pipeline and a AAA balance sheet.").needsRisk);
-  assertFalse(cleanNote("JNJ has a deep pipeline, but Stelara biosimilars erode sales.").needsRisk);
+  // r11 P8: a risk is an explicit "The risk:" clause; a "but" in passing does not count
+  assert(cleanNote("JNJ has a deep pipeline, but Stelara biosimilars erode sales.").needsRisk);
+  assertFalse(cleanNote("JNJ has a deep pipeline. The risk: Stelara biosimilars erode sales.").needsRisk);
 });
 
 Deno.test("r22 newcomer 5: one symbol per listing", () => {

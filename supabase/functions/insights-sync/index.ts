@@ -8,7 +8,7 @@ import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
   YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
   digitsForWritten, dropInstructionEcho, fixFractions, promoCharacterisations, crossedLevelClaims, unicodeMinus, sanitize, glossParenthetical, anchorNewsItem, staleNewsTitle,
-  readerLevel, earningsEstimate, relativeGapClaims, productVersionClaims, directionCauseClaims, splitSentences, glossedCardHits, CARD_MAX_AGE_DAYS, canonicalSymbol,
+  readerLevel, softVerdicts, duplicateMoveBullets, earningsEstimate, relativeGapClaims, productVersionClaims, directionCauseClaims, splitSentences, glossedCardHits, CARD_MAX_AGE_DAYS, canonicalSymbol,
 } from "../_shared/intel.ts";
 import { dividendRows, ensureHistory, hiLo, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
@@ -467,8 +467,11 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       {
         const est = earningsEstimate((filItems ?? fils ?? []) as { form: string; filed_at: string; items?: string | null }[], (tr ?? []) as { title: string; published_at: string | null }[], today);
         const gapFacts = [{ names: [symbol, ...aka], dates: { earnings: est ? (est.range ? est.range[0] : est.est) : null, deliveries: deliveriesEstimate(symbol, today)?.est ?? null, exdate: null } }];
-        const badG = new Set([...relativeGapClaims(bullets.join(" "), gapFacts), ...productVersionClaims(bullets.join(" "), sourceText), ...directionCauseClaims(bullets.join(" "))]);
+        // r11 P9: card verdicts ("not a reversal signal", "the bull thesis has visible cracks", "over-extended, raising
+        // write-off risk", "valuation stretch to $7T") and a day move stated twice on one card
+        const badG = new Set([...relativeGapClaims(bullets.join(" "), gapFacts), ...productVersionClaims(bullets.join(" "), sourceText), ...directionCauseClaims(bullets.join(" ")), ...softVerdicts(bullets.join(" "))]);
         if (badG.size) bullets = bullets.map((b) => splitSentences(b).filter((x) => !badG.has(x)).join(" ")).filter((b) => b.trim());
+        bullets = duplicateMoveBullets(bullets);
       }
       // r10: card bullets in the app's own voice ("UPI dominance caps near-term growth", "a structural risk to AMZN") go
       // through the same compliance judge as Ask; a card the judge cannot read keeps the regex result

@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  superlativeClaims, periodReturnMismatches, YTD, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  superlativeClaims, periodReturnMismatches, YTD, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -1718,6 +1718,10 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             if (withMemo && !withMemo.needsRisk) note = withMemo.note;
             else { const row = rowOf(p.name); note = `${note.replace(/[.\s]+$/, "")}. ${codeRisk(row?.kind, row ? themeOf(row.symbol, row.kind) : "")}`; }
           }
+          // r11 P8: "It pays income" at 0.42%; SOXL's "daily reset decay risk" unexplained for a beginner
+          { const row = rowOf(p.name); const y = row ? Number(divRows.get(row.symbol)?.div_yield ?? 0) || 0 : null;
+            const bad = new Set(lowYieldIncomeClaims(note, y)); if (bad.size) note = splitSentences(note).filter((x) => !bad.has(x)).join(" ") || note; }
+          note = plainLeverage(note);
           const watch = wordWatch(String(p.watch ?? "").replace(/\s*([<>])\s*consensus/gi, (_m, s) => s === ">" ? " above consensus" : " below consensus"));
           return { ...p, name: plainCompanyName(p.name), note, watch: watch || "" };
         });
@@ -1730,6 +1734,14 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             const w = usd(Number(r.value ?? 0), r.currency) / total * 100;
             sections.positions.push({ name: nm, note: `${nm} is ${w < 0.05 ? "under 0.1" : w.toFixed(1)}% of assets. ${codeRisk(r.kind, themeOf(r.symbol, r.kind))}`, watch: "" });
           }
+          // r11 P8: STRUCTURE states the tech and chip share, and a held leveraged fund's drawdown risk plainly
+          const TECH_S = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index", "leveraged semiconductors"]);
+          const techS = holdings.filter((r) => TECH_S.has(themeOf(r.symbol, r.kind))).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / total * 100;
+          const lev = holdings.filter((r) => /leveraged/.test(themeOf(r.symbol, r.kind)) || /\b(?:2x|3x|ultra|bull 3x|leveraged)\b/i.test(String(r.name ?? "")));
+          const add: string[] = [];
+          if (techS >= 20 && !/\btech|\bchip/i.test(sections.desk_view)) add.push(`Tech and chip holdings are ${techS.toFixed(1)}% of assets.`);
+          if (lev.length) add.push(`${lev.map((r) => plainCompanyName(krName(r.symbol, r.nickname, r.name))).join(" and ")} ${lev.length > 1 ? "are" : "is a"} leveraged fund${lev.length > 1 ? "s" : ""}: ${lev.length > 1 ? "they reset" : "it resets"} every day, so a sharp drop in the index can wipe out most of ${lev.length > 1 ? "their" : "its"} value.`);
+          if (add.length) sections.desk_view = `${String(sections.desk_view ?? "").replace(/[.\s]+$/, "")}. ${add.join(" ")}`.replace(/^\.\s*/, "");
         }
         if (edition === "assessment") {
           const styles = toArr((invBy.get(uid) as Investor | null | undefined)?.styles, ["value"]);
