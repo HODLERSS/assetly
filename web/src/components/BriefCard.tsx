@@ -167,7 +167,10 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
   const freshOf = (b: DailyBrief) => briefFreshness(b, { liveDayPct, pendingSince, held, book, totalUsd });
   // opens on the newest edition written for THIS book; one written before a smaller change is a tap away, labelled
   const current = [...shown].reverse().find((b) => !freshOf(b).bookChanged) ?? shown[shown.length - 1];
-  const brief = (picked && shown.find((b) => b.edition === picked)) ?? current;
+  // while narration plays, an unpicked card shows the edition being read: back from another tab the card opened
+  // on the Assessment while the player said "Closing Note" (r10 native m3). A pick the reader makes still wins.
+  const playingNow = player.playing ? shown.find((b) => `${b.brief_date}:${b.edition}` === player.track?.id) : undefined;
+  const brief = (picked && shown.find((b) => b.edition === picked)) ?? playingNow ?? current;
   const meta = ED_META[brief.edition] ?? ED_META.morning;
   const dow = new Date(brief.brief_date + "T12:00:00Z").getUTCDay();
   const title = brief.edition === "weekend" && dow !== 0 && dow !== 6 ? "Holiday Read" : meta.title;
