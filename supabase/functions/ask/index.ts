@@ -750,13 +750,15 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   let judgeStatus: "ok" | "timeout" | "error" | "unparseable" | "skipped" = "skipped";
   const judge = async (list: string[]): Promise<Set<number> | null> => {
     if (!list.length) { judgeStatus = "ok"; return new Set(); }
-    const ms = Math.min(JUDGE_MS, left() - 300);
+    // r11: the judge takes whatever is left before the deadline, up to 6s (JUDGE_MS is only what the answer stage reserves);
+    // at a fixed cap ~40% of judgements timed out while data answers had budget to spare
+    const ms = Math.min(6000, left() - 300);
     if (ms < 1200) { judgeStatus = "timeout"; return null; }
     const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
     let aborted = false;
     const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {
       signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: FAST, temperature: 0, max_tokens: 600, response_format: { type: "json_object" },
+      body: JSON.stringify({ model: FAST, temperature: 0, max_tokens: 400, response_format: { type: "json_object" },
         // gpt-oss reads its reasoning level from the system prompt ("Reasoning: low"); an unknown request field could
         // be refused by the gateway, which would turn every judgement into a timeout
         messages: [{ role: "system", content: `Reasoning: low\n\n${JUDGE_POLICY}` }, { role: "user", content: `Items:\n${list.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] }),
