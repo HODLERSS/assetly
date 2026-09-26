@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel,
+  readerLevel, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -423,7 +423,10 @@ Deno.serve(async (req) => {
   const complex = isComplex(question);
   const cap = complex ? 170 : 90;
   // "should I?" right after a trade question is the same question
-  const tradeQ = isTradeQuestion(question) || (turns.length > 0 && /\bshould (i|we)\b|(할까|될까|해야)/i.test(question) && isTradeQuestion(turns[turns.length - 1].q));
+  // round 9 intelligence: Korean trade intents, hypothetical and role-play framings, "which is safer / to dump / only
+  // keep one", product-as-a-buy questions are decisions too (they reached the model and got allocation advice)
+  const tradeQ = isTradeQuestion(question) || isDecisionFrame(question)
+    || (turns.length > 0 && /\bshould (i|we)\b|(할까|될까|해야)/i.test(question) && (isTradeQuestion(turns[turns.length - 1].q) || isDecisionFrame(turns[turns.length - 1].q)));
   // the language of the QUESTION decides the answer's language, trade questions included (round 2: "테슬라
   // 팔까요?" came back in English because the example opener below was English and the model copied it)
   const ko = questionIsKorean(question);
@@ -540,9 +543,10 @@ Deno.serve(async (req) => {
   const prevQ = turns.length ? turns[turns.length - 1].q : "";
   const prevA = turns.length ? turns[turns.length - 1].a : "";
   const prevWasHusk = /usually weighs here|보통 따지는 것/.test(prevA);
-  const followDecision = turns.length > 0 && (isTradeQuestion(prevQ) || isPickQuestion(prevQ) || prevWasHusk)
-    && /\b(?:cash|money|\$\s?\d|what about|how about|and if|instead|where would|what would|if you had|the rest|with that)\b|현금|돈|그럼|대신|나머지/i.test(question);
-  const pickQ = isPickQuestion(question) || followDecision
+  const followDecision = turns.length > 0 && (isTradeQuestion(prevQ) || isPickQuestion(prevQ) || isDecisionFrame(prevQ) || prevWasHusk)
+    && /\b(?:cash|money|\$\s?\d|what about|how about|and if|instead|where would|what would|if you had|the rest|with that|yes or no|just say|good plan|which wins|had to|then)\b|현금|돈|그럼|대신|나머지|네 아니오|예 아니오/i.test(question);
+  // a ranking by a stated metric ("best 3-month return") is data, not a pick (round 9 M7)
+  const pickQ = (isPickQuestion(question) && !isDataRankQuestion(question)) || followDecision
     || /(현금|돈)[^?]{0,12}(뭘|무엇을|어디에|어떤)[^?]{0,8}(사|넣|투자)/.test(question);
   // Korean names too, so a Korean shortlist ("애플은… 마이크로소프트는…") is recognised (round 7)
   const bookNames = held.map((r) => ({ symbol: r.symbol, names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)] }));
@@ -604,6 +608,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // under the gateway, with the code-built figures as the fallback
   const FAST = "gpt-oss-120b", BUDGET = decisionQ ? 15000 : 26000;
   const left = () => BUDGET - (Date.now() - t0);
+  // round 9: the compliance judge runs after the answer, inside the same budget; the answer stage leaves it room
+  const JUDGE_MS = 3500;
+  const room = () => left() - JUDGE_MS;
   const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3") => {
     if (timeoutMs < 1500) return null;
     const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -618,6 +625,28 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     return parseAnswer(out?.choices?.[0]?.message?.content ?? "");
   };
   const base = [{ role: "system", content: system }, { role: "user", content: prompt }];
+  /** The compliance judge (round 9 A): the flagged item numbers, or null when it did not answer in time. */
+  const judge = async (list: string[]): Promise<Set<number> | null> => {
+    if (!list.length) return new Set();
+    const ms = Math.min(JUDGE_MS, left() - 300);
+    if (ms < 1200) return null;
+    const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
+    const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {
+      signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: FAST, temperature: 0, max_tokens: 900, response_format: { type: "json_object" },
+        messages: [{ role: "system", content: JUDGE_POLICY }, { role: "user", content: `Items:\n${list.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] }),
+    }).catch(() => null);
+    clearTimeout(timer);
+    if (!r || !r.ok) return null;
+    const out = await r.json().catch(() => null);
+    const txt = String(out?.choices?.[0]?.message?.content ?? "");
+    try {
+      const m = /\{[\s\S]*\}/.exec(txt);
+      const o = m ? JSON.parse(m[0]) : null;
+      if (!o || !Array.isArray(o.flag)) return null;
+      return new Set((o.flag as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= list.length).map((n) => n - 1));
+    } catch { return null; }
+  };
   let parsedA: { answer: string; followups: string[] } | null = null;
   type Ans = { answer: string; followups: string[] } | null;
   parsedA = await new Promise<Ans>((resolve) => {
@@ -631,11 +660,12 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     const startFast = () => {
       if (fastStarted || settled) return;
       fastStarted = true; open++;
-      ask(base, 0.3, Math.min(decisionQ ? 7000 : 20000, left() - 1500), FAST).then(finish, () => finish(null));
+      ask(base, 0.3, Math.min(decisionQ ? 7000 : 20000, room() - 1500), FAST).then(finish, () => finish(null));
     };
-    ask(base, 0.2, Math.min(decisionQ ? 10000 : 20000, left() - 1500)).then(finish, () => finish(null));
+    ask(base, 0.2, Math.min(decisionQ ? 10000 : 20000, room() - 1500)).then(finish, () => finish(null));
     setTimeout(startFast, decisionQ ? 3000 : 7000);
-    if (decisionQ) setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, 10000);
+    if (decisionQ) setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, Math.max(0, room() - 1000));
+    else setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, Math.max(0, room() - 500));
   });
   const deDash = (v: string) => v.trim().replace(/\s*—\s*/g, ": ").replace(/\s*–\s*/g, ": ");
   // one bullet per line before any check: a shortlist written "• A. • B." on one line reads as one line otherwise
@@ -655,9 +685,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...wrongDividendAmounts(a, divFacts).map((s) => `"${s.slice(0, 120)}" states a dividend figure that is not that holding's (see DIVIDENDS).`),
   ];
   const found = answer ? problems(answer) : [];
-  if (found.length && left() > (decisionQ ? 5500 : 8000)) {
+  if (found.length && room() > (decisionQ ? 5500 : 8000)) {
     const fixed = await ask([...base, { role: "assistant", content: JSON.stringify({ answer, followups: parsedA?.followups ?? [] }) },
-      { role: "user", content: `Your answer broke the rules:\n- ${found.join("\n- ")}\nReturn the corrected JSON in the same shape. Keep everything else that was right.` }], 0.2, Math.min(decisionQ ? 4500 : 9000, left() - 1500), FAST);
+      { role: "user", content: `Your answer broke the rules:\n- ${found.join("\n- ")}\nReturn the corrected JSON in the same shape. Keep everything else that was right.` }], 0.2, Math.min(decisionQ ? 4500 : 9000, room() - 1500), FAST);
     if (fixed && problems(normalizeBullets(deDash(fixed.answer))).length < found.length) { parsedA = fixed; answer = normalizeBullets(deDash(fixed.answer)); }
   }
   // ...and whatever survives the rewrite is removed or corrected in code
@@ -703,7 +733,20 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   let guarded = fixPriceConfusions(stripAdvice(normalizeBullets(pruned), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
   // round 8 newcomer: every surface runs the same sanitize(); "Long-term AI and robotics thesis … is intact" (TSLA −17.3%
   // YTD) was reassurance in the app's voice
-  guarded = sanitize(guarded, { verdictQuestion: tradeQ || pickQ });
+  guarded = sanitize(guarded, { verdictQuestion: tradeQ || pickQ || isVerdictQuestion(question) });
+  // ---- round 9 A: the COMPLIANCE JUDGE. Regex guards cannot keep up with paraphrase, Korean and role-play, so a fast
+  // second model reads the answer (and the model's chips) against a short policy and names the sentences that give
+  // advice, name a product to buy, pass a verdict in the app's voice or forecast. Those sentences go. If the judge
+  // does not answer in time, a decision question gets the code-built answer and any other keeps the regex result.
+  let judgedChips: string[] | null = null;
+  if (guarded.trim()) {
+    const chips0 = (parsedA?.followups ?? []).map(deDash);
+    const items = judgeItems(guarded, chips0);
+    const flags = await judge(items.list);
+    // no verdict from the judge: the model's chips are not shown either (they asked for products in round 9)
+    if (flags === null) { judgedChips = []; if (decisionQ) guarded = ""; }
+    else { const r = applyJudge(guarded, chips0, items, flags); guarded = r.text; judgedChips = r.chips; }
+  }
   // Round 4: after the guards, "What should I buy with $10K?" was left with one unrelated line and "top pick"
   // with a ten-holding dump. When the guards took most of an answer to a trade or pick question, the model
   // gets ONE informational re-ask, and if that is thin too, the answer is built in code from the stats.
@@ -744,15 +787,16 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // the code-built answer is 4-5 checked bullets (~100 words with the opener): the phone cap must not cut its
   // last bullet, which is the one about what a buyer weighs
   answer = trimAnswer(answer, builtInCode ? 150 : cap + 10);
-  const focus = (mentioned.length ? mentioned : held.slice(0, 1).map((r) => r.symbol)).map((s) => nameOf(held.find((h) => h.symbol === s)!));
+  // chips follow the CURRENT question's holding (round 9: a Korean NVDA question got TSLA chips)
+  const focus = (focusRow ? [focusRow.symbol] : mentionedNow.length ? mentionedNow : mentioned.length ? mentioned : held.slice(0, 1).map((r) => r.symbol)).map((s) => nameOf(held.find((h) => h.symbol === s)!));
   const fallbacks = ko ? [
-    ...(focus[0] ? [`${focus[0]}을(를) 움직이는 요인은 뭔가요?`, `${focus[0]} 전망을 바꿀 변수는 뭔가요?`] : []),
+    ...(focus[0] ? [`${focus[0]} 주가를 움직이는 요인은 뭔가요?`, `${focus[0]} 전망을 바꿀 변수는 뭔가요?`] : []),
     "내 포트폴리오는 얼마나 집중돼 있나요?", "내 포트폴리오의 가장 큰 위험은 뭔가요?",
   ] : [
     ...(focus[0] ? [`What's driving ${focus[0]} right now?`, `What would change the outlook for ${focus[0]}?`] : []),
     "How concentrated is my portfolio?", "What are the biggest risks in my portfolio?",
   ];
   // chips follow the question's language too
-  const followups = cleanFollowups((parsedA?.followups ?? []).map(deDash).filter((f) => chipInLanguage(question, f)), fallbacks);
+  const followups = cleanFollowups((judgedChips ?? (parsedA?.followups ?? []).map(deDash)).filter((f) => chipInLanguage(question, f)), fallbacks);
   return json({ ok: true, answer, followups, mentioned });
 });

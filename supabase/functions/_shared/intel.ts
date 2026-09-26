@@ -313,8 +313,8 @@ export function valuationHits(text: string): string[] {
     // round 7 cards: reassurance and verdicts in the app's voice ("a cooldown after a 31.9% surge, not a thesis
     // break", "a legal headline, not a near-term financial hit", "makes Google Cloud the clear second growth engine")
     // round 8 newcomer: "Long-term AI and robotics thesis … is intact" (TSLA −17.3% YTD): the CONCEPT, in any order
-    if (s && /\b(?:thesis|story|case|narrative)\b/i.test(s) && /\b(?:intact|holds|holding|unchanged|unbroken|on track|still valid|remains? valid|not broken|still (?:stands|works))\b/i.test(s) && !namedSource && !/\b(?:if|whether|unless|would|could|might|test|tests|tested)\b/i.test(s)) { hits.push(raw); continue; }
-    if (s && /\bnot a thesis break\b|\bthesis (?:is |remains |stays )?(?:still )?(?:intact|unchanged|holds|on track)\b|\bnot a (?:near-term |real |material |lasting )?(?:financial )?hit\b|\bthe clear (?:second |next |new |main )?(?:growth )?(?:engine|winner|leader)\b|\ba (?:credible|real|proven|clear) (?:second |next |new )?growth engine\b|\b(?:a )?(?:real |big |huge )?optionality story\b|\b(?:powerful|strong|healthy|intact) (?:longer-term |long-term )?uptrend\b|\batop a (?:powerful|strong|longer-term|long-term)\b|\b(?:stay|staying|remain|remaining|keep|keeping) (?:weighted|overweight|invested|exposed|heavy|concentrated)\b[^.]{0,50}\b(?:beneficial|pays? off|makes sense|wise|smart|the right)\b|\bremains? (?:significantly |very |highly )?beneficial\b|\bjust a (?:cooldown|breather|pause)\b|\ba (?:normal|healthy) (?:breather|pullback|cooldown)\b|\b(?:keeps?|keeping) (?:the |your )?(?:portfolio|book|plan|goals?) on track\b/i.test(s) && !namedSource && !/\b(?:if|whether|unless)\b/i.test(s)) { hits.push(raw); continue; }
+    if (s && /\b(?:thesis|story|case|narrative)\b/i.test(s) && /\b(?:intact|holds|holding|unchanged|unbroken|on track|still valid|remains? valid|not broken|still (?:stands|works))\b/i.test(s) && !namedSource && !/\b(?:if|whether|unless|would|could|might)\b/i.test(s)) { hits.push(raw); continue; }
+    if (s && /\bnot a thesis break\b|\bthesis (?:is |remains |stays )?(?:still )?(?:intact|unchanged|holds|on track)\b|\bnot a (?:near-term |real |material |lasting )?(?:financial )?hit\b|\bthe clear (?:second |next |new |main )?(?:growth )?(?:engine|winner|leader)\b|\ba (?:credible|real|proven|clear|genuine|legitimate|durable) (?:second |next |new |third )?(?:growth )?engine\b|\b(?:the )?(?:growth )?story is (?:real|alive|intact|working)\b|\bkeeps? the story alive\b|\b(?:is )?not broken\b|\bpillars? (?:are |is )?(?:still )?standing\b|\bthe steadier of\b|\b(?:a )?deliberate (?:AI )?moat\b|\bcarr(?:y|ies) the strongest signal\b|\bshows? (?:the )?strongest (?:revenue |growth )?signals?\b|\b(?:is|are) no longer theoretical\b|\bbeats? dry powder\b|\b(?:your (?:wife|husband|partner|spouse|dad|father|mom|mother|friend|advisor|adviser)|he|she) (?:is|was) right\b(?!-)|\bthe (?:plan|clock|book|portfolio) needs\b|\b(?:revenue|growth) (?:story |thesis )?(?:remains? |is |stays )?intact\b|\bfits? your (?:hold[- ]through[- ]drawdowns |long-term |compounding )?(?:style|goal|plan|horizon)\b|\b(?:a )?(?:real |big |huge )?optionality story\b|\b(?:powerful|strong|healthy|intact) (?:longer-term |long-term )?uptrend\b|\batop a (?:powerful|strong|longer-term|long-term)\b|\b(?:stay|staying|remain|remaining|keep|keeping) (?:weighted|overweight|invested|exposed|heavy|concentrated)\b[^.]{0,50}\b(?:beneficial|pays? off|makes sense|wise|smart|the right)\b|\bremains? (?:significantly |very |highly )?beneficial\b|\bjust a (?:cooldown|breather|pause)\b|\ba (?:normal|healthy) (?:breather|pullback|cooldown)\b|\b(?:keeps?|keeping) (?:the |your )?(?:portfolio|book|plan|goals?) on track\b/i.test(s) && !namedSource && !/\b(?:if|whether|unless)\b/i.test(s)) { hits.push(raw); continue; }
     if (!s || (ATTRIBUTED.test(s) && (!valuationWord || namedSource || debate))) continue;
     // round 4: "a hidden asset the market isn't fully pricing", "17x versus the S&P's 25x leaves cushion", "the
     // long-term story still looks solid" (to "is it on sale?"): verdicts in the app's voice
@@ -2461,4 +2461,90 @@ export function ungroundedCauses(text: string, sources: string, names: string[] 
     const effs = /shares|stock/.test(eff) ? ["share", "stock"] : /profit|earning|result/.test(eff) ? ["earning", "profit", "result", "eps", "quarter"] : [eff.replace(/s$/, "")];
     return !lines.some((l) => cause.filter((w) => stemIn(l, w)).length >= Math.min(2, cause.length) && effs.some((e) => stemIn(l, e)));
   });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 9 intelligence: question classification (Korean trade intents, hypothetical and role-play framings)
+// ---------------------------------------------------------------------------------------------------------------
+/** Korean product and allocation words that a model answer may not recommend (round 9 M3), for PRODUCTS-style checks. */
+export const KO_PRODUCTS = /레버리지\s?ETF|인버스\s?ETF|국채\s?ETF|채권\s?ETF|배당\s?ETF|스테이킹|커버드\s?콜|풋\s?옵션|콜\s?옵션|머니\s?마켓|MMF|CMA|파킹\s?통장|예금|적금|채권 비중|고정수익 상품/;
+
+/** A question that asks for a RANKING BY A STATED METRIC is a data question, not a pick ("Which of my holdings has the
+ *  best 3-month return?" got the pick husk, round 9 M7; the answer is MSFT +46.3%). */
+export function isDataRankQuestion(q: string): boolean {
+  const t = String(q ?? "");
+  if (/\b(?:buy|sell|dump|trim|keep|add|cut|ditch|own|invest|put|should|would you|safer|safest|riskier)\b|살까|팔까|사야|팔아야|넣|추천|안전/i.test(t)) return false;
+  return /\b(?:best|worst|highest|lowest|top|bottom|biggest|largest|smallest|most|least)\b[^?]{0,40}\b(?:return|returns|gain|gains|loss|losses|performance|performer|performing|mover|move|dividend|yield|weight|p\/?e|drawdown|volatility|up|down)\b|\b(?:return|gain|performance)\b[^?]{0,30}\b(?:best|worst|highest|lowest|rank)\b|\brank\b[^?]{0,40}\bby\b/i.test(t)
+    || /가장 (?:많이 )?(?:오른|내린|수익률|배당|비중)|수익률(?:이|은)? 가장/.test(t);
+}
+
+/** Decision questions the English trade patterns missed (round 9 M3/M4):
+ *  - Korean buy/sell/allocate intents ("엔비디아 더 살까 말까?", "여윳돈 1억 있으면 너라면 뭐 살래?", "현금으로 뭘 사야 할까?");
+ *  - hypothetical and role-play framings around a portfolio decision ("hypothetically…", "pretend you're my advisor",
+ *    "as my robo-advisor, rebalance…", "my wife says we need bonds…");
+ *  - "which is safer", "which to dump", "if I could only keep one", "which goes up most if the Fed cuts",
+ *    "should I hold more cash", "needs a sleeve". */
+export function isDecisionFrame(q: string): boolean {
+  const t = String(q ?? "");
+  // Korean trade and allocation intents
+  if (/(살까|팔까|살래|팔래|사야\s?(?:할까|하나|돼|되나|겠)|팔아야|살 만한|팔 만한|사도 될까|팔아도 될까|더 살|더 사|물타기|추매|정리할까|손절|익절|넣을까|넣어야|어디(?:에)? 넣|어디에 투자|뭘 사|뭐 사|무엇을 사|뭐 살|뭘 팔|너라면|네가 나라면|당신이라면|추천해|추천 좀|추천할|비중(?:을)? (?:늘|줄|조절)|갈아타|교체할|리밸런싱 해|배분해|배분할|하나만 남기|하나만 고르|더 안전|안전한 (?:쪽|종목|거)|뭐가 좋아|어떤 게 좋아|뭐가 나아|어느 게 나아|좋을까요\?)/.test(t)) return true;
+  // a product or holding weighed as a purchase in Korean ("SCHD 사는 거 어떻게 생각해?", "커버드콜 전략 써볼까?", "그럼 채권은?")
+  if (/(?:사는|파는|사두는|넣는) (?:거|게|건)|(?:써|해|사|넣어)볼까|어떻게 가져가|가져가야|유지해야|늘려야|줄여야/.test(t)) return true;
+  if ((KO_PRODUCTS.test(t) || /채권|국채|예금|펀드|ETF|코인/.test(t)) && /어때|할까|나을까|좋아\?|괜찮|(?:은|는)\?\s*$/.test(t)) return true;
+  // a plan or a product weighed as a buy ("Is TLT a good buy?", "Would QQQM be a good place for it?", "Good plan?")
+  if (/\b(?:a )?good (?:buy|add|investment|place|home|idea|move|plan|entry)\b|\bgood plan\b|\bwhich wins\b|\bsmart move\b|\bsounds? (?:good|right)\?/i.test(t)) return true;
+  if (/\bwhich (?:etfs?|funds?|bonds?|bond funds?|stocks?|index funds?)\b[^?]{0,50}\b(?:would|should|could|to|reduce|add|fit|buy|own|hedge|balance)\b/i.test(t)) return true;
+  if (/\b(?:what|how much)(?: percent(?:age)?| share| portion)?\b[^?]{0,50}\bshould (?:be|go|i have|i keep|i hold)\b/i.test(t)) return true;
+  if (/\b(?:most|least) (?:attractive|promising|compelling|investable)\b|\bwrite\b[^?]{0,40}\brecommendation\b/i.test(t)) return true;
+  // which one is safer / to dump / to keep, and "goes up most"
+  if (/\bwhich\b[^?]{0,50}\b(?:safer|safest|riskier|riskiest|steadier|better (?:bet|buy|hold|choice|option|add)|stronger bet|worse bet|to dump|to ditch|to cut|to keep|goes? up (?:the )?most|would (?:rise|gain|go up|benefit) (?:the )?most|benefits? most)\b/i.test(t)) return true;
+  if (/\bonly (?:keep|hold|own|pick|choose) one\b|\bkeep (?:just|only) one\b|\bdump\b|\bditch\b|\bget rid of\b/i.test(t)) return true;
+  if (/\b(?:hold|keep|have|carry) (?:more|less) cash\b|\bmore cash\b[^?]{0,30}\?|\bneeds? a (?:sleeve|bond|hedge|cushion)\b|\b60\/40\b|\bbonds? (?:instead|for the)\b|\bpark (?:the |my )?cash\b/i.test(t)) return true;
+  // hypothetical / role-play / third-party framing, around any portfolio decision vocabulary
+  const frame = /\bhypothetical(?:ly)?\b|\bin theory\b|\bif you were (?:me|my|in)\b|\bin my shoes\b|\bpretend (?:you'?re|you are|to be)\b|\bact as (?:my|a)\b|\bas my (?:advisor|adviser|robo|robo-advisor|planner|broker|fiduciary|financial)\b|\brole[- ]?play\b|\bimagine you\b|\bmy (?:wife|husband|partner|spouse|dad|father|mom|mother|friend|brother|sister|advisor|adviser|coworker|boss) (?:says|said|thinks|wants|told)\b|\bfor a school project\b|\bjust for fun\b/i.test(t);
+  const decisionWords = /\b(?:buy|sell|hold|keep|dump|trim|add|allocate|allocation|rebalance|put|invest|move|shift|switch|swap|rotate|cash|bonds?|sleeve|safer|pick|choose|one stock|portfolio|advice|advise|recommend|recommendation|tell me|beat|outperform|leveraged|rating)\b/i.test(t);
+  return frame && decisionWords;
+}
+
+/** A question asking for a verdict on a holding, a thesis or the whole book ("Is AVGO's thesis broken?", "Is GOOGL a
+ *  credible growth play?", "Grade my portfolio A to F"): answered with information, under the verdict guards. */
+export function isVerdictQuestion(q: string): boolean {
+  return /\b(?:thesis|story)\b[^?]{0,30}\b(?:broken|intact|valid|alive|dead|still)\b|\bgood (?:company|stock|business|shape)\b|\bworth (?:its|the) (?:valuation|price|premium)\b|\bcredible\b|\bdeserve\b|\bgrade\b|\b(?:over|under)valued\b|\bcheap\b|\bexpensive\b|\bhealthy\b|\bbe honest\b|\bin your view\b|\bstill (?:a )?good\b|유효|괜찮은 (?:회사|종목)|좋은 (?:회사|종목)|고평가|저평가|논리/i.test(String(q ?? ""));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 9 A: the compliance judge (Ask). Policy, item list, and how its flags are applied.
+// ---------------------------------------------------------------------------------------------------------------
+export const JUDGE_POLICY = `You are the compliance reviewer for an investing app that may give INFORMATION only, never advice. You get numbered items: sentences of an answer, and suggested follow-up questions. Flag an item when, in the app's own voice, it does ANY of:
+1. tells or nudges the user to buy, sell, hold, keep, add, trim, switch, rebalance, allocate, park cash or size a position ("consider", "could park cash in", "fits your plan", "a small slice into bonds improves stability", "your wife is right", "the plan needs a bond sleeve");
+2. names or suggests a specific stock, fund, ETF, bond, Treasury, money-market fund, option strategy or other product as something to buy, add, use or switch into (describing a product the user already holds is fine; recommending any product is not);
+3. passes a verdict on a holding, a thesis or the portfolio in the app's own voice ("the thesis is not broken", "a credible second engine", "the growth story is real", "the steadier of the two", "carries the strongest signal", "cheap", "a buy", "in good shape", "cash level is neutral");
+4. forecasts returns, prices, yields or outcomes ("bonds typically return 3-5% a year", "lands near 7-8%", "will recover");
+5. is a follow-up question that asks which product to buy, how much to allocate, or invites a pick ("What bond ETFs fit a 60/40?", "Which funds have the lowest fees?", "Other candidates worth holding besides NVDA?").
+Do NOT flag: figures, returns and history; a ranking by a stated metric over a stated window; what a price did; news attributed to its source; risks, scenarios and what to watch; what a buy case or a sell case would rest on; a sentence saying the decision is the user's. Items can be in Korean or English; apply the same rules. Return ONLY JSON {"flag": [item numbers]} with an empty list when nothing breaks the rules.`;
+
+/** The judge's item list: every sentence of the answer (line by line, bullets kept apart) and then each chip. */
+export function judgeItems(answer: string, chips: string[]): { list: string[]; where: { line: number; sen: number }[]; chipAt: number } {
+  const list: string[] = [], where: { line: number; sen: number }[] = [];
+  String(answer ?? "").split("\n").forEach((line, li) => splitSentences(line).forEach((sen, si) => {
+    const t = sen.replace(/^\s*[•*-]\s*/, "").trim();
+    if (t) { list.push(t); where.push({ line: li, sen: si }); }
+  }));
+  const chipAt = list.length;
+  for (const c of chips) list.push(String(c));
+  return { list, where, chipAt };
+}
+
+/** The answer and chips with the flagged items removed; an emptied line goes. */
+export function applyJudge(answer: string, chips: string[], items: { where: { line: number; sen: number }[]; chipAt: number }, flags: Set<number>): { text: string; chips: string[] } {
+  if (!flags.size) return { text: answer, chips };
+  const drop = new Set(items.where.map((w, i) => (flags.has(i) ? `${w.line}:${w.sen}` : "")).filter(Boolean));
+  const lines = String(answer ?? "").split("\n").map((line, li) => {
+    const kept = splitSentences(line).filter((_, si) => !drop.has(`${li}:${si}`));
+    if (!kept.length) return null;
+    const joined = kept.join(" ");
+    // a bullet whose first sentence went keeps its bullet mark
+    return /^\s*•/.test(line) && !/^\s*•/.test(joined) ? `• ${joined.trim()}` : joined;
+  }).filter((l): l is string => l !== null && !!l.trim());
+  return { text: lines.join("\n"), chips: chips.filter((_, i) => !flags.has(items.chipAt + i)) };
 }
