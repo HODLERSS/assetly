@@ -6,7 +6,8 @@
 //   - callers: daily-brief (fire-and-forget after every write), the backfill sweep (rows missing audio),
 //     and the orchestrator. Auth: internal token, service role, or the owning user.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { readerLevel, scriptProblems } from "../_shared/intel.ts";
+import { readerLevel, scriptProblems, sanitize, ungroundedEventSentences } from "../_shared/intel.ts";
+import { callJudge } from "../_shared/judge.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -514,6 +515,30 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
           console.log(`narrate: ${bad.length} script sentence(s) failed the brief guards; ${heard} words left`);
           spoken = heard >= Math.round(spec.floor * 0.7) ? kept.join(" ") : null;
           if (savedScript && spoken && !(await writeIfSame({ script: spoken }))) continue;
+        }
+      }
+      // r10 intelligence: the v11 close's script said "no immediate upside or downside to worry about", "reinforcing
+      // confidence in Azure's growth trajectory" and "Watch for Microsoft earnings next week" (MSFT reports ~Oct 28), none
+      // of it on the card. The spoken script now passes the same gates as the written card: sanitize() on each sentence,
+      // every dated event must appear on the card, and the compliance judge reads it. A script the judge cannot read is
+      // not used: the listener gets the deterministic script built from the card itself.
+      if (spoken) {
+        const plain = (x: string) => x.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+        const card = [s.lede, s.overnight, s.desk_view, s.horizon ?? "", ...(s.positions ?? []).flatMap((p) => [p.name, p.note, p.watch]), ...(s.calendar ?? [])].join("\n");
+        const nm = [...new Set((s.positions ?? []).map((p) => p.name))];
+        const sents = spoken.split(/(?<=[.!?])\s+/);
+        const events = new Set(ungroundedEventSentences(plain(spoken), card, nm));
+        const j = key ? await callJudge(key, sents.map(plain), 6000) : { flags: null, status: "skipped" as const };
+        if (j.status !== "ok" || !j.flags) { console.log(`narrate: script judge ${j.status}; the card-built script is used`); spoken = null; }
+        else {
+          const kept = sents.filter((x, i) => {
+            const t = plain(x);
+            if (!t || /^(?:that'?s your|talk soon|good (?:morning|afternoon|evening))/i.test(t)) return true;
+            return !j.flags!.has(i) && !events.has(t) && ![...events].some((e) => e.includes(t) || t.includes(e)) && sanitize(t).trim().length > 0;
+          });
+          const heard = kept.join(" ").replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+          if (kept.length !== sents.length) console.log(`narrate: ${sents.length - kept.length} script sentence(s) failed the card gates; ${heard} words left`);
+          spoken = heard >= Math.round(spec.floor * 0.7) ? kept.join(" ") : null;
         }
       }
       if (!spoken) { spoken = fallbackScript(s, dayLine, ed); usedFallback = true; }
