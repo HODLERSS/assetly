@@ -11,7 +11,7 @@
 //     the currency, and "not enough price history yet" instead of a window that silently reused a shorter one.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { dayTag, marketOf, marketState, weekdayOf } from "../_shared/calendar.ts";
-import { dividendLine, dividendRows, ensureHistory, refreshDividends, windowReturns } from "../_shared/history.ts";
+import { dividendLine, dividendRows, ensureHistory, refreshDividends, windowReturns, windowReturnsBatch } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
 import {
@@ -208,7 +208,7 @@ Deno.serve(async (req) => {
     const b = await peek.json().catch(() => ({})) as { question?: unknown };
     const ko = /[\uac00-\ud7a3]/.test(String(b.question ?? ""));
     console.error("ask: degraded answer", why);
-    return json({ ok: true, degraded: true, followups: [],
+    return json({ ok: true, degraded: true, followups: [], meta: { judge: "skipped", degraded: why.slice(0, 80) },
       answer: ko ? "지금은 이 답을 끝내지 못했습니다. 잠시 후 다시 물어봐 주세요." : "I couldn't finish this answer just now. Please ask again in a moment." });
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -288,10 +288,25 @@ async function handle(req: Request): Promise<Response> {
   const noneE = { data: [] as never[] };
   const deepNone = [{ data: [] }, { data: [] }, { data: [] }, { data: [] }] as unknown as [{ data: { title: string; url: string; source: string; summary: string | null; published_at: string }[] | null }, { data: { bullets: string[]; generated_at: string }[] | null }, { data: { form: string; filed_at: string; title: string | null }[] | null }, { data: { title: string; published_at: string | null; content: string | null }[] | null }];
   const asP = <T,>(q: PromiseLike<T>): Promise<T> => Promise.resolve(q);
-  const pPerf = Promise.all(held.slice(0, 20).map(async (r) => [r.symbol, await capped(windowReturns(admin, r.symbol, windows, Date.now(), marketOf(r.symbol, r.kind, r.currency)), CAP, { last: null, pct: {} as Record<number, number | null> })] as const));
+  // r11: all windows of all holdings in one round trip (window_bases, migration 45); per holding only when the function
+  // is not there. A read that misses its cap is UNKNOWN: it is never reported as "not enough price history".
+  type WinRes = { last: unknown; pct: Record<number, number | null> };
+  const pPerf = (async (): Promise<{ map: Map<string, WinRes>; unknown: Set<string> }> => {
+    const items = held.slice(0, 20).map((r) => ({ symbol: r.symbol, mkt: marketOf(r.symbol, r.kind, r.currency) }));
+    const batch = await capped<Map<string, WinRes> | null | "timeout">(windowReturnsBatch(admin, items, windows).catch(() => null) as Promise<Map<string, WinRes> | null>, CAP, "timeout");
+    if (batch === "timeout") return { map: new Map(), unknown: new Set(items.map((i) => i.symbol)) };
+    if (batch) return { map: batch as Map<string, WinRes>, unknown: new Set() };
+    const unknown = new Set<string>();
+    const arr = await Promise.all(items.map(async (it) => {
+      const w = await capped(windowReturns(admin, it.symbol, windows, Date.now(), it.mkt).catch(() => null), CAP, null);
+      if (!w) unknown.add(it.symbol);
+      return [it.symbol, (w ?? { last: null, pct: {} }) as WinRes] as const;
+    }));
+    return { map: new Map(arr), unknown };
+  })();
   const pQuotes = held.length ? capped(asP(admin.from("prices").select("symbol,prev_close").in("symbol", heldSyms)) as Promise<{ data: unknown[] | null }>, CAP, { data: [] }) : Promise.resolve({ data: [] });
   const pShares = held.length ? capped(asP(admin.from("symbols").select("symbol,shares_outstanding,shares_as_of").in("symbol", heldSyms)) as Promise<{ data: unknown[] | null }>, CAP, { data: [] }) : Promise.resolve({ data: [] });
-  const pDiv = capped(dividendRows(admin, heldSyms), CAP, new Map() as Awaited<ReturnType<typeof dividendRows>>);
+  const pDiv = capped(dividendRows(admin, heldSyms).then((m) => ({ m, ok: true })).catch(() => ({ m: new Map() as Awaited<ReturnType<typeof dividendRows>>, ok: false })), CAP, { m: new Map() as Awaited<ReturnType<typeof dividendRows>>, ok: false });
   const pLots = holdingIds0.length ? capped(asP(admin.from("lots").select("holding_id,qty,cost_per_share,acquired_on").in("holding_id", holdingIds0)
     .gte("acquired_on", new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10))) as unknown as Promise<{ data: unknown[] | null }>, CAP, { data: [] }) : Promise.resolve({ data: [] as unknown[] });
   const pDig = digSyms0.length ? Promise.all([
@@ -311,13 +326,16 @@ async function handle(req: Request): Promise<Response> {
   const envKey = Deno.env.get("MARA_API_KEY") ?? "";
   const pKey: Promise<string> = envKey || keyCache ? Promise.resolve(envKey || keyCache)
     : capped(asP(admin.rpc("get_secret", { secret_name: "mara_api_key" })).then((r) => String((r as { data?: unknown }).data ?? "")), Math.max(CAP, 3000), "");
-  const [perfArr, quotesR, shareR, divRows] = await Promise.all([pPerf, pQuotes, pShares, pDiv]);
-  const perf = new Map(perfArr);
+  const [perfRes, quotesR, shareR, divRes] = await Promise.all([pPerf, pQuotes, pShares, pDiv]);
+  const perf = perfRes.map;
+  const perfUnknown = perfRes.unknown;
+  const divRows = divRes.m;
+  const divUnknown = !divRes.ok && held.some((r) => r.kind !== "crypto");
   const holdingIds = held.map((r) => (r as { holding_id?: string }).holding_id).filter((x): x is string => !!x);
   const sameDayLots = ((await pLots).data ?? []) as { holding_id: string; qty: number; cost_per_share: number; acquired_on: string | null }[];
   // a held symbol whose history is too short to answer these windows is backfilled after the answer ships,
   // so the next question has them (bounded; the insights lap covers the rest)
-  const shortSyms = held.filter((r) => windows.some((d) => (perf.get(r.symbol)?.pct[d] ?? null) === null)).map((r) => r.symbol);
+  const shortSyms = held.filter((r) => !perfUnknown.has(r.symbol) && windows.some((d) => (perf.get(r.symbol)?.pct[d] ?? null) === null)).map((r) => r.symbol);
   if (shortSyms.length) {
     try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(ensureHistory(admin, shortSyms, { cap: 3, budgetMs: 60000 })); } catch { /* the insights lap heals it */ }
   }
@@ -349,6 +367,7 @@ async function handle(req: Request): Promise<Response> {
   const stats: string[] = [];
   let totNow = 0;
   const moved: Record<number, { then: number; now: number; missing: string[] }> = { 7: { then: 0, now: 0, missing: [] }, 30: { then: 0, now: 0, missing: [] }, 90: { then: 0, now: 0, missing: [] }, 365: { then: 0, now: 0, missing: [] }, [YTD]: { then: 0, now: 0, missing: [] } };
+  const unknownWin: string[] = [];   // r11: holdings whose windows read missed its cap (unknown, not missing)
   const posFacts: PosFact[] = [];
   for (const r of book) {
     const valUsd = usd(Number(r.value ?? 0), r.currency);
@@ -370,7 +389,8 @@ async function handle(req: Request): Promise<Response> {
       `total gain/loss ${signedUsd(usd(Number(r.total_gl ?? 0), cur))} since purchase`,
     ];
     const p = perf.get(r.symbol);
-    for (const d of windows) {
+    if (perfUnknown.has(r.symbol)) { bits.push("longer-window returns couldn't be loaded just now (NOT missing history: never say there is not enough history)"); unknownWin.push(nameOf(r)); }
+    else for (const d of windows) {
       const pct = p?.pct[d] ?? null;
       const label = winLabel(d);
       if (pct === null) { moved[d].missing.push(nameOf(r)); if (d === 7 || d === 30) bits.push(`${label} ${NO_HISTORY}`); continue; }
@@ -409,6 +429,7 @@ async function handle(req: Request): Promise<Response> {
   const totalLines = windows.map((d) => {
     const m = moved[d];
     const label = winLabel(d);
+    if (unknownWin.length && (!m.then || m.now < investedUsd * 0.8)) return `${label}: couldn't be loaded just now`;
     // a "portfolio" move that leaves out a fifth of the invested money is not the portfolio's move
     if (!m.then || m.now < investedUsd * 0.8) return `${label}: ${NO_HISTORY}${m.missing.length ? ` (missing: ${m.missing.slice(0, 5).join(", ")})` : ""}`;
     const delta = m.now - m.then;
@@ -421,13 +442,14 @@ async function handle(req: Request): Promise<Response> {
   let digest = "";
   const peBy = new Map<string, number[]>();
   const askEsts: { names: string[]; est: string | null; range?: [string, string] }[] = [];
-  let earnReadOk = true;
+  let earnReadOk = true, newsReadOk = true;
   const headlinesBy = new Map<string, string>();
   const digSyms = held.slice(0, 12).map((r) => r.symbol);
   const digRes = await pDig;
   if (digSyms.length && digRes) {
     const [{ data: dn }, { data: dt }, { data: df }] = digRes as unknown as [{ data: { symbol: string; title: string; url: string; source: string; summary: string | null; published_at: string }[] | null }, { data: { symbol: string; title: string; published_at: string | null }[] | null }, { data: { symbol: string; form: string; filed_at: string; items?: string | null }[] | null }];
     earnReadOk = df !== (noneE.data as unknown);
+    newsReadOk = dn !== (none.data as unknown);
     // each holding's own recent headlines, for the cause check (round 8: META's drop "after a director sale filing" was AVGO's)
     for (const s of digSyms) {
       const r = held.find((h) => h.symbol === s)!;
@@ -465,7 +487,8 @@ async function handle(req: Request): Promise<Response> {
     // Forbes "$9 billion in a day" story were there, and the answer said no headline explained the drop)
     const heads = (news ?? []).filter((n) => usableNews(n, aliasesFor(hr.symbol, hr.name)) && !staleNewsTitle(String(n.title), n.published_at, today) && headlineOk(String(n.title))
       && centrality(String(n.title), [hr.symbol, nameOf(hr), ...aliasesFor(hr.symbol, hr.name)]) <= 40).slice(0, 12);
-    context += `\n[${nm}] 7d headlines:\n${heads.map((n) => `- [${n.source}, ${String(n.published_at).slice(5, 10)}] ${n.title}`).join("\n") || "- none"}`;
+    // r11: a read that missed its cap is not "no headlines"
+    context += `\n[${nm}] 7d headlines:\n${heads.map((n) => `- [${n.source}, ${String(n.published_at).slice(5, 10)}] ${n.title}`).join("\n") || (deep[k] === deepNone ? "- couldn't be loaded just now (NOT none: never say no headline explains a move)" : "- none")}`;
     if (ins?.[0]) peBy.set(sym, [...(peBy.get(sym) ?? []), ...peFigures((ins[0].bullets as string[]).join(" "))]);
     if (ins?.[0]) context += `\n[${nm}] current desk take (written ${String(ins[0].generated_at).slice(0, 16).replace("T", " ")} UTC; its prices may be older than the stats above, which win): ${(ins[0].bullets as string[]).join(" | ")}`;
     if (fils?.length) context += `\n[${nm}] SEC filings: ${fils.map((f) => `${f.form} ${f.filed_at}`).join(", ")}`;
@@ -530,7 +553,7 @@ async function handle(req: Request): Promise<Response> {
     cashUsd: book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0),
     assetsUsd, today,
     reports: askEsts.map((e) => ({ name: e.names[0], est: e.est, ...(e.range ? { range: e.range } : {}) })), reportsUnknown: !earnReadOk,
-    dividends: divLines.map((x) => ({ name: nameOf(x.r), annualUsd: x.d.annual, nextEx: divRows.get(x.r.symbol)?.div_next_ex ?? null, current: x.d.current })),
+    dividends: divLines.map((x) => ({ name: nameOf(x.r), annualUsd: x.d.annual, nextEx: divRows.get(x.r.symbol)?.div_next_ex ?? null, current: x.d.current })), dividendsUnknown: divUnknown,
     mode: isRankQuestion(question) ? "rank" : isSellQuestion(question) ? "sell" : "buy",
     returns1m: Object.fromEntries(held.map((r) => [r.symbol, perf.get(r.symbol)?.pct[30] ?? null])),
     ...(focusRow ? { focus: {
@@ -622,7 +645,7 @@ async function handle(req: Request): Promise<Response> {
     ? `Money: portfolio totals and position values are US dollars ($); Korean shares also show their won price. Write won amounts with the ₩ sign.`
     : `Money: every amount is in US dollars ($). This account holds nothing in Korean won: write ₩ only when the user asks for won, converting at the rate on file: USD/KRW ${Math.round(fxMap.get("KRW") ?? 1380).toLocaleString("en-US")} (₩ per $1); say it is a conversion at that rate.`;
   // round 9 C (and newcomer 6): a data question's figures are computed here and lead the answer
-  const perfRows: PerfRow[] = held.map((r) => ({ symbol: r.symbol, label: nameOf(r), names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], usd: usd(Number(r.value ?? 0), r.currency), pct: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> }));
+  const perfRows: PerfRow[] = held.map((r) => ({ symbol: r.symbol, label: nameOf(r), names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], usd: usd(Number(r.value ?? 0), r.currency), pct: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null>, unknown: perfUnknown.has(r.symbol) }));
   // round 9 v44: "How did the market do today?" leads with the indexes; a dividend question with the payers ranked
   const { data: idxRows } = await pIdx;
   const idx = (idxRows ?? []).filter((r) => r.symbol !== "^KS11" || korean || ko).map((r) => ({ label: r.symbol === "^GSPC" ? "S&P 500" : r.symbol === "NQ=F" ? (ko ? "나스닥100 선물" : "Nasdaq 100 futures") : "KOSPI", pct: r.change_pct === null ? null : Number(r.change_pct), price: Number(r.price) }));
@@ -653,7 +676,7 @@ async function handle(req: Request): Promise<Response> {
     if (!dated.length) return null;
     return ko ? `• 실적 발표 예상 (추정, 날짜순): ${dated.map((d) => `${d.n} ${d.txt}`).join(", ")}.` : `• Expected earnings reports (estimates, soonest first): ${dated.map((d) => `${d.n} ${d.txt}`).join(", ")}.`;
   })();
-  const dataLead = tradeQ ? null : (computedDataLead(question, perfRows, mentionedNow, ko) ?? earnLead ?? dayLead ?? marketLead(question, idx, ko) ?? (/\b(?:which|what|how much|per holding|each|from which|largest|biggest)\b|얼마|어느|어떤|종목별|제일|가장/i.test(question) ? dividendLead(question, payersL, ko) : null));
+  const dataLead = tradeQ ? null : (computedDataLead(question, perfRows, mentionedNow, ko) ?? earnLead ?? dayLead ?? marketLead(question, idx, ko) ?? (/\b(?:which|what|how much|per holding|each|from which|largest|biggest)\b|얼마|어느|어떤|종목별|제일|가장/i.test(question) && !divUnknown ? dividendLead(question, payersL, ko) : null));
   const prompt = `TODAY is ${today} (US Eastern date).
 ${ccyLine}
 User's portfolio (deterministic; the ONLY source of numbers). For each holding: "share price" is the price of ONE share; "position value" is what the user's whole holding is worth. They are different numbers: a question about the stock's price or close gets the SHARE PRICE, never the position value. Each "day" figure is tagged with the session it belongs to: a LIVE session is today's move so far, a "past (not today)" session is named by its day, and a live move is never "yesterday".
@@ -661,9 +684,9 @@ ${stats.join("\n")}
 Portfolio total: ${money(totNow)} · TODAY (this session only${closedToday.length ? `; excludes ${closedToday.join(", ")}, whose market is closed today` : ""}): ${signedUsd(bookDayUsd)} (${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%) · longer windows (NEVER "today"): ${totalLines}
 Window figures that read "${NO_HISTORY}" have no data: say so plainly for that window; never reuse another window's number in its place.
 DIVIDENDS per holding (the ONLY dividend figures you may state, each for its own holding; an estimate is labelled "(est)" and every estimated date you write keeps that label; when the cash is paid after the ex-date is NOT in the data, so never state a payment lag; a coin such as bitcoin pays no dividend, say so plainly):
-${divLines.map((x) => "- " + x.d.line).join("\n")}
-${divPending ? `Portfolio dividend income: still loading for ${divPending} holding(s); say the figures are being fetched and to ask again in a minute, never state $0 or a partial total as the portfolio's income.` : `Portfolio dividend income ≈ ${money(divIncome)} a year (shares × last 12 months' payments per holding)${assetsUsd > 0 ? `, ${(divIncome / assetsUsd * 100).toFixed(2)}% of assets` : ""}.`}
-Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
+${divUnknown ? "- (couldn't be loaded just now)" : divLines.map((x) => "- " + x.d.line).join("\n")}
+${divUnknown ? `DIVIDEND DATA COULDN'T BE LOADED JUST NOW: state no dividend figure and never say a holding pays none; say the dividend figures couldn't be loaded and to ask again in a moment.` : divPending ? `Portfolio dividend income: still loading for ${divPending} holding(s); say the figures are being fetched and to ask again in a minute, never state $0 or a partial total as the portfolio's income.` : `Portfolio dividend income ≈ ${money(divIncome)} a year (shares × last 12 months' payments per holding)${assetsUsd > 0 ? `, ${(divIncome / assetsUsd * 100).toFixed(2)}% of assets` : ""}.`}
+${newsReadOk ? "" : "HEADLINES COULDN'T BE LOADED JUST NOW: never say there are no headlines or that none explains a move; say the news couldn't be loaded.\n"}${unknownWin.length ? `LONGER-WINDOW RETURNS COULDN'T BE LOADED JUST NOW for ${unknownWin.join(", ")}: never call them missing history; say they couldn't be loaded and to ask again.\n` : ""}Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
 ${context}
 ${dataLead ? `\nCOMPUTED ANSWER (from the stats; open the answer with exactly these figures, then add context):\n${dataLead}\n` : ""}OTHER LISTINGS: a price or target for a Korean holding quoted in dollars in a headline belongs to another listing (a US ADR or OTC line), not the KRX share the user holds: never state it as their holding's price or target; if it matters, say "its US-listed shares".
 USER STATEMENTS: what the user says about their own money, plans or life ("I have ₩100M in cash", "we're buying a house in 2 years") is context to use, never a claim about the portfolio to correct.

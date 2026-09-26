@@ -3,7 +3,8 @@
 // model gateway. Run: deno test -A supabase/functions/ask/slow_db_test.ts
 import { assert } from "jsr:@std/assert@1";
 
-const PORT = 54511, READ_DELAY = 3000;
+const PORT = 54511;
+let READ_DELAY = 3000;
 const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]) as CryptoKeyPair;
 const jwk = { ...(await crypto.subtle.exportKey("jwk", kp.publicKey)), kid: "k1", alg: "ES256", use: "sig" };
 const b64u = (b: Uint8Array | string) => btoa(typeof b === "string" ? b : String.fromCharCode(...b)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -74,6 +75,26 @@ Deno.test({ name: "slow database: data questions answer inside the budget", sani
     const r = await ask(q);
     assert(r.status === 200 && r.body.ok === true, q);
     assert(r.ms < 12000, `${q}: ${Math.round(r.ms)}ms`);
+  }
+} });
+
+Deno.test({ name: "reads that miss their cap are UNKNOWN, never 'no history' or 'no dividends' (r11 P1)", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  // the book loads, then every later read takes longer than any cap
+  const base = READ_DELAY;
+  READ_DELAY = 0;
+  const first = await ask("warm up");   // the per-isolate client and key are warm
+  assert(first.status === 200);
+  READ_DELAY = base;
+  const slowAfterBook = READ_DELAY;
+  // model answer echoes nothing about history: the code-built parts are what is checked
+  for (const q of ["What's NVDA's 1-year return?", "Should I sell NVDA?", "How much dividend income do I get?"]) {
+    READ_DELAY = 6000;
+    const r = await ask(q);
+    READ_DELAY = slowAfterBook;
+    const text = String(r.body.answer ?? "");
+    assert(r.body.ok === true, q);
+    assert(!/not enough price history/i.test(text), `${q}: ${text}`);
+    assert(!/no holding pays a dividend/i.test(text), `${q}: ${text}`);
   }
   await server.shutdown();
 } });

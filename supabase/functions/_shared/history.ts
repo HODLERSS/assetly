@@ -27,6 +27,33 @@ export async function windowReturns(admin: Db, symbol: string, days: number[], n
   return { last, pct };
 }
 
+/** Round 11 (load): every window of every holding in ONE database round trip (the SQL function window_bases, migration
+ *  45), instead of 1 + N queries per holding (Ask fanned out 20 holdings x 6 queries on each question, the top query of
+ *  the database). The same rule as windowReturns: the latest price and, per window, the last price at or before its
+ *  cutoff, judged by pctOver. Returns null when the function is not there (before migration 45) or the call failed, so
+ *  the caller can fall back. */
+export async function windowReturnsBatch(admin: Db, items: { symbol: string; mkt: Mkt | null | undefined }[], days: number[], now = Date.now()): Promise<Map<string, { last: Pt | null; pct: Record<number, number | null> }> | null> {
+  if (!items.length) return new Map();
+  const syms: string[] = [], ks: number[] = [], cuts: string[] = [];
+  for (const it of items) days.forEach((d, i) => { syms.push(it.symbol); ks.push(i + 1); cuts.push(new Date(windowCutoff(d, now, it.mkt)).toISOString()); });
+  const { data, error } = await admin.rpc("window_bases", { p_symbols: syms, p_ks: ks, p_cuts: cuts }).then((r: unknown) => r, (e: unknown) => ({ data: null, error: e }));
+  if (error || !Array.isArray(data)) return null;
+  const by = new Map<string, Map<number, Pt>>();
+  for (const r of data as { symbol: string; k: number; ts: string; price: number }[]) {
+    if (!by.has(r.symbol)) by.set(r.symbol, new Map());
+    by.get(r.symbol)!.set(Number(r.k), { ts: String(r.ts), price: Number(r.price) });
+  }
+  const out = new Map<string, { last: Pt | null; pct: Record<number, number | null> }>();
+  for (const it of items) {
+    const m = by.get(it.symbol);
+    const last = m?.get(0) ?? null;
+    const pct: Record<number, number | null> = {};
+    days.forEach((d, i) => { const b = m?.get(i + 1); pct[d] = b && last ? pctOver([b, last], d, now, it.mkt) : null; });
+    out.set(it.symbol, { last, pct });
+  }
+  return out;
+}
+
 /** The highest and lowest stored price (closes and live ticks) over the last `days` days, with the live price.
  *  Round 7 native: "BTC surged past $87,000" when no price in the window reached it. */
 export async function hiLo(admin: Db, symbol: string, days = 30, livePrice: number | null = null, now = Date.now()): Promise<{ high: number | null; low: number | null }> {
