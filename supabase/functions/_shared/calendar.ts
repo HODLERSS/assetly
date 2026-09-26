@@ -87,3 +87,37 @@ export function dayTag(mkt: Mkt | null, now = new Date()): string {
   if (s.phase === "post") return `today's ${weekdayOf(s.ymd)} ${who} session, final`;
   return `${dayName(s.lastSessionDate)} ${who} session, past (not today)`;
 }
+
+/** Round 9: each edition has an ET (or KST) session window, and nothing is generated outside it. A "Midday" was written at
+ *  5:32 PM ET and a "Morning" at 8:02 PM ET (00:02 UTC), so Home opened on them instead of the Close. The clock also ran
+ *  on UTC minutes, which moves every edition an hour once daylight time ends (a 20:05 UTC "close" is 3:05 PM EST).
+ *  morning: 8:00 AM ET to the open · midday: the session · close: from 4:00 PM ET to midnight ET (same ET date)
+ *  kr_open: 8:00 AM KST to the KRX close · kr_close: after the KRX close · weekend: a day with no US session. */
+export function editionWindow(edition: string, now = new Date()): { ok: boolean; reason?: string } {
+  if (edition === "assessment") return { ok: true };
+  const kr = edition === "kr_open" || edition === "kr_close";
+  const mkt: Mkt = kr ? "KR" : "US";
+  const z = zonedParts(now, TZ[mkt]);
+  const trading = isTradingDay(mkt, z.ymd);
+  const at = `${String(Math.floor(z.minutes / 60)).padStart(2, "0")}:${String(z.minutes % 60).padStart(2, "0")} ${kr ? "KST" : "ET"}`;
+  const no = (why: string) => ({ ok: false, reason: `${edition} is not written at ${at}: ${why}` });
+  if (edition === "weekend") return trading ? no("the US market trades today") : { ok: true };
+  if (!trading) return no(kr ? "KRX is not trading today" : "no US session today");
+  if (edition === "morning") return z.minutes >= 8 * 60 && z.minutes < OPEN_MIN.US ? { ok: true } : no("the morning edition runs 8:00 to 9:30 AM ET");
+  if (edition === "midday") return z.minutes >= OPEN_MIN.US && z.minutes < CLOSE_MIN.US ? { ok: true } : no("the midday edition runs during the session");
+  if (edition === "close") return z.minutes >= CLOSE_MIN.US ? { ok: true } : no("the close edition runs after 4:00 PM ET");
+  if (edition === "kr_open") return z.minutes >= 8 * 60 && z.minutes < CLOSE_MIN.KR ? { ok: true } : no("the Korea open edition runs before the KRX close");
+  if (edition === "kr_close") return z.minutes >= CLOSE_MIN.KR ? { ok: true } : no("the Korea close edition runs after the KRX close");
+  return no("unknown edition");
+}
+
+/** The US edition the clock is on, in ET: morning from 8:00 AM, midday from 11:00 AM (a read needs some session behind
+ *  it), close from 4:05 PM; null between windows (before 8 AM, 9:30-11:00, 4:00-4:05). "weekend" on a day with no session. */
+export function clockEdition(now = new Date()): "morning" | "midday" | "close" | "weekend" | null {
+  const z = zonedParts(now, TZ.US);
+  if (!isTradingDay("US", z.ymd)) return "weekend";
+  if (z.minutes >= CLOSE_MIN.US + 5) return "close";
+  if (z.minutes >= 11 * 60 && z.minutes < CLOSE_MIN.US) return "midday";
+  if (z.minutes >= 8 * 60 && z.minutes < OPEN_MIN.US) return "morning";
+  return null;
+}

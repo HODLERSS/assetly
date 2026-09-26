@@ -10,7 +10,7 @@
 //   3 editor synthesis (memos + rebuttals + market context + yesterday's brief -> the note)
 //   4 fact-check       (every number verified against the deterministic stats, or cut)
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
+import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
   aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
@@ -305,13 +305,21 @@ function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: numbe
  *  script and audio were cleared, so the caller can have them re-narrated. */
 // deno-lint-ignore no-explicit-any
 type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null }[]; yields: number[] };
-async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctx?: RepairCtx): Promise<string[]> {
-  const r = await admin.from("daily_briefs").select("id, edition, sections, gen_version").eq("user_id", uid).eq("brief_date", briefDate);
+async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctx?: RepairCtx): Promise<{ edition: string; date: string }[]> {
+  // Round 9 designer: the rows a reader SEES are the latest ones, not only today's. Over a weekend (or before the first
+  // edition of a day) Home shows the last trading day's rows, and a repair keyed to today's date never reached them: the
+  // App Review showcase still read "(as of 7:31 PM ET)" and "META -3.3%" after GEN 10 shipped. Each user's latest brief
+  // date (within the last week) is repaired along with today's, eagerly, on the next run.
+  const r = await admin.from("daily_briefs").select("id, edition, sections, gen_version, brief_date").eq("user_id", uid)
+    .lte("brief_date", briefDate).gte("brief_date", ymdShift(briefDate, -7)).order("brief_date", { ascending: false }).limit(20);
   if (r.error) return [];   // before migration 39
-  const stale = ((r.data ?? []) as { id: number; edition: string; sections: unknown; gen_version: number | null }[])
-    .filter((o) => !live.includes(o.edition) && Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
+  const all = (r.data ?? []) as { id: number; edition: string; sections: unknown; gen_version: number | null; brief_date: string }[];
+  const latestPast = all.map((o) => String(o.brief_date)).filter((d) => d < briefDate).sort().pop();
+  const stale = all.filter((o) => (o.brief_date === briefDate || o.brief_date === latestPast)
+    // a live edition of TODAY is regenerated, never patched; the latest past day's rows are all past-window
+    && !(o.brief_date === briefDate && live.includes(o.edition)) && Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
   if (!stale.length) return [];
-  const patched: string[] = [];
+  const patched: { edition: string; date: string }[] = [];
   const syms = rows.filter((x) => !x.symbol.startsWith("$") && x.kind !== "cash" && x.kind !== "debt").map((x) => x.symbol).slice(0, 12);
   const [fl, { data: tr }] = await Promise.all([
     earningsFilings(admin, syms),
@@ -324,16 +332,16 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
     return { names, label: names[0], est: e?.est ?? null, ...(e?.range ? { range: e.range } : {}), dlv: deliveriesEstimate(sy, briefDate)?.est ?? null };
   });
   for (const o of stale) {
-    const fixed = repairSections(o.sections as Sections, ests, briefDate, ctx, o.edition);
+    const fixed = repairSections(o.sections as Sections, ests, String(o.brief_date ?? briefDate), ctx, o.edition);
     // Round 8 native: every GEN bump nulled the audio and script of every repaired row, and re-narration is throttled,
     // so no brief had narration. The spoken text is cleared ONLY when the repair actually changed the text.
     const changed = spokenText(fixed) !== spokenText(o.sections as Sections);
     await admin.from("daily_briefs").update(changed ? { sections: fixed, gen_version: GEN_VERSION, audio_path: null, script: null } : { gen_version: GEN_VERSION }).eq("id", o.id).then(() => {}, () => {});
-    if (changed) patched.push(o.edition);
+    if (changed) patched.push({ edition: o.edition, date: String(o.brief_date ?? briefDate) });
   }
-  // the latest edition of the day first: that is the one the reader opens
+  // the latest edition of the latest day first: that is the one the reader opens
   const ORDER = ["close", "kr_close", "midday", "kr_open", "morning", "weekend", "assessment"];
-  return patched.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
+  return patched.sort((a, b) => b.date.localeCompare(a.date) || ORDER.indexOf(a.edition) - ORDER.indexOf(b.edition));
 }
 
 /** Code-only repair of a stored brief (no model, no new facts): doubled phrases and glosses collapse, "directly"
@@ -352,7 +360,12 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   const liveFacts = wasLive && ctx ? ctx.facts.filter((f) => typeof basis.day_by_symbol?.[f.symbol] === "number").map((f) => ({ names: f.names, pct: basis.day_by_symbol![f.symbol] })) : [];
   // a collapsed appositive can leave a comma between a subject and its verb ("The market's fear gauge, fell 3.3%")
   const unComma = (t: string) => t.replace(/(^|[.!?]\s+)([A-Z][^,.!?]{2,50}),\s+(fell|rose|jumped|slipped|climbed|dropped|gained|lost|added|edged|dipped|sank|rallied)\b/g, "$1$2 $3");
-  const text = (t: string) => unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN)))));
+  // round 9: a figure fixed at the 4:00 PM close carried the clock time it was read ("(as of 7:31 PM ET)")
+  const closeLabel = (t: string) => t.replace(/\(as of (\d{1,2}):(\d{2}) (AM|PM) ET\)/g, (m, h, mi, ap) => {
+    const mins = (Number(h) % 12 + (ap === "PM" ? 12 : 0)) * 60 + Number(mi);
+    return edition === "close" || edition === "kr_close" || mins >= 16 * 60 ? "(as of the 4:00 PM ET close)" : m;
+  });
+  const text = (t: string) => closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))));
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
@@ -414,25 +427,25 @@ Deno.serve(async (req) => {
   type Edition = "morning" | "midday" | "close" | "assessment" | "weekend" | "kr_open" | "kr_close";
   const validEd = (x: unknown): x is Edition => x === "morning" || x === "midday" || x === "close" || x === "assessment" || x === "weekend" || x === "kr_open" || x === "kr_close";
   const edRaw = url.searchParams.get("edition") ?? (body as { edition?: unknown }).edition;
-  const utcMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();   // close = 4:05 PM ET (20:05 UTC), never before the bell
   // "assessment" is never chosen by the clock: it is requested explicitly (orchestrator / brief-retry) and always forced
   const clockResolved = !validEd(edRaw);
-  let edition: Edition = validEd(edRaw) ? edRaw : utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
-  // The morning edition has a WINDOW. brief_date is the ET date and the fallthrough above calls everything
-  // before 15:00 UTC "morning", so the */30 backfill sweep was writing the day's morning brief at 12:30-2:30
-  // AM ET, hours before any overnight or pre-market news, and the 8:35 AM ET run then found the row and left
-  // it. Clock-resolved morning now waits for 8 AM ET; the ET evening still resolves to close (a missing
-  // close can be backfilled overnight); the small hours write nothing. Explicit editions and force are untouched.
-  if (clockResolved && edition === "morning") {
-    const etMin = zonedParts(new Date(), TZ.US).minutes;
-    if (etMin >= 20 * 60 + 5) edition = "close";
-    else if (etMin < 8 * 60) return json({ ok: true, users: 0, wrote: 0, reason: "morning edition waits for 8 AM ET" });
-  }
-  // No US session today (weekend or market holiday): the clock-resolved daily editions collapse into ONE weekend /
-  // holiday read, written after 9 AM ET. An explicit edition (batteries, operators, brief-retry) is honored as asked.
-  if (clockResolved && !marketState("US").tradingToday) {
-    edition = "weekend";
-    if (zonedParts(new Date(), TZ.US).minutes < 9 * 60) return json({ ok: true, users: 0, wrote: 0, reason: "weekend read waits for 9 AM ET" });
+  // Round 9: the clock runs in ET (it ran on UTC minutes) and every edition has a window (_shared/calendar.ts
+  // editionWindow): a Midday was written at 5:32 PM ET and a Morning at 8:02 PM ET, and Home opened on them instead of
+  // the Close. An explicit edition (brief-retry, the regeneration dispatch, operators) obeys the same window; only an
+  // internal-token caller passing outOfWindow (batteries) or a fixture run may write outside it.
+  const clockEd = clockEdition();
+  if (clockResolved && clockEd === null) return json({ ok: true, users: 0, wrote: 0, reason: "between edition windows (ET)" });
+  let edition: Edition = validEd(edRaw) ? edRaw : clockEd!;
+  if (clockResolved && edition === "weekend" && zonedParts(new Date(), TZ.US).minutes < 9 * 60) return json({ ok: true, users: 0, wrote: 0, reason: "weekend read waits for 9 AM ET" });
+  {
+    const w = editionWindow(edition);
+    let overrideOk = false;
+    if (body.outOfWindow === true) {
+      let t = Deno.env.get("INTERNAL_TOKEN") ?? "";
+      if (!t) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); t = data ?? ""; }
+      overrideOk = !!t && (req.headers.get("x-internal-token") ?? "") === t;
+    }
+    if (!w.ok && !fixture && !overrideOk) return json({ ok: true, users: 0, wrote: 0, reason: w.reason });
   }
   // Korea editions ride the KRX clock, not the US one: written on KRX trading days (KST) for users holding Korean
   // names. A Sunday 8 PM Central for the reader is Monday 10 AM in Korea, and their Korean sleeve is already moving.
@@ -511,8 +524,8 @@ Deno.serve(async (req) => {
   // after 9:30 ET takes the opening-read path); only older editions are patched, and those are re-narrated
   // because the patch clears the script.
   const isRegen = body.regen === true;   // a regeneration run never repairs or dispatches (no cascades)
-  const usClock: Edition = !marketState("US").tradingToday ? "weekend" : utcMin >= 20 * 60 + 5 ? "close" : utcMin >= 15 * 60 ? "midday" : "morning";
-  const live: string[] = [...new Set([...liveEditions(edition), ...liveEditions(usClock)])];
+  const usClock: Edition | null = clockEd;
+  const live: string[] = [...new Set([...liveEditions(edition), ...(usClock ? liveEditions(usClock) : [])])];
   const svcKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   let itokShared = Deno.env.get("INTERNAL_TOKEN") ?? "";
   const handOff = async (fn: string, payload: Record<string, unknown>) => {
@@ -550,16 +563,16 @@ Deno.serve(async (req) => {
     const repairStart = Date.now();
     for (const uid of userIds) {
       if (Date.now() - repairStart > 30000) break;
-      const patched = await repairToday(admin, uid, byUser.get(uid) ?? [], briefDate, live, await repairCtxOf(uid).catch(() => undefined)).catch(() => [] as string[]);
+      const patched = await repairToday(admin, uid, byUser.get(uid) ?? [], briefDate, live, await repairCtxOf(uid).catch(() => undefined)).catch(() => [] as { edition: string; date: string }[]);
       // the patch cleared the script: re-script and re-voice it now (narrate's sweep catches any beyond 8)
       // every row whose text changed is re-narrated (round 8: 8 hand-offs per run left most rows silent)
-      for (const ed of patched) if (!fixture && !noAudio && renarrated < 40) { renarrated++; await handOff("narrate", { user_id: uid, brief_date: briefDate, edition: ed }); }
+      for (const pt of patched) if (!fixture && !noAudio && renarrated < 40) { renarrated++; await handOff("narrate", { user_id: uid, brief_date: pt.date, edition: pt.edition }); }
     }
     if (!fixture) {
       const staleLive = await admin.from("daily_briefs").select("user_id, edition, gen_version, generated_at").eq("brief_date", briefDate).in("edition", live).in("user_id", userIds);
       for (const o of (staleLive.error ? [] : staleLive.data ?? []) as { user_id: string; edition: string; gen_version: number | null; generated_at: string | null }[]) {
         if (dispatched >= 8) break;
-        if (Number(o.gen_version ?? 0) >= GEN_VERSION || !validEd(o.edition) || o.edition === "assessment") continue;
+        if (Number(o.gen_version ?? 0) >= GEN_VERSION || !validEd(o.edition) || o.edition === "assessment" || !editionWindow(o.edition).ok) continue;
         if (Date.now() - +new Date(String(o.generated_at ?? 0)) < 15 * 60000) continue;   // its narration may still be running
         // the edition this run writes is regenerated inline for the users the loop reaches
         if (o.edition === edition && loopIds.has(o.user_id)) continue;
