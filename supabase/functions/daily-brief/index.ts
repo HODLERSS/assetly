@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  superlativeClaims, periodReturnMismatches, YTD, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -76,7 +76,9 @@ const FAST_MODEL = "gpt-oss-120b";
 // 11 (round 9 / r10): grounded events and causes, book day move, "X% in <holding>", theme claims, cleaned notes; the
 //    latest past date's rows are patched too, so the live Sep 25 close loses its invented Monday events
 // 12 (r10): a day move related to the return target, scope labels that do not match the figure's composition
-const GEN_VERSION = 12;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+// 13 (r10 newcomer / intelligence): theme shares, notes with a real risk each, watches in words, ideas' wording, week
+//    superlatives, grounded earnings watches; every stored script is re-made through narrate's card gates
+const GEN_VERSION = 13;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -351,7 +353,9 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
     const fixed = repairSections(o.sections as Sections, ests, String(o.brief_date ?? briefDate), ctx, o.edition);
     // Round 8 native: every GEN bump nulled the audio and script of every repaired row, and re-narration is throttled,
     // so no brief had narration. The spoken text is cleared ONLY when the repair actually changed the text.
-    const changed = spokenText(fixed) !== spokenText(o.sections as Sections);
+    // r10: a script written before narrate gated scripts against the card (GEN < 13) is re-made even when the text
+    // did not change (the v11 close's script carried advice and a false "earnings next week")
+    const changed = spokenText(fixed) !== spokenText(o.sections as Sections) || Number(o.gen_version ?? 0) < 13;
     await admin.from("daily_briefs").update(changed ? { sections: fixed, gen_version: GEN_VERSION, audio_path: null, script: null } : { gen_version: GEN_VERSION }).eq("id", o.id).then(() => {}, () => {});
     if (changed) patched.push({ edition: o.edition, date: String(o.brief_date ?? briefDate) });
   }
@@ -418,7 +422,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
 function validSections(o: unknown): o is Sections {
   const s = o as Sections;
   return !!s && typeof s.lede === "string" && !!s.lede.trim() && typeof s.overnight === "string"
-    && Array.isArray(s.positions) && s.positions.length >= 1 && s.positions.length <= 6
+    && Array.isArray(s.positions) && s.positions.length >= 1 && s.positions.length <= 10
     && s.positions.every((p) => p && typeof p.name === "string" && typeof p.note === "string" && typeof p.watch === "string")
     && typeof s.desk_view === "string" && Array.isArray(s.calendar ?? []);
 }
@@ -1657,12 +1661,32 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         // round 9 newcomer: KO's "The risk:" listed strengths, ">consensus tripwire" leaked the field name, SCHD's risk came
         // twice, JNJ and BRKB had none. Every note is cleaned; an assessment note left without a risk gets one from the
         // memo, or none at all.
+        // r10 newcomer M2: "Your bet holds SK hynix…" openers, shorthand watches ("<45% alert signal"), strengths or trivia as
+        // the risk (VXUS, VTI), BTC and SHOP with no risk line, BRKB with no note. Every assessment note carries a real
+        // risk (the memo's, else one built for its kind) and every held non-cash symbol gets a note.
+        const rowOf = (name: string) => holdings.find((r) => [krName(r.symbol, r.nickname, r.name), r.symbol, r.symbol.replace(/\.(?:KS|KQ)$/, ""), ...aliasesFor(r.symbol, r.name)].some((n) => n && n.toLowerCase() === String(name).toLowerCase()));
         sections.positions = sections.positions.map((p) => {
-          const c = cleanNote(p.note);
+          const c = cleanNote(fixNoteOpener(p.note));
           let note = c.note || p.note;
-          if (edition === "assessment" && c.needsRisk) { const r = memoRisk(p.name, p.watch, note); if (r) note = cleanNote(`${note.replace(/[.\s]+$/, "")}. ${r}`).note || note; }
-          return { ...p, note, watch: String(p.watch ?? "").replace(/\s*\btripwire\b\s*/gi, " ").replace(/\s*([<>])\s*consensus/gi, (_m, s) => s === ">" ? " above consensus" : " below consensus").replace(/\s{2,}/g, " ").trim() };
+          if (edition === "assessment" && c.needsRisk) {
+            const r = memoRisk(p.name, p.watch, note);
+            const withMemo = r ? cleanNote(`${note.replace(/[.\s]+$/, "")}. ${r}`) : null;
+            if (withMemo && !withMemo.needsRisk) note = withMemo.note;
+            else { const row = rowOf(p.name); note = `${note.replace(/[.\s]+$/, "")}. ${codeRisk(row?.kind, row ? themeOf(row.symbol, row.kind) : "")}`; }
+          }
+          const watch = wordWatch(String(p.watch ?? "").replace(/\s*([<>])\s*consensus/gi, (_m, s) => s === ">" ? " above consensus" : " below consensus"));
+          return { ...p, name: plainCompanyName(p.name), note, watch: watch || "No confirmed date yet" };
         });
+        if (edition === "assessment") {
+          const covered = new Set(sections.positions.map((p) => rowOf(p.name)?.symbol).filter(Boolean));
+          const missing = holdings.filter((r) => !covered.has(r.symbol) && r.kind !== "cash" && r.kind !== "debt" && !r.symbol.startsWith("$"));
+          for (const r of missing) {
+            if (sections.positions.length >= 10) break;
+            const nm = plainCompanyName(krName(r.symbol, r.nickname, r.name));
+            const w = usd(Number(r.value ?? 0), r.currency) / total * 100;
+            sections.positions.push({ name: nm, note: `${nm} is ${w < 0.05 ? "under 0.1" : w.toFixed(1)}% of assets. ${codeRisk(r.kind, themeOf(r.symbol, r.kind))}`, watch: "No confirmed date yet" });
+          }
+        }
         if (edition === "assessment") {
           const styles = toArr((invBy.get(uid) as Investor | null | undefined)?.styles, ["value"]);
           // round 5: a stability / income reader was told to "improve the modest Bitcoin position"
@@ -1671,7 +1695,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           const bookInfo = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], theme: themeOf(r.symbol, r.kind),
             pct: usd(Number(r.value ?? 0), r.currency) / total * 100, region: (r.kind === "crypto" ? "crypto" : /\.(?:KS|KQ)$/.test(r.symbol) ? "KR" : "US") as "US" | "KR" | "crypto" }));
           const EXAMPLES = ["No income sleeve: dividend-growth ETFs", "All-US book: developed-market ex-US index funds", "One-theme book: AI software and infrastructure beyond chips"];
-          const fit = (sections.ideas ?? []).map(deValue).filter((x) => !offLensIdea(x, styles) && !offRiskIdea(x, styles) && !ideaContradictions(x, bookInfo, EXAMPLES));
+          const fit = (sections.ideas ?? []).map(deValue).map((x) => cleanIdea(x)).filter((x): x is string => !!x).filter((x) => !offLensIdea(x, styles) && !offRiskIdea(x, styles) && !ideaContradictions(x, bookInfo, EXAMPLES));
           // every idea pushed a product this reader does not invest in: the gap itself stays, as a fact (when it is true)
           const fallbackIdea = "No bond or income exposure: one growth driver moves the whole book";
           sections.ideas = fit.length ? fit : (sections.ideas ?? []).length && !ideaContradictions(fallbackIdea, bookInfo) ? [fallbackIdea] : [];
@@ -1717,11 +1741,18 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         // own; a group share must be labelled as the group
         const weightFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / total * 100 }));
         const bookNamesAll = weightFacts.flatMap((w) => w.names);
+        // r10: "META, the week's biggest loser" when META was the week's top gainer: superlatives and period claims are held
+        // to each holding's own windows, as in Ask
+        const winFacts = fixture ? [] : await Promise.all(holdings.slice(0, 12).map(async (r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)],
+          windows: ((await Promise.race([windowReturns(admin, r.symbol, [7, 30, 90, 365, YTD], Date.now(), r.kind === "crypto" ? null : /\.(?:KS|KQ)$/.test(r.symbol) ? "KR" : "US").catch(() => null), new Promise<null>((res) => setTimeout(() => res(null), 4000))]))?.pct ?? {}) as Record<number, number | null> })));
         // round 9 intelligence: events and causes are grounded in DATA only (headlines, earnings estimates, dividend and
         // deliveries dates), never in model text: the memos are model output and would ground their own inventions
         const { data: gNews } = fixture ? { data: [] } : await admin.from("news").select("title, summary").in("symbol", holdings.map((r) => r.symbol).slice(0, 25))
           .gte("published_at", new Date(Date.now() - 10 * 86400000).toISOString()).limit(400);
+        // r10: the estimates as data lines too (their ISO dates read as "Nov 25"), so an earnings watch built from them
+        // is grounded (every watch had become "No confirmed date yet", NVDA and AAPL included)
         const groundSrc = [...nextEarn, ...divData.map((x) => x.d.line), ...dlvFacts.filter((d) => d.est).map((d) => `${d.names[0]} deliveries ${d.est}`),
+          ...earnEsts.filter((e) => e.est || e.range).map((e) => `${e.names.join(" ")} earnings results report expected ${e.est ?? ""} ${e.range ? e.range.join(" ") : ""}`),
           ...((gNews ?? []) as { title: string; summary?: string | null }[]).map((n) => `${n.title} ${n.summary ?? ""}`)].join("\n");
         const weightGroups = [{ label: /\bcrypto\b/i, value: exposure.crypto }, { label: /\bbonds?\b/i, value: exposure.bonds }, { label: /\bKorea(?:n)?\b/i, value: exposure.krEquity },
           { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity }, { label: /\bcash\b/i, value: exposure.cash }, { label: /\b(?:top (?:three|3|five|5)|together|combined)\b/i, value: -1 }];
@@ -1751,6 +1782,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         ];
         const TECH_T = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]);
         // r10: "Today added $621 across US and Korean stocks" when the $621 has crypto and Korea's Wednesday move in it
+        const bookYieldPct = divIncome > 0 ? divIncome / total * 100 : 0;
         const scopeMixed = holdings.some((r) => (r.kind === "crypto" || /-USD$/.test(r.symbol)) && r.change_pct !== null && Number(r.change_pct) !== 0)
           || (holdings.some((r) => /\.(?:KS|KQ)$/.test(r.symbol)) && !marketState("KR").tradingToday);
         const themesArr = [...themeShare].filter(([th]) => th !== "other").map(([name, pct]) => ({ name, pct }));
@@ -1760,7 +1792,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           // tech share is held to the computed one ("Tech makes up about 57%" at ~97%)
           // round 9: the compact morning read "Portfolio up 0.5%" (+0.27%) and "What it means the AI chip rally adds..."
           const x0 = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup);
-          const x = fixScopeLabels(fixThemeHeavy(fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB), themesArr), scopeMixed);
+          const x = dropYieldPurpose(fixThemeShares(fixScopeLabels(fixThemeHeavy(fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB), themesArr), scopeMixed), themesArr), bookYieldPct);
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
@@ -1768,7 +1800,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           const bad = [...historicalClaims(x, hsrc, briefDate), ...unsupportedCauses(x, hsrc), ...wrongEarningsMonths(x, earnEsts),
             ...wrongEarningsDates(parts, earnEsts, briefDate), ...wrongDividendAmounts(x, divFacts), ...wrongDeliveriesDates(x, dlvFacts, briefDate),
             // round 5: "captures the full S&P 500 upside while avoiding individual stock fees", "support a 4-8% annual return"
-            ...promoClaims(x), ...returnForecasts(x), ...themeClaims(x, themesArr), ...(edition === "assessment" ? [] : dayTargetClaims(x)),
+            ...promoClaims(x), ...returnForecasts(x), ...themeClaims(x, themesArr), ...illogicalConcentration(x),
+            ...(winFacts.length ? [...superlativeClaims(x, winFacts), ...periodReturnMismatches(x, winFacts)] : []), ...(edition === "assessment" ? [] : dayTargetClaims(x)),
             // round 9 intelligence: a dated event or a cause no source line carries ("MSFT Copilot revenue update
             // Monday", "Microsoft's AI spend boosted earnings")
             ...(fixture ? [] : [...ungroundedEventSentences(x, groundSrc, bookNamesAll), ...ungroundedCauses(x, groundSrc, bookNamesAll)]),
@@ -1825,7 +1858,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           ...(fixture ? [] : ungroundedEvents(sections.calendar ?? [], groundSrc, bookNamesAll))]);
         sections.calendar = (sections.calendar ?? []).filter((c) => !offCal.has(c)).map((c) => tidyNumbers(plainScrub(c, PORTFOLIO_PLAIN)));
         sections.positions = sections.positions.map((p) => weekendDated([p.watch], briefDate).length || wrongDeliveriesDates(p.watch, dlvFacts, briefDate).length
-          || (!fixture && ungroundedEvents([p.watch], groundSrc, bookNamesAll).length)
+          || (!fixture && !(/\b(?:earnings|results|reports?)\b/i.test(p.watch) && earnEsts.some((e) => (e.est || e.range) && e.names.some((n) => n && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(p.watch)))) && ungroundedEvents([p.watch], groundSrc, bookNamesAll).length)
           ? { ...p, watch: ((w) => !fixture && ungroundedEvents([w], groundSrc, bookNamesAll).length ? "No confirmed date yet" : w)(watchFallback(p.name)) } : p);
       }
       snap("clean (plain words/exposure/weights/claims)", sections);

@@ -318,7 +318,7 @@ export function valuationHits(text: string): string[] {
     // round 9 v44 re-check: contractions and near-paraphrases ("Thesis isn't broken, it's being tested", "Cloud is the new
     // engine", "makes robotaxi optionality real", "Grade: B.", "not stretched on that metric", "Trend intact", "modest but
     // compounding", "현금 3.4%는 낮은 수준", "현금이 채권 대체 일부 가능")
-    if (s && /\b(?:isn['’]t|is not|not|wasn['’]t|hasn['’]t been|never) (?:yet |really )?broken\b|\bthe (?:new|next|second|real|clear) (?:growth |profit )?engine\b|\bmakes? [\w' -]{0,30}\b(?:optionality|story|case|thesis) real\b|\boptionality (?:is |looks )?(?:now )?real\b|(?:^|[.:]\s*)grade:?\s*[A-F][+-]?(?=[\s.,;]|$)|\bgets? an? [A-F][+-]?\b(?= grade|$|[.,])|\b(?:isn['’]t|is not|not|doesn['’]t look|does not look|hardly) (?:too |overly |that |especially )?(?:stretched|expensive|cheap|overvalued|undervalued|rich|frothy|pricey)\b|\btrend (?:is |remains |stays |looks )?intact\b|\bmodest but compounding\b|\b(?:solid|healthy|strong|robust) (?:growth|execution|fundamentals|momentum)\b(?![^.]{0,20}\b(?:if|whether|unless)\b)|\bexecution (?:is |looks |remains )?(?:mostly |largely )?(?:positive|solid|strong|on track)\b|(?:현금|비중).{0,20}?(?:낮은|높은|적정한?|적당한|과한|부족한|중립적인?) 수준|대체 (?:일부 )?가능|대신할 수 있|(?:양호|탄탄|견조)(?:합니다|한 편|해 보)/i.test(s) && !namedSource && !/\b(?:if|whether|unless)\b|만약|경우에/i.test(s)) { hits.push(raw); continue; }
+    if (s && /\b(?:isn['’]t|is not|not|wasn['’]t|hasn['’]t been|never) (?:yet |really )?broken\b|\bthe (?:new|next|second|real|clear) (?:growth |profit )?engine\b|\bmakes? [\w' -]{0,30}\b(?:optionality|story|case|thesis) real\b|\boptionality (?:is |looks )?(?:now )?real\b|(?:^|[.:]\s*)grade:?\s*[A-F][+-]?(?=[\s.,;]|$)|\bgets? an? [A-F][+-]?\b(?= grade|$|[.,])|\b(?:isn['’]t|is not|not|doesn['’]t look|does not look|hardly) (?:too |overly |that |especially )?(?:stretched|expensive|cheap|overvalued|undervalued|rich|frothy|pricey)\b|\btrend (?:is |remains |stays |looks )?intact\b|\bnot structural\b|\b(?:is|looks|seems|appears) (?:temporary|transitory|cyclical, not structural)\b|\bmodest but compounding\b|\b(?:solid|healthy|strong|robust) (?:growth|execution|fundamentals|momentum)\b(?![^.]{0,20}\b(?:if|whether|unless)\b)|\bexecution (?:is |looks |remains )?(?:mostly |largely )?(?:positive|solid|strong|on track)\b|(?:현금|비중).{0,20}?(?:낮은|높은|적정한?|적당한|과한|부족한|중립적인?) 수준|대체 (?:일부 )?가능|대신할 수 있|(?:양호|탄탄|견조)(?:합니다|한 편|해 보)/i.test(s) && !namedSource && !/\b(?:if|whether|unless)\b|만약|경우에/i.test(s)) { hits.push(raw); continue; }
     if (!s || (ATTRIBUTED.test(s) && (!valuationWord || namedSource || debate))) continue;
     // round 4: "a hidden asset the market isn't fully pricing", "17x versus the S&P's 25x leaves cushion", "the
     // long-term story still looks solid" (to "is it on sale?"): verdicts in the app's voice
@@ -1339,7 +1339,7 @@ export function promoClaims(text: string): string[] {
 }
 /** A return forecast in the app's voice ("should support a 4-8% annual return", round 5). */
 export function returnForecasts(text: string): string[] {
-  return sentencesOf(text).filter((s) => /\b(?:support|deliver|generate|produce|achieve|reach|hit|earn|return|yield|compound(?:ing)? at)\w*\b[^.]{0,40}?\b\d+(?:\.\d+)?(?:\s?(?:-|–|to)\s?\d+(?:\.\d+)?)?\s?%\s*(?:an?\s+|per\s+)?(?:annual(?:ly|ized)?|a year|per year|yearly|each year)?\s*(?:returns?|gains?|growth)\b/i.test(s)
+  return sentencesOf(text).filter((s) => /\b(?:long[- ](?:run|term) )?(?:significant |strong |outsized |big )?return potential\b|\bsignificant (?:long[- ](?:run|term) )?returns?\b(?! (?:so far|this year|since))/i.test(s) || /\b(?:support|deliver|generate|produce|achieve|reach|hit|earn|return|yield|compound(?:ing)? at)\w*\b[^.]{0,40}?\b\d+(?:\.\d+)?(?:\s?(?:-|–|to)\s?\d+(?:\.\d+)?)?\s?%\s*(?:an?\s+|per\s+)?(?:annual(?:ly|ized)?|a year|per year|yearly|each year)?\s*(?:returns?|gains?|growth)\b/i.test(s)
     && !/\b(?:target|goal|you (?:set|chose|picked)|your (?:target|goal))\b/i.test(s) || /\b(?:should|will|can)\s+(?:return|earn|deliver|compound)\b[^.]{0,30}\d+(?:\.\d+)?\s?%/i.test(s));
 }
 /** An idea to ADD to crypto for a reader whose profile is not crypto (round 5: a stability / income investor
@@ -2022,7 +2022,7 @@ export function readerLevel(xs: unknown): string {
  *  The named holding must be the leader (or laggard) of that window. */
 export function superlativeClaims(text: string, facts: { names: string[]; windows: Record<number, number | null> }[]): string[] {
   const WIN: [RegExp, number][] = [[/\b(?:year to date|YTD|this year|since January)\b|올해|연초/i, -1], [/\b(?:1-year|one-year|over (?:the )?(?:past |last )?year|12-month|1Y)\b|1년/i, 365],
-    [/\b(?:three months|3-month|3M|quarter)\b|3개월/i, 90], [/\b(?:this month|one-month|1-month|30-day|1M|past month)\b|한 달|1개월/i, 30], [/\b(?:this week|one-week|1-week|1W|past week)\b|이번 주|1주/i, 7]];
+    [/\b(?:three months|3-month|3M|quarter)\b|3개월/i, 90], [/\b(?:this month|one-month|1-month|30-day|1M|past month)\b|한 달|1개월/i, 30], [/\b(?:this week|one-week|1-week|1W|past week)\b|\b(?:the|this) week's\b|\bon the week\b|\bweekly\b|이번 주|1주/i, 7]];
   return sentencesOf(text).filter((s) => {
     const up = /\b(?:strongest|best|biggest|top|largest|leading|highest)\s+(?:gain|gainer|performer|performance|return|returner|rise|winner|mover)s?\b|\b(?:leads|tops) (?:your|the) (?:portfolio|holdings|pack|book)\b|\b(?:leads|is leading|tops|is ahead)\b(?=[^.]{0,30}(?:\bYTD\b|this year|year to date|\b1Y\b|past year|3-month|3M|this month|1M|this week))|가장 (?:많이 오른|큰 상승|수익률이 높은)/i.test(s);
     const down = /\b(?:weakest|worst|biggest|largest)\s+(?:loser|performer|performance|return|drop|decline|laggard)s?\b|\b(?:lags|trails) (?:your|the) (?:portfolio|holdings|pack|book)\b|가장 (?:많이 내린|부진한)/i.test(s);
@@ -2393,6 +2393,8 @@ export function cleanNote(note: string): { note: string; needsRisk: boolean } {
     // a list of strengths in the risk slot (KO: "iconic brand moat, ..., high margins, strong cash generation,
     // manageable leverage"): most items carry a strength marker
     const items = body.split(/,|;|\band\b/).map((x) => x.trim()).filter(Boolean);
+    // r10: "highly diversified with no concentration risk" (a strength), "expense ratio could exceed 0.05%" (not a real risk)
+    if (/\bno (?:\w+ ){0,2}risks?\b|\b(?:highly |broadly |well[- ])?diversified\b|\blow[- ]cost\b|\blow fees?\b|\bexpense ratio\b/i.test(body) && !/\b(?:fall|falls|drop|drops|declin\w*|lose|loses|lag\w*|trail\w*|cut\w*|miss\w*|hurt\w*|plunge\w*|slump\w*|drawdown|sell-?off)\b/i.test(body)) return false;
     const POS = /\b(?:moat|iconic|high margins?|strong|manageable|healthy|solid|robust|durable|pricing power|cash generation|AAA|wide|leading|dominant|resilient|diversified)\b/i;
     return !(items.length >= 2 && items.filter((x) => POS.test(x)).length * 2 >= items.length);
   });
@@ -2869,4 +2871,104 @@ export function dayTargetClaims(text: string): string[] {
 export function fixScopeLabels(text: string, mixed: boolean): string {
   if (!mixed) return String(text ?? "");
   return String(text ?? "").replace(/\bacross (?:your )?(?:(?:US|U\.S\.|American)(?: and (?:Korean|KRX))?|(?:Korean|KRX) and (?:US|U\.S\.)) (?:stocks|shares|holdings|names|equities)\b/gi, "across the portfolio");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// r10 newcomer M1/M2
+// ---------------------------------------------------------------------------------------------------------------
+const THEME_LABEL: [RegExp, string[]][] = [
+  [/\bAI[- ]?semi(?:conductor)?s?\b|\bAI[- ]chips?\b|\bsemis\b|\bsemiconductors?\b|\bchip(?:makers?|s)?\b|\bmemory[- ]chips?\b/i, ["AI semiconductors"]],
+  [/\bAI[- ]infrastructure\b|\bdata[- ]cent(?:er|re)s?\b/i, ["AI infrastructure"]], [/\bmega[- ]?caps?\b|\bmega-cap platforms?\b/i, ["mega-cap platforms"]],
+  [/\bhealth ?care\b|\bpharma\b/i, ["healthcare"]], [/\bfinancials?\b|\bbanks?\b/i, ["financials"]], [/\bcrypto\b/i, ["crypto", "crypto beta"]],
+  [/\bdividend (?:equity|funds?|ETFs?)\b|\bincome (?:equity|funds?)\b/i, ["dividend equity", "income equity"]], [/\binternational\b|\bex-US\b|\bnon-US\b|\bglobal funds?\b/i, ["international index"]],
+  [/\bbroad (?:US )?(?:index|market)\b|\btotal[- ]market\b/i, ["broad US index"]], [/\bEVs?\b|\bautos?\b/i, ["EV and autos"]], [/\bsoftware\b/i, ["software"]],
+  [/\benergy\b/i, ["energy"]], [/\bconsumer staples\b|\bstaples\b/i, ["consumer staples"]], [/\bbonds?\b/i, ["bonds"]], [/\bgold\b/i, ["gold"]],
+];
+/** "A focused AI-semiconductor theme consumes 58.2% of assets" when that theme is 33.2% (58.2% was the US-stocks share):
+ *  any "<theme label> … N%" with any verb is held to the computed theme share, within 2 points. A move ("rose 3%") and a
+ *  figure closer to another named group are left alone. */
+export function fixThemeShares(text: string, themes: { name: string; pct: number }[]): string {
+  const share = (names: string[]) => themes.filter((t) => names.includes(t.name)).reduce((a, t) => a + t.pct, 0);
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => {
+    for (const [re, names] of THEME_LABEL) {
+      const want = share(names);
+      if (!(want > 0)) continue;
+      const lm = re.exec(sen);
+      if (!lm) continue;
+      const after = sen.slice(lm.index + lm[0].length);
+      const m = /^([^.%]{0,60}?)(?<![+−-])(\d+(?:\.\d+)?)(\s?%)(\s*(?:of (?:assets|the portfolio|your portfolio|the book|holdings)|weight|share|exposure|allocation)?)/i.exec(after);
+      if (!m) continue;
+      if (/\b(?:rose|fell|up|down|gained|lost|dropped|jumped|slid|climbed|moved|returned|growth|grew|margin|yield|revenue)\b[^%\d]{0,14}$/i.test(m[1])) continue;
+      const v = Number(m[2]);
+      if (Math.abs(v - want) <= 2) continue;
+      const at = lm.index + lm[0].length + m[1].length;
+      sen = sen.slice(0, at) + want.toFixed(1) + sen.slice(at + m[2].length);
+    }
+    return sen;
+  }).join(" "));
+}
+
+/** "diversifies into … for modest yield" when the book yields under ~2%: yield is not what the book is held for. */
+export function dropYieldPurpose(text: string, bookYieldPct: number | null): string {
+  if (bookYieldPct === null || bookYieldPct >= 2) return String(text ?? "");
+  return String(text ?? "").replace(/,?\s*(?:held |kept |owned |chosen )?for (?:its |their )?(?:modest |steady |some |extra |added )?(?:yield|income)\b/gi, "");
+}
+
+/** "Your bet holds SK hynix, a DRAM…" / "Your core is TSMC, the world's…": the opener names the holding plainly. */
+export function fixNoteOpener(note: string): string {
+  return String(note ?? "").replace(/^\s*Your (?:[\w-]+ ){0,3}?(?:bet|core|play|anchor|piece|holding|stake|position|exposure|fund|sleeve) (?:holds|is|sits in|comes from|rides on) ([A-Z][\w.&' -]{0,30}?), (a|an|the) /, (_m, name, art) => `${name} is ${art} `);
+}
+
+/** A watch written as memo shorthand ("HBM share <45% alert signal", "Price < $70,000 weekly alert", "expense ratio
+ *  >0.05% trigger"): symbols become words and alert/trigger labels go. */
+export function wordWatch(w: string): string {
+  return String(w ?? "")
+    .replace(/\s*\b(?:(?:weekly|daily|monthly) )?(?:alert signal|alert|trigger|tripwire|signal)\b\s*/gi, " ")
+    .replace(/\s*<=?\s*(?=[$\d₩])/g, " falls below ").replace(/\s*>=?\s*(?=[$\d₩])/g, " rises above ")
+    .replace(/\s{2,}/g, " ").trim();
+}
+
+/** A risk line built in code, per kind, for a holding whose note has none (r10: BTC and SHOP had none; BRKB had no note). */
+export function codeRisk(kind: string | null | undefined, theme: string, ko = false): string {
+  const k = String(kind ?? "").toLowerCase();
+  if (k === "crypto" || /^crypto/.test(theme)) return ko ? "위험: 가격이 1년에 50% 넘게 떨어질 수 있습니다." : "The risk: its price can fall 50% or more in a year.";
+  if (theme === "bonds") return ko ? "위험: 금리가 오르면 가격이 내립니다." : "The risk: rising rates push its price down.";
+  if (theme === "international index") return ko ? "위험: 시장 전체의 하락과 환율 변동에 함께 움직입니다." : "The risk: a broad market drawdown and currency swings move it with the whole market.";
+  if (/index/.test(theme) || /\bindex\b/.test(k)) return ko ? "위험: 시장 전체가 하락하면 함께 떨어집니다." : "The risk: a broad market drawdown takes it down with the whole market.";
+  if (/dividend|income/.test(theme)) return ko ? "위험: 성장주가 시장을 이끌 때 뒤처질 수 있습니다." : "The risk: it lags the broad market when growth stocks lead.";
+  if (k === "etf" || k === "fund") return ko ? "위험: 담고 있는 시장이 하락하면 함께 떨어집니다." : "The risk: it falls with the market it holds.";
+  return ko ? "위험: 성장이나 실적이 기대에 못 미치면 높은 밸류에이션이 흔들릴 수 있습니다." : "The risk: a growth or earnings miss would weigh on its valuation.";
+}
+
+/** A company name with its legal suffix ("SK hynix Inc.") reads as the name everyone uses. */
+export const plainCompanyName = (n: string): string => String(n ?? "").replace(/,?\s+(?:Inc\.?|Incorporated|Corp\.?|Corporation|Co\.,? Ltd\.?|Ltd\.?|plc|PLC|N\.V\.|S\.A\.|AG|SE|Holdings?,? Inc\.?)$/, "").trim();
+
+/** An idea worded as a nudge ("look at a large-cap dividend aristocrat ETF"), with a benefit clause ("to add inflation
+ *  protection"), or pointing at "high-yield": the verb and the clause go; a high-yield idea goes entirely. */
+export function cleanIdea(idea: string): string | null {
+  let t = String(idea ?? "").trim();
+  if (/\bhigh[- ]yield(?:ing)?\b/i.test(t)) return null;
+  t = t.replace(/(:\s*)(?:look (?:at|into)|consider(?:ing)?|explore|check out|try|think about|add(?:ing)?|buy(?:ing)?)\s+/i, "$1")
+    .replace(/\s+(?:to (?:add|provide|boost|improve|increase|gain|capture|lock in|secure|offer)|for (?:added |extra |better |more )?(?:inflation |downside )?(?:protection|stability|income|upside|yield))\b[^.;]*/i, "");
+  return t.replace(/\s+([.,;])/g, "$1").trim() || null;
+}
+
+/** "The concentration risk rises sharply" as the consequence of a business metric: the book's concentration does not
+ *  change with a company's market share. */
+export function illogicalConcentration(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\bconcentration (?:risk )?(?:rises|grows|increases|jumps|spikes|climbs)\b/i.test(s) && /\b(?:if|when|should)\b/i.test(s));
+}
+
+/** A cause given to a move too small to need one ("BRKB gained 0.1% as Berkshire's Lennar stake was reported"), or a
+ *  fund's move credited to its own distribution notice ("VTI rose 0.4% after its quarterly distribution announcement"). */
+export function smallMoveCauses(text: string, facts: { names: string[]; pct: number | null; fund: boolean }[]): string[] {
+  return sentencesOf(text).filter((s) => {
+    const named = facts.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    if (named.length !== 1) return false;
+    if (!/\b(?:after|as|on|following|because of|due to|amid|thanks to|driven by)\b/i.test(s)) return false;
+    const f = named[0];
+    if (f.fund && /\b(?:distribution|dividend|payout)\b[^.]{0,30}\b(?:announce\w*|declar\w*|notice)\b|\b(?:announce\w*|declar\w*)\b[^.]{0,30}\b(?:distribution|dividend|payout)\b/i.test(s)) return true;
+    const m = /(\d+(?:\.\d+)?)\s?%/.exec(s);
+    return !!m && typeof f.pct === "number" && Math.abs(f.pct) < 0.5 && Number(m[1]) < 0.5;
+  });
 }
