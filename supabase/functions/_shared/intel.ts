@@ -2848,15 +2848,21 @@ export function dividendLead(q: string, payers: { label: string; annual: number;
 }
 
 /** "Two holdings are in the red" with one name listed: a count of holdings that does not match the names given. */
-export function countClaims(text: string, facts: { names: string[] }[]): string[] {
+export function countClaims(text: string, facts: { names: string[] }[], book?: { stocks: number; funds: number; holdings: number }): string[] {
   const W: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5 };
   return sentencesOf(text).filter((s) => {
-    const m = /\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+) (?:of your )?(?:holdings|stocks|positions|names|payers)\b|(한|두|세|네|다섯|\d+) ?(?:종목|개 종목)/i.exec(s);
+    const m = /\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+) (?:of your )?(?:single |individual |separate )?(?:holdings|stocks|positions|names|payers|ETFs|funds)\b|(한|두|세|네|다섯|\d+) ?(?:종목|개 종목)/i.exec(s);
     if (!m) return false;
     const n = W[(m[1] ?? m[2] ?? "").toLowerCase()] ?? Number(m[1] ?? m[2]);
     if (!(n >= 2)) return false;
     const named = facts.filter((f) => f.names.some((x) => x && nameIn(s, x))).length;
-    return named > 0 && named !== n;
+    if (named > 0) return named !== n;
+    // r11: "Nine single stocks" in a book of eight: a count of the book's own kinds is checked against it
+    if (book) {
+      const kind = /\bsingle[- ]stocks?|\bindividual stocks?|\bstocks\b|종목/i.test(s) ? book.stocks : /\bETFs?\b|\bfunds?\b/i.test(s) ? book.funds : /\bholdings|\bpositions|\bnames\b/i.test(s) ? book.holdings : null;
+      if (kind !== null && /\byour\b|\bthe (?:book|portfolio)\b|\bholds?\b|\bown\b|보유/i.test(s)) return kind !== n;
+    }
+    return false;
   });
 }
 
@@ -3017,6 +3023,11 @@ export function rankPositionClaims(text: string, facts: { names: string[]; pct: 
       if (typeof mine !== "number" || vals.length < 2) return false;
       return vals.filter((v) => v < 0).length !== 1 || mine >= 0;
     }
+    if (/\bthe (?:biggest |main |largest |key )?drag\b/i.test(s)) {
+      if (typeof mine !== "number" || vals.length < 2) return false;
+      const contrib = facts.map((f) => (typeof f.pct[w as number] === "number" ? (f.pct[w as number] as number) * (f.weight ?? 1) : Infinity));
+      return (mine * (me.weight ?? 1)) > Math.min(...contrib) + 1e-9;
+    }
     if (/\bthe only (?:gainer|winner|holding up|one up)\b/i.test(s)) {
       if (typeof mine !== "number" || vals.length < 2) return false;
       return vals.filter((v) => v > 0).length !== 1 || mine <= 0;
@@ -3065,4 +3076,82 @@ export function mergeParens(text: string): string {
   return String(text ?? "")
     .replace(/\((as of [^()]+)\)\s*\(([+−-]?\d+(?:\.\d+)?%)\)/g, "($2, $1)")
     .replace(/\(([+−-]?\d+(?:\.\d+)?%)\)\s*\((as of [^()]+)\)/g, "($1, $2)");
+}
+
+/** "Q3 deliveries ~Oct 2, one week before earnings" (earnings ~Oct 21): a stated gap between two of a holding's known
+ *  dates is held to the dates (within a week). */
+export function relativeGapClaims(text: string, facts: { names: string[]; dates: Record<string, string | null> }[]): string[] {
+  const W: Record<string, number> = { a: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6 };
+  return sentencesOf(text).filter((s) => {
+    const m = /\b(a|one|two|three|four|five|six|\d)\s+(weeks?|days?|months?)\s+(?:before|ahead of|after|prior to)\s+(?:its |the |their )?(earnings|results|report|deliveries|ex-date|dividend)/i.exec(s);
+    if (!m) return false;
+    const named = facts.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    if (named.length !== 1) return false;
+    const f = named[0];
+    const target = /deliver/i.test(m[3]) ? f.dates.deliveries : /ex-date|dividend/i.test(m[3]) ? f.dates.exdate : f.dates.earnings;
+    const other = Object.entries(f.dates).filter(([k, v]) => v && v !== target && !(/deliver/i.test(m[3]) ? k === "deliveries" : /ex-date|dividend/i.test(m[3]) ? k === "exdate" : k === "earnings")).map(([, v]) => v as string);
+    if (!target || !other.length) return false;
+    const n = W[m[1].toLowerCase()] ?? 1;
+    const statedDays = /week/i.test(m[2]) ? n * 7 : /month/i.test(m[2]) ? n * 30 : n;
+    const actual = other.map((o) => Math.abs(Date.parse(target) - Date.parse(o)) / 86400000);
+    return actual.every((a) => Math.abs(a - statedDays) > 7);
+  });
+}
+
+/** "the biggest company by far" / "the largest company you own" held to market caps (shares outstanding x price). */
+export function companySizeClaims(text: string, facts: { names: string[]; mcap: number | null }[]): string[] {
+  const known = facts.filter((f) => typeof f.mcap === "number" && (f.mcap as number) > 0);
+  if (known.length < 2) return [];
+  const top = [...known].sort((a, b) => (b.mcap as number) - (a.mcap as number))[0];
+  return sentencesOf(text).filter((s) => {
+    if (!/\b(?:biggest|largest|most valuable)\s+(?:company|business|firm|by market (?:cap|value))\b|\bthe (?:biggest|largest) by (?:far|market cap)\b|시가총액(?:이)? (?:가장|제일) 큰/i.test(s)) return false;
+    const named = known.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    return named.length === 1 && named[0] !== top;
+  });
+}
+
+/** "~83% mega-cap tech" when the group is 69.5% (a figure BEFORE the label): the group share is the computed one. */
+export function groupShareFirstClaims(text: string, groups: { label: RegExp; value: number }[]): string[] {
+  return sentencesOf(text).filter((s) => groups.some((g) => {
+    const re = new RegExp(`~?\\s?(\\d+(?:\\.\\d+)?)\\s?%\\s+(?:of (?:the |your )?(?:portfolio|book|assets) (?:is |in )?)?(?:in )?${g.label.source}`, "i");
+    const m = re.exec(s);
+    return !!m && Math.abs(Number(m[1]) - g.value) > 5;
+  }));
+}
+
+/** Percentage-point contributions ("TSLA took about 15 points off", Korean "약 15%p") held to weight x return. */
+export function pointContributionClaims(text: string, facts: { names: string[]; weight: number; pct: Record<number, number | null> }[]): string[] {
+  return sentencesOf(text).filter((s) => {
+    const m = /(\d+(?:\.\d+)?)\s?(?:%p|pp|percentage points?|points?\b|포인트)/i.exec(s);
+    if (!m) return false;
+    const named = facts.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    if (named.length !== 1) return false;
+    const v = Number(m[1]), f = named[0];
+    const cands = [f.weight, ...Object.values(f.pct).filter((x): x is number => typeof x === "number").map((p) => Math.abs(p * f.weight / 100))];
+    return !cands.some((c) => Math.abs(c - v) <= Math.max(0.3, c * 0.2));
+  });
+}
+
+/** "iPhone 17" when every headline says iPhone 18: a product generation the sources contradict. */
+export function productVersionClaims(text: string, sources: string): string[] {
+  const src = String(sources ?? "");
+  const RE = /\b(iPhone|iPad|Pixel|Galaxy S|Galaxy Z Fold|Galaxy Z Flip|Model|GPT|Gemini|Llama|Claude|Grok|Apple Watch Series|PlayStation|Xbox|Switch)\s?(\d{1,3})\b/gi;
+  const inSrc = new Map<string, Set<string>>();
+  for (const m of src.matchAll(RE)) { const k = m[1].toLowerCase(); if (!inSrc.has(k)) inSrc.set(k, new Set()); inSrc.get(k)!.add(m[2]); }
+  return sentencesOf(text).filter((s) => [...s.matchAll(RE)].some((m) => { const seen = inSrc.get(m[1].toLowerCase()); return !!seen && seen.size > 0 && !seen.has(m[2]); }));
+}
+
+/** A cause pointing the other way ("META fell on JPMorgan's bullish call", "rose after a downgrade"). */
+export function directionCauseClaims(text: string): string[] {
+  return sentencesOf(text).filter((s) => {
+    const down = /\b(?:fell|dropped|slid|sank|declined|lost|slipped|tumbled|down)\b|하락|떨어|빠졌|내렸/i.test(s);
+    const up = /\b(?:rose|gained|jumped|climbed|rallied|surged|up)\b|상승|올랐|뛰었/i.test(s);
+    if (down === up) return false;
+    const cause = /\b(?:after|on|following|as|because of|due to|amid)\b(.{0,80})|(.{0,40})(?:때문|영향으로|여파로|탓에)/i.exec(s);
+    if (!cause) return false;
+    const c = cause[1] ?? cause[2] ?? "";
+    const bull = /\bbullish\b|\bupgrad\w*|\braised (?:its |the )?(?:price )?target\b|\bprice target (?:hike|raise)|\boutperform rating\b|\bbuy rating\b|강세 (?:전망|의견)|목표주가 상향|투자의견 상향|매수 의견/i.test(c);
+    const bear = /\bbearish\b|\bdowngrad\w*|\bcut (?:its |the )?(?:price )?target\b|\bunderperform rating\b|\bsell rating\b|약세 (?:전망|의견)|목표주가 하향|투자의견 하향|매도 의견/i.test(c);
+    return (down && bull && !bear) || (up && bear && !bull);
+  });
 }
