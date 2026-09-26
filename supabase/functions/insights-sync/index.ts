@@ -140,7 +140,8 @@ const lineOk = (l: string, facts: LiveFact[], dlv: DlvFact[] = []) => !dayMoveMi
 // stay digits in written copy
 // round 8: position cards are shared by every reader of a symbol, so they carry no beginner glosses ("a wide the biggest
 // companies gap of its price tag against profits" reached advanced readers); signed figures use the true minus sign
-const cardScrub = (t: string) => sanitize(tidyNumbers(plainScrub(t, [...PORTFOLIO_PLAIN, ...CARD_PLAIN])));
+// r10: "adds legal risk hanging over it to Meta's AI-driven rally" (a template garble) reads "adds legal risk to …"
+const cardScrub = (t: string) => sanitize(tidyNumbers(plainScrub(String(t ?? "").replace(/\s+hanging over it(?= (?:to|on|for)\b)/gi, ""), [...PORTFOLIO_PLAIN, ...CARD_PLAIN])));
 
 /** A second read of a finished card by the fast model, for what patterns cannot see: a bullet that is garbled
  *  (two headlines compressed into nonsense, round 3: "TSLA leads 2,500 electric trucks backed by Microsoft and

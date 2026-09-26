@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  superlativeClaims, periodReturnMismatches, YTD, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  superlativeClaims, periodReturnMismatches, YTD, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -505,12 +505,14 @@ Deno.serve(async (req) => {
   };
   // KOSPI and the won rate only reach books that hold something Korean: a USD-only reader never sees won
   const krCtx = (korean: boolean) => korean ? [fmtCtx("^KS11", "KOSPI"), fmtCtx("USDKRW", "USDKRW")] : [];
+  const afterClose = edition === "close" || edition === "kr_close";
   const marketLinesFor = (korean: boolean) => [
-    fmtCtx("ES=F", "S&P500 futures"), fmtCtx("NQ=F", "Nasdaq futures"), fmtCtx("^GSPC", "S&P500 close"),
+    // r10: a closing note cited "Nasdaq futures" as the day's result; after the close only the index closes are given
+    ...(afterClose ? [] : [fmtCtx("ES=F", "S&P 500 futures"), fmtCtx("NQ=F", "Nasdaq futures")]), fmtCtx("^GSPC", "S&P 500 close"),
     fmtCtx("^VIX", "VIX"), ...krCtx(korean),
   ].filter(Boolean).join(" · ");
   const mktLiveFor = (korean: boolean) => [
-    fmtCtx("^GSPC", "S&P500 index"), fmtCtx("NQ=F", "Nasdaq futures"), fmtCtx("^VIX", "VIX"), ...krCtx(korean),
+    fmtCtx("^GSPC", "S&P 500 index"), ...(afterClose ? [] : [fmtCtx("NQ=F", "Nasdaq futures")]), fmtCtx("^VIX", "VIX"), ...krCtx(korean),
   ].filter(Boolean).join(" · ");
   const leaderLines = LEADERS.map((sy) => { const p = px.get(sy); return p && p.chg !== null ? `${sy} ${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%` : null; }).filter(Boolean).join(" · ");
   const since24h = new Date(Date.now() - 24 * 3600000).toISOString();
@@ -1792,7 +1794,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           // tech share is held to the computed one ("Tech makes up about 57%" at ~97%)
           // round 9: the compact morning read "Portfolio up 0.5%" (+0.27%) and "What it means the AI chip rally adds..."
           const x0 = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup);
-          const x = dropYieldPurpose(fixThemeShares(fixScopeLabels(fixThemeHeavy(fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB), themesArr), scopeMixed), themesArr), bookYieldPct);
+          const x = ((t: string) => edition === "close" || edition === "kr_close" ? dropFuturesAfterClose(t) : t)(fixFragments(dropYieldPurpose(fixThemeShares(fixScopeLabels(fixThemeHeavy(fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB), themesArr), scopeMixed), themesArr), bookYieldPct)));
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
