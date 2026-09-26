@@ -2530,7 +2530,9 @@ export function isDecisionFrame(q: string): boolean {
   // r11 P5: price levels (support, resistance, floor, bottom), options / margin / leverage strategies, premium and cheap
   // or expensive calls, and "roast / be brutal" framings are decisions or verdicts, answered from code
   if (/\b(?:support|resistance|price floor|floor|bottom(?:ed)? out) (?:level|price|zone|line)?\b[^?]{0,30}\?|\bwhere(?:'s| is) (?:the )?(?:support|resistance|floor|bottom)\b|\bhas \w+ bottomed\b|\bkey level\b|바닥|저점|지지선|저항선/i.test(t)) return true;
-  if (/\bcovered calls?\b|\bprotective puts?\b|\b(?:buy|sell|write|use)\b[^?]{0,20}\b(?:calls?|puts?|options?)\b|\boptions? strateg|\bon margin\b|\bmargin (?:loan|account|debt)\b|\bleverage(?:d)?\b[^?]{0,30}\?|\b(?:2x|3x) (?:etf|fund)\b/i.test(t)) return true;
+  // only a DECISION about options, margin or leverage routes here: "What is SOXL and why does it move so much?", "How does
+  // SOXL's daily reset work?" and "What did SOXL do this week?" are information about a holding and are answered
+  if (/\b(?:should|shall|would|could|do|can) (?:i|we)\b[^?]{0,40}\b(?:covered calls?|puts?|calls?|options?|margin|leverage[d]?|2x|3x)\b|\b(?:buy|sell|write|use|try|add|start)\b[^?]{0,20}\b(?:covered calls?|protective puts?|calls?|puts?|options?|on margin|leverage[d]? (?:etf|fund)s?|(?:2x|3x) (?:etf|fund)s?)\b|\b(?:options?|margin|leverage[d]?|(?:2x|3x) (?:etf|fund)s?|covered calls?)\b[^?]{0,40}\b(?:a good idea|a bad idea|worth it|for me|make sense|smart|wise|safe)\b|\boptions? strateg(?:y|ies) (?:for|should|would)/i.test(t)) return true;
   if (/\bdeserve[sd]? (?:its|the|a) (?:premium|valuation|multiple|price)\b|\b(?:over|under)valued\b|\b(?:cheap|expensive|pricey|a bargain)\b[^?]{0,30}\?|고평가|저평가|비싸|싸다|싼가/i.test(t)) return true;
   if (/\broast\b|\bbe brutal\b|\bbrutally honest\b|\bno sugar[- ]?coat|\btear (?:it|my portfolio) apart\b|팩폭|냉정하게/i.test(t)) return true;
   // r10: "just your opinion, AAPL 사 말아?" got "Setup is mixed: momentum strong"

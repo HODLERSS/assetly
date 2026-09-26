@@ -43,3 +43,10 @@ Deno.test("r28 P7: escaped breaks and share-class facts", async () => {
   assertEquals(dualClassClaims("One BRK.A share equals 1,500 Class B shares.").length, 0);
   assertEquals(dualClassClaims("A BRK.B share has 1/200 of the vote of an A share.").length, 1);
 });
+
+Deno.test("r28 P5: information about a held leveraged ETF is answered; a leverage decision is not", async () => {
+  const { isDecisionFrame, isTradeQuestion, isPickQuestion } = await import("./intel.ts");
+  const decision = (q: string) => isDecisionFrame(q) || isTradeQuestion(q) || isPickQuestion(q);
+  for (const q of ["What is SOXL and why does it move so much?", "How does SOXL's daily reset work?", "What did SOXL do this week?", "What is a covered call?"]) if (decision(q)) throw new Error("routed: " + q);
+  for (const q of ["Should I buy a 3x fund?", "Is leverage a good idea for me?", "Should I sell covered calls on AAPL?", "Is buying on margin a good idea?", "Should I use options to hedge?"]) if (!decision(q)) throw new Error("not routed: " + q);
+});
