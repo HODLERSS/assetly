@@ -328,9 +328,11 @@ describe("C6 today never mixes sessions", () => {
     render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue(mixed()) })} />);
     // one calm "Today" line adds every market's latest session (owner, home-calm); which sessions is in its
     // aria-label, and per market, with its own session, inside the Breakdown
+    // "Today" is only what traded today (owner, home-today): the US session, never Korea's Wednesday added in
     const today = await screen.findByTestId("total-day");
-    await waitFor(() => expect(today.textContent).toMatch(/^Today \+\$302 \(/));
-    expect(today.getAttribute("aria-label")).toMatch(/latest sessions: Korea Wed close$/);
+    await waitFor(() => expect(today.textContent).toBe("Today +$11 (+1.09%)"));
+    expect(today.getAttribute("aria-label")).toBe("Today: US +$11 (+1.09%)");
+    expect(document.body.textContent).not.toMatch(/\+\$302/);   // sessions from different days are never blended
     expect(screen.queryByTestId("total-day-other")).toBeNull();
     await userEvent.click(screen.getByTestId("nw-detail-toggle"));
     const lines = screen.getAllByTestId("market-line").map((el) => el.textContent);
