@@ -29,6 +29,16 @@ Deno.test("r29 C: member lists, targets, non-session dates, smallest sleeve", as
   assertEquals(metricSuperlativeClaims("Smallest sleeve: cash.", [{ names: ["cash"], weight: 3.4 }, { names: ["AVGO"], weight: 1.2 }, { names: ["NVDA"], weight: 19 }]).length, 1);
 });
 
+Deno.test("r29 D: house-voice forecast and low-yield income claims in a brief", async () => {
+  const { holdingIncomeClaims, lowYieldIncomeClaims } = await import("./intel.ts");
+  assertEquals(softVerdicts("Microsoft reports Oct 28. A clean beat rerates the whole portfolio.").length, 1);
+  const facts = [{ names: ["MSFT", "Microsoft"], yieldPct: 0.7 }, { names: ["KO", "Coca-Cola"], yieldPct: 2.9 }, { names: ["AAPL"], yieldPct: null }];
+  assertEquals(holdingIncomeClaims("MSFT's yield adds meaningful income. The book rose 0.3%.", facts), ["MSFT's yield adds meaningful income."]);
+  assertEquals(holdingIncomeClaims("Coca-Cola adds steady income.", facts), []);
+  assertEquals(holdingIncomeClaims("AAPL adds some income.", facts), []);   // yield did not load: unknown, not low
+  assertEquals(lowYieldIncomeClaims("Its yield adds meaningful income.", 0.7).length, 1);
+});
+
 Deno.test("r29 B: asked counts and the code summary", () => {
   assertEquals(askedCount("Summarize my portfolio in 3 bullet points"), 3);
   assertEquals(askedCount("How is NVDA doing?"), null);

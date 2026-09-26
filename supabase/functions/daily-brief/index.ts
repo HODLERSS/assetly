@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -82,7 +82,9 @@ const FAST_MODEL = "gpt-oss-120b";
 // 14 (r10 native): fragments and seams, no futures in a closing note
 // 15 (r11): stored rows held to the windows ("the week's biggest loser"), merged parentheticals
 // 16 (r11): live rows repaired in place, estimated watches kept, no "No confirmed date yet" placeholder
-const GEN_VERSION = 16;   // 4:
+// 17 (r12 D): house-voice verdicts/forecasts ("A clean beat rerates the whole portfolio") and low-yield income claims
+//    dropped from stored rows; scripts re-made (card decimals, "~" / "(est)" in words, "Platforms'")
+const GEN_VERSION = 17;   // 4:
 const REPAIR_ROWS_PER_RUN = 12, REPAIR_ROWS_PER_USER = 6;   // r10 load: a GEN bump no longer rewrites every stored row in one run calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
@@ -314,7 +316,7 @@ function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: numbe
  *  (`live`: those are regenerated from current data, never patched). Returns the editions it patched, whose
  *  script and audio were cleared, so the caller can have them re-narrated. */
 // deno-lint-ignore no-explicit-any
-type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null }[]; yields: number[]; ground?: string; wins?: { names: string[]; windows: Record<number, number | null> }[] };
+type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null; yieldPct?: number | null }[]; yields: number[]; ground?: string; wins?: { names: string[]; windows: Record<number, number | null> }[] };
 async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctxIn?: RepairCtx | (() => Promise<RepairCtx | undefined>)): Promise<{ edition: string; date: string }[]> {
   // Round 9 designer: the rows a reader SEES are the latest ones, not only today's. Over a weekend (or before the first
   // edition of a day) Home shows the last trading day's rows, and a repair keyed to today's date never reached them: the
@@ -411,6 +413,9 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
       // round 7: a weight printed as a move ("META dropped 12.8%"), a yield we never computed ("near 0.5%")
       ...(ctx ? [...weightAsMoveHits(x, ctx.facts), ...(ctx.yields.length ? wrongYieldClaims(x, ctx.yields) : [])] : []),
       ...promoCharacterisations(x), ...targetPaceClaims(x), ...(edition === "assessment" ? [] : dayTargetClaims(x)),
+      // r12 D: the stored close kept "A clean beat rerates the whole portfolio" (a forecast, also spoken) and MSFT's
+      // "yield adds meaningful income" at 0.7%
+      ...softVerdicts(x), ...(ctx ? holdingIncomeClaims(x, ctx.facts.map((f) => ({ names: f.names, yieldPct: f.yieldPct ?? null }))) : []),
       ...(ctx?.wins?.length ? [...superlativeClaims(x, ctx.wins), ...periodReturnMismatches(x, ctx.wins)] : []),
       ...(groundSrc !== null ? [...ungroundedEventSentences(x, groundSrc, allNames), ...ungroundedCauses(x, groundSrc, allNames)] : [])]);
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
@@ -604,7 +609,8 @@ Deno.serve(async (req) => {
       windows: ((await Promise.race([windowReturns(admin, r.symbol, [7, 30, 90, 365, YTD], Date.now(), r.kind === "crypto" ? null : /\.(?:KS|KQ)$/.test(r.symbol) ? "KR" : "US").catch(() => null), new Promise<null>((res) => setTimeout(() => res(null), 4000))]))?.pct ?? {}) as Record<number, number | null> })));
     return {
       wins,
-      facts: hs.map((r) => ({ symbol: r.symbol, names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: toUsd(Number(r.value ?? 0), r.currency) / tot * 100, pct: r.change_pct === null ? null : Number(r.change_pct) })),
+      facts: hs.map((r) => ({ symbol: r.symbol, names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: toUsd(Number(r.value ?? 0), r.currency) / tot * 100, pct: r.change_pct === null ? null : Number(r.change_pct),
+        yieldPct: dv.has(r.symbol) ? Number(dv.get(r.symbol)?.div_yield ?? 0) || 0 : null })),
       yields: cur > 0 ? [cur / tot * 100, ttm / tot * 100, ...each].map((v) => Number(v.toFixed(2))) : [],
     };
   };
@@ -1844,6 +1850,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           || (holdings.some((r) => /\.(?:KS|KQ)$/.test(r.symbol)) && !marketState("KR").tradingToday);
         const themesArr = [...themeShare].filter(([th]) => th !== "other").map(([name, pct]) => ({ name, pct }));
         const techGroup = [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: [...themeShare].filter(([th]) => TECH_T.has(th)).reduce((a, [, v]) => a + v, 0) }];
+        const incomeFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], yieldPct: divRows.has(r.symbol) ? Number(divRows.get(r.symbol)?.div_yield ?? 0) || 0 : null }));
         const clean = (t: string) => {
           // round 8: a verdict TAIL leaves a one-sentence lede as a clause ("…, keeping the portfolio on track"), and a
           // tech share is held to the computed one ("Tech makes up about 57%" at ~97%)
@@ -1870,7 +1877,10 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             // (AAPL + MSFT pay 26% of it), "+7.2% this month, on pace with your 8-12% annual target"
             ...promoCharacterisations(x), ...dividendShareClaims(x, divShares), ...targetPaceClaims(x), ...targetBandClaims(x),
             // a two-word fragment left by an earlier deletion ("It adds.", round 5) goes without a model call
-            ...brokenSentences(x).filter((b) => b.split(/\s+/).length <= 2)];
+            ...brokenSentences(x).filter((b) => b.split(/\s+/).length <= 2),
+            // r12 D: a verdict or forecast in the house voice ("A clean beat rerates the whole portfolio"), and an income
+            // claim for a holding that yields under 2% ("MSFT's yield adds meaningful income")
+            ...softVerdicts(x), ...holdingIncomeClaims(x, incomeFacts)];
           if (!bad.length) return x;
           // line by line, so a multi-line field keeps its newlines (round 7: the join(" ") flattened bullets)
           const kept = perLine(x, (line) => splitSentences(line).filter((s) => !bad.some((b) => b.includes(s.trim()) || s.includes(b))).join(" "));

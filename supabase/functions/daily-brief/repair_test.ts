@@ -22,7 +22,7 @@ const T: Record<string, unknown[]> = {
   ],
   daily_briefs: [{ id: 1, user_id: UID, edition: "close", brief_date: etToday, gen_version: 11, generated_at: day(0.05),
     sections: { lede: "A $9,447 (as of the 4:00 PM ET close) (+0.3%) gain. TSLA was the week's biggest loser.",
-      overnight: "The S&P 500 closed at 7,743.41 (+0.5%), Nasdaq futures sit at 30,921.75.", desk_view: "Concentration stays high.",
+      overnight: "The S&P 500 closed at 7,743.41 (+0.5%), Nasdaq futures sit at 30,921.75.", desk_view: "Concentration stays high. A clean beat rerates the whole portfolio.",
       positions: [{ name: "Tesla", note: "Tesla fell 2.1%.", watch: "No confirmed date yet" }], calendar: [] } }],
 };
 const patches: Record<string, unknown>[] = [];
@@ -71,6 +71,7 @@ Deno.test({ name: "repair: today's live row is patched in place; no placeholder 
   const sec = p!.body.sections;
   assert(!/biggest loser/.test(sec.lede), sec.lede);
   assert(!/futures/.test(sec.overnight), sec.overnight);
+  assert(!/rerates/.test((sec as { desk_view?: string }).desk_view ?? ""), (sec as { desk_view?: string }).desk_view);   // r12 D
   assert(!/\) \(/.test(sec.lede), sec.lede);
   assert(sec.positions.every((x) => !/no confirmed date yet/i.test(x.watch)), JSON.stringify(sec.positions));
   await server.shutdown();

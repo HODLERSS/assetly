@@ -5,6 +5,7 @@
 //     first, so the app's device voice can read it when the ElevenLabs quota is gone (checked once per run).
 //   - callers: daily-brief (fire-and-forget after every write), the backfill sweep (rows missing audio),
 //     and the orchestrator. Auth: internal token, service role, or the owning user.
+import { earWords, roundPct } from "./ear.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { readerLevel, scriptProblems, sanitize, ungroundedEventSentences } from "../_shared/intel.ts";
 import { callJudge } from "../_shared/judge.ts";
@@ -166,7 +167,7 @@ const sayNames = (t: string, names: [string, string][]) => {
 // numbers for the ear: $107,300 -> "a hundred and seven thousand three hundred dollars" is model work; the
 // fallback keeps digits but spaces them so TTS reads them cleanly ("107,300 dollars", "5.8 percent")
 // verbal rounding: nobody says "thirty-four point three percent" or "forty-three thousand two hundred twenty-four dollars"
-const roundPct = (v: number) => (Math.abs(v) < 1 ? v.toFixed(1) : String(Math.round(v)));
+
 const roundUsd = (v: number) => {
   if (v >= 1e9) return (v / 1e9).toFixed(1).replace(/\.0$/, "") + " billion dollars";
   if (v >= 1e6) return (v / 1e6).toFixed(1).replace(/\.0$/, "") + " million dollars";
@@ -182,7 +183,7 @@ const QTR = ["", "first", "second", "third", "fourth"];
 // road: the currency word comes AFTER the magnitude, never before it. A listener heard "three dollar
 // million" on 2026-09-02 because "$3 million" fell through to the bare "$N" rule, which wrote "3 dollars
 // million". Every form the writer might produce is handled BEFORE that catch-all fires.
-const earNumbers = (t: string) => t
+const earNumbers = (t: string) => earWords(t)
   // an ISO date read aloud is "two thousand twenty six dash zero nine"; say it like a person
   .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_, _y, m, d) => `${MONTHS[Number(m) - 1] ?? ""} ${ORD[Number(d)] ?? Number(d)}`.trim())
   // "$3 million", "$3.2 billion", "$85k", "$1.1bn", "USD 3 million", "-$706", "+$48": magnitude first, currency last
@@ -548,7 +549,7 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
       // so the script an operator inspects is exactly the one a listener hears
       if (!savedScript || usedFallback) {
         spoken = roundEar(spoken);
-        spoken = sayNames(earNumbers(spoken.replace(/(\d+(?:\.\d+)?)\s?percent/gi, "$1%").replace(/(\d[\d,]*(?:\.\d+)?)\s?dollars/gi, "$$$1")), names);   // normalize then round: every spoken number comes out rounded, tickers come out as company names
+        spoken = earWords(sayNames(earNumbers(spoken.replace(/(\d+(?:\.\d+)?)\s?percent/gi, "$1%").replace(/(\d[\d,]*(?:\.\d+)?)\s?dollars/gi, "$$$1")), names));   // normalize then round: every spoken number comes out rounded, tickers come out as company names
         if (!/(talk soon|see you|that's your|that’s your)/i.test(spoken.slice(-120))) spoken += ` <break time="0.6s" /> ${isAssess ? "That's your assessment." : "That's your brief."} Talk soon.`;
         if (!(await writeIfSame({ script: spoken }))) continue;
       }
