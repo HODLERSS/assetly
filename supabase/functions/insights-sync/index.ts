@@ -280,7 +280,8 @@ Deno.serve(async (req) => {
     (Array.isArray(body.symbols) && body.symbols.length ? body.symbols.map(String) : undefined);
   let targets = held.filter((s) => !only || only.includes(s));
   // Priority: stalest insight first; money invested breaks ties (big positions refresh first).
-  const { data: existing } = await admin.from("insights").select("symbol, generated_at, bullets, windows")
+  // r11 load: only recent cards (the served one is the newest); the whole card history of every held symbol was read each lap
+  const { data: existing } = await admin.from("insights").select("symbol, generated_at, bullets, windows").gte("generated_at", new Date(Date.now() - 21 * 86400000).toISOString())
     .in("symbol", targets).order("generated_at", { ascending: false });
   const age = new Map<string, number>();
   // A served card that fails today's guards (a valuation call, pipeline wording, a return "from the 1Y low",
@@ -317,7 +318,7 @@ Deno.serve(async (req) => {
   // Round 9 newcomer: cards nobody's lap refreshes (symbols no one holds, seen on the add strip) are not served once
   // they are old, carry a verdict, or carry the old gloss; nor are the cards of a duplicate listing (BRKB for BRK.B).
   // Deleted a few hundred per lap; a held symbol's failing card is regenerated instead (above).
-  if (!fixture && !only && !onlyUser) {
+  if (!fixture && !only && !onlyUser && new Date().getUTCMinutes() < 15) {   // r11 load: once an hour
     const cutoff = new Date(Date.now() - CARD_MAX_AGE_DAYS * 86400000).toISOString();
     const heldSet = new Set(held);
     const heldList = `(${held.map((h) => `"${h.replace(/"/g, "")}"`).join(",")})`;

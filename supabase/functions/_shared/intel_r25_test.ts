@@ -16,6 +16,11 @@ Deno.test("r25: a '<name>:' prefix whose rest is about another company is not th
   assertEquals(anchorNewsItem("Amazon: Meta's Muse handed investors a $65 billion gift", heads), null);
 });
 
+Deno.test("r25 r11: feed pitches and labels", () => {
+  for (const t of ["Meet the AI Stock Wall Street Can't Stop Buying", "Our Target Leaves Wall Street Behind", "IREN Has 82% Upside, Says Analyst"]) assertFalse(headlineOk(t), t);
+  assertEquals(cleanHeadline("Stock Market Today: Nasdaq Hits Record as Apple (AAPL) Rallies | Closing Bell", ["Apple"]), "Nasdaq Hits Record as Apple Rallies");
+});
+
 Deno.test("r25: outlet names", () => {
   assertEquals(sourceName("foxbusiness.com"), "Fox Business");
   assertEquals(sourceName("qz.com"), "Quartz");

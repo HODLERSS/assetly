@@ -2217,6 +2217,8 @@ export function headlineOk(title: string): boolean {
   if (/^\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:(?:[A-Z][\w-]*|AI|top|great|dividend|growth|unstoppable|magnificent)\s+){0,3}(?:stocks?|etfs?|reasons?|things|ways|picks)\b/i.test(t)) return false;   // listicles
   if (/:\s*(?:\d+|one)\s+(?:\w+\s+){0,2}stocks?\b|\b\d+\s+(?:AI\s+)?stocks?\s+to\b/i.test(t)) return false;
   if (/\bif you (?:had )?invest(?:ed)?\s+\$|\bcould be worth\b|\bwhat (?:it|they) could be worth|\bhere'?s (?:what|how much)\b|\bprice (?:targets?|predictions?|forecasts?)\b|\bstock forecasts?\b|\bby 20[3-9]\d\b/i.test(t)) return false;
+  // r11: pitches ("Meet the…", "Our Target Leaves Wall Street Behind", "82% Upside")
+  if (/^meet the\b|\bour (?:price )?target\b|\b\d+(?:\.\d+)?% upside\b|\bupside (?:potential|target)\b|\bleaves wall street behind\b|\bmillionaire[- ]maker\b|\bgenerational\b|\bmust[- ]own\b|\bcould soar\b|\bset to (?:soar|explode)\b/i.test(t)) return false;
   // r10: "Why now might be a good time to invest in Alphabet", "(and 3 Other Stocks to Watch)"
   if (/\b(?:good|great|right|best) time to (?:buy|invest|add|own)\b|\btime to invest\b|\b\d+ other stocks?\b|\bstocks? to (?:watch|own|hold)\b/i.test(t)) return false;
   if (/\bForm\s*4\b|\bSEC Form\b|\b(?:director|officer|insider|10% owner|ceo|cfo|evp|svp)\b[^.]{0,40}\b(?:reported|reports|files?|filed)\b[^.]{0,40}\b(?:sale|sales|purchase|purchases|gift|acquisition)s?\b|\bshare gift\b|\bsells? [\d,]+ shares\b|\bbuys? [\d,]+ shares\b/i.test(t)) return false;
@@ -3054,4 +3056,11 @@ export function dropFuturesAfterClose(text: string): string {
     const cut = s.replace(/,?\s*(?:and\s+)?(?:the\s+)?(?:S&P ?500|Nasdaq|Dow)(?: 100)? futures.*?(?=,\s+[A-Za-z]|[.;](?:\s|$)|$)/gi, "").replace(/\s+([,.;])/g, "$1").replace(/,\s*\./g, ".");
     return /\b\d/.test(cut) || cut.split(/\s+/).length >= 6 ? cut : "";
   }).filter(Boolean).join(" "));
+}
+
+/** "(as of the 4:00 PM ET close) (+0.3%)": two parentheticals in a row read as one ("(+0.3%, as of the 4:00 PM ET close)"). */
+export function mergeParens(text: string): string {
+  return String(text ?? "")
+    .replace(/\((as of [^()]+)\)\s*\(([+−-]?\d+(?:\.\d+)?%)\)/g, "($2, $1)")
+    .replace(/\(([+−-]?\d+(?:\.\d+)?%)\)\s*\((as of [^()]+)\)/g, "($1, $2)");
 }

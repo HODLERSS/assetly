@@ -13,7 +13,7 @@
 //    (_shared/news_rules.ts usableNews: every function that feeds headlines to a model, and the News tab)
 //    and admit it on its lead exactly as ingest did.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { aliasesFor, centrality, decodeEntities, headlineOk, isJunkNews, newsRelevant, publisherFor, titleKey, urlDate } from "../_shared/intel.ts";
+import { aliasesFor, centrality, cleanHeadline, decodeEntities, headlineOk, isJunkNews, newsRelevant, publisherFor, sourceName, titleKey, urlDate } from "../_shared/intel.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
@@ -92,6 +92,9 @@ function gate(items: Parsed[], aliasBy: Map<string, string[]>, knownKeys: Set<st
   const kept: Parsed[] = [];
   for (const i of items) {
     if (isJunkNews(i.title, i.url, i.source)) { dropped.junk++; continue; }
+    // r11: the feed shows the stored title as is: feed labels ("Stock Market Today:", "| Closing Bell"), ticker
+    // parentheticals and publisher suffixes are cleaned before the gate, so duplicates share one key
+    i.title = cleanHeadline(i.title, aliasBy.get(i.symbol) ?? []);
     if (!newsRelevant(i.title, aliasBy.get(i.symbol) ?? [i.symbol], i.lead, i.symbolFeed)) { dropped.offTopic++; continue; }
     // r10 newcomer: the feed carried "82% Upside" pitches and a Hegseth story under BTC. Server-side gate (news_rules
     // stays the web's shared rule): buy-framed, listicle and forecast titles, and a title that does not name the holding
@@ -115,7 +118,7 @@ function gate(items: Parsed[], aliasBy: Map<string, string[]>, knownKeys: Set<st
     const k = titleKey(i.title);
     if (best.get(k) !== i || knownKeys.has(k) || seenUrl.has(`${i.symbol}\u0000${i.url}`)) { dropped.duplicate++; continue; }
     seenUrl.add(`${i.symbol}\u0000${i.url}`);
-    rows.push({ symbol: i.symbol, title: i.title, url: i.url, source: i.source, published_at: i.published_at, summary: i.symbolFeed && i.lead ? i.lead.slice(0, 300) : null });
+    rows.push({ symbol: i.symbol, title: i.title, url: i.url, source: sourceName(publisherFor(i.url, i.source)) || i.source, published_at: i.published_at, summary: i.symbolFeed && i.lead ? i.lead.slice(0, 300) : null });
   }
   return { rows, dropped };
 }
@@ -194,10 +197,18 @@ Deno.serve(async (req) => {
   }
   // the same gate over what is already stored (the last 14 days), a few hundred rows per run
   let pruned = 0;
-  if (url.searchParams.get("fixture") !== "1" && !dry) {
-    const { data: recent } = await admin.from("news").select("id, symbol, title").gte("published_at", new Date(Date.now() - 14 * 86400000).toISOString()).order("published_at", { ascending: false }).limit(300);
-    const bad = ((recent ?? []) as { id: number; symbol: string; title: string }[]).filter((r) => aliasBy.has(r.symbol) && (!headlineOk(String(r.title)) || !Number.isFinite(centrality(String(r.title), aliasBy.get(r.symbol)!)))).map((r) => r.id).slice(0, 50);   // r10 load: small batches
+  if (url.searchParams.get("fixture") !== "1" && !dry && new Date().getUTCMinutes() < 15) {   // r11 load: once an hour
+    const { data: recent } = await admin.from("news").select("id, symbol, title, source, url").gte("published_at", new Date(Date.now() - 14 * 86400000).toISOString()).order("published_at", { ascending: false }).limit(300);
+    const recentRows = ((recent ?? []) as { id: number; symbol: string; title: string; source?: string | null; url?: string }[]).filter((r) => aliasBy.has(r.symbol));
+    // the same story stored more than once under one holding (titles that differed only by a feed label or suffix)
+    const seenKey = new Set<string>(); const dupIds: number[] = [];
+    for (const r of recentRows) { const k = r.symbol + "\u0001" + titleKey(cleanHeadline(String(r.title))); if (seenKey.has(k)) dupIds.push(r.id); else seenKey.add(k); }
+    const bad = [...new Set([...recentRows.filter((r) => !headlineOk(String(r.title)) || !Number.isFinite(centrality(String(r.title), aliasBy.get(r.symbol)!))).map((r) => r.id), ...dupIds])].slice(0, 50);   // r10 load: small batches
     if (bad.length) { const { error } = await admin.from("news").delete().in("id", bad); if (!error) pruned = bad.length; }
+    // stored titles and bylines get the write-time cleaning too, a few per run
+    const fix = recentRows.filter((r) => !bad.includes(r.id)).map((r) => ({ r, t: cleanHeadline(String(r.title), aliasBy.get(r.symbol)!), s: sourceName(publisherFor(String(r.url ?? ""), String(r.source ?? ""))) }))
+      .filter((x) => (x.t && x.t !== x.r.title) || (x.s && x.s !== x.r.source)).slice(0, 25);
+    for (const x of fix) await admin.from("news").update({ title: x.t || x.r.title, source: x.s || x.r.source }).eq("id", x.r.id).then(() => {}, () => {});
   }
   return json({ ok: true, symbols: targetCount, parsed: items.length, stored: wrote, dropped, ...(pruned ? { pruned } : {}) });
 });

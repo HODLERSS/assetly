@@ -44,3 +44,9 @@ Deno.test("r27 native: fragments, seams, futures after the close", async () => {
   assertEquals(dropFuturesAfterClose("The S&P 500 closed at 7,743.41 (+0.5%), Nasdaq futures at 30,921.75."), "The S&P 500 closed at 7,743.41 (+0.5%).");
   assertEquals(dropFuturesAfterClose("Nasdaq futures rose."), "");
 });
+
+Deno.test("r27 r11: two parentheticals in a row read as one", async () => {
+  const { mergeParens } = await import("./intel.ts");
+  assertEquals(mergeParens("A $9,447 (as of the 4:00 PM ET close) (+0.3%) gain."), "A $9,447 (+0.3%, as of the 4:00 PM ET close) gain.");
+  assertEquals(mergeParens("A $9,447 (+0.3%) (as of 4:05 PM ET) gain."), "A $9,447 (+0.3%, as of 4:05 PM ET) gain.");
+});
