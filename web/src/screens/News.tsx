@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
 import { labelParts, marketClock, timeAgo } from "../lib/format";
-import { decodeEntities, dedupeNews } from "../lib/news";
+import { cleanFeedTitle, decodeEntities, dedupeNews } from "../lib/news";
 import { InsightsCard } from "../components/InsightsCard";
 import { heldOnly, readRemovals } from "../lib/heldIntel";
 import { Icon } from "../components/Icon";
@@ -19,7 +19,10 @@ const clock = (ms: number) => marketClock(ms, "US");   // ET with its label, lik
 // the reader had been to Home and back, because the list lived in the screen's own state (r5 designer m-h).
 // "All holdings" is also kept on the device per user (cleared at sign-out, lib/localState), for a cold start
 // offline; the per-holding filters are kept for the session.
-type Kept = { items: NewsItem[]; at: number };
+// `held`: the holdings the "All holdings" list was read for (sorted symbols). A list read for another set, or
+// for no set at all, is never shown for this one (r11 designer: a read made before the holdings were known came
+// back empty, was kept, and showed "Nothing fresh right now" once they arrived).
+type Kept = { items: NewsItem[]; at: number; held?: string };
 // per api and per user: the next account signed in on this device never sees the last one's list
 const newsMemo = new WeakMap<Api, { uid: string | null; scopes: Map<string, Kept> }>();
 const memoFor = (api: Api, uid: string | null) => {
@@ -39,7 +42,7 @@ function readKept(uid: string | null): Kept | null {
 function writeKept(uid: string | null, kept: Kept) {
   if (!uid) return;
   // a page's worth is what the screen shows first; the rest reloads
-  try { localStorage.setItem(newsKey(uid), JSON.stringify({ items: kept.items.slice(0, NEWS_PAGE), at: kept.at })); } catch { /* private mode or quota */ }
+  try { localStorage.setItem(newsKey(uid), JSON.stringify({ items: kept.items.slice(0, NEWS_PAGE), at: kept.at, held: kept.held })); } catch { /* private mode or quota */ }
 }
 
 /** "Today", "Yesterday", else "Wed, Sep 23" (the reader's own calendar); no date: "Earlier". */
@@ -80,26 +83,35 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
   onRefreshSymbol?: (symbol: string) => void; symbolRefreshing?: Record<string, boolean>; symbolFresh?: Record<string, Insight>;
 }) {
   const [filter, setFilter] = useState<string | null>(null);
+  // cash and debt have no news; one chip per symbol even when held in several accounts
+  const newsRows = rows.filter((r, i) => r.kind !== "cash" && r.kind !== "debt"
+    && rows.findIndex((x) => x.symbol === r.symbol) === i);
+  const heldKey = newsRows.map((r) => r.symbol).sort().join(",");
+  // "All holdings" is cached per holdings set; a one-symbol filter is the same list whatever else is held
+  const ck = (key: string) => (key === ALL ? `${ALL}|${heldKey}` : key);
   // the kept list paints at once (a device copy fills in on a cold start); the refresh runs behind it
-  const [cache] = useState(() => {
-    const m = memoFor(api, uid);
-    if (!m.has(ALL)) { const k = readKept(uid); if (k) m.set(ALL, k); }
-    return m;
-  });
-  const [items, setItems] = useState<NewsItem[]>(() => cache.get(ALL)?.items ?? []);
-  const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">(() => (cache.has(ALL) ? "ok" : "loading"));
+  const [cache] = useState(() => memoFor(api, uid));
+  const keptFor = (key: string): Kept | undefined => {
+    if (bookUnknown) return undefined;   // no holdings known yet: nothing kept applies
+    // the device copy: for these holdings, or (an older copy, from before lists carried their holdings) one with
+    // stories in it; an empty older copy may be the empty read this guards against
+    if (!cache.has(ck(key)) && key === ALL) {
+      const k = readKept(uid);
+      if (k && (k.held === heldKey || (k.held === undefined && k.items.length > 0))) cache.set(ck(ALL), k);
+    }
+    return cache.get(ck(key));
+  };
+  const [items, setItems] = useState<NewsItem[]>(() => keptFor(ALL)?.items ?? []);
+  const [state, setState] = useState<"loading" | "ok" | "pulling" | "error">(() => (keptFor(ALL) ? "ok" : "loading"));
   const [limit, setLimit] = useState(NEWS_PAGE);
   const [keptAt, setKeptAt] = useState<number | null>(null);   // a failed refresh over a list loaded earlier: its time
   const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
   const [top5, setTop5] = useState<Insight | null>(null);          // Assetly Intelligence, portfolio-wide
   const [retryN, setRetryN] = useState(0);                         // Retry after a failed load, or a pull to refresh
+  const retrySeenRef = useRef(0);                                   // the retryN the feed effect last handled
   // pull to refresh bumps the same counter; its promise settles once the reload has landed
   const settled = useRef<(() => void) | null>(null);
   const refresh = () => new Promise<void>((resolve) => { settled.current = resolve; setRetryN((n) => n + 1); });
-  // cash and debt have no news; one chip per symbol even when held in several accounts
-  const newsRows = rows.filter((r, i) => r.kind !== "cash" && r.kind !== "debt"
-    && rows.findIndex((x) => x.symbol === r.symbol) === i);
-
   useEffect(() => {
     let live = true;
     if (rows.length > 0) api.getPortfolioInsights().then((v) => {
@@ -118,9 +130,17 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
   useEffect(() => {
     let live = true;
     const key = filter ?? ALL;
-    if (cache.has(key)) { setItems(cache.get(key)!.items); setState("ok"); }   // show instantly, refresh behind
-    else setState("loading");
     setKeptAt(null);
+    // until the holdings are known there is nothing to read: a read now comes back empty and would be kept
+    if (bookUnknown) { setItems([]); setState("ok"); return () => { live = false; }; }   // says "once your portfolio loads"
+    const hit = keptFor(key);
+    if (hit) { setItems(hit.items); setState("ok"); }   // show instantly, refresh behind
+    else { setItems([]); setState("loading"); }
+    // a list read under a minute ago is not read again just because the tab or chip was revisited (each visit
+    // re-read the feed; r11 server fan-out); Retry and pull to refresh always read
+    const asked = retryN !== retrySeenRef.current;
+    retrySeenRef.current = retryN;
+    if (hit && !asked && !offline() && Date.now() - hit.at < 60_000) { settled.current?.(); settled.current = null; return () => { live = false; }; }
     const held = newsRows.map((r) => r.symbol);
     const scope = filter ?? held;
     // one copy per story (URL or headline), entities decoded. Offline, a request can hang instead of failing,
@@ -139,8 +159,8 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
           n = await load();
           if (!live) return;
         }
-        const kept = { items: n, at: Date.now() };
-        cache.set(key, kept);
+        const kept = { items: n, at: Date.now(), held: heldKey };
+        cache.set(ck(key), kept);
         if (key === ALL) writeKept(uid, kept);
         setItems(n);
         setState("ok");
@@ -148,13 +168,14 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
       .catch(() => {
         if (!live) return;
         // a list this visit already loaded stays on screen, dated, under the error (r3 design m3)
-        const kept = cache.get(key);
+        const kept = cache.get(ck(key));
         if (kept) { setItems(kept.items); setKeptAt(kept.at); }
         setState("error");
       })
       .finally(() => { settled.current?.(); settled.current = null; });
     return () => { live = false; };
-  }, [api, filter, rows, retryN]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, filter, heldKey, bookUnknown, retryN]);
   useEffect(() => { setLimit(NEWS_PAGE); }, [filter]);
 
   // only what is still held: bullets about a removed holding wait for the rerun instead of leading the card
@@ -238,7 +259,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
               <a key={n.id} className="row" href={n.url} target="_blank" rel="noreferrer noopener" style={{ textDecoration: "none", display: "flex" }}
                  onClick={(e) => { e.preventDefault(); void openExternal(n.url); }}>
                 <span>
-                  <span style={{ fontWeight: 500 }}>{n.title}</span><br />
+                  <span style={{ fontWeight: 500 }}>{cleanFeedTitle(n.title)}</span><br />
                   <span className="sub">{(() => { const rr = rows.find((x) => x.symbol === n.symbol); return rr ? labelParts(rr, dispKr === "KRW").main : n.symbol; })()} · {n.source} · {timeAgo(n.published_at)}</span>
                 </span>
               </a>

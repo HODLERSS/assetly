@@ -31,8 +31,10 @@ export function writeError(e: unknown, fallback: string): string {
 // Canvas 2c + 3i + the remove flow (gap screen g1): detail, every lot editable, delete with confirm.
 // Every write here (save, delete, remove, change account) runs through one in-flight guard: a second tap
 // while the first is out is ignored, and the button says what it is doing.
-export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved, dispKr = "KRW", others = [] }: {
+export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved, dispKr = "KRW", others = [], onNotice }: {
   api: Api; row: PortfolioRow | null; dispKr?: "USD" | "KRW";
+  /** a short note of what a write actually did ("Lot deleted", "VOO removed"), shown by the app */
+  onNotice?: (message: string) => void;
   /** the same symbol held in other accounts: moving into one of them merges, and asks first */
   others?: PortfolioRow[];
   onChanged: () => Promise<void> | void; onRemoved: () => Promise<void> | void; onBack: () => void;
@@ -189,10 +191,13 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
       </div>
       <div className="card">
         {lots.map((l) => (
-          <button key={l.id} className="row" onClick={() => setEditing(l)} aria-label={cashish ? `Edit ${money(l.qty, row.currency)}` : `Edit lot ${l.qty} ${row.kind === "crypto" ? qtyUnit(row) : "shares"}`}>
-            <span><span className="num">{cashish ? money(l.qty, row.currency) : `${formatQty(l.qty)} ${qtyUnit(row)} @ ${moneyExact(l.cost_per_share, row.currency)}`}</span>{l.note ? <><br /><span className="sub">{l.note}</span></> : null}</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {!cashish && <span className="sub" data-testid="lot-date">{l.acquired_on ? formatDate(l.acquired_on) : "no date"}</span>}
+          <button key={l.id} className="row lot-row" onClick={() => setEditing(l)} aria-label={cashish ? `Edit ${money(l.qty, row.currency)}` : `Edit lot ${l.qty} ${row.kind === "crypto" ? qtyUnit(row) : "shares"}`}>
+            {/* at 320 the date moves under the amount instead of squeezing between it and Edit (r11 designer) */}
+            <span className="lot-main"><span className="num">{cashish ? money(l.qty, row.currency) : `${formatQty(l.qty)} ${qtyUnit(row)} @ ${moneyExact(l.cost_per_share, row.currency)}`}</span>
+              {!cashish && <span className="sub lot-date-narrow" aria-hidden="true">{l.acquired_on ? formatDate(l.acquired_on) : "no date"}</span>}
+              {l.note ? <span className="sub lot-note">{l.note}</span> : null}</span>
+            <span className="lot-side">
+              {!cashish && <span className="sub lot-date-wide" data-testid="lot-date">{l.acquired_on ? formatDate(l.acquired_on) : "no date"}</span>}
               <span className="edit-pill">Edit</span>
             </span>
           </button>
@@ -287,11 +292,18 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
               // ghost lot, or a lot count read before another lot landed, used to turn "Delete lot" into "Remove
               // position" and wiped a 1,000-share VOO (r10 native, data loss).
               const now = await api.getLots(target.holdingId);
+              // what actually happened is said after, in a short note: the server's lot list can differ from what
+              // the confirm showed, and the outcome with it (r11 designer)
               if (now.length === 1 && now[0].id === target.lotId) {
-                await api.removeHolding(target.holdingId); closeSheet(); await onRemoved(); return;
+                await api.removeHolding(target.holdingId); closeSheet();
+                onNotice?.(`${name} removed`);
+                await onRemoved(); return;
               }
-              if (now.some((l) => l.id === target.lotId)) await api.deleteLot(target.lotId);
-              closeSheet(); await reload();
+              const exists = now.some((l) => l.id === target.lotId);
+              if (exists) await api.deleteLot(target.lotId);
+              closeSheet();
+              onNotice?.(exists ? (cashish ? "Balance deleted" : "Lot deleted") : `That ${cashish ? "balance" : "lot"} was already gone. ${name} is unchanged.`);
+              await reload();
             } catch (e) {
               setErr(writeError(e, "Could not delete lot."));
               void reload().catch(() => {});   // put back what is really there

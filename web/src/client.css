@@ -151,3 +151,18 @@
 main.screen.swiping { position: relative; z-index: 2; background: var(--as-bg); }
 /* the slow-refresh line lives in the header row: no layout shift under it (r7 design n-2) */
 .topbar-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--as-muted); white-space: nowrap; }
+/* large text: the status may wrap and never widens the page (320 at 1.6x ran 5px wide; r11 designer m-4) */
+.text-large .topbar-status { white-space: normal; min-width: 0; text-align: right; }
+.topbar { min-width: 0; gap: 10px; }
+.topbar .brand { flex: none; }
+
+/* lot rows (Position): amount (with its note) left, date and Edit right; under 340pt the date moves under the
+   amount so the right side is only Edit (r11 designer) */
+.lot-row .lot-main { min-width: 0; display: flex; flex-direction: column; }
+.lot-row .lot-note { display: block; }
+.lot-row .lot-side { display: flex; align-items: center; gap: 8px; flex: none; white-space: nowrap; }
+.lot-row .lot-date-narrow { display: none; }
+@media (max-width: 340px) {
+  .lot-row .lot-date-wide { display: none; }
+  .lot-row .lot-date-narrow { display: block; }
+}

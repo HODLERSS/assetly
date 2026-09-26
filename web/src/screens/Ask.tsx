@@ -186,7 +186,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
       </div>
       <form className="ask-composer" onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
         <input ref={inputRef} aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
-               placeholder={largeText || narrow ? "Ask a question…" : "Ask about your portfolio…"} enterKeyHint="send" autoComplete="off" />
+               placeholder={largeText && narrow ? "Ask…" : largeText || narrow ? "Ask a question…" : "Ask about your portfolio…"} enterKeyHint="send" autoComplete="off" />
         {/* the button keeps its width while an answer is on the way: "…" shrank it to 49px and the field jumped
             27px wider and back on every question (r5 designer m-g). The label stays for the width, hidden. */}
         <button className="btn ask-send" disabled={busy || !q.trim()} aria-busy={busy || undefined} aria-label={busy ? "Waiting for the answer" : undefined}>

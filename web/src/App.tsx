@@ -10,7 +10,8 @@ import { useKeepScrollAnchor } from "./lib/scrollAnchor";
 import { guardWrites, mutatedSince, mutationMark } from "./lib/mutations";
 import type { Session } from "@supabase/supabase-js";
 import { completeNativeAuth, supabase } from "./lib/supabase";
-import { api as defaultApi, type Api, type BriefEdition, type Insight, type PortfolioRow, type Profile } from "./lib/api";
+import { api as defaultApi, type Api, type BriefEdition, type DailyBrief, type Insight, type PortfolioRow, type Profile } from "./lib/api";
+import { MIN_BACKGROUND_MS, pageHidden, startPoll } from "./lib/poll";
 import { AuthScreen } from "./screens/Auth";
 import { Onboarding } from "./screens/Onboarding";
 import { Home, NEXT_KEY } from "./screens/Home";
@@ -98,6 +99,9 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
   const connectPendingRef = useRef<string | null>(null);   // set at the connect moment; consumed when fresh intelligence lands
   const seenBriefRef = useRef<string | null>(null);   // latest brief generated_at the user has seen
   const seenMediaRef = useRef<string | null>(null);   // that brief plus whether its narration/script exist yet
+  const briefAwaitRef = useRef(true);   // a brief or its narration is expected: the brief watcher polls quickly
+  const assessPendingRef = useRef(false);   // an assessment run is under way: the same
+  assessPendingRef.current = assess.state.phase === "pending";
   // the book the brief watcher judges against (null until the first load): a brief about other holdings is
   // never announced as "Your brief is ready" (r4 newcomer)
   const briefBookRef = useRef<PortfolioRow[] | null>(null);
@@ -112,21 +116,29 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
   useEffect(() => {
     if (!session) return;
     let live = true;
-    const tick = async () => {
+    const tick = async (): Promise<boolean> => {
       try {
         const book = briefBookRef.current;
-        if (!book) return;   // judged against the book: the first look waits for it (the effect reruns at boot)
+        if (!book) return true;   // judged against the book: the first look waits for it (the effect reruns at boot)
         const bs = (await api.getDailyBriefs()).filter((b) => !foreignBrief(b, book));
-        if (!live) return;
+        if (!live) return true;
+        // quick polling only while something is expected: the first brief, or the latest edition's narration
+        const last = bs[bs.length - 1];
+        briefAwaitRef.current = !bs.length || (!!last && !last.audio_path && !last.script && Date.now() - Date.parse(last.generated_at) < 30 * 60_000);
+        return tickBody(bs);
+      } catch { return false; }
+    };
+    const tickBody = (bs: DailyBrief[]): boolean => {
+      {
         // baseline on the very first look: "no brief yet" is itself a state, so a fresh account's
         // first brief counts as NEW when it lands instead of being swallowed as the baseline
-        if (!bs.length) { if (seenBriefRef.current === null) seenBriefRef.current = "none"; return; }
+        if (!bs.length) { if (seenBriefRef.current === null) seenBriefRef.current = "none"; return true; }
         const latest = bs[bs.length - 1];
         const key = `${latest.brief_date}:${latest.edition}:${latest.generated_at}`;
         // the narration and its script are attached to the row after it first appears: when they land, the card
         // on Home reads its editions again (quietly: no new banner) so ▶ shows without leaving Home (r7 native m1)
         const media = `${key}:${latest.audio_path ? 1 : 0}${latest.script ? 1 : 0}`;
-        if (seenBriefRef.current === null) { seenBriefRef.current = key; seenMediaRef.current = media; return; }
+        if (seenBriefRef.current === null) { seenBriefRef.current = key; seenMediaRef.current = media; return true; }
         if (key === seenBriefRef.current && media !== seenMediaRef.current) {
           seenMediaRef.current = media;
           setBriefRev((n) => n + 1);
@@ -145,11 +157,13 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
           setBriefBanner({ audio: !!latest.audio_path, edition: latest.edition });
           if (!onHome) setHomeAlert(true);
         }
-      } catch { /* quiet */ }
+      }
+      return true;
     };
-    tick();
-    const t = setInterval(tick, 20000);   // a fresh account's first brief lands in 1-3 min; catch it promptly
-    return () => { live = false; clearInterval(t); };
+    // 20s while a brief or its narration is expected (a fresh account's first brief lands in 1-3 min; a run is
+    // under way), else once a minute; paused while the page is hidden, backing off on errors (lib/poll)
+    const stop = startPoll(tick, () => (briefAwaitRef.current || assessPendingRef.current ? 20_000 : MIN_BACKGROUND_MS));
+    return () => { live = false; stop(); };
   }, [session, api, booted]);
   const seenInsightRef = useRef<string | null>(null);   // generated_at the user has already seen
   const [pinsRefreshing, setPinsRefreshing] = useState(false);
@@ -188,15 +202,15 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
   useEffect(() => {
     if (!session) return;
     let live = true;
-    const tick = async () => {
+    const tick = async (): Promise<boolean> => {
       try {
         const v = await api.getPortfolioInsights();
-        if (!live || !v) return;
+        if (!live || !v) return true;
         // a connect moment survives the callback's full page load via sessionStorage
         let connectAt: string | null = null;
         try { connectAt = sessionStorage.getItem("assetly-connect-at"); } catch { /* none */ }
         const freshSinceConnect = !!connectAt && v.generated_at > connectAt;
-        if (seenInsightRef.current === null && !freshSinceConnect) { seenInsightRef.current = v.generated_at; return; }
+        if (seenInsightRef.current === null && !freshSinceConnect) { seenInsightRef.current = v.generated_at; return true; }
         if (v.generated_at !== seenInsightRef.current) {
           const cur = viewRef.current.kind === "tab" ? viewRef.current.tab : null;
           if (cur === "news") seenInsightRef.current = v.generated_at;
@@ -209,10 +223,17 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
             try { sessionStorage.removeItem("assetly-connect-at"); } catch { /* none */ }
           }
         }
-      } catch { /* quiet */ }
+        return true;
+      } catch { return false; }
     };
-    const t = setInterval(tick, 15000);   // 15s: a connect-moment assessment is noticed within seconds
-    return () => { live = false; clearInterval(t); };
+    // 15s only around a connect moment or a run (a fresh assessment is noticed within seconds), else once a
+    // minute; paused while hidden, backing off on errors. It was every 15s, always.
+    const connectWaiting = () => { try { return !!connectPendingRef.current || !!sessionStorage.getItem("assetly-connect-at"); } catch { return !!connectPendingRef.current; } };
+    // the first look waits one period, as before (the baseline is taken on it)
+    let first = true;
+    const stop = startPoll(async () => { if (first) { first = false; return true; } return tick(); },
+      () => (connectWaiting() || assessPendingRef.current ? 15_000 : MIN_BACKGROUND_MS));
+    return () => { live = false; stop(); };
   }, [session, api]);
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -344,7 +365,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
       // kick the chain again as a belt-and-braces (idempotent: the per-user lock makes a duplicate sync yield)
       connectPendingRef.current = String(Date.now());
       try { sessionStorage.setItem("assetly-connect-at", new Date().toISOString()); } catch { /* storage unavailable */ }
-      assess.start();
+      assess.start(seenBriefRef.current === null ? null : seenBriefRef.current === "none");   // "first" only for a reader with no brief rows yet
       // Imported rows land over several seconds (callback sync + webhook syncs). Poll the book quickly
       // until it stops growing so Home shows the new stocks immediately, not on the next 60s tick.
       let lastCount = -1, stable = 0, ticks = 0;
@@ -404,7 +425,8 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
       }
       await api.snaptradeEventsSeen(evs.map((e) => e.id));
     }).catch(() => {});
-    const t = setInterval(load, REFRESH_MS);
+    // once a minute while the page is visible; a hidden page skips (coming back refreshes at once, onForeground)
+    const t = setInterval(() => { if (!pageHidden()) void load(); }, REFRESH_MS);
     return () => clearInterval(t);
   }, [session, load, api]);
   // The 60s timer does not run while the app is in the background, so a return after lunch showed a
@@ -445,7 +467,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
     try { sessionStorage.setItem("assetly-connect-at", new Date().toISOString()); } catch { /* storage unavailable */ }
     // Home's assessment card carries the wait (and a failure, with Retry), not a 7-second toast
     try { if (!localStorage.getItem(NEXT_KEY)) localStorage.setItem(NEXT_KEY, "armed"); } catch { /* private mode */ }   // first adds: arm the next-step hint
-    assess.start();
+    assess.start(seenBriefRef.current === null ? null : seenBriefRef.current === "none");   // "first" only for a reader with no brief rows yet (r11)
     api.brokerageConnected().catch((e) => assess.fail(e instanceof Error ? e.message : "We couldn't start your assessment."));
   }, [api, assess.start, assess.fail]);
   const retryAssessment = useCallback(() => { bookChangeRef.current.pending = true; runBookPipeline(); }, [runBookPipeline]);
@@ -585,6 +607,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
         )}
         {view.kind === "position" && (
           <PositionScreen api={api} dispKr={profile?.display_kr ?? "KRW"} row={rows.find((r) => r.holding_id === view.holdingId) ?? null}
+            onNotice={(m) => { setNoticeKind("ok"); setNotice(m); setTimeout(() => setNotice((cur) => (cur === m ? null : cur)), 5000); }}
             others={(() => { const me = rows.find((r) => r.holding_id === view.holdingId); return me ? rows.filter((r) => r.symbol === me.symbol && r.holding_id !== me.holding_id) : []; })()}
             onChanged={load} onRemoved={async () => {
               // a removal changes the book as much as an add: the assessment and the intelligence are rerun

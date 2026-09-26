@@ -52,6 +52,7 @@ export function useAssessmentWatch(api: Api, uid: string | null) {
   const [run, setRun] = useState(0);   // bumps restart the poll loop
   const stateRef = useRef(state);
   stateRef.current = state;
+  const hasBriefsRef = useRef(false);   // the reader has brief rows: never "Your first assessment"
 
   // resume a run that was in flight when the app was closed or reloaded
   useEffect(() => {
@@ -81,7 +82,7 @@ export function useAssessmentWatch(api: Api, uid: string | null) {
           setState((p) => ({ ...p, phase: "error", error: "The assessment didn't finish." }));
           return;
         }
-        const intel = !!st.intelligenceAt, first = !st.hadEarlier;
+        const intel = !!st.intelligenceAt, first = !st.hadEarlier && !hasBriefsRef.current;
         setState((p) => (p.intelligenceReady === intel && p.first === first ? p : { ...p, intelligenceReady: intel, first }));
       } catch { /* offline for a moment: keep waiting */ }
       if (Date.now() - +new Date(since) >= ASSESS_TIMEOUT_MS) { if (live) setState((p) => ({ ...p, phase: "slow" })); return; }
@@ -92,9 +93,13 @@ export function useAssessmentWatch(api: Api, uid: string | null) {
   }, [api, uid, state.phase, state.startedAt, run]);
 
   /** A run just started (the book changed and the chain was kicked). */
-  const start = useCallback(() => {
+  // `noBriefs`: whether this reader has no brief rows yet (true), has some (false), or it isn't known (null). The
+  // card says "Your first assessment" only for a reader with none: an established user saw it flash after an add
+  // or remove (r11 designer). With rows known, no poll turns it back to "first"; unknown, the poll settles it.
+  const start = useCallback((noBriefs: boolean | null = null) => {
     const startedAt = new Date().toISOString();
-    const first = true;   // until the first poll finds an earlier assessment
+    const first = noBriefs === true;
+    hasBriefsRef.current = noBriefs === false;
     if (uid) write(uid, { startedAt, first });
     setState({ ...IDLE, phase: "pending", startedAt, first });
     setRun((n) => n + 1);
