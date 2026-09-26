@@ -1013,8 +1013,10 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     "How concentrated is my portfolio?", "What are the biggest risks in my portfolio?",
   ];
   // chips follow the question's language too
+  // r11 P5: chips that invite a verdict or a forecast ("What's the bull case?", "모멘텀이 계속 갈까?")
+  const VERDICT_CHIP = /\bbull(?:ish)? case\b|\bbear(?:ish)? case\b|\bupside\b|\bcheap\b|\bexpensive\b|\bstill a good\b|\bworth (?:it|buying|owning)\b|\bwill (?:it|\w+) (?:keep|continue|recover|rebound)\b|모멘텀[^?]{0,15}(?:갈까|이어질까|계속)|오를까|반등할까|저평가|고평가/i;
   const PRODUCT_CHIP = /\b(?:which|what)\b[^?]{0,20}\b(?:etfs?|funds?|bonds?|treasur(?:y|ies)|money[- ]market|index funds?)\b|\blowest fees\b|\b(?:candidates?|alternatives?) (?:worth|to)\b|채권 ?ETF|어떤 ETF|어떤 채권|어떤 펀드|후보/i;
-  const modelChips = (builtInCode || !parsedA ? [] : (judgedChips ?? (parsedA?.followups ?? []).map(deDash))).filter((c) => !PRODUCT_CHIP.test(c));
+  const modelChips = (builtInCode || !parsedA ? [] : (judgedChips ?? (parsedA?.followups ?? []).map(deDash))).filter((c) => !PRODUCT_CHIP.test(c) && !VERDICT_CHIP.test(c));
   const followups = cleanFollowups(modelChips.filter((f) => chipInLanguage(question, f)), fallbacks);
   return json({ ok: true, answer, followups, mentioned, meta: { judge: judgeStatus } });
 }

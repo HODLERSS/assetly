@@ -2527,6 +2527,12 @@ export function isDecisionFrame(q: string): boolean {
   const t = String(q ?? "");
   // Korean trade and allocation intents
   if (/(살까|팔까|살래|팔래|사야\s?(?:할까|하나|돼|되나|겠)|팔아야|살 만한|팔 만한|사도 될까|팔아도 될까|더 살|더 사|물타기|추매|정리할까|손절|익절|넣을까|넣어야|어디(?:에)? 넣|어디에 투자|뭘 사|뭐 사|무엇을 사|뭐 살|뭘 팔|너라면|네가 나라면|당신이라면|추천해|추천 좀|추천할|비중(?:을)? (?:늘|줄|조절)|갈아타|교체할|리밸런싱 해|배분해|배분할|하나만 남기|하나만 고르|더 안전|안전한 (?:쪽|종목|거)|뭐가 좋아|어떤 게 좋아|뭐가 나아|어느 게 나아|좋을까요\?)/.test(t)) return true;
+  // r11 P5: price levels (support, resistance, floor, bottom), options / margin / leverage strategies, premium and cheap
+  // or expensive calls, and "roast / be brutal" framings are decisions or verdicts, answered from code
+  if (/\b(?:support|resistance|price floor|floor|bottom(?:ed)? out) (?:level|price|zone|line)?\b[^?]{0,30}\?|\bwhere(?:'s| is) (?:the )?(?:support|resistance|floor|bottom)\b|\bhas \w+ bottomed\b|\bkey level\b|바닥|저점|지지선|저항선/i.test(t)) return true;
+  if (/\bcovered calls?\b|\bprotective puts?\b|\b(?:buy|sell|write|use)\b[^?]{0,20}\b(?:calls?|puts?|options?)\b|\boptions? strateg|\bon margin\b|\bmargin (?:loan|account|debt)\b|\bleverage(?:d)?\b[^?]{0,30}\?|\b(?:2x|3x) (?:etf|fund)\b/i.test(t)) return true;
+  if (/\bdeserve[sd]? (?:its|the|a) (?:premium|valuation|multiple|price)\b|\b(?:over|under)valued\b|\b(?:cheap|expensive|pricey|a bargain)\b[^?]{0,30}\?|고평가|저평가|비싸|싸다|싼가/i.test(t)) return true;
+  if (/\broast\b|\bbe brutal\b|\bbrutally honest\b|\bno sugar[- ]?coat|\btear (?:it|my portfolio) apart\b|팩폭|냉정하게/i.test(t)) return true;
   // r10: "just your opinion, AAPL 사 말아?" got "Setup is mixed: momentum strong"
   if (/\b(?:just |your )?(?:honest )?opinion\b[^?]{0,40}\b(?:buy|sell|hold|keep|add|trim|사|팔)|\bin your opinion\b|사 말아|살 말아|팔 말아|살까 말까|사야 돼 말아|네 생각은/i.test(t)) return true;
   // a product or holding weighed as a purchase in Korean ("SCHD 사는 거 어떻게 생각해?", "커버드콜 전략 써볼까?", "그럼 채권은?")
@@ -2998,13 +3004,15 @@ export function smallMoveCauses(text: string, facts: { names: string[]; pct: num
  *  "Will AAPL hit $400?", "TSLA 목표주가"): answered with history, never a projection (r10: "$6.2M-$8.8M… plausible"). */
 export function isForecastQuestion(q: string): boolean {
   const t = String(q ?? "");
+  // r11 P6: "How much will I get in dividends each year?" is the income the holdings pay now, not a projection
+  if (/\bdividends?\b|\bincome\b|\byield\b|\bpayouts?\b|\bdistributions?\b|배당|분배금/i.test(t)) return false;
   return /\b(?:worth|be worth|be)\b[^?]{0,20}\bin (?:\d+|one|two|three|five|ten|twenty) (?:years?|months?|decades?)\b|\bwhere will\b|\bhow much will\b|\bwill (?:\S+ ){0,3}(?:hit|reach|go to|get to|be worth|recover|double|triple|crash|rise to|fall to)\b|\bprice target\b|\bprice prediction\b|\bpredict\b|\bforecast\b|\bproject(?:ion|ed)?\b[^?]{0,20}\b(?:value|worth|return|price)\b|\bby (?:20[3-9]\d|the end of (?:the )?(?:year|decade))\b|몇 년 (?:후|뒤)|\d+년 (?:후|뒤)(?:에)?[^?]{0,15}(?:얼마|될|가치)|얼마가 될|목표 ?주가|전망 ?가격|(?:오를까|떨어질까|갈까)\??\s*$/i.test(t);
 }
 
 /** Soft verdicts that slipped through when the judge timed out (r10 intelligence): "the setup has real weight",
  *  "structural drivers for a multi-year hold", "still far below the target", "$350 is the line to watch". */
 export function softVerdicts(text: string): string[] {
-  return sentencesOf(text).filter((s) => /\bsetup (?:has|carries) (?:real )?weight\b|\bstructural drivers? for a (?:multi-year|long-term) hold\b|\bfor a (?:multi-year|long-term) hold\b|\b(?:still )?(?:far |well )?(?:below|above|short of|ahead of) (?:the |your )?(?:\d+\s?(?:-|–|to)\s?\d+\s?% )?(?:target|goal)\b|\bis the (?:line|level) to watch\b|\bkey (?:line|level) (?:is|at)\s*\$|\bsetup is (?:mixed|constructive|favorable|strong|weak)\b|\bmomentum (?:is )?strong\b/i.test(s) && !/\b(?:if|whether|unless)\b/i.test(s));
+  return sentencesOf(text).filter((s) => /\bpriced in\b|\bargues? against\b|\b(?:has |finds? |forms? |adds? |provides? |gives? )(?:a |some )?(?:floor|cushion|support)\b|\b(?:a |the )?floor (?:under|beneath|at)\b|\bsupport (?:at|near|around) \$?\d|\brecovery phase\b|\bcompounding (?:is )?(?:intact|alive|on track)\b|\bmomentum (?:has )?(?:stalled|is alive|alive|intact|fading|broken)\b|\bthe story (?:is|remains|still|holds)\b|\bopportunity cost is real\b|\bmeaningful but not extreme\b|\bsetup (?:has|carries) (?:real )?weight\b|\bstructural drivers? for a (?:multi-year|long-term) hold\b|\bfor a (?:multi-year|long-term) hold\b|\b(?:still )?(?:far |well )?(?:below|above|short of|ahead of) (?:the |your )?(?:\d+\s?(?:-|–|to)\s?\d+\s?% )?(?:target|goal)\b|\bis the (?:line|level) to watch\b|\bkey (?:line|level) (?:is|at)\s*\$|\bsetup is (?:mixed|constructive|favorable|strong|weak)\b|\bmomentum (?:is )?strong\b/i.test(s) && !/\b(?:if|whether|unless)\b/i.test(s));
 }
 
 /** "TSLA was the only drag" (AVGO lost more), "MSFT is #2" (AAPL is), "MSFT lagging the rest" (META and TSLA did worse):
