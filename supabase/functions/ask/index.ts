@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -657,7 +657,10 @@ async function handle(req: Request): Promise<Response> {
   const dayLead = (() => {
     if (!/\b(?:my )?(?:portfolio|holdings|book|account)\b[^?]{0,30}\b(?:today|do|did|doing)\b|\bhow (?:did|am) i (?:do|doing)\b|오늘 (?:내 )?(?:포트폴리오|자산)|포트폴리오 오늘/i.test(question) || questionWindows(question).length) return null;
     const part = (rows: typeof held) => { const d = rows.reduce((a, r) => a + dayOf(r), 0); const v = rows.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0); return { d, p: v - d > 0 ? d / (v - d) * 100 : 0, n: rows.length }; };
-    const us = part(held.filter((r) => marketOf(r.symbol, r.kind, r.currency) !== "KR" && tradesToday(r)));
+    // r12 C: on a weekend or holiday the US line is the last session's, labelled with it ("+$0 today" was no answer)
+    const usState = marketState("US");
+    const us = part(held.filter((r) => marketOf(r.symbol, r.kind, r.currency) !== "KR" && (usState.tradingToday ? tradesToday(r) : true)));
+    const usWhen = usState.tradingToday ? (ko ? "오늘" : "today") : (ko ? `${usState.lastSessionDate.slice(5).replace("-", "/")} 거래일` : `in ${weekdayOf(usState.lastSessionDate)}'s session`);
     const krRows = held.filter((r) => marketOf(r.symbol, r.kind, r.currency) === "KR");
     const kr = part(krRows);
     const krState = marketState("KR");
@@ -665,7 +668,7 @@ async function handle(req: Request): Promise<Response> {
     const pp = (x: number) => `${x >= 0 ? "+" : "\u2212"}${Math.abs(x).toFixed(2)}%`;
     // the label names what the figure holds ("US + crypto" only when a coin is in it)
     const hasCoin = held.some((r) => r.kind === "crypto" || /-USD$/.test(r.symbol));
-    const lines = [ko ? `• ${hasCoin ? "미국 + 코인" : "미국"}, 오늘: ${signedUsd(us.d)} (${pp(us.p)}).` : `• ${hasCoin ? "US + crypto" : "US stocks"} today: ${signedUsd(us.d)} (${pp(us.p)}).`];
+    const lines = [ko ? `• ${hasCoin ? "미국 + 코인" : "미국"}, ${usWhen}: ${signedUsd(us.d)} (${pp(us.p)}).` : `• ${hasCoin ? "US + crypto" : "US stocks"} ${usWhen}: ${signedUsd(us.d)} (${pp(us.p)}).`];
     if (krRows.length) lines.push(ko ? `• 한국, ${krWhen}: ${signedUsd(kr.d)} (${pp(kr.p)}).` : `• Korea ${krWhen}: ${signedUsd(kr.d)} (${pp(kr.p)}).`);
     return lines.join("\n");
   })();
@@ -729,6 +732,24 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const decisionQ = tradeQ || pickQ;
   // r10: "How much will my portfolio be worth in 5 years?" got "$6.2M-$8.8M… plausible". A projection question gets the
   // history, stated as history, and no projection.
+  // r12 B: the code-built answer for this question's type: the computed lead, a portfolio summary, or the figures
+  const summaryQ = /\bsummar(?:y|ize|ise)\b|\boverview\b|\bin (?:\d|one|two|three|four|five) (?:bullet|point)|요약|한눈에/i.test(question);
+  const ytdLine = (() => { const m = /YTD: ([^·]+)/.exec(totalLines); return m && !/not enough|couldn't/i.test(m[1]) ? m[1].trim() : null; })();
+  // r12 C: on a weekend or holiday "today +$0" is no answer: the last session's figures, labelled with the session (Home's)
+  const usOpenToday = marketState("US").tradingToday;
+  const lastUs = marketState("US").lastSessionDate;
+  const sessDay = usOpenToday ? bookDayUsd : held.reduce((a, r) => a + dayOf(r), 0);
+  const sessPct = totNow - sessDay > 0 ? sessDay / (totNow - sessDay) * 100 : 0;
+  const sessLabel = usOpenToday ? (ko ? "오늘" : "today") : ko ? `${lastUs.slice(5).replace("-", "/")} 거래일` : `in ${weekdayOf(lastUs)}'s session`;
+  const summaryLead = () => portfolioSummaryLead({ total: totNow, dayUsd: sessDay, dayPct: sessPct, dayLabel: sessLabel,
+    top: held.map((r) => ({ label: nameOf(r), weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100 })).sort((a, b) => b.weight - a.weight), ytd: ytdLine }, ko);
+  const codeAnswer = (): string => summaryQ ? summaryLead() : dataLead ? [dataLead, dataFallback().split("\n").filter((l) => !dataLead.includes(l)).slice(0, 2).join("\n")].filter(Boolean).join("\n") : dataFallback();
+  // r12 B: a report-date question is answered from the calendar, before (and without) the model
+  if (earnLead && !tradeQ && !pickQ && !fixture) {
+    const dlvs = held.map((r) => { const d = deliveriesEstimate(r.symbol, today); return d && (mentionedNow.length === 0 || mentionedNow.includes(r.symbol)) ? `${nameOf(r)} ${d.quarter} deliveries ~${new Date(d.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" })} (est)` : null; }).filter(Boolean);
+    const extra = dlvs.length ? (ko ? `\n• 인도량 발표(추정): ${dlvs.join(", ")}.` : `\n• Deliveries reports (estimates, separate from earnings): ${dlvs.join(", ")}.`) : "";
+    return json({ ok: true, answer: unicodeMinus(earnLead + extra), followups: cleanFollowups([], ko ? ["내 포트폴리오는 얼마나 집중돼 있나요?"] : ["How concentrated is my portfolio?"]), mentioned, meta: { judge: "skipped", code: "calendar" } });
+  }
   if (isForecastQuestion(question) && !fixture) {
     const one = mentionedNow.length ? mentionedNow.map((sy) => held.find((h) => h.symbol === sy)!).slice(0, 3) : [];
     const pc = (x: number | null | undefined) => typeof x === "number" ? `${x >= 0 ? "+" : "\u2212"}${Math.abs(x).toFixed(1)}%` : (ko ? "데이터 부족" : "n/a");
@@ -940,7 +961,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     const flags = await judge(items.list);
     // no verdict from the judge: the model's chips are not shown either (they asked for products in round 9)
     // round 9 v44: a verdict question whose judge did not answer leaked on the non-decision path; it goes to the husk too
-    if (flags === null) { judgedChips = []; if (decisionQ || verdictQ) guarded = ""; }
+    // r12 A: an answer the judge did not read is never shipped: a decision or verdict gets the code-built answer (husk),
+    // anything else the code-built answer for its question type (29% of answers had no judgement; three leaks shipped)
+    if (flags === null) { judgedChips = []; guarded = decisionQ || verdictQ ? "" : codeAnswer(); }
     else { const r = applyJudge(toJudge, chips0, items, flags); guarded = toJudge === guarded ? r.text : [dataLead, r.text].filter(Boolean).join("\n"); judgedChips = r.chips; }
     // round 9: what the drops left may point at what is gone ("Both report late October", "AAPL is third"), or a
     // compared holding may have vanished: a decision falls to the husk; a data answer loses the dangling sentences and
@@ -961,6 +984,13 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
         if (dataLead && !statesLead(guarded, dataLead)) guarded = `${dataLead}\n${guarded}`;
       }
     }
+  }
+  // r12 B: filters that removed more than half of a data answer's lines, or left fewer points than asked, leave a gutted
+  // answer ("Summarize my portfolio in 3 bullet points" came back as two fragments): the code-built answer replaces it
+  if (!(tradeQ || pickQ || verdictQ) && guarded.trim()) {
+    const lines = (t: string) => t.split("\n").map((l) => l.trim()).filter((l) => l.split(/\s+/).length >= 3).length;
+    const want = askedCount(question);
+    if ((lines(pruned0) >= 2 && lines(guarded) * 2 < lines(pruned0)) || (want !== null && lines(guarded) < want)) guarded = codeAnswer();
   }
   // Round 4: after the guards, "What should I buy with $10K?" was left with one unrelated line and "top pick"
   // with a ten-holding dump. When the guards took most of an answer to a trade or pick question, the model

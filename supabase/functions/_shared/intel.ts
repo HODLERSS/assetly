@@ -2528,6 +2528,8 @@ export function isDecisionFrame(q: string): boolean {
   const t = String(q ?? "");
   // Korean trade and allocation intents
   if (/(살까|팔까|살래|팔래|사야\s?(?:할까|하나|돼|되나|겠)|팔아야|살 만한|팔 만한|사도 될까|팔아도 될까|더 살|더 사|물타기|추매|정리할까|손절|익절|넣을까|넣어야|어디(?:에)? 넣|어디에 투자|뭘 사|뭐 사|무엇을 사|뭐 살|뭘 팔|너라면|네가 나라면|당신이라면|추천해|추천 좀|추천할|비중(?:을)? (?:늘|줄|조절)|갈아타|교체할|리밸런싱 해|배분해|배분할|하나만 남기|하나만 고르|더 안전|안전한 (?:쪽|종목|거)|뭐가 좋아|어떤 게 좋아|뭐가 나아|어느 게 나아|좋을까요\?)/.test(t)) return true;
+  // r12 A: rebalancing plans, hold-or-fold slang, bubbles, hedges, "back up the truck", "no-brainer", mixed "지금 buy 해도 돼?"
+  if (/\bplan(?:ning)? to rebalance\b|\bdiamond hands\b|\bpaper hands\b|\bbail(?: out)?\b|\bhold or fold\b|\bbubble\b|\bbuy (?:some )?puts?\b|\bhedg(?:e|ing)\b[^?]{0,30}\?|\bback up the truck\b|\bno[- ]brainer\b|\bbuy (?:해도|할까|하면|해야)|\bsell (?:해도|할까|하면|해야)|(?:지금|이제)\s*(?:buy|sell)\b|거품/i.test(t)) return true;
   // r11 P5: price levels (support, resistance, floor, bottom), options / margin / leverage strategies, premium and cheap
   // or expensive calls, and "roast / be brutal" framings are decisions or verdicts, answered from code
   if (/\b(?:support|resistance|price floor|floor|bottom(?:ed)? out) (?:level|price|zone|line)?\b[^?]{0,30}\?|\bwhere(?:'s| is) (?:the )?(?:support|resistance|floor|bottom)\b|\bhas \w+ bottomed\b|\bkey level\b|바닥|저점|지지선|저항선/i.test(t)) return true;
@@ -3021,7 +3023,7 @@ export function isForecastQuestion(q: string): boolean {
 /** Soft verdicts that slipped through when the judge timed out (r10 intelligence): "the setup has real weight",
  *  "structural drivers for a multi-year hold", "still far below the target", "$350 is the line to watch". */
 export function softVerdicts(text: string): string[] {
-  return sentencesOf(text).filter((s) => /\bnot a (?:reversal|buy|sell|breakdown|breakout|trend) signal\b|\b(?:bull|bear) (?:thesis|case) (?:has|shows|is showing) (?:visible |clear |some )?cracks\b|\bover-?extended\b|\bwrite-?off risk\b|\bvaluation stretch(?:es|ed)? to\b|\bstretched to \$\d|\bpriced in\b|\bargues? against\b|\b(?:has |finds? |forms? |adds? |provides? |gives? )(?:a |some )?(?:floor|cushion|support)\b|\b(?:a |the )?floor (?:under|beneath|at)\b|\bsupport (?:at|near|around) \$?\d|\brecovery phase\b|\bcompounding (?:is )?(?:intact|alive|on track)\b|\bmomentum (?:has )?(?:stalled|is alive|alive|intact|fading|broken)\b|\bthe story (?:is|remains|still|holds)\b|\bopportunity cost is real\b|\bmeaningful but not extreme\b|\bsetup (?:has|carries) (?:real )?weight\b|\bstructural drivers? for a (?:multi-year|long-term) hold\b|\bfor a (?:multi-year|long-term) hold\b|\b(?:still )?(?:far |well )?(?:below|above|short of|ahead of) (?:the |your )?(?:\d+\s?(?:-|–|to)\s?\d+\s?% )?(?:target|goal)\b|\bis the (?:line|level) to watch\b|\bkey (?:line|level) (?:is|at)\s*\$|\bsetup is (?:mixed|constructive|favorable|strong|weak)\b|\bmomentum (?:is )?strong\b/i.test(s) && !/\b(?:if|whether|unless)\b/i.test(s));
+  return sentencesOf(text).filter((s) => /\brerat(?:e|es|ed|ing)\b|\ba clean beat\b|\bretracement\b|\bnot (?:a )?reversal\b|\bride (?:it )?out\b|\bsays otherwise\b|\bshift\w* (?:\w+ ){0,4}toward\b|\blight reserve\b|\bnot the engine\b|\bconcentration is (?:your|the) edge\b|\bsmall enough to\b|\bnot a (?:reversal|buy|sell|breakdown|breakout|trend) signal\b|\b(?:bull|bear) (?:thesis|case) (?:has|shows|is showing) (?:visible |clear |some )?cracks\b|\bover-?extended\b|\bwrite-?off risk\b|\bvaluation stretch(?:es|ed)? to\b|\bstretched to \$\d|\bpriced in\b|\bargues? against\b|\b(?:has |finds? |forms? |adds? |provides? |gives? )(?:a |some )?(?:floor|cushion|support)\b|\b(?:a |the )?floor (?:under|beneath|at)\b|\bsupport (?:at|near|around) \$?\d|\brecovery phase\b|\bcompounding (?:is )?(?:intact|alive|on track)\b|\bmomentum (?:has )?(?:stalled|is alive|alive|intact|fading|broken)\b|\bthe story (?:is|remains|still|holds)\b|\bopportunity cost is real\b|\bmeaningful but not extreme\b|\bsetup (?:has|carries) (?:real )?weight\b|\bstructural drivers? for a (?:multi-year|long-term) hold\b|\bfor a (?:multi-year|long-term) hold\b|\b(?:still )?(?:far |well )?(?:below|above|short of|ahead of) (?:the |your )?(?:\d+\s?(?:-|–|to)\s?\d+\s?% )?(?:target|goal)\b|\bis the (?:line|level) to watch\b|\bkey (?:line|level) (?:is|at)\s*\$|\bsetup is (?:mixed|constructive|favorable|strong|weak)\b|\bmomentum (?:is )?strong\b/i.test(s) && !/\b(?:if|whether|unless)\b/i.test(s));
 }
 
 /** "TSLA was the only drag" (AVGO lost more), "MSFT is #2" (AAPL is), "MSFT lagging the rest" (META and TSLA did worse):
@@ -3223,4 +3225,22 @@ export function duplicateMoveBullets(bullets: string[]): string[] {
     seen.add(k);
     return true;
   });
+}
+
+/** The code-built summary for "summarize my portfolio" (r12 B: the model's three bullets were filtered down to two
+ *  fragments): value and day, the largest weights, and the year so far. */
+export function portfolioSummaryLead(v: { total: number; dayUsd: number; dayPct: number; dayLabel: string; top: { label: string; weight: number }[]; ytd: string | null }, ko: boolean): string {
+  const money = (x: number) => `$${Math.round(Math.abs(x)).toLocaleString("en-US")}`;
+  const sign = (x: number) => (x >= 0 ? "+" : "−");
+  const top = v.top.slice(0, 3).map((t) => `${t.label} ${t.weight > 0 && t.weight < 0.05 ? (ko ? "0.1% 미만" : "under 0.1%") : t.weight.toFixed(1) + "%"}`).join(", ");
+  return ko
+    ? [`• 포트폴리오 ${money(v.total)}, ${v.dayLabel} ${sign(v.dayUsd)}${money(v.dayUsd)} (${sign(v.dayPct)}${Math.abs(v.dayPct).toFixed(2)}%).`, `• 비중이 큰 종목: ${top}.`, ...(v.ytd ? [`• 올해: ${v.ytd}.`] : [])].join("\n")
+    : [`• Your portfolio is worth ${money(v.total)}; ${v.dayLabel} ${sign(v.dayUsd)}${money(v.dayUsd)} (${sign(v.dayPct)}${Math.abs(v.dayPct).toFixed(2)}%).`, `• Largest holdings: ${top}.`, ...(v.ytd ? [`• This year: ${v.ytd}.`] : [])].join("\n");
+}
+/** How many bullets or points a question asks for ("in 3 bullet points"), or null. */
+export function askedCount(q: string): number | null {
+  const m = /\b(?:in |give me |list )?(\d|one|two|three|four|five)\s+(?:bullet(?: point)?s?|points|lines|things|takeaways)\b|(\d)\s*(?:줄|가지|개 요점)/i.exec(String(q ?? ""));
+  if (!m) return null;
+  const W: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+  return W[(m[1] ?? "").toLowerCase()] ?? Number(m[1] ?? m[2]);
 }
