@@ -28,8 +28,10 @@
   var q = new URLSearchParams(location.search);
   var token = q.get("token") || "", type = q.get("type") || "", to = q.get("redirect_to") || "";
   if (!/^[A-Za-z0-9_-]{8,}$/.test(token) || !TYPES[type]) {
+    document.title = "Link not valid · Assetly";
     document.getElementById("t").textContent = "This link isn't valid";
-    document.getElementById("m").textContent = "Open Assetly and request a new sign-in email.";
+    document.getElementById("m").textContent = "Open Assetly and request a new link.";
+    document.getElementById("go").href = "./";   // Continue opens the app
     document.getElementById("go").hidden = false;
     return;
   }

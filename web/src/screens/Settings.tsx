@@ -25,6 +25,9 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
   const [theme, setThemeState] = useState<ThemeChoice>(() => getTheme());
   const [fx, setFx] = useState<{ rate: number; asOf: string } | null>(null);
   const [st, setSt] = useState<{ connected: boolean; last_sync_at?: string | null; institutions?: string[] } | null>(null);
+  // the brokerage status is a fact only once read: before (or without) it, "Not connected" and a Connect button
+  // were shown as if known (r11 designer)
+  const [stRead, setStRead] = useState<"pending" | "ok" | "failed">("pending");
   const [conns, setConns] = useState<{ id: string; institution: string; disabled: boolean }[]>([]);
   const [excluded, setExcluded] = useState<string[]>([]);
   const [removing, setRemoving] = useState<{ id: string; institution: string } | null>(null);   // keep/delete sheet
@@ -35,12 +38,12 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
     let live = true;
     api.snaptrade("status").then(async (r) => {
       if (!live) return;
-      setSt({ connected: !!r.connected, last_sync_at: r.last_sync_at, institutions: r.institutions });
+      setSt({ connected: !!r.connected, last_sync_at: r.last_sync_at, institutions: r.institutions }); setStRead("ok");
       if (r.connected) {
         try { const c = await api.snaptrade("connections"); if (live) setConns(c.connections ?? []); } catch { /* list stays empty */ }
         try { const x = await api.snaptrade("exclusions"); if (live) setExcluded(x.exclusions ?? []); } catch { /* none */ }
       }
-    }).catch(() => { if (live) setSt(null); });
+    }).catch(() => { if (live) { setSt(null); setStRead("failed"); } });
     return () => { live = false; };
   }, [api]);
   const [busy, setBusy] = useState(false);
@@ -106,7 +109,7 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
           </>
         ) : (
           // the same quiet value as every other row's ("USD" was 15px ink beside 12.5px muted; r3-r5 design m7)
-          <div className="row"><span>Base currency</span><span className="sub" data-testid="base-currency">{base}</span></div>
+          <div className="row"><span>Base currency</span><span className="sub" data-testid="base-currency">{profile ? base : "Not loaded yet"}</span></div>
         )}
         {hasKrw && fx && (
           <div className="row"><span>Exchange rate</span>
@@ -143,7 +146,8 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
       </div>
       <div className="card" style={{ marginBottom: 14 }} data-testid="snaptrade-card">
         <div className="row"><span>Brokerage sync</span>
-          <span className="sub">{st?.connected ? `Connected · ${(st.institutions ?? []).join(", ") || "SnapTrade"}` : "Not connected"}</span></div>
+          <span className="sub" data-testid="brokerage-status">{st?.connected ? `Connected · ${(st.institutions ?? []).join(", ") || "SnapTrade"}`
+            : stRead === "pending" ? "Checking…" : stRead === "failed" ? "Not loaded yet" : "Not connected"}</span></div>
         {st?.connected && st.last_sync_at && (
           <div className="row"><span>Last import</span><span className="sub num">{timeAgo(st.last_sync_at)}</span></div>
         )}
@@ -172,7 +176,7 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
           </div>
         )}
         <div className="chips" style={{ padding: "10px 14px 4px" }}>
-          {!st?.connected && (
+          {stRead === "ok" && !st?.connected && (
             <button className="chip" disabled={stBusy} onClick={async () => {
               setStBusy(true);
               setConnErr(null);

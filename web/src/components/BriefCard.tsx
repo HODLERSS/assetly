@@ -48,6 +48,14 @@ function clock(iso: string, now: Date): string {
  *    (sections.day_sign), when written on an earlier day, or (older rows without day_sign) after 2 hours.
  *  Every field is optional: rows written before the server stamped them fall back to generated_at. */
 const memo = new WeakMap<object, DailyBrief[]>();
+
+// The edition the reader chose (a chip, or ▶ on it), kept for the session outside the card: Home unmounts on every
+// tab switch, and the remounted card fell back to the latest edition while the mini player went on reading the
+// Assessment they had picked (r10/r11 native m3, device voice). `among` is the editions on offer when it was
+// chosen: once a new edition lands the choice lapses, unless it is the one still playing.
+type Choice = { key: string; among: string };
+const choiceMemo = new WeakMap<object, Choice>();
+const briefKey = (b: DailyBrief) => `${b.brief_date}:${b.edition}`;
 const SAVED_KEY = "assetly-briefs";   // cleared at sign-out (lib/localState)
 function readSaved(): DailyBrief[] | null {
   try { const v = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "null"); return Array.isArray(v) ? (v as DailyBrief[]) : null; } catch { return null; }
@@ -169,8 +177,13 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
   const current = [...shown].reverse().find((b) => !freshOf(b).bookChanged) ?? shown[shown.length - 1];
   // while narration plays, an unpicked card shows the edition being read: back from another tab the card opened
   // on the Assessment while the player said "Closing Note" (r10 native m3). A pick the reader makes still wins.
-  const playingNow = player.playing ? shown.find((b) => `${b.brief_date}:${b.edition}` === player.track?.id) : undefined;
-  const brief = (picked && shown.find((b) => b.edition === picked)) ?? playingNow ?? current;
+  const playingNow = player.playing ? shown.find((b) => briefKey(b) === player.track?.id) : undefined;
+  // the session's choice (survives a remount): still offered, and either nothing new has landed since or it is
+  // the edition the player has loaded
+  const among = shown.map(briefKey).join("|");
+  const kept = choiceMemo.get(api);
+  const keptBrief = kept ? shown.find((b) => briefKey(b) === kept.key && (kept.among === among || player.track?.id === kept.key)) : undefined;
+  const brief = (picked && shown.find((b) => b.edition === picked)) ?? playingNow ?? keptBrief ?? current;
   const meta = ED_META[brief.edition] ?? ED_META.morning;
   const dow = new Date(brief.brief_date + "T12:00:00Z").getUTCDay();
   const title = brief.edition === "weekend" && dow !== 0 && dow !== 6 ? "Holiday Read" : meta.title;
@@ -178,7 +191,13 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
 
   // switching edition does NOT stop playback: the mini player keeps whatever is loaded, so you can
   // read the close while the morning brief finishes talking
-  const pick = (ed: BriefEdition) => { if (ed !== brief.edition) setPicked(ed); };
+  const remember = (b: DailyBrief) => choiceMemo.set(api, { key: briefKey(b), among });
+  const pick = (ed: BriefEdition) => {
+    if (ed === brief.edition) return;
+    setPicked(ed);
+    const b = shown.find((x) => x.edition === ed);
+    if (b) remember(b);
+  };
 
   const trackId = `${brief.brief_date}:${brief.edition}`;
   const isThis = player.track?.id === trackId;
@@ -192,6 +211,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
   const offlineAudio = savedCopy && !!brief.audio_path && !isThis;
   const canListen = (!!brief.audio_path || voiceOnly) && !offlineAudio;
   const toggleAudio = () => {
+    remember(brief);   // what is being played is the card's edition when Home comes back
     if (isThis) { togglePlayer(); return; }
     const track = { id: trackId, title, subtitle: dateLabel, date: brief.brief_date };
     const path = brief.audio_path;

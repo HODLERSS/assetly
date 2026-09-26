@@ -344,7 +344,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
       // kick the chain again as a belt-and-braces (idempotent: the per-user lock makes a duplicate sync yield)
       connectPendingRef.current = String(Date.now());
       try { sessionStorage.setItem("assetly-connect-at", new Date().toISOString()); } catch { /* storage unavailable */ }
-      assess.start();
+      assess.start(seenBriefRef.current === null ? null : seenBriefRef.current === "none");   // "first" only for a reader with no brief rows yet
       // Imported rows land over several seconds (callback sync + webhook syncs). Poll the book quickly
       // until it stops growing so Home shows the new stocks immediately, not on the next 60s tick.
       let lastCount = -1, stable = 0, ticks = 0;
@@ -445,7 +445,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
     try { sessionStorage.setItem("assetly-connect-at", new Date().toISOString()); } catch { /* storage unavailable */ }
     // Home's assessment card carries the wait (and a failure, with Retry), not a 7-second toast
     try { if (!localStorage.getItem(NEXT_KEY)) localStorage.setItem(NEXT_KEY, "armed"); } catch { /* private mode */ }   // first adds: arm the next-step hint
-    assess.start();
+    assess.start(seenBriefRef.current === null ? null : seenBriefRef.current === "none");   // "first" only for a reader with no brief rows yet (r11)
     api.brokerageConnected().catch((e) => assess.fail(e instanceof Error ? e.message : "We couldn't start your assessment."));
   }, [api, assess.start, assess.fail]);
   const retryAssessment = useCallback(() => { bookChangeRef.current.pending = true; runBookPipeline(); }, [runBookPipeline]);
@@ -585,6 +585,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
         )}
         {view.kind === "position" && (
           <PositionScreen api={api} dispKr={profile?.display_kr ?? "KRW"} row={rows.find((r) => r.holding_id === view.holdingId) ?? null}
+            onNotice={(m) => { setNoticeKind("ok"); setNotice(m); setTimeout(() => setNotice((cur) => (cur === m ? null : cur)), 5000); }}
             others={(() => { const me = rows.find((r) => r.holding_id === view.holdingId); return me ? rows.filter((r) => r.symbol === me.symbol && r.holding_id !== me.holding_id) : []; })()}
             onChanged={load} onRemoved={async () => {
               // a removal changes the book as much as an add: the assessment and the intelligence are rerun

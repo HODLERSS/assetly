@@ -148,6 +148,9 @@ input, select { font: inherit; }
   border-color: color-mix(in srgb, var(--as-loss) 45%, transparent); }
 .btn.danger-quiet:active { background: var(--as-note-loss-bg); }
 .btn:disabled { opacity: .55; cursor: default; }
+/* a disabled chip reads as one (Settings' investor "Edit" before the profile loads looked tappable; r11 designer) */
+.chip:disabled { opacity: .45; cursor: default; }
+.chip:disabled:active::before { background: transparent; }
 /* text-button: same 44pt target as a real button, but reads as a link (auth's password toggle) */
 .linky { display: block; width: 100%; min-height: 44px; padding: 10px 8px; background: none; border: 0;
   color: var(--as-primary); font: inherit; font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
