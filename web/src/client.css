@@ -138,8 +138,11 @@
 .text-large .investor-row > span:first-child { flex: 1 1 100%; }
 .insights-head > .sub, .insights-head > .insights-toggle { flex: none; white-space: nowrap; }
 .text-large .insights-head .insights-brand { flex: 1 1 auto; }
-.text-large .insights-head .brief-title { display: block; }
-.text-large .brief-title .brief-title-name { white-space: normal; }
+.text-large .insights-head .brief-title { display: block; overflow: visible; text-overflow: clip; flex: 1 1 auto; min-width: 0; }
+/* AX5 on a 16e still cut the date ("SEP …"; r10 native): the date is one unbreakable unit that drops to its own
+   line when it does not fit, and nothing around it clips */
+.text-large .brief-title .brief-title-date { display: inline-block; }
+.text-large .brief-title .brief-title-name { white-space: normal; overflow: visible; text-overflow: clip; }
 
 /* Edge swipe back (lib/swipeBack.ts): Home as it was left, under the sliding page, never empty ground.
    Below the sticky top bar (15) and the tab bar; the page being popped rides above it on its own ground. */

@@ -154,7 +154,7 @@ describe("10 Home's briefs are chosen by edition and session, not by write time 
 
   it("a Morning written after 4 PM ET never outranks the Close of the same date: the Close wins", () => {
     const picked = pickHomeBriefs([lateMorning, close], assessment, now);
-    expect(picked.map((x) => x.edition)).toEqual(["assessment", "close"]);
+    expect(picked.map((x) => x.edition)).toEqual(["assessment", "morning", "close"]);
     // without an assessment the next edition fills the second slot, and the Close still opens
     expect(pickHomeBriefs([close, lateMorning], null, now).map((x) => x.edition)).toEqual(["morning", "close"]);
   });
@@ -164,8 +164,8 @@ describe("10 Home's briefs are chosen by edition and session, not by write time 
     const regenClose = b("close", "2026-09-25", "2026-09-25T21:00:00Z", "Regenerated close.");
     const lateAssessment = b("assessment", "2026-09-25", "2026-09-26T00:30:00Z");
     const picked = pickHomeBriefs([olderClose, midday, close, regenClose, lateMorning], lateAssessment, now);
-    expect(picked.map((x) => x.edition)).toEqual(["assessment", "close"]);
-    expect(picked[1].sections.lede).toBe("Regenerated close.");
+    expect(picked.map((x) => x.edition)).toEqual(["assessment", "morning", "midday", "close"]);
+    expect(picked[3].sections.lede).toBe("Regenerated close.");
     expect(pickHomeBriefs([midday, lateMorning], null, now).map((x) => x.edition)).toEqual(["morning", "midday"]);
     // a stale assessment (over 14 days) is not offered
     expect(pickHomeBriefs([close], b("assessment", "2026-09-01", "2026-09-01T12:00:00Z"), now).map((x) => x.edition)).toEqual(["close"]);
@@ -179,10 +179,10 @@ describe("10 Home's briefs are chosen by edition and session, not by write time 
     };
     const sb = { from: vi.fn().mockReturnValueOnce(q([lateMorning, close])).mockReturnValueOnce(q([assessment])) };
     const briefs = await makeApi(sb as unknown as SupabaseClient).getDailyBriefs();
-    expect(briefs.map((x) => x.edition)).toEqual(["assessment", "close"]);
+    expect(briefs.map((x) => x.edition)).toEqual(["assessment", "morning", "close"]);
     render(<App api={stubApi({ getDailyBriefs: vi.fn().mockResolvedValue(briefs) })} />);
     const card = await screen.findByTestId("brief-card");
     expect(within(card).getByRole("button", { name: "Close" }).getAttribute("aria-pressed")).toBe("true");
-    expect(within(card).queryByRole("button", { name: "Morning" })).toBeNull();
+    expect(within(card).getByRole("button", { name: "Morning" }).getAttribute("aria-pressed")).toBe("false");   // every edition of the day is a chip (r10)
   });
 });

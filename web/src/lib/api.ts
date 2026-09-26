@@ -40,10 +40,10 @@ const EDITION_RANK: Record<string, number> = { close: 6, midday: 5, morning: 4, 
 const ASSESSMENT_FRESH_MS = 14 * 86400000;
 
 /**
- * The (at most) two briefs Home shows: from the latest brief date, the edition furthest into its session
- * (close > midday > morning, one row per edition, its newest), plus the Portfolio Assessment when it is recent,
- * else the next edition of that date. The card opens on the last one: the ranked edition, always, with the
- * assessment as the chip before it (only a first assessment with no edition yet stands alone).
+ * The briefs Home shows: every edition of the latest brief date (one row per edition, its newest), in session
+ * order (morning, midday, close), plus the Portfolio Assessment when it is recent, first. The card opens on the
+ * last one, the edition furthest into its session; the rest are chips. Two at most hid the Midday when three
+ * editions existed (r10 native m3). Only a first assessment, with no edition yet, stands alone.
  */
 export function pickHomeBriefs(daily: DailyBrief[], assessment: DailyBrief | null, now: number = Date.now()): DailyBrief[] {
   const day = daily.reduce<string | null>((m, b) => (m === null || b.brief_date > m ? b.brief_date : m), null);
@@ -60,8 +60,8 @@ export function pickHomeBriefs(daily: DailyBrief[], assessment: DailyBrief | nul
   // the edition leads (the card opens on the last one); the assessment is a chip beside it. Ordering by write
   // time opened Home on an evening re-run assessment (after an add or remove) until the next Morning (r10
   // power-user). Only the FIRST assessment, with no edition yet, is the card on its own (the branch above).
-  if (fresh) return [fresh, top];
-  return ranked[1] ? [ranked[1], top] : [top];
+  const editions = [...ranked].reverse();   // ascending: the top-ranked edition last
+  return fresh ? [fresh, ...editions] : editions;
 }
 
 /** A headline line with its trailing "…" / "..." cut: a clipped title reads as a sentence that stops. */
