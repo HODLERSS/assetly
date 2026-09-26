@@ -187,3 +187,4 @@ main.screen.swiping { position: relative; z-index: 2; background: var(--as-bg); 
 
 /* a new question scrolls to the top of the view, clear of the sticky header */
 .bubble.user{scroll-margin-top:calc(env(safe-area-inset-top, 0px) + 72px)}
+.bubble.ai{scroll-margin-top:calc(env(safe-area-inset-top, 0px) + 72px)}

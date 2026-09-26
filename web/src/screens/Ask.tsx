@@ -105,12 +105,18 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
   // used to scroll to the end, which showed the tail of the previous answer instead of the tapped question).
   // The arrival of the answer does not scroll: the reader is already at the question.
   const lastQRef = useRef<HTMLDivElement | null>(null);
+  const lastARef = useRef<HTMLDivElement | null>(null);
   const seenTurns = useRef(0);
   useEffect(() => {
     if (turns.length > seenTurns.current) lastQRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
     else if (turns.length === 0) endRef.current?.scrollIntoView?.({ block: "end" });
     seenTurns.current = turns.length;
   }, [turns.length]);
+  // ...and when that question's answer lands, the view moves to the answer (owner feedback)
+  const lastAnswered = turns.length > 0 && turns[turns.length - 1].a !== null;
+  useEffect(() => {
+    if (lastAnswered) lastARef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [lastAnswered, turns.length]);
 
   const submit = async (question: string) => {
     const text = question.trim();
@@ -176,7 +182,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
               {wait > 0 && <p className="sub ask-wait" data-testid="ask-wait" aria-live="polite">{WAIT_COPY[wait]}</p>}
             </>)}
             {t.a !== null && !t.error && (
-              <div className="bubble ai" data-testid="ask-answer" role="status" aria-live="polite" aria-atomic="true">
+              <div className="bubble ai" data-testid="ask-answer" role="status" aria-live="polite" aria-atomic="true" ref={i === turns.length - 1 ? lastARef : undefined}>
                 <Md text={t.a} />
                 <p className="bubble-foot">{notAdvice()}</p>
               </div>
