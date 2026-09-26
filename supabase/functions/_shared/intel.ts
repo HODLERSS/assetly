@@ -2216,7 +2216,9 @@ export function headlineOk(title: string): boolean {
   if (/\b(?:(?:to|a|a better|still a|strong|top|best)\s+buy|buy(?:ing)? (?:now|the dip|opportunity)|time to (?:buy|sell)|(?:should|would) you (?:buy|sell)|worth buying|to sell now|(?:better|best) (?:stock|pick|buy)|is (?:a )?(?:buy|sell)\b|sell[- ]off alert|on sale\b|bargain|no[- ]brainer|millionaire|retire (?:rich|early))/i.test(t)) return false;
   if (/^\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:(?:[A-Z][\w-]*|AI|top|great|dividend|growth|unstoppable|magnificent)\s+){0,3}(?:stocks?|etfs?|reasons?|things|ways|picks)\b/i.test(t)) return false;   // listicles
   if (/:\s*(?:\d+|one)\s+(?:\w+\s+){0,2}stocks?\b|\b\d+\s+(?:AI\s+)?stocks?\s+to\b/i.test(t)) return false;
-  if (/\bif you (?:had )?invest(?:ed)?\s+\$|\bcould be worth\b|\bwhat (?:it|they) could be worth|\bhere'?s (?:what|how much)\b|\bprice (?:target|prediction|forecast)\b|\bstock forecast\b|\bby 20[3-9]\d\b/i.test(t)) return false;
+  if (/\bif you (?:had )?invest(?:ed)?\s+\$|\bcould be worth\b|\bwhat (?:it|they) could be worth|\bhere'?s (?:what|how much)\b|\bprice (?:targets?|predictions?|forecasts?)\b|\bstock forecasts?\b|\bby 20[3-9]\d\b/i.test(t)) return false;
+  // r10: "Why now might be a good time to invest in Alphabet", "(and 3 Other Stocks to Watch)"
+  if (/\b(?:good|great|right|best) time to (?:buy|invest|add|own)\b|\btime to invest\b|\b\d+ other stocks?\b|\bstocks? to (?:watch|own|hold)\b/i.test(t)) return false;
   if (/\bForm\s*4\b|\bSEC Form\b|\b(?:director|officer|insider|10% owner|ceo|cfo|evp|svp)\b[^.]{0,40}\b(?:reported|reports|files?|filed)\b[^.]{0,40}\b(?:sale|sales|purchase|purchases|gift|acquisition)s?\b|\bshare gift\b|\bsells? [\d,]+ shares\b|\bbuys? [\d,]+ shares\b/i.test(t)) return false;
   if (/\bwhat'?s (?:going on|next|happening)\b|\bwhy (?:is|are|did|does)\b[^.]{0,40}\bstock\b/i.test(t)) return false;
   return true;
@@ -2231,6 +2233,9 @@ const PUBLISHERS = "Yahoo Finance|Reuters|Bloomberg|MarketBeat|Investing\\.com(?
  *  style has no em dashes), curly quotes straightened, a trailing "…" removed. */
 export function cleanHeadline(title: string, names: string[] = []): string {
   let t = decodeHtml(String(title ?? "")).replace(/\s+/g, " ").trim();
+  // r10: feed labels ("Market Chatter:", "The 8:30:", "UPDATE 2 -", "| Closing Bell")
+  t = t.replace(/^(?:Market Chatter|The \d{1,2}:\d{2}|Breaking|Exclusive|Update(?: \d+)?|Stock Market Today(?:,[^:]{0,20})?|Earnings Preview|Midday Movers|Premarket Movers)\s*[:\-\u2013\u2014]\s*/i, "")
+    .replace(/\s*\|\s*(?:Closing Bell|Opening Bell|Mad Money|Squawk Box|Power Lunch|Fast Money|The Exchange|Market Wrap|Morning Brief)\s*$/i, "");
   t = t.replace(new RegExp(`\\s*(?:[-|–—]\\s*|\\bBy\\s+)(?:${PUBLISHERS})\\s*$`, "i"), "");
   // a trailing " - <holding name>" section tag ("What's Going On With Microsoft Stock Friday? - Microsoft")
   for (const n of names) if (n && n.length >= 3) t = t.replace(new RegExp(`\\s+[-|–—]\\s+${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i"), "");
@@ -2276,7 +2281,12 @@ export function anchorNewsItem(line: string, heads: { symbol: string; names: str
     return new Set((t.toLowerCase().replace(/(\d),(\d{3})/g, "$1$2").match(/[a-z0-9$%.]{3,}|\d+(?:\.\d+)?%?/g) ?? [])
       .map((w) => w.replace(/\.$/, "").replace(/'s$/, "")).filter((w) => w.length >= 2 && !STOP.test(w) && !nameToks.has(w.replace(/[$%]/g, ""))));
   };
-  const cands = named.map((h) => {
+  const cands = named.filter((h) => {
+    // r10: "Amazon: Meta's Muse Just Handed Investors A $65 Billion Gift" is about Meta: a "<name>:" prefix whose rest does
+    // not name the holding is not that holding's headline
+    const m = /^([^:]{2,30}):\s*(.+)$/.exec(cleanHeadline(h.title));
+    return !m || [h.symbol.replace(/\.(?:KS|KQ)$/, ""), ...h.names].some((n) => n && n.length >= 2 && nameIn(m[2], n));
+  }).map((h) => {
     const t = cleanHeadline(h.title, [h.symbol.replace(/\.(?:KS|KQ)$/, ""), ...h.names]);
     const L = toks(line, [h.symbol, ...h.names]), T = toks(t, [h.symbol, ...h.names]);
     let n = 0; for (const w of L) if (T.has(w)) n++;
@@ -2296,7 +2306,7 @@ export function anchorNewsItem(line: string, heads: { symbol: string; names: str
       t = cut[1].trim();
     }
     const sym = c.h.symbol.replace(/\.(?:KS|KQ)$/, "");
-    const src = String(c.h.source ?? "").replace(/\.(?:com|io|net|org)$/i, "").trim();
+    const src = sourceName(String(c.h.source ?? ""));
     const mentions = [sym, ...c.h.names].some((n) => n && nameIn(t, n));
     const pretty = c.h.names.find((n) => n && !/^[A-Z0-9.]{1,6}$/.test(n)) ?? c.h.names[0];
     return { text: mentions ? t : `${pretty}: ${t}`, source: src || null };
@@ -2423,7 +2433,9 @@ export function fixWhatItMeans(text: string): string {
 // ---------------------------------------------------------------------------------------------------------------
 const MON3: Record<string, string> = { january: "jan", february: "feb", march: "mar", april: "apr", june: "jun", july: "jul", august: "aug", september: "sep", sept: "sep", october: "oct", november: "nov", december: "dec" };
 const normSrc = (t: string) => String(t ?? "").toLowerCase().replace(/[‘’]/g, "'")
-  .replace(/\b(january|february|march|april|june|july|august|september|sept|october|november|december)\b/g, (m) => MON3[m] ?? m).replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\.\s/g, "$1 ");
+  .replace(/\b(january|february|march|april|june|july|august|september|sept|october|november|december)\b/g, (m) => MON3[m] ?? m).replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\.\s/g, "$1 ")
+  // ISO dates in the data ("deliveries 2026-10-02") also read as "oct 2", the way an item writes them
+  .replace(/\b20\d\d-(\d\d)-(\d\d)\b/g, (m, mo, d) => `${m} ${["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"][Number(mo) - 1] ?? ""} ${Number(d)}`);
 const EVENT_W = /\b(?:earnings|results|report(?:s|ing)?|guidance|outlook|update|launch(?:es)?|release|renewal|decision|ruling|verdict|vote|hearing|meeting|conference|keynote|event|deliver(?:y|ies)|call|investor day|ex-date|ex-dividend|payout|split|filing|approval|deadline|trial|announcement|unveil\w*|reveal\w*|presentation|data|readout|summit|expiry|expiration)\b/i;
 const TIME_W = /\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b|\btomorrow\b|\btonight\b|\b(?:next|this|later this) week\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/i;
 const GENERIC = new Set(["the", "and", "for", "with", "its", "their", "from", "this", "that", "into", "over", "after", "before", "next", "week", "later", "day", "today", "tomorrow", "tonight", "expected", "est", "update", "updates", "report", "reports", "event", "call", "data", "new", "stock", "shares", "share", "company", "signal", "watch", "key", "level", "levels", "risk", "any", "more", "about",
@@ -2829,4 +2841,32 @@ export function countClaims(text: string, facts: { names: string[] }[]): string[
     const named = facts.filter((f) => f.names.some((x) => x && nameIn(s, x))).length;
     return named > 0 && named !== n;
   });
+}
+
+const OUTLETS: Record<string, string> = { foxbusiness: "Fox Business", qz: "Quartz", financialpost: "Financial Post", benzinga: "Benzinga", entrepreneur: "Entrepreneur",
+  stocktwits: "Stocktwits", pluang: "Pluang", investing: "Investing.com", marketwatch: "MarketWatch", cnbc: "CNBC", reuters: "Reuters", bloomberg: "Bloomberg", wsj: "The Wall Street Journal",
+  ft: "Financial Times", barrons: "Barron's", fool: "The Motley Fool", seekingalpha: "Seeking Alpha", zacks: "Zacks", tipranks: "TipRanks", businessinsider: "Business Insider",
+  forbes: "Forbes", fortune: "Fortune", axios: "Axios", techcrunch: "TechCrunch", theverge: "The Verge", macrumors: "MacRumors", "9to5mac": "9to5Mac", electrek: "Electrek",
+  coindesk: "CoinDesk", cointelegraph: "Cointelegraph", yonhapnews: "Yonhap", koreaherald: "The Korea Herald", koreatimes: "The Korea Times", carboncredits: "CarbonCredits.com" };
+/** An outlet's display name: a bare domain ("foxbusiness.com", "qz.com") becomes its name; an unknown slug is title-cased. */
+export function sourceName(src: string): string {
+  const t = String(src ?? "").trim();
+  if (!t) return "";
+  const dom = /^(?:www\.)?([a-z0-9-]+)\.(?:com|co|io|net|org|news|co\.kr|kr|ca|co\.uk|uk|st)$/i.exec(t);
+  if (!dom) return t;
+  const slug = dom[1].toLowerCase();
+  return OUTLETS[slug] ?? slug.split("-").map((w) => w ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
+}
+
+/** A daily note relating the day's move to the reader's long-term return target ("nudges the portfolio toward its 12-20%
+ *  target" on a +0.27% day): a day is no step toward a yearly target. */
+export function dayTargetClaims(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\b(?:toward|towards|closer to|nudges?|moves?|keeps?|on track (?:for|to)|in line with|ahead of|behind)\b[^.]{0,50}\b(?:\d+\s?(?:-|–|to)\s?\d+\s?%\s*)?(?:return |annual |yearly )?(?:target|goal)\b/i.test(s) && !/\bassessment\b/i.test(s));
+}
+
+/** "Today added $621 across US and Korean stocks" when the $621 is the whole book (crypto included, or Korea's last
+ *  session when KRX did not trade today): the scope label becomes "across the portfolio". */
+export function fixScopeLabels(text: string, mixed: boolean): string {
+  if (!mixed) return String(text ?? "");
+  return String(text ?? "").replace(/\bacross (?:your )?(?:(?:US|U\.S\.|American)(?: and (?:Korean|KRX))?|(?:Korean|KRX) and (?:US|U\.S\.)) (?:stocks|shares|holdings|names|equities)\b/gi, "across the portfolio");
 }

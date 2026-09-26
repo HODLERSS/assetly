@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -75,7 +75,8 @@ const FAST_MODEL = "gpt-oss-120b";
 // 10 (round 8): verdict tails, close-time labels, true minus signs, tech share and target-band checks
 // 11 (round 9 / r10): grounded events and causes, book day move, "X% in <holding>", theme claims, cleaned notes; the
 //    latest past date's rows are patched too, so the live Sep 25 close loses its invented Monday events
-const GEN_VERSION = 11;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+// 12 (r10): a day move related to the return target, scope labels that do not match the figure's composition
+const GEN_VERSION = 12;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -385,7 +386,8 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     return edition === "close" || edition === "kr_close" || mins >= 16 * 60 ? "(as of the 4:00 PM ET close)" : m;
   });
   const bookPct = typeof (src as unknown as { day_pct?: number }).day_pct === "number" && edition !== "assessment" && edition !== "weekend" ? (src as unknown as { day_pct: number }).day_pct : null;
-  const text = (t: string) => fixBookMove(fixWhatItMeans(closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))))), bookPct);
+  const repairMixed = (ctx?.facts ?? []).some((f) => /\.(?:KS|KQ)$|-USD$|^(?:BTC|ETH|SOL|XRP|DOGE)$/.test(f.symbol));
+  const text = (t: string) => fixScopeLabels(fixBookMove(fixWhatItMeans(closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))))), bookPct), repairMixed);
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
@@ -395,7 +397,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests), ...wrongDeliveriesDates(x, dlvFacts, today), ...parts.filter((p) => strengthAsRisk(p)), ...repairDrops(x),
       // round 7: a weight printed as a move ("META dropped 12.8%"), a yield we never computed ("near 0.5%")
       ...(ctx ? [...weightAsMoveHits(x, ctx.facts), ...(ctx.yields.length ? wrongYieldClaims(x, ctx.yields) : [])] : []),
-      ...promoCharacterisations(x), ...targetPaceClaims(x),
+      ...promoCharacterisations(x), ...targetPaceClaims(x), ...(edition === "assessment" ? [] : dayTargetClaims(x)),
       ...(groundSrc !== null ? [...ungroundedEventSentences(x, groundSrc, allNames), ...ungroundedCauses(x, groundSrc, allNames)] : [])]);
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
     return kept.length ? kept.join(" ") : x;
@@ -455,9 +457,12 @@ Deno.serve(async (req) => {
   // the Close. An explicit edition (brief-retry, the regeneration dispatch, operators) obeys the same window; only an
   // internal-token caller passing outOfWindow (batteries) or a fixture run may write outside it.
   const clockEd = clockEdition();
-  if (clockResolved && clockEd === null) return json({ ok: true, users: 0, wrote: 0, reason: "between edition windows (ET)" });
-  let edition: Edition = validEd(edRaw) ? edRaw : clockEd!;
-  if (clockResolved && edition === "weekend" && zonedParts(new Date(), TZ.US).minutes < 9 * 60) return json({ ok: true, users: 0, wrote: 0, reason: "weekend read waits for 9 AM ET" });
+  // r10: a clock run outside every window still runs the REPAIR pass (stored rows are fixed through the night and the
+  // weekend morning, not only when an edition is due); it just writes no new edition
+  let repairOnlyReason: string | null = null;
+  if (clockResolved && clockEd === null) repairOnlyReason = "between edition windows (ET)";
+  let edition: Edition = validEd(edRaw) ? edRaw : (clockEd ?? "weekend");
+  if (clockResolved && edition === "weekend" && zonedParts(new Date(), TZ.US).minutes < 9 * 60) repairOnlyReason = "weekend read waits for 9 AM ET";
   {
     const w = editionWindow(edition);
     let overrideOk = false;
@@ -466,7 +471,7 @@ Deno.serve(async (req) => {
       if (!t) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); t = data ?? ""; }
       overrideOk = !!t && (req.headers.get("x-internal-token") ?? "") === t;
     }
-    if (!w.ok && !fixture && !overrideOk) return json({ ok: true, users: 0, wrote: 0, reason: w.reason });
+    if (!w.ok && !fixture && !overrideOk && !repairOnlyReason) return json({ ok: true, users: 0, wrote: 0, reason: w.reason });
   }
   // Korea editions ride the KRX clock, not the US one: written on KRX trading days (KST) for users holding Korean
   // names. A Sunday 8 PM Central for the reader is Monday 10 AM in Korea, and their Korean sleeve is already moving.
@@ -602,6 +607,7 @@ Deno.serve(async (req) => {
       }
     }
   }
+  if (repairOnlyReason) return json({ ok: true, users: 0, wrote: 0, reason: repairOnlyReason, repairPass: true, ...(dispatched ? { regenerating: dispatched } : {}), ...(renarrated ? { renarrated } : {}) });
   // Round 7: one run wrote about ONE user's brief before its wall clock ran out, so the close edition reached 6 of 10
   // users by 23:00 UTC (the showcase not at all). A clock run (no user target) now fans out: every user who still
   // needs this edition gets their own invocation, with its own wall clock.
@@ -1744,6 +1750,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity },
         ];
         const TECH_T = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]);
+        // r10: "Today added $621 across US and Korean stocks" when the $621 has crypto and Korea's Wednesday move in it
+        const scopeMixed = holdings.some((r) => (r.kind === "crypto" || /-USD$/.test(r.symbol)) && r.change_pct !== null && Number(r.change_pct) !== 0)
+          || (holdings.some((r) => /\.(?:KS|KQ)$/.test(r.symbol)) && !marketState("KR").tradingToday);
         const themesArr = [...themeShare].filter(([th]) => th !== "other").map(([name, pct]) => ({ name, pct }));
         const techGroup = [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: [...themeShare].filter(([th]) => TECH_T.has(th)).reduce((a, [, v]) => a + v, 0) }];
         const clean = (t: string) => {
@@ -1751,7 +1760,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           // tech share is held to the computed one ("Tech makes up about 57%" at ~97%)
           // round 9: the compact morning read "Portfolio up 0.5%" (+0.27%) and "What it means the AI chip rally adds..."
           const x0 = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup);
-          const x = fixThemeHeavy(fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB), themesArr);
+          const x = fixScopeLabels(fixThemeHeavy(fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB), themesArr), scopeMixed);
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
@@ -1759,7 +1768,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           const bad = [...historicalClaims(x, hsrc, briefDate), ...unsupportedCauses(x, hsrc), ...wrongEarningsMonths(x, earnEsts),
             ...wrongEarningsDates(parts, earnEsts, briefDate), ...wrongDividendAmounts(x, divFacts), ...wrongDeliveriesDates(x, dlvFacts, briefDate),
             // round 5: "captures the full S&P 500 upside while avoiding individual stock fees", "support a 4-8% annual return"
-            ...promoClaims(x), ...returnForecasts(x), ...themeClaims(x, themesArr),
+            ...promoClaims(x), ...returnForecasts(x), ...themeClaims(x, themesArr), ...(edition === "assessment" ? [] : dayTargetClaims(x)),
             // round 9 intelligence: a dated event or a cause no source line carries ("MSFT Copilot revenue update
             // Monday", "Microsoft's AI spend boosted earnings")
             ...(fixture ? [] : [...ungroundedEventSentences(x, groundSrc, bookNamesAll), ...ungroundedCauses(x, groundSrc, bookNamesAll)]),

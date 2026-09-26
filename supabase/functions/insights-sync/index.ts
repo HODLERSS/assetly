@@ -13,6 +13,7 @@ import {
 import { dividendRows, ensureHistory, hiLo, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
+import { callJudge } from "../_shared/judge.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -459,6 +460,9 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
           // "Up 453% in a year" when the trailing year is +422% (the run from the 12-month low), round 4
           && !periodReturnMismatches(b, [{ names: [symbol, ...aka], windows: wr.pct }]).length);
       if (!fixture) { const bad = await incoherent(key, bullets, sourceText); bullets = bullets.filter((_, i) => !bad.has(i)); }
+      // r10: card bullets in the app's own voice ("UPI dominance caps near-term growth", "a structural risk to AMZN") go
+      // through the same compliance judge as Ask; a card the judge cannot read keeps the regex result
+      if (!fixture && bullets.length) { const j = await callJudge(key, bullets, 6000); if (j.flags?.size) bullets = bullets.filter((_, i) => !j.flags!.has(i)); }
       if (bullets.length < 2) { errors.push(symbol + ": take contradicted the live numbers; kept the previous one"); continue; }
       const trend = parsed.windows?.trend ? (fixArticles(cardScrub(String(parsed.windows.trend))) || null) : null;
       // the summary line may not restate a bullet (round 4: "Off 7.6% over two months despite 5% one-year gain"
@@ -639,6 +643,13 @@ ${VALUE_LAW}`;
       if (bullets.length < 2) { errors.push("user " + uid.slice(0, 8) + ": take contradicted the live book; kept the previous one"); continue; }
       const heldBook = bookNames.map((b) => b.symbol).filter((sy) => !gone.has(sy));
       bullets = bullets.map((b) => sanitize(b)).filter(Boolean);
+      if (!fixture && bullets.length) {
+        const j = await callJudge(key, bullets, 6000);
+        if (j.flags?.size) {
+          bullets = bullets.filter((_, i) => !j.flags!.has(i));
+          if (bullets.length < 2) { errors.push("user " + uid.slice(0, 8) + ": the judge removed the take; kept the previous one"); continue; }
+        }
+      }
       // round 8 newcomer: a News line reversed its source ("NVDA CEO warns AI slowdown risk despite hype" for "Nvidia CEO
       // Pushes Back On The 'AI Apocalypse'"): each line is replaced by the matching source headline, verbatim and cleaned
       let news5Items: { text: string; source: string | null }[] | null = null;
