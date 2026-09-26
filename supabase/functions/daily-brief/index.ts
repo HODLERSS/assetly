@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  fixBookMove, fixWhatItMeans, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -874,7 +874,7 @@ overnight: YOUR BOOK: what they own. Total, the top holdings BY NAME with their 
 positions: EVERY equity, fund, or crypto holding, largest first (the 6 largest when the book has more than 6), so the quality read covers the whole portfolio; every such holding above 20% of assets MUST appear; cash and debt are NEVER positions (they belong in YOUR BOOK and STRUCTURE only). note 28-38 words of flowing prose: what the business is, the quality verdict (for a company: moat, growth, balance sheet; for a fund: what it holds, concentration, cost; for a coin: adoption, supply, custody), and its role in this book; a strength AND a risk or condition, written as sentences, NEVER as "Strength:" / "Risk:" labels: the LAST sentence of every note must be the risk, and must start with "The risk:" or "But" (never a positive clause after "while"); at most two numbers, from the data only, and NEVER state a holding's size twice: give its WEIGHT (25.6% of book) or its DOLLAR VALUE ($5,900), never both, because they are one fact and the weight is the more useful half. If the note also carries a threshold, that threshold is one of the two. watch 5-10 words, no padding words: the thesis TRIPWIRE, MEASURABLE (a metric with a threshold, a guidance item, or a dated event); vague words like "significantly", "sharply", "weakens" are forbidden; NEVER verbs like monitor, watch, track, keep an eye.
 desk_view: STRUCTURE, exactly two or three sentences. Sentence 1: the ONE concentration, correlation, currency or leverage fact that most shapes this book, with its percentage from the data - a single fact, NEVER a list of holdings with their moves. THE WHOLE desk_view MAY CONTAIN AT MOST THREE FIGURES: one weight in sentence 1 and at most two more anywhere after it. Naming several holdings with a percentage each is the laundry list this section exists to replace; say "the rest is spread across five smaller positions" instead of listing them. Sentence 2 MUST start with "This means" and say what that structure does FOR them: if the concentration fits their stated risk appetite, style and target, name the upside it is buying (the exposure they wanted, the compounding it allows, the cost it avoids); if it does not fit, name what it has delivered for them so far. Sentence 3 (optional): the single condition that would turn it into a problem. No performance figures here (they belong in the notes), no list of returns, no single-day numbers. <= 50 words. Never invent a hypothetical loss or drawdown percentage.
 horizon: exactly two labeled clauses in this shape: "${HZ1}: ... ${HZ2}: ..." The first names what actually decides the ${HZ1.toLowerCase()} for THIS book (a print, a cycle, a macro number); any date you write must be AFTER today and come from NEXT EARNINGS ESTIMATES, otherwise say "the next earnings print" without a date. The second names what must be true over the ${HZ2.toLowerCase()} for this book to deliver. 36-46 words total.
-ideas: 2-3 items, <= 14 words each, each about a GAP in this book (not about the names already held): name the gap, then the specific theme or instrument type worth researching to fill it (e.g. ${incomeLens ? `"No income sleeve: dividend-growth ETFs", ` : `"One-theme book: AI software and infrastructure beyond chips", `}"All-US book: developed-market ex-US index funds"). The gaps must fit THIS reader's lens and purpose (READER PROFILE)${incomeLens ? "" : `: this reader invests for growth, so never propose dividend, income or bond products; a missing asset class may be named only as a diversification FACT ("No bond or international exposure: one driver moves everything"), never as a product to research`}. Never write a return target or goal as a figure. Never start with Add, Buy, Consider, or Allocate (write "No income sleeve: dividend-growth ETFs" or "All-US book: developed-market ex-US index funds"; after the colon name the instrument type directly, never a verb); never a price target.
+ideas: 2-3 items, <= 14 words each, each about a GAP in this book (not about the names already held): name the gap, then the specific theme or instrument type worth researching to fill it (shape: "<the gap in THIS book>: <an instrument type worth researching>"; the gap must be TRUE of this book: never "All-US" when it holds any non-US stock, never an income or dividend gap when it holds a dividend or income fund, never a category it already holds). The gaps must fit THIS reader's lens and purpose (READER PROFILE)${incomeLens ? "" : `: this reader invests for growth, so never propose dividend, income or bond products; a missing asset class may be named only as a diversification FACT ("No bond or international exposure: one driver moves everything"), never as a product to research`}. Never write a return target or goal as a figure. Never start with Add, Buy, Consider, or Allocate (write "<gap>: <instrument type>"; after the colon name the instrument type directly, never a verb); never a price target.
 LENGTH TARGET: ${holdings.length <= 2 ? `220-320 words in total. This book has only ${holdings.length} holding${holdings.length > 1 ? "s" : ""}: give each note a deeper quality read of 36-48 words, and use the full budgets for the book, structure and horizon.` : (holdings.length > 4 ? "340-460 words in total, a three-minute read." : "280-360 words in total, a two-minute read.")} Use the budget: lede 18-28 words, book 34-48, ${holdings.length <= 2 ? "each note 36-48" : holdings.length > 4 ? "each note 24-32" : "each note 28-38"}, structure 32-44, horizon 32-42, each idea 8-13. Shorter than the floors reads thin; longer than the caps gets cut.
 ADVICE LAW: never tell them to buy, sell, trim, add, or take profits. You describe, you judge quality, you point at what to research.
 HORIZON LAW: forbidden words and phrases: today, tonight, overnight, yesterday, this morning, premarket, after-hours, after market close, at the bell, futures, session, intraday. Timeframes are weeks, months, quarters, years.
@@ -1635,12 +1635,27 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           }
           return { ...p, note };
         });
+        // round 9 newcomer: KO's "The risk:" listed strengths, ">consensus tripwire" leaked the field name, SCHD's risk came
+        // twice, JNJ and BRKB had none. Every note is cleaned; an assessment note left without a risk gets one from the
+        // memo, or none at all.
+        sections.positions = sections.positions.map((p) => {
+          const c = cleanNote(p.note);
+          let note = c.note || p.note;
+          if (edition === "assessment" && c.needsRisk) { const r = memoRisk(p.name, p.watch, note); if (r) note = cleanNote(`${note.replace(/[.\s]+$/, "")}. ${r}`).note || note; }
+          return { ...p, note, watch: String(p.watch ?? "").replace(/\s*\btripwire\b\s*/gi, " ").replace(/\s*([<>])\s*consensus/gi, (_m, s) => s === ">" ? " above consensus" : " below consensus").replace(/\s{2,}/g, " ").trim() };
+        });
         if (edition === "assessment") {
           const styles = toArr((invBy.get(uid) as Investor | null | undefined)?.styles, ["value"]);
           // round 5: a stability / income reader was told to "improve the modest Bitcoin position"
-          const fit = (sections.ideas ?? []).map(deValue).filter((x) => !offLensIdea(x, styles) && !offRiskIdea(x, styles));
-          // every idea pushed a product this reader does not invest in: the gap itself stays, as a fact
-          sections.ideas = fit.length ? fit : (sections.ideas ?? []).length ? ["No bond or income exposure: one growth driver moves the whole book"] : [];
+          // round 9 newcomer: "All-US book" beside a 12.6% Korean holding, "dividend-growth ETFs beyond SCHD" for a SCHD
+          // holder: an idea that contradicts the book, names a holding, or copies the prompt's example goes
+          const bookInfo = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], theme: themeOf(r.symbol, r.kind),
+            pct: usd(Number(r.value ?? 0), r.currency) / total * 100, region: (r.kind === "crypto" ? "crypto" : /\.(?:KS|KQ)$/.test(r.symbol) ? "KR" : "US") as "US" | "KR" | "crypto" }));
+          const EXAMPLES = ["No income sleeve: dividend-growth ETFs", "All-US book: developed-market ex-US index funds", "One-theme book: AI software and infrastructure beyond chips"];
+          const fit = (sections.ideas ?? []).map(deValue).filter((x) => !offLensIdea(x, styles) && !offRiskIdea(x, styles) && !ideaContradictions(x, bookInfo, EXAMPLES));
+          // every idea pushed a product this reader does not invest in: the gap itself stays, as a fact (when it is true)
+          const fallbackIdea = "No bond or income exposure: one growth driver moves the whole book";
+          sections.ideas = fit.length ? fit : (sections.ideas ?? []).length && !ideaContradictions(fallbackIdea, bookInfo) ? [fallbackIdea] : [];
         }
         // "A ultra-concentrated book" (round 2): articles fixed in code, English editions only
         const art = (t: string) => fixArticles(t);
@@ -1716,13 +1731,14 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity },
         ];
         const TECH_T = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]);
+        const themesArr = [...themeShare].filter(([th]) => th !== "other").map(([name, pct]) => ({ name, pct }));
         const techGroup = [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: [...themeShare].filter(([th]) => TECH_T.has(th)).reduce((a, [, v]) => a + v, 0) }];
         const clean = (t: string) => {
           // round 8: a verdict TAIL leaves a one-sentence lede as a clause ("…, keeping the portfolio on track"), and a
           // tech share is held to the computed one ("Tech makes up about 57%" at ~97%)
           // round 9: the compact morning read "Portfolio up 0.5%" (+0.27%) and "What it means the AI chip rally adds..."
           const x0 = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup);
-          const x = fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB);
+          const x = fixThemeHeavy(fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB), themesArr);
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
@@ -1730,7 +1746,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           const bad = [...historicalClaims(x, hsrc, briefDate), ...unsupportedCauses(x, hsrc), ...wrongEarningsMonths(x, earnEsts),
             ...wrongEarningsDates(parts, earnEsts, briefDate), ...wrongDividendAmounts(x, divFacts), ...wrongDeliveriesDates(x, dlvFacts, briefDate),
             // round 5: "captures the full S&P 500 upside while avoiding individual stock fees", "support a 4-8% annual return"
-            ...promoClaims(x), ...returnForecasts(x),
+            ...promoClaims(x), ...returnForecasts(x), ...themeClaims(x, themesArr),
             // round 9 intelligence: a dated event or a cause no source line carries ("MSFT Copilot revenue update
             // Monday", "Microsoft's AI spend boosted earnings")
             ...(fixture ? [] : [...ungroundedEventSentences(x, groundSrc, bookNamesAll), ...ungroundedCauses(x, groundSrc, bookNamesAll)]),

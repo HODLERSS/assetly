@@ -2362,15 +2362,26 @@ export function ideaContradictions(idea: string, book: { names: string[]; theme:
  *  risk sentence with no negative in it goes. `needsRisk` says the caller must supply one (from data) or leave it out. */
 export function cleanNote(note: string): { note: string; needsRisk: boolean } {
   let x = String(note ?? "").replace(/\s*\b(?:tripwire|long[_ ]case|near[_ ]term catalyst|role|memo)\b\s*:?/gi, (m) => /^\s*tripwire\b/i.test(m) ? " " : m)
-    .replace(/(\S)\s+tripwire\b/gi, "$1").replace(/\b(?:business|quality|role|tripwire|near)\s*:\s*/gi, "").replace(/\s{2,}/g, " ").trim();
+    .replace(/(\S)\s+tripwire\b/gi, "$1").replace(/\b(?:business|quality|role|tripwire|near)\s*:\s*/gi, "")
+    // memo shorthand ">consensus", "<4%": words
+    .replace(/(^|\s)>\s?(?=[A-Za-z$\d])/g, "$1above ").replace(/(^|\s)<\s?(?=[A-Za-z$\d])/g, "$1below ").replace(/\s+([.,;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
   const seen: string[] = [];
-  const NEG = /\b(?:risk|below|declin\w*|slow\w*|cut\w*|weak\w*|loss\w*|lose|debt|leverage\w*|competit\w*|depend\w*|concentrat\w*|regulat\w*|cyclical|volatil\w*|stretch\w*|expensive|uncertain\w*|pressure\w*|dilut\w*|custody|export|miss\w*|fall\w*|drop\w*|shrink\w*|lawsuit|litigation|probe|tariff\w*|headwind\w*|exposure to|could|if|fails?|erod\w*|squeeze\w*|slump\w*|downgrad\w*)\b/i;
+  const NEG = /\b(?:risk|below|declin\w*|slow\w*|cut\w*|weak\w*|loss\w*|lose|debt|leverage\w*|competit\w*|depend\w*|concentrat\w*|regulat\w*|cyclical|volatil\w*|stretch\w*|expensive|uncertain\w*|pressure\w*|dilut\w*|custody|export|miss\w*|fall\w*|drop\w*|shrink\w*|lawsuit|litigation|probe|tariff\w*|headwind\w*|exposure to|could|if|fails?|erod\w*|squeeze\w*|slump\w*|downgrad\w*|trail\w*|underperform\w*|lag\w*|behind|erosion|erod\w*|biosimilar\w*|miss\w*)\b/i;
   const sents = splitSentences(x).filter((sen) => {
     const k = sen.toLowerCase().replace(/[^a-z0-9%.]+/g, " ").trim();
     if (seen.some((p) => p === k || overlap(p, k) >= 0.9)) return false;
     seen.push(k);
     return true;
-  }).filter((sen) => !(/^\s*(?:the )?risk\s*:/i.test(sen) && !NEG.test(sen.replace(/^\s*(?:the )?risk\s*:/i, ""))));
+  }).filter((sen) => {
+    if (!/^\s*(?:the )?risk\s*:/i.test(sen)) return true;
+    const body = sen.replace(/^\s*(?:the )?risk\s*:/i, "");
+    if (!NEG.test(body)) return false;
+    // a list of strengths in the risk slot (KO: "iconic brand moat, ..., high margins, strong cash generation,
+    // manageable leverage"): most items carry a strength marker
+    const items = body.split(/,|;|\band\b/).map((x) => x.trim()).filter(Boolean);
+    const POS = /\b(?:moat|iconic|high margins?|strong|manageable|healthy|solid|robust|durable|pricing power|cash generation|AAA|wide|leading|dominant|resilient|diversified)\b/i;
+    return !(items.length >= 2 && items.filter((x) => POS.test(x)).length * 2 >= items.length);
+  });
   x = sents.join(" ");
   const needsRisk = !/\b(?:the risk:|but|however|though|yet)\b/i.test(x) && !/\brisk\b/i.test(x);
   return { note: x, needsRisk };
@@ -2433,7 +2444,9 @@ export function ungroundedEvents(items: string[], sources: string, names: string
     const time = TIME_W.exec(x);
     if (!EVENT_W.test(x) && !time) return false;
     if (opts.needTime && !time) return false;
-    if (/[$€₩]\s?\d|\d\s?%/.test(x) && !time && !EVENT_W.test(x.replace(/\blevel\b/i, ""))) return false;
+    // an undated threshold is a measurable tripwire, not an invented event ("data-center growth <30% on quarterly
+    // release", "$350 level")
+    if (!time && (/[<>]|\b(?:below|above|under|over|beyond)\s*\$?\d|\d\s?%|[$€₩]\s?\d/i.test(x))) return false;
     const toks = contentToks(x, names);
     if (time) {
       const t = normSrc(time[0]).replace(/(\w{3})[a-z]*\.? (\d{1,2})/, "$1 $2");
@@ -2655,3 +2668,17 @@ export function windowDollarMismatches(text: string, rows: PerfRow[], defaultWin
     return false;
   });
 }
+
+/** "healthcare-heavy" when another theme is bigger becomes "<top theme>-heavy"; a "biggest theme" sentence that names the
+ *  wrong theme is left for themeClaims to remove (round 9 newcomer). */
+export function fixThemeHeavy(text: string, themes: { name: string; pct: number }[]): string {
+  const bad = themeClaims(text, themes);
+  if (!bad.length || themes.length < 2) return String(text ?? "");
+  const top = [...themes].sort((a, b) => b.pct - a.pct)[0];
+  const label = top.name.replace(/^AI /, "AI-").replace(/\s+/g, " ");
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => bad.includes(sen) && /-heavy\b/i.test(sen)
+    ? sen.replace(/\b([a-z][a-z ]{2,20}?)-heavy\b/i, `${label}-heavy`) : sen).join(" "));
+}
+
+/** The abstract idea examples the assessment prompt shows (round 9: the model copied the literal examples). */
+export const IDEA_EXAMPLES = ["<the gap in this book>: <an instrument type worth researching>"];
