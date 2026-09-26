@@ -346,6 +346,8 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
 
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeKind, setNoticeKind] = useState<"busy" | "ok" | "warn">("ok");
+  // a write confirmation from a scrolled screen (Position) floats above the tab bar so it is seen (final design m-1)
+  const [noticeFloat, setNoticeFloat] = useState(false);
   const [obSnap, setObSnap] = useState<string | null>(null);
   const [snapReturn, setSnapReturn] = useState<string | null>(null);
   // a web portal window closed without connecting: nothing to announce, but pick up anything that did land
@@ -589,7 +591,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
 
       {notice && (noticeKind === "warn"
         ? <div className="error-note" role="status">{notice}</div>
-        : <div className={"status-note" + (noticeKind === "ok" ? " ok" : "")} role="status" data-testid="brokerage-notice">
+        : <div className={"status-note" + (noticeKind === "ok" ? " ok" : "") + (noticeFloat ? " float" : "")} role="status" data-testid="brokerage-notice">
             <span className="lead">{noticeKind === "busy" ? <span className="progress-dot" aria-hidden="true" /> : <Icon name="check" />}{notice}</span>
           </div>)}
       <main className="screen" ref={mainRef}>
@@ -607,7 +609,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
         )}
         {view.kind === "position" && (
           <PositionScreen api={api} dispKr={profile?.display_kr ?? "KRW"} row={rows.find((r) => r.holding_id === view.holdingId) ?? null}
-            onNotice={(m) => { setNoticeKind("ok"); setNotice(m); setTimeout(() => setNotice((cur) => (cur === m ? null : cur)), 5000); }}
+            onNotice={(m) => { setNoticeKind("ok"); setNoticeFloat(true); setNotice(m); setTimeout(() => { setNotice((cur) => (cur === m ? null : cur)); setNoticeFloat(false); }, 5000); }}
             others={(() => { const me = rows.find((r) => r.holding_id === view.holdingId); return me ? rows.filter((r) => r.symbol === me.symbol && r.holding_id !== me.holding_id) : []; })()}
             onChanged={load} onRemoved={async () => {
               // a removal changes the book as much as an add: the assessment and the intelligence are rerun

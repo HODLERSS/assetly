@@ -1,6 +1,6 @@
 // Behaviour battery for the 1.0.1 launch fixes (number entry, portfolio correctness, first run,
 // search, sign-in). jsdom + Testing Library with a stubbed data layer, same harness as ui.test.tsx.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, onTestFinished } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -321,6 +321,8 @@ describe("C6 today never mixes sessions", () => {
   ];
   it("Home labels each market's move by its own session instead of one blended 'today'", async () => {
     sessionNow.at = FRI;
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(FRI);   // the session label also reads the wall clock
+    onTestFinished(() => { vi.useRealTimers(); });
     render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue(mixed()) })} />);
     await waitFor(() => expect(screen.getByTestId("total-day").textContent).toBe("US +$11 (+1.09%) today"));
     expect(screen.getByTestId("total-day-other").textContent).toBe("Korea +$291 (+3.00%) · Wed close");
