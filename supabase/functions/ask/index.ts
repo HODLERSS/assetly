@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -609,7 +609,31 @@ async function handle(req: Request): Promise<Response> {
   const { data: idxRows } = await capped(admin.from("prices").select("symbol,price,change_pct").in("symbol", ["^GSPC", "NQ=F", "^KS11"]).then((r) => r) as unknown as Promise<{ data: { symbol: string; price: number; change_pct: number | null }[] | null }>, 2000, { data: [] });
   const idx = (idxRows ?? []).filter((r) => r.symbol !== "^KS11" || korean || ko).map((r) => ({ label: r.symbol === "^GSPC" ? "S&P 500" : r.symbol === "NQ=F" ? (ko ? "나스닥100 선물" : "Nasdaq 100 futures") : "KOSPI", pct: r.change_pct === null ? null : Number(r.change_pct), price: Number(r.price) }));
   const payersL = divLines.map((x) => ({ label: nameOf(x.r), annual: x.d.annual, yieldPct: divRows.get(x.r.symbol)?.div_yield ?? null }));
-  const dataLead = tradeQ ? null : (computedDataLead(question, perfRows, mentionedNow, ko) ?? marketLead(question, idx, ko) ?? (/\b(?:which|what|how much|per holding|each|from which|largest|biggest)\b|얼마|어느|어떤|종목별|제일|가장/i.test(question) ? dividendLead(question, payersL, ko) : null));
+  // r10 newcomer: "How did my portfolio do today?" said "+$70 today" on a whole-book base while Home showed "US + Crypto
+  // +$71" and "Korea +$162" (Wednesday's session): the day is labelled the way Home labels it
+  const dayLead = (() => {
+    if (!/\b(?:my )?(?:portfolio|holdings|book|account)\b[^?]{0,30}\b(?:today|do|did|doing)\b|\bhow (?:did|am) i (?:do|doing)\b|오늘 (?:내 )?(?:포트폴리오|자산)|포트폴리오 오늘/i.test(question) || questionWindows(question).length) return null;
+    const part = (rows: typeof held) => { const d = rows.reduce((a, r) => a + dayOf(r), 0); const v = rows.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0); return { d, p: v - d > 0 ? d / (v - d) * 100 : 0, n: rows.length }; };
+    const us = part(held.filter((r) => marketOf(r.symbol, r.kind, r.currency) !== "KR" && tradesToday(r)));
+    const krRows = held.filter((r) => marketOf(r.symbol, r.kind, r.currency) === "KR");
+    const kr = part(krRows);
+    const krState = marketState("KR");
+    const krWhen = krState.tradingToday ? (ko ? "오늘" : "today") : (ko ? `${krState.lastSessionDate.slice(5).replace("-", "/")} 거래일` : `in ${weekdayOf(krState.lastSessionDate)}'s session`);
+    const pp = (x: number) => `${x >= 0 ? "+" : "\u2212"}${Math.abs(x).toFixed(2)}%`;
+    const lines = [ko ? `• 미국 + 코인, 오늘: ${signedUsd(us.d)} (${pp(us.p)}).` : `• US + crypto today: ${signedUsd(us.d)} (${pp(us.p)}).`];
+    if (krRows.length) lines.push(ko ? `• 한국, ${krWhen}: ${signedUsd(kr.d)} (${pp(kr.p)}).` : `• Korea ${krWhen}: ${signedUsd(kr.d)} (${pp(kr.p)}).`);
+    return lines.join("\n");
+  })();
+  // r9/r10: "When do NVDA, AAPL, MSFT… report?" listed them out of date order: the estimates lead, sorted by date
+  const earnLead = (() => {
+    if (!/\b(?:report|reports|earnings|results)\b[^?]{0,40}\b(?:when|next|date|dates|upcoming)\b|\bwhen (?:do|does|will)\b[^?]{0,60}\b(?:report|earnings|results)\b|\bwhich\b[^?]{0,30}\breport\b|실적 발표[^?]{0,10}(?:언제|일정|날짜)|언제[^?]{0,20}실적/i.test(question)) return null;
+    const pick = mentionedNow.length ? askEsts.filter((e) => mentionedNow.some((sy) => { const r = held.find((h) => h.symbol === sy)!; return e.names.includes(nameOf(r)); })) : askEsts;
+    const dated = pick.filter((e) => e.est || e.range).map((e) => ({ n: e.names[0], k: (e.range ? e.range[0] : e.est) ?? "", txt: e.range ? (ko ? spanOfMonthKo(e.range) : spanOfMonth(e.range)) : "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }) }))
+      .sort((a, b) => a.k.localeCompare(b.k));
+    if (!dated.length) return null;
+    return ko ? `• 실적 발표 예상 (추정, 날짜순): ${dated.map((d) => `${d.n} ${d.txt}`).join(", ")}.` : `• Expected earnings reports (estimates, soonest first): ${dated.map((d) => `${d.n} ${d.txt}`).join(", ")}.`;
+  })();
+  const dataLead = tradeQ ? null : (computedDataLead(question, perfRows, mentionedNow, ko) ?? earnLead ?? dayLead ?? marketLead(question, idx, ko) ?? (/\b(?:which|what|how much|per holding|each|from which|largest|biggest)\b|얼마|어느|어떤|종목별|제일|가장/i.test(question) ? dividendLead(question, payersL, ko) : null));
   const prompt = `TODAY is ${today} (US Eastern date).
 ${ccyLine}
 User's portfolio (deterministic; the ONLY source of numbers). For each holding: "share price" is the price of ONE share; "position value" is what the user's whole holding is worth. They are different numbers: a question about the stock's price or close gets the SHARE PRICE, never the position value. Each "day" figure is tagged with the session it belongs to: a LIVE session is today's move so far, a "past (not today)" session is named by its day, and a live move is never "yesterday".
@@ -621,7 +645,8 @@ ${divLines.map((x) => "- " + x.d.line).join("\n")}
 ${divPending ? `Portfolio dividend income: still loading for ${divPending} holding(s); say the figures are being fetched and to ask again in a minute, never state $0 or a partial total as the portfolio's income.` : `Portfolio dividend income ≈ ${money(divIncome)} a year (shares × last 12 months' payments per holding)${assetsUsd > 0 ? `, ${(divIncome / assetsUsd * 100).toFixed(2)}% of assets` : ""}.`}
 Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
 ${context}
-${dataLead ? `\nCOMPUTED ANSWER (from the stats; open the answer with exactly these figures, then add context):\n${dataLead}\n` : ""}USER STATEMENTS: what the user says about their own money, plans or life ("I have ₩100M in cash", "we're buying a house in 2 years") is context to use, never a claim about the portfolio to correct.
+${dataLead ? `\nCOMPUTED ANSWER (from the stats; open the answer with exactly these figures, then add context):\n${dataLead}\n` : ""}OTHER LISTINGS: a price or target for a Korean holding quoted in dollars in a headline belongs to another listing (a US ADR or OTC line), not the KRX share the user holds: never state it as their holding's price or target; if it matters, say "its US-listed shares".
+USER STATEMENTS: what the user says about their own money, plans or life ("I have ₩100M in cash", "we're buying a house in 2 years") is context to use, never a claim about the portfolio to correct.
 CAUSES: when a holding's 7d headlines give a reason for its move, name it and its source; the cause of TODAY's move is a headline dated today that explains it, not an older story about something else; never say no headline explains a move when its headlines are listed above.
 
 ${convoBlock}Question: "${question}"
@@ -652,6 +677,18 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // Round 6: a trade or pick question ends in the code-built answer whenever the models are slow, so it stops
   // waiting on them at 10s (fast lane from 3s) and its whole budget is 15s.
   const decisionQ = tradeQ || pickQ;
+  // r10: "How much will my portfolio be worth in 5 years?" got "$6.2M-$8.8M… plausible". A projection question gets the
+  // history, stated as history, and no projection.
+  if (isForecastQuestion(question) && !fixture) {
+    const one = mentionedNow.length ? mentionedNow.map((sy) => held.find((h) => h.symbol === sy)!).slice(0, 3) : [];
+    const pc = (x: number | null | undefined) => typeof x === "number" ? `${x >= 0 ? "+" : "\u2212"}${Math.abs(x).toFixed(1)}%` : (ko ? "데이터 부족" : "n/a");
+    const lines = one.length
+      ? one.map((r) => { const p = perf.get(r.symbol)?.pct ?? {}; return ko ? `• ${nameOf(r)}: 1개월 ${pc(p[30])}, 올해 ${pc(p[YTD])}, 1년 ${pc(p[365])}.` : `• ${nameOf(r)}: 1 month ${pc(p[30])}, this year ${pc(p[YTD])}, 1 year ${pc(p[365])}.`; })
+      : [ko ? `• 현재 포트폴리오: ${money(totNow)}.` : `• Your portfolio today: ${money(totNow)}.`, `• ${totalLines}`];
+    const opener = ko ? "앞으로의 가격이나 가치는 예측해 드릴 수 없습니다. 지금까지의 기록은 이렇습니다." : "I can't project a future price or value. Here's the record so far.";
+    const tail = ko ? "• 과거 수익률은 미래 수익을 보장하지 않습니다." : "• Past returns don't tell you future ones.";
+    return json({ ok: true, answer: unicodeMinus([opener, ...lines, tail].join("\n")), followups: cleanFollowups([], ko ? ["내 포트폴리오는 얼마나 집중돼 있나요?", "내 포트폴리오의 가장 큰 위험은 뭔가요?"] : ["How concentrated is my portfolio?", "What are the biggest risks in my portfolio?"]), mentioned, meta: { judge: "skipped" } });
+  }
   if (decisionQ && prevWasHusk && !fixture) {
     const again = withNoCallLine(defaultInfo(), question, "", "", true);
     return json({ ok: true, answer: plainDataWords(tidyNumbers(again)), followups: cleanFollowups([], ko ? ["내 포트폴리오는 얼마나 집중돼 있나요?", "내 포트폴리오의 가장 큰 위험은 뭔가요?"] : ["How concentrated is my portfolio?", "What are the biggest risks in my portfolio?"]), mentioned, meta: { judge: "skipped" } });
@@ -664,7 +701,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const FAST = "gpt-oss-120b", BUDGET = decisionQ && !(frameOnly && complex) ? 15000 : 26000;
   const left = () => BUDGET - (Date.now() - t0);
   // round 9: the compliance judge runs after the answer, inside the same budget; the answer stage leaves it room
-  const JUDGE_MS = 2500;   // round 9 v44: a hard 2.5s cap (the output is only item numbers)
+  // r10: at 2.5s half the judgements timed out; 4s, inside the budget (the answer stage leaves it room), with the code-built
+  // lines kept out of its input
+  const JUDGE_MS = 4000;
   const room = () => left() - JUDGE_MS;
   const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3") => {
     if (timeoutMs < 1500) return null;
@@ -795,7 +834,12 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...windowDollarMismatches(answer, perfRows, questionWindows(question)[0] ?? null),
     // round 9 v44: an order the figures contradict ("NVDA +20.7%, followed by AAPL +25.5%"), a highest/lowest yield or weight
     // that is another holding's, a P/E from another holding, "$10 billion" written as 10조, a count its names do not match
-    ...orderingClaims(answer, perfRows), ...countClaims(answer, perfRows),
+    ...orderingClaims(answer, perfRows), ...countClaims(answer, perfRows), ...softVerdicts(answer),
+    // r10: "Portfolio up $70 today" (whole-book base, Korea's move left out): the book's day dollars must be today's figure
+    ...splitSentences(answer).filter((sen) => /\b(?:portfolio|book|account|holdings)\b/i.test(sen) && /\btoday\b|오늘/i.test(sen) && !/\bKorea|한국/i.test(sen)
+      && [...sen.matchAll(/([+\u2212-])?\$\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)/g)].some((m) => { const v = Number(m[2].replace(/,/g, "")); return Math.abs(v - Math.abs(bookDayUsd)) > Math.max(5, Math.abs(bookDayUsd) * 0.05) && Math.abs(v - totNow) > totNow * 0.01; })),
+    ...rankPositionClaims(answer, perfRows.map((r) => ({ names: r.names, pct: r.pct, weight: r.usd / (assetsUsd || 1) * 100 })), questionWindows(question)[0] ?? null),
+    ...smallMoveCauses(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], pct: r.change_pct === null ? null : Number(r.change_pct), fund: r.kind === "etf" || r.kind === "fund" }))),
     ...metricSuperlativeClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], yieldPct: divRows.get(r.symbol)?.div_yield ?? null, weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100, annualDiv: divLines.find((x) => x.r.symbol === r.symbol)?.d.annual ?? 0 }))),
     ...crossMetricClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], pes: [...(peBy.get(r.symbol) ?? []), ...peFigures(headlinesBy.get(r.symbol) ?? "")] }))),
     ...(ko ? wonConversionClaims(answer, causeSource, fxMap.get("KRW") ?? 1380) : []),
@@ -828,12 +872,14 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   let judgedChips: string[] | null = null;
   if (guarded.trim()) {
     const chips0 = (parsedA?.followups ?? []).map(deDash);
-    const items = judgeItems(guarded, chips0);
+    // the computed lead is code, not model text: it is not judged (a shorter input answers faster)
+    const toJudge = dataLead && guarded.startsWith(dataLead) ? guarded.slice(dataLead.length).replace(/^\n+/, "") : guarded;
+    const items = judgeItems(toJudge, chips0);
     const flags = await judge(items.list);
     // no verdict from the judge: the model's chips are not shown either (they asked for products in round 9)
     // round 9 v44: a verdict question whose judge did not answer leaked on the non-decision path; it goes to the husk too
     if (flags === null) { judgedChips = []; if (decisionQ || verdictQ) guarded = ""; }
-    else { const r = applyJudge(guarded, chips0, items, flags); guarded = r.text; judgedChips = r.chips; }
+    else { const r = applyJudge(toJudge, chips0, items, flags); guarded = toJudge === guarded ? r.text : [dataLead, r.text].filter(Boolean).join("\n"); judgedChips = r.chips; }
     // round 9: what the drops left may point at what is gone ("Both report late October", "AAPL is third"), or a
     // compared holding may have vanished: a decision falls to the husk; a data answer loses the dangling sentences and
     // leads with the computed figures
@@ -876,7 +922,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // every date we ESTIMATED (ex-dates, report dates) carries its label (round 7: "2026-09-28 (3일 뒤)" with no 추정)
   guarded = labelEstimatedDates(guarded, [...held.map((r) => divRows.get(r.symbol)?.div_next_ex ?? ""), ...askEsts.map((e) => e.est ?? "")], ko);
   // round 7: "Apple is my biggest holding" (NVDA is) was repeated as fact: the premise is corrected in the first line
-  { const fix = holdingRankPremise(question, rankFacts, ko); if (fix && !guarded.includes(fix)) guarded = `${fix}\n${guarded}`; }
+  // r9/r10: the premise was corrected twice when the model's answer already corrected it
+  { const fix = holdingRankPremise(question, rankFacts, ko); if (fix && !guarded.includes(fix) && !/\bnot (?:your |the )?(?:biggest|largest)\b|\bis your (?:biggest|largest)(?: single)? holding\b|가장 큰 (?:보유 )?종목은|최대 보유/i.test(guarded)) guarded = `${fix}\n${guarded}`; }
   // the husk text is held to the same report dates as everything else (round 5: "NVDA … late October")
   { const bad = new Set(wrongEarningsMonths(guarded, askEsts)); if (bad.size) guarded = guarded.split("\n").filter((l) => ![...bad].some((b) => l.includes(b))).join("\n") || defaultInfo(); }
   // "on file" is pipeline language (round 5: "BTC: no dividend data on file")
