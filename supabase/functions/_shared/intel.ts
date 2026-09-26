@@ -1231,7 +1231,21 @@ export const tidyNumbers = (t: string): string => String(t ?? "")
 
 /** A risk clause that names a strength ("The risk: net cash balance sheet.", round 4 assessment). */
 export const strengthAsRisk = (t: string): boolean =>
-  /\b(?:the )?risk(?:s)?\s*(?:is|:|—|-)\s*(?:a |an |its |the )?(?:net[- ]cash|no debt|zero debt|debt-free|cash-rich|strong balance sheet|fortress balance sheet|pristine balance sheet|buybacks?|share repurchases?|dividend growth|rising dividends?|investment[- ]grade|wide moat|high margins?|steady cash flow)\b/i.test(String(t ?? ""));
+  /\b(?:the )?risk(?:s)?\s*(?:is|:|—|-)\s*(?:a |an |its |the )?(?:net[- ]cash|no debt|zero debt|debt-free|cash-rich|strong balance sheet|fortress balance sheet|pristine balance sheet|buybacks?|share repurchases?|dividend growth|rising dividends?|investment[- ]grade|wide moat|high margins?|steady cash flow)\b/i.test(String(t ?? ""))
+  // e2e P04-2: the same rule as cleanNote for a "The risk:" line ("iconic brand moat, low single-digit volume growth,
+  // premium margins, modest leverage, reliable dividend compounder")
+  || (/^\s*(?:•\s*)?(?:the )?risk\s*:/i.test(String(t ?? "")) && isStrengthRisk(String(t ?? "").replace(/^\s*(?:•\s*)?(?:the )?risk\s*:/i, "")));
+/** The body of a "The risk:" line that names no risk: a comma list of mostly strengths, or one that has no risk word
+ *  once softened terms ("modest leverage", "manageable debt", "low debt") are set aside. */
+export function isStrengthRisk(body: string): boolean {
+  const b = String(body ?? "");
+  const NEGW = /\b(?:risk|below|declin\w*|slow\w*|cut\w*|weak\w*|loss\w*|lose|debt|leverage\w*|competit\w*|depend\w*|concentrat\w*|regulat\w*|cyclical|volatil\w*|stretch\w*|expensive|uncertain\w*|pressure\w*|dilut\w*|custody|export|miss\w*|fall\w*|drop\w*|shrink\w*|lawsuit|litigation|probe|tariff\w*|headwind\w*|exposure to|could|if|fails?|erod\w*|squeeze\w*|slump\w*|downgrad\w*|trail\w*|underperform\w*|lag\w*|behind|settlement|payout|flat|stall\w*|satur\w*|disrupt\w*|threat\w*|lower\w*|hurt\w*|drag\w*)\b/i;
+  const softened = b.replace(/\b(?:modest|manageable|low|little|no|zero|minimal|light|conservative|moderate)\s+(?:leverage|debt|net debt|borrowing|risk)\b/gi, "").replace(/\bdebt-free\b|\bnet[- ]cash\b/gi, "");
+  if (!NEGW.test(softened)) return true;
+  const POS = /\b(?:moat|iconic|premium|high margins?|strong|manageable|healthy|solid|robust|durable|pricing power|cash generation|AAA|wide|leading|dominant|resilient|diversified|reliable|steady|stable|consistent|predictable|compounder|fortress|best-in-class|modest leverage|low debt|no debt|net cash)\b/i;
+  const items = b.split(/,|;|\band\b/).map((x) => x.trim()).filter(Boolean);
+  return items.length >= 2 && items.filter((x) => POS.test(x)).length * 2 >= items.length;
+}
 
 // ---- dividends ----
 export type DividendInfo = { last: number | null; lastEx: string | null; ttm: number | null; perYear: number | null; freqDays: number | null; nextEx: string | null; yieldPct: number | null };
@@ -2403,13 +2417,11 @@ export function cleanNote(note: string): { note: string; needsRisk: boolean } {
     if (!/^\s*(?:the )?risk\s*:/i.test(sen)) return true;
     const body = sen.replace(/^\s*(?:the )?risk\s*:/i, "");
     if (!NEG.test(body)) return false;
-    // a list of strengths in the risk slot (KO: "iconic brand moat, ..., high margins, strong cash generation,
-    // manageable leverage"): most items carry a strength marker
-    const items = body.split(/,|;|\band\b/).map((x) => x.trim()).filter(Boolean);
     // r10: "highly diversified with no concentration risk" (a strength), "expense ratio could exceed 0.05%" (not a real risk)
     if (/\bno (?:\w+ ){0,2}risks?\b|\b(?:highly |broadly |well[- ])?diversified\b|\blow[- ]cost\b|\blow fees?\b|\bexpense ratio\b/i.test(body) && !/\b(?:fall|falls|drop|drops|declin\w*|lose|loses|lag\w*|trail\w*|cut\w*|miss\w*|hurt\w*|plunge\w*|slump\w*|drawdown|sell-?off)\b/i.test(body)) return false;
-    const POS = /\b(?:moat|iconic|high margins?|strong|manageable|healthy|solid|robust|durable|pricing power|cash generation|AAA|wide|leading|dominant|resilient|diversified)\b/i;
-    return !(items.length >= 2 && items.filter((x) => POS.test(x)).length * 2 >= items.length);
+    // a list of strengths in the risk slot (e2e P04-2, KO: "iconic brand moat, low single-digit volume growth, premium
+    // margins, modest leverage, reliable dividend compounder"): one rule with the repair pass (isStrengthRisk)
+    return !isStrengthRisk(body);
   });
   x = sents.join(" ");
   // r11 P8: a note without an explicit "The risk:" clause needs one (ETH's "self-custody risk" in passing was not a risk line)
@@ -2863,7 +2875,9 @@ export function marketLead(q: string, idx: { label: string; pct: number | null; 
 /** Dividend payers ranked by yearly income, for dividend questions (round 9: the list jumped from MSFT to "AAPL third";
  *  the Korean answer lost its per-holding lines). */
 export function dividendLead(q: string, payers: { label: string; annual: number; yieldPct: number | null }[], ko: boolean): string | null {
-  if (!/\bdividends?\b|\byield\b|\bincome\b|배당/i.test(String(q ?? ""))) return null;
+  // e2e P04-1: "Which holding pays the most?" names no dividend word, so the ranking lead never existed and the model's
+  // partial list stood
+  if (!/\bdividends?\b|\byield\b|\bincome\b|\bpays?\b|\bpaying\b|\bpayers?\b|\bpayouts?\b|배당/i.test(String(q ?? ""))) return null;
   const ps = payers.filter((p) => p.annual > 0).sort((a, b) => b.annual - a.annual);
   if (!ps.length) return null;
   const tot = ps.reduce((a, p) => a + p.annual, 0);
@@ -3763,4 +3777,25 @@ export function unheldTickersIn(q: string, heldSyms: string[]): string[] {
   if (!/\bcompare\b|\bvs\.?\b|\bversus\b|\bagainst\b|비교/i.test(String(q ?? ""))) return [];
   const held = new Set(heldSyms.map((x) => x.replace(/\.(?:KS|KQ)$/, "").toUpperCase()));
   return [...new Set([...String(q ?? "").matchAll(/(?<![A-Za-z0-9$])([A-Z]{2,5})(?![A-Za-z0-9])/g)].map((m) => m[1]))].filter((t) => !held.has(t) && !NOT_TICKERS.has(t));
+}
+
+/** e2e P04-4: clauses cut short or padded in the assessment ("Talc settlement rises above $5.5B or equity", "Top-10
+ *  holdings rise above 45% fund", "The risk: but state-tax drag…", "…in recent periods", "…now overall"). */
+export function tidyClauseEndings(t: string): string {
+  return String(t ?? "")
+    .replace(/((?:\$|₩)\s?[\d.,]+\s?(?:[KMBT]|million|billion|trillion)?|\d+(?:\.\d+)?\s?%)\s+or\s+[A-Za-z-]+(?=\s*[.;]?\s*$)/g, "$1")
+    .replace(/(\d+(?:\.\d+)?\s?%)\s+(?:fund|stock|share|shares|index|portfolio|book)(?=\s*[.;]?\s*$)/g, "$1")
+    .replace(/((?:the )?risk:)\s*(?:but|and|yet|though|however)\s+/gi, "$1 ")
+    .replace(/,?\s*\bin recent (?:periods|quarters|times)\b/gi, "")
+    .replace(/\s+now overall\b/gi, " now").replace(/\s+overall\b(?=\s*[.;]?\s*$)/gi, "")
+    .replace(/\s+([.,;])/g, "$1").replace(/\s{2,}/g, " ").trim();
+}
+
+/** e2e P04-1: "Which holding pays the most?" is a ranking question: the full code-built ranking answers it. */
+export const isDividendRankQuestion = (q: string): boolean => /\b(?:pays?|paying|payer|dividend|income|yield)\b[^?]{0,30}\b(?:most|highest|largest|biggest|top|least|lowest|smallest|rank|order)\b|\b(?:most|highest|largest|biggest|top|least|lowest|smallest)\b[^?]{0,20}\b(?:dividend|income|payer|yield)\b|배당[^?]{0,10}(?:가장|많이|순)/i.test(String(q ?? ""));
+/** The model's own partial ranking of payers ("SCHD pays about $1,583", "JNJ and KO trail"): every sentence that names
+ *  a payer and orders or prices its dividend goes, so the code ranking stands alone. */
+export function dividendRankClaims(text: string, payerLabels: string[]): string[] {
+  return sentencesOf(text).filter((s) => payerLabels.some((n) => n && nameIn(s, n))
+    && (/\$\s?\d/.test(s) || /\b(?:pays? the most|second|third|next|then|trail\w*|follow\w*|behind|after|top payer|largest payer|biggest payer|smallest payer|least|the most|highest|lowest|rank\w*|ahead of)\b/i.test(s)));
 }
