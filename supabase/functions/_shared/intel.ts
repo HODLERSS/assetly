@@ -3489,6 +3489,7 @@ export type IntentRow = {
   dayPct: number | null; dayUsd: number; leveraged?: boolean;
   heads?: { title: string; source: string; date: string }[] | null;   // null: the read failed (unknown, not none)
   maxClose?: number | null;
+  tech?: boolean;   // a TECH_THEMES holding
 };
 const INTENT = {
   tax: /\btax(?:es|ed)?\b|\bcapital gains?\b|세금|양도(?:소득)?세/i,
@@ -3497,17 +3498,19 @@ const INTENT = {
   stress: /\b(?:if|what happens|what if|suppose|say)\b[^?]{0,60}?\b(?:falls?|drops?|crash(?:es)?|declines?|tanks?|loses?|goes down|is down|plunges?|sinks?|corrects?)\s+(?:by\s+|another\s+)?(\d+(?:\.\d+)?)\s?%|(\d+(?:\.\d+)?)\s?%\s*(?:drop|fall|crash|decline|correction|하락|폭락|빠지)/i,
   ath: /\ball[- ]time highs?\b|\brecord (?:high|close)s?\b|\bnew highs?\b|\bATH\b|신고가|사상 최고/i,
   rank: /\b(smallest|largest|biggest|tiniest)\b[^?]{0,25}?\b(?:holding|position|stake|investment)s?\b|가장 (작은|큰) (?:종목|보유|비중)/i,
+  // r14 A: "What's my biggest risk right now?" (a starter chip) got the generic performance summary
+  risk: /\b(?:biggest|main|largest|top|key|greatest|major)\s+risks?\b|\bhow risky\b|\btoo risky\b|\brisk(?:s|iest)? (?:in|to|of) my\b|가장 큰 (?:위험|리스크)|위험한가|리스크가/i,
 };
 /** The intent of a data question the code can answer on its own, or null. */
 export function questionIntent(q: string): keyof typeof INTENT | null {
   const t = String(q ?? "");
-  for (const k of ["tax", "basis", "why", "stress", "ath", "rank"] as const) if (INTENT[k].test(t)) return k;
+  for (const k of ["tax", "basis", "why", "stress", "ath", "rank", "risk"] as const) if (INTENT[k].test(t)) return k;
   return null;
 }
 
 /** r13 M1(a): the code-built answer for the question's intent, always naming the holding. `focus` = the holdings the
  *  question names. Null when the question has none of these intents (the caller's generic figures stand). */
-export function intentAnswer(q: string, rows: IntentRow[], focus: IntentRow[], ctx: { totalUsd: number; sessionLabel: string; athTracked: boolean }, ko = false): string | null {
+export function intentAnswer(q: string, rows: IntentRow[], focus: IntentRow[], ctx: { totalUsd: number; sessionLabel: string; athTracked: boolean; cashPct?: number }, ko = false): string | null {
   const intent = questionIntent(q);
   if (!intent) return null;
   const L: string[] = [];
@@ -3586,9 +3589,71 @@ export function intentAnswer(q: string, rows: IntentRow[], focus: IntentRow[], c
     L.push(ko ? "• 기준: 저장된 약 5년치 종가입니다." : "• Based on the roughly five years of closes on file.");
     return L.join("\n");
   }
+  if (intent === "risk") {
+    // r14 A: the structure facts a risk answer rests on: the largest holding, the tech and chip share (one TECH_THEMES
+    // set), a held leveraged fund, and the cash cushion
+    const top = bySize[0];
+    if (top) L.push(ko ? `• 가장 큰 종목: ${top.name}, 자산의 ${w(top)} (${usd0(top.usd)}).` : `• Largest holding: ${top.name}, ${w(top)} of assets (${usd0(top.usd)}).`);
+    const tech = rows.filter((r) => r.tech).reduce((a, r) => a + r.weight, 0);
+    if (tech > 0) L.push(ko ? `• 기술주와 반도체: 자산의 ${tech.toFixed(1)}%. 한 가지 흐름에 함께 움직입니다.` : `• Tech and chip holdings: ${tech.toFixed(1)}% of assets, which tend to move together.`);
+    const lev = rows.filter((r) => r.leveraged).map((r) => r.name);
+    if (lev.length) L.push(ko ? `• ${lev.join(", ")}은(는) 레버리지 펀드입니다. 매일 배율을 다시 맞춰 급락장에서 가치 대부분을 잃을 수 있습니다.` : `• ${lev.join(" and ")} ${lev.length > 1 ? "are leveraged funds: they reset" : "is a leveraged fund: it resets"} every day, so a sharp drop in the index can wipe out most of ${lev.length > 1 ? "their" : "its"} value.`);
+    if (typeof ctx.cashPct === "number") L.push(ko ? `• 현금: 자산의 ${ctx.cashPct.toFixed(1)}%.` : `• Cash: ${ctx.cashPct.toFixed(1)}% of assets.`);
+    return L.join("\n");
+  }
   // rank: smallest / largest holding
   const small = /smallest|tiniest|작은/i.test(q);
   const pick = (small ? [...bySize].reverse() : bySize).slice(0, 3);
   return ko ? `• ${small ? "비중이 가장 작은" : "비중이 가장 큰"} 종목: ${pick.map((r) => `${r.name} ${w(r)} (${usd0(r.usd)})`).join(", ")}.`
     : `• Your ${small ? "smallest" : "largest"} holding${pick.length > 1 ? "s" : ""}: ${pick.map((r) => `${r.name} ${w(r)} (${usd0(r.usd)})`).join(", ")}.`;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// r13 intelligence M2: numbers in judge-ok answers (the judge checks advice, not arithmetic)
+// ---------------------------------------------------------------------------------------------------------------
+/** "Portfolio gained ≈ $11,155 on Friday, about 0.32%" while Home showed +$9,447 (+0.27%): a whole-book day figure is
+ *  set to Home's computation. Only sentences about the whole book (no holding named, no longer window) are touched. */
+export function fixBookDayClaims(text: string, day: { usd: number; pct: number }, holdings: { names: string[] }[]): string {
+  const fmt = (v: number, signed: boolean) => `${signed ? (v >= 0 ? "+" : "−") : ""}$${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => {
+    if (!/\b(?:portfolio|book|account|overall|in total|altogether)\b|포트폴리오|전체/i.test(sen)) return sen;
+    if (!/\b(?:today|on the day|session|Monday|Tuesday|Wednesday|Thursday|Friday|day's)\b|오늘|거래일/i.test(sen)) return sen;
+    if (/\b(?:week|month|year|YTD|since)\b/i.test(sen)) return sen;
+    if (holdings.some((h) => h.names.some((n) => n && nameIn(sen, n)))) return sen;
+    let out = sen.replace(/([+−-]?)\s?[≈~]?\s?\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!\s?(?:[KkMB]\b|million|billion))/, (m: string, sg: string, d: string) => {
+      const v = Number(d.replace(/,/g, ""));
+      if (Math.abs(v - Math.abs(day.usd)) <= Math.max(50, Math.abs(day.usd) * 0.03)) return m;
+      const lead = m.match(/^\s*/)?.[0] ?? "";
+      return lead + fmt(day.usd, !!sg);
+    });
+    out = out.replace(/([+−-]?)(\d+(?:\.\d+)?)\s?%/, (m: string, sg: string, n: string) => Math.abs(Number(n) - Math.abs(day.pct)) > 0.03 ? `${sg ? (day.pct >= 0 ? "+" : "−") : ""}${Math.abs(day.pct).toFixed(2)}%` : m);
+    return out;
+  }).join(" "));
+}
+
+/** "NVDA's current price $224.58" (Thursday's close; Friday's close $225.07 is the current price): a current-price claim
+ *  that states the previous close is set to the latest price. */
+export function fixCurrentPriceClaims(text: string, facts: { names: string[]; price: number | null; prevClose: number | null }[]): string {
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => {
+    if (!/\b(?:current(?:ly)?|now|latest|trades? at|trading at|price is|share price|last price|sits at|stands at)\b|현재가|현재 주가/i.test(sen)) return sen;
+    const f = facts.find((x) => x.names.some((n) => n && nameIn(sen, n)));
+    if (!f || f.price === null || f.prevClose === null || Math.abs(f.price - f.prevClose) < 0.01) return sen;
+    return sen.replace(/\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d+)?)/g, (m: string, d: string) => Math.abs(Number(d.replace(/,/g, "")) - (f.prevClose as number)) < 0.006 ? `$${(f.price as number).toFixed(2)}` : m)
+      .replace(/\bprevious session close\b/i, "latest close");
+  }).join(" "));
+}
+
+/** r14 B: "About 70% of your money sits in tech and chip stocks" (48.1%): a group share stated figure-first, with
+ *  "tech and chips / semiconductors" read as one group. A figure more than `tolPp` off is set to the computed share. */
+export function fixGroupSharePctFirst(text: string, groups: { label: RegExp; value: number }[], tolPp = 5): string {
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => {
+    let out = sen;
+    for (const g of groups) {
+      const re = new RegExp(String.raw`(\d+(?:\.\d+)?)(\s?%)([^.%]{0,45}?\b(?:sits?|is|are|goes|lives?|held|invested|parked)?\s*(?:in|into|on)\s+(?:your\s+|the\s+)?)(` + g.label.source + ")", g.label.flags.replace("g", "") + "g");
+      out = out.replace(re, (m: string, n: string, pct: string, mid: string, lab: string) => Math.abs(Number(n) - g.value) > tolPp ? `${g.value.toFixed(1)}${pct}${mid}${lab}` : m);
+    }
+    return out;
+  }).join(" "));
+}
+/** One label for the tech-and-chip group, every surface. */
+export const TECH_GROUP_LABEL = /\b(?:tech(?:nology)?(?:\s+(?:and|&)\s+(?:chips?|semiconductors?|semis))?|(?:chips?|semiconductors?)\s+(?:and|&)\s+tech(?:nology)?)(?: stocks| names| holdings| exposure| share| companies)?/i;
