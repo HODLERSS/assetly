@@ -5,7 +5,8 @@
 //   richer regeneration that silently upgrades the card. The hourly cron owns it after.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { ensureHistory, hiLo, refreshDividends, windowReturns } from "../_shared/history.ts";
-import { adviceHits, aliasesFor, cardCopyHits, unsupportedCauses, dayMoveMismatches, EVIDENCE_LAW, fixArticles, isEarningsCallTitle, levelMismatches, type LiveFact, pctText, usableNews } from "../_shared/intel.ts";
+import { adviceHits, aliasesFor, cardCopyHits, unsupportedCauses, dayMoveMismatches, EVIDENCE_LAW, fixArticles, isEarningsCallTitle, levelMismatches, type LiveFact, pctText, usableNews, sanitize
+} from "../_shared/intel.ts";
 import { dayTag, marketOf } from "../_shared/calendar.ts";
 
 const CORS = {
@@ -138,7 +139,8 @@ Each bullet 10-15 words. Refer to the company by NAME, never numeric KRX codes.$
   const writeGlance = async (content: string | null, facts: LiveFact[] = [], src = "") => {
     const parsed = content ? parseGlance(content) : null;
     if (!parsed) return false;
-    const bullets = parsed.bullets.map(fixArticles).filter((b) => okLine(b, facts, src));
+    // round 8: the same sanitize() as every surface (verdicts, promo, product pushes), true minus signs
+    const bullets = parsed.bullets.map((b) => sanitize(fixArticles(b))).filter((b) => !!b && okLine(b, facts, src));
     if (bullets.length < 2) return false;
     const windows = parsed.windows.trend && !okLine(parsed.windows.trend, facts) ? {} : parsed.windows;
     const { error: e } = await admin.from("insights").insert({

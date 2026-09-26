@@ -20,7 +20,7 @@ import {
   curatedListHits, deliveriesEstimate, isPickQuestion, normalizeBullets, plainScrub, PORTFOLIO_PLAIN, wrongDeliveriesDates,
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
-  perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
+  sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
   readerLevel,
 } from "../_shared/intel.ts";
 
@@ -207,7 +207,7 @@ Deno.serve(async (req) => {
 
   // ---- deterministic portfolio math (the model never invents numbers) ----
   const [{ data: rows }, { data: prof }, { data: fxRows }] = await Promise.all([
-    admin.from("portfolio").select("symbol,nickname,name,kind,account,currency,qty,price,value,change_pct,avg_cost,total_gl,as_of").eq("user_id", uid),
+    admin.from("portfolio").select("holding_id,symbol,nickname,name,kind,account,currency,qty,price,value,change_pct,avg_cost,total_gl,as_of").eq("user_id", uid),
     admin.from("profiles").select("investor,base_currency,display_kr").eq("id", uid).maybeSingle(),
     admin.from("prices").select("symbol,price").like("symbol", "USD___"),
   ]);
@@ -235,6 +235,9 @@ Deno.serve(async (req) => {
     dividendRows(admin, heldSyms),
   ]);
   const perf = new Map(perfArr);
+  const holdingIds = held.map((r) => (r as { holding_id?: string }).holding_id).filter((x): x is string => !!x);
+  const sameDayLots = (holdingIds.length ? (await capped(admin.from("lots").select("holding_id,qty,cost_per_share,acquired_on").in("holding_id", holdingIds)
+    .gte("acquired_on", new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10)).then((r) => r) as unknown as Promise<{ data: unknown[] | null }>, 3000, { data: [] })).data ?? [] : []) as { holding_id: string; qty: number; cost_per_share: number; acquired_on: string | null }[];
   // a held symbol whose history is too short to answer these windows is backfilled after the answer ships,
   // so the next question has them (bounded; the insights lap covers the rest)
   const shortSyms = held.filter((r) => windows.some((d) => (perf.get(r.symbol)?.pct[d] ?? null) === null)).map((r) => r.symbol);
@@ -257,10 +260,11 @@ Deno.serve(async (req) => {
 
   // refresh when a held symbol was never checked or is older than 3 days (every symbol already has a row, so
   // "no row" was never true and the refresh never ran)
-  if (held.some((r) => { if (r.kind === "crypto") return false; const d = divRows.get(r.symbol); return !d?.div_as_of || Date.now() - +new Date(d.div_as_of) > 3 * 86400000; })) {
+  if (held.some((r) => { if (r.kind === "crypto") return false; const d = divRows.get(r.symbol); return !d?.div_as_of || Date.now() - +new Date(d.div_as_of) > 3 * 86400000 || (!!d.div_next_ex && d.div_next_ex <= new Date().toISOString().slice(0, 10)); })) {
     try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(refreshDividends(admin, held.map((r) => r.symbol), 8).catch(() => [])); } catch { /* the insights lap refreshes them */ }
   }
-  const divLines = held.map((r) => ({ r, d: dividendLine(nameOf(r), divRows.get(r.symbol), Number(r.qty ?? 0), r.currency ?? "USD", fxMap.get(r.currency ?? "USD") ?? 1) }));
+  // round 8 newcomer: a coin pays no dividend (ETH read "data isn't loaded")
+  const divLines = held.map((r) => ({ r, d: r.kind === "crypto" || /-USD$/.test(r.symbol) ? { line: `${nameOf(r)}: a coin, pays no dividend`, amounts: [] as number[], annual: 0, current: false } : dividendLine(nameOf(r), divRows.get(r.symbol), Number(r.qty ?? 0), r.currency ?? "USD", fxMap.get(r.currency ?? "USD") ?? 1) }));
   const divIncome = divLines.reduce((a, x) => a + x.d.annual, 0);
   const divPending = held.filter((r) => r.kind !== "crypto" && !divRows.get(r.symbol)?.div_as_of).length;   // coins are never checked
   const divFacts = divLines.map((x) => ({ names: [nameOf(x.r), ...aliasesFor(x.r.symbol, x.r.name)], amounts: x.d.amounts }));
@@ -309,7 +313,21 @@ Deno.serve(async (req) => {
   // the total (round 5: Samsung's Wednesday move was counted in Friday's "today" during KRX's Chuseok break)
   const tradesToday = (r: (typeof held)[number]) => { const mk = marketOf(r.symbol, r.kind, r.currency); return mk === null || marketState(mk).tradingToday; };
   const closedToday = held.filter((r) => !tradesToday(r)).map((r) => nameOf(r));
-  const bookDayUsd = held.filter(tradesToday).reduce((a, r) => r.change_pct === null ? a : a + usd(Number(r.value ?? 0), r.currency) * (Number(r.change_pct) / 100) / (1 + Number(r.change_pct) / 100), 0);
+  // round 8 newcomer: a lot bought in today's session moves from its COST, not the prior close (Home's rule, web
+  // portfolio.ts withSameDayLots): Ask said "+$20 today" for an NVDA lot bought at the close while Home booked $0
+  const dayOf = (r: (typeof held)[number]): number => {
+    if (r.change_pct === null) return 0;
+    const f = 1 + Number(r.change_pct) / 100, v = Number(r.value ?? 0);
+    const mk = marketOf(r.symbol, r.kind, r.currency);
+    const session = mk ? marketState(mk).lastSessionDate : null;
+    const fresh = session ? sameDayLots.filter((l) => l.holding_id === (r as { holding_id?: string }).holding_id && !!l.acquired_on && l.acquired_on >= session) : [];
+    if (!fresh.length || f <= 0 || !Number(r.qty)) return usd(v * (Number(r.change_pct) / 100) / f, r.currency);
+    const qNew = fresh.reduce((s2, l) => s2 + Number(l.qty), 0);
+    const px = Number(r.price ?? 0);
+    const native = (v - v / f) * Math.max(0, Number(r.qty) - qNew) / Number(r.qty) + fresh.reduce((s2, l) => s2 + Number(l.qty) * (px - Number(l.cost_per_share)), 0);
+    return usd(native, r.currency);
+  };
+  const bookDayUsd = held.filter(tradesToday).reduce((a, r) => a + dayOf(r), 0);
   const bookDayPct = totNow - bookDayUsd > 0 ? bookDayUsd / (totNow - bookDayUsd) * 100 : 0;
   const totalLines = windows.map((d) => {
     const m = moved[d];
@@ -352,7 +370,7 @@ Deno.serve(async (req) => {
       const talks = ts.filter((x) => !isEarningsCallTitle(x.title)).slice(0, 1).map((x) => `conference talk (not an earnings report) ${String(x.published_at).slice(0, 10)}`);
       const ff = fs.slice(0, 2).map((x) => `${x.form} ${String(x.filed_at).slice(5, 10)}`);
       // judged again at read time: rows stored before the ingest gate still hold option chains and off-topic stories
-      const nn = (dn ?? []).filter((x) => x.symbol === s && usableNews(x, aka)).slice(0, 2).map((x) => `"${String(x.title).slice(0, 90)}" [${x.source} ${String(x.published_at).slice(5, 10)}]`);
+      const nn = (dn ?? []).filter((x) => x.symbol === s && usableNews(x, aka) && !staleNewsTitle(String(x.title), x.published_at, today)).slice(0, 2).map((x) => `"${String(x.title).slice(0, 90)}" [${x.source} ${String(x.published_at).slice(5, 10)}]`);
       const dlv = deliveriesEstimate(s, today);
       const bits = [...(earn ? [earn.replace(/^[^:]+:\s*/, "")] : ["no earnings date known"]),
         // a deliveries report is not earnings (round 3: "Q3 deliveries due late October"; Tesla's came Oct 2)
@@ -389,7 +407,7 @@ Deno.serve(async (req) => {
     const [{ data: news }, { data: ins }, { data: fils }, { data: trAll }] = deep[k];
     const hr = held.find((h) => h.symbol === sym)!;
     const nm = nameOf(hr);
-    const heads = (news ?? []).filter((n) => usableNews(n, aliasesFor(hr.symbol, hr.name))).slice(0, 12);
+    const heads = (news ?? []).filter((n) => usableNews(n, aliasesFor(hr.symbol, hr.name)) && !staleNewsTitle(String(n.title), n.published_at, today)).slice(0, 12);
     context += `\n[${nm}] 7d headlines:\n${heads.map((n) => `- [${n.source}, ${String(n.published_at).slice(5, 10)}] ${n.title}`).join("\n") || "- none"}`;
     if (ins?.[0]) context += `\n[${nm}] current desk take (written ${String(ins[0].generated_at).slice(0, 16).replace("T", " ")} UTC; its prices may be older than the stats above, which win): ${(ins[0].bullets as string[]).join(" | ")}`;
     if (fils?.length) context += `\n[${nm}] SEC filings: ${fils.map((f) => `${f.form} ${f.filed_at}`).join(", ")}`;
@@ -683,6 +701,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   }
 
   let guarded = fixPriceConfusions(stripAdvice(normalizeBullets(pruned), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
+  // round 8 newcomer: every surface runs the same sanitize(); "Long-term AI and robotics thesis … is intact" (TSLA −17.3%
+  // YTD) was reassurance in the app's voice
+  guarded = sanitize(guarded, { verdictQuestion: tradeQ || pickQ });
   // Round 4: after the guards, "What should I buy with $10K?" was left with one unrelated line and "top pick"
   // with a ten-holding dump. When the guards took most of an answer to a trade or pick question, the model
   // gets ONE informational re-ask, and if that is thin too, the answer is built in code from the stats.
