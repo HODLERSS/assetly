@@ -2,6 +2,12 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { fixBookDayClaims, fixCurrentPriceClaims, fixGroupSharePctFirst, intentAnswer, type IntentRow, sessionDayLine, TECH_GROUP_LABEL, dualClassFacts } from "./intel.ts";
 
+Deno.test("r31 brief: the live row's exact wording is caught", async () => {
+  const { productVersionClaims, lowYieldIncomeClaims } = await import("./intel.ts");
+  assertEquals(productVersionClaims("Apple rose on iPhone 17 launch optimism.", "Apple's iPhone 18 lineup ships in stores").length, 1);
+  assertEquals(lowYieldIncomeClaims("The 0.7% yield adds meaningful income to your portfolio.", 0.7).length, 1);
+});
+
 Deno.test("r31 r14 A+B: risk intent, share classes, tech-and-chip share figure-first", () => {
   const rs: IntentRow[] = [
     { name: "SOXL", symbol: "SOXL", kind: "etf", usd: 6045, weight: 23.4, qty: 40, currency: "USD", price: 151.45, avgCost: 35, costUsd: 1400, glUsd: 4645, dayPct: 3.5, dayUsd: 204, leveraged: true, tech: true },
