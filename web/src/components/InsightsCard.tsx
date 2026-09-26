@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 const insightCache = new Map<string, Insight | null>();
 import type { Api, Insight } from "../lib/api";
 import { timeAgo } from "../lib/format";
+import { pageHidden } from "../lib/poll";
 import { Icon } from "./Icon";
 
 // Assetly Intelligence — visually distinct from raw news: accent bar, labeled header,
@@ -46,14 +47,22 @@ export function InsightsCard({ api, symbol, pollMs = 2000, onRefresh, refreshing
     let live = true, tries = 0;
     if (insightCache.has(symbol)) setIns(insightCache.get(symbol));   // instant on revisit
     else setIns(undefined);
+    // A card with nothing yet looks again with a backoff (2s, 4s, 8s, 16s, then 30s; 8 looks, about 2 minutes),
+    // not every 2s for 14 looks: the per-symbol reads were ~4.4k in pg_stat_statements (r11 server). A hidden
+    // page skips its look and resumes where it left off.
+    const again = (fn: () => void, ms: number) => setTimeout(() => {
+      if (!live) return;
+      if (pageHidden()) { const on = () => { if (!pageHidden()) { document.removeEventListener("visibilitychange", on); if (live) fn(); } }; document.addEventListener("visibilitychange", on); return; }
+      fn();
+    }, ms);
     const check = () => api.getInsights(symbol).then((v) => {
       if (!live) return;
       insightCache.set(symbol, v);
       setIns(v);
-      // warmup's fast pass lands within ~5s — keep looking
-      if (v === null && tries++ < 14) setTimeout(check, pollMs);
+      // warmup's fast pass lands within ~5s: keep looking, less often each time
+      if (v === null && tries < 8) { again(check, Math.min(30_000, pollMs * 2 ** tries)); tries++; }
       // the background enrichment may upgrade the card shortly after; pick it up once
-      else if (v !== null && tries > 0) setTimeout(() => {
+      else if (v !== null && tries > 0) again(() => {
         api.getInsights(symbol).then((nv) => { if (live && nv) { insightCache.set(symbol, nv); setIns(nv); } }).catch(() => {});
       }, 25000);
     }).catch(() => { if (live) setIns(null); });

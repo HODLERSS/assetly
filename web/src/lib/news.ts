@@ -169,17 +169,59 @@ export function cleanNews<T extends NewsRow>(items: T[], names: Record<string, {
     .map((n) => ({ ...n, source: publisherFor(n.url, decodeEntities(String(n.source ?? ""))) }));
 }
 
-/** Keep the first (newest) copy of each story, by URL and by normalized title. Titles come back decoded;
- *  junk pages never reach the list and the byline is the real publisher. */
+const FEED_PUBLISHERS = "Yahoo Finance|Reuters|Bloomberg|MarketBeat|Investing\\.com(?: Canada)?|Seeking Alpha|The Motley Fool|Motley Fool|Benzinga|CNBC|Barron's|MarketWatch|TipRanks|Zacks(?: Investment Research)?|Forbes|TheStreet|Barchart|GuruFocus|Stocktwits|24/7 Wall St\\.|Investor's Business Daily|Stock Titan|TradingKey|Fox Business|Financial Post";
+/**
+ * A feed title as the reader sees it: a PORT of the server's cleanHeadline (supabase/functions/_shared/intel.ts,
+ * r10): entities decoded, feed labels ("Stock Market Today:", "Market Chatter:", "| Closing Bell") and publisher
+ * suffixes ("- Yahoo Finance", "By Investing.com") removed, ticker parentheticals ("(AAPL)", "(NASDAQ:AAPL)") gone,
+ * em and en dashes made commas or colons, curly quotes straightened, a trailing "…" cut. `names`: holding names
+ * whose trailing " - <name>" section tag is dropped too.
+ */
+export function cleanFeedTitle(title: string, names: string[] = []): string {
+  let t = decodeEntities(String(title ?? "")).replace(/ /g, " ").replace(/\s+/g, " ").trim();
+  t = t.replace(/^(?:Market Chatter|The \d{1,2}:\d{2}|Breaking|Exclusive|Update(?: \d+)?|Stock Market Today(?:,[^:]{0,20})?|Earnings Preview|Midday Movers|Premarket Movers)\s*[:\-–—]\s*/i, "")
+    .replace(/\s*\|\s*(?:Closing Bell|Opening Bell|Mad Money|Squawk Box|Power Lunch|Fast Money|The Exchange|Market Wrap|Morning Brief)\s*$/i, "");
+  t = t.replace(new RegExp(`\\s*(?:[-|–—]\\s*|\\bBy\\s+)(?:${FEED_PUBLISHERS})\\s*$`, "i"), "");
+  for (const n of names) if (n && n.length >= 3) t = t.replace(new RegExp(`\\s+[-|–—]\\s+${esc(n)}\\s*$`, "i"), "");
+  t = t.replace(/\s*\((?:NASDAQ|NYSE|NYSEARCA|AMEX|KRX|KOSPI|KOSDAQ|OTC|TSX|LSE)\s*:\s*[A-Z0-9.\-]+\)/gi, "")
+    .replace(/\s*\((?:[A-Z]{1,5}(?:\.[A-Z])?|\d{6}(?:\.K[SQ])?)\)/g, "");
+  t = t.replace(/[‘’‛]/g, "'").replace(/[“”‟]/g, '"');
+  t = t.replace(/(\S)[—–](\S)/g, "$1, $2")
+    .replace(/\s+(?:—|–|--?)\s+/g, (_m, at: number, whole: string) => (/[:,;]/.test(whole.slice(0, at)) ? ", " : ": "))
+    .replace(/[—–]/g, ", ");
+  t = t.replace(/\s*(?:…|\.\.\.)\s*$/, "").replace(/\s+([,.:;!])/g, "$1").replace(/[,:;]\s*$/, "").trim();
+  return t || decodeEntities(String(title ?? ""));
+}
+
+const OUTLETS: Record<string, string> = { foxbusiness: "Fox Business", qz: "Quartz", financialpost: "Financial Post", benzinga: "Benzinga", entrepreneur: "Entrepreneur",
+  stocktwits: "Stocktwits", pluang: "Pluang", investing: "Investing.com", marketwatch: "MarketWatch", cnbc: "CNBC", reuters: "Reuters", bloomberg: "Bloomberg", wsj: "The Wall Street Journal",
+  ft: "Financial Times", barrons: "Barron's", fool: "The Motley Fool", seekingalpha: "Seeking Alpha", zacks: "Zacks", tipranks: "TipRanks", businessinsider: "Business Insider",
+  forbes: "Forbes", fortune: "Fortune", axios: "Axios", techcrunch: "TechCrunch", theverge: "The Verge", macrumors: "MacRumors", "9to5mac": "9to5Mac", electrek: "Electrek",
+  coindesk: "CoinDesk", cointelegraph: "Cointelegraph", yonhapnews: "Yonhap", koreaherald: "The Korea Herald", koreatimes: "The Korea Times", carboncredits: "CarbonCredits.com" };
+/** An outlet's display name (port of the server's sourceName): a bare domain ("foxbusiness.com", "qz.com") becomes
+ *  its name; an unknown slug is title-cased; anything else is kept as written. */
+export function sourceName(src: string): string {
+  const t = String(src ?? "").trim();
+  if (!t) return "";
+  const dom = /^(?:www\.)?([a-z0-9-]+)\.(?:com|co|io|net|org|news|co\.kr|kr|ca|co\.uk|uk|st)$/i.exec(t);
+  if (!dom) return t;
+  const slug = dom[1].toLowerCase();
+  return OUTLETS[slug] ?? slug.split("-").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
+}
+
+/** Keep the first (newest) copy of each story, by URL and by normalized CLEANED title (a story whose copies differ
+ *  only by a feed label or publisher suffix is one story). Titles come back cleaned; junk pages never reach the
+ *  list and the byline is the real publisher, by name. */
 export function dedupeNews(items: NewsItem[]): NewsItem[] {
   const urls = new Set<string>(), titles = new Set<string>();
   const out: NewsItem[] = [];
   for (const n of items) {
     if (isJunkNews(n.title, n.url, n.source ?? "")) continue;
-    const k = titleKey(n.title);
+    const title = cleanFeedTitle(n.title);
+    const k = titleKey(title);
     if (urls.has(n.url) || (k && titles.has(k))) continue;
     urls.add(n.url); if (k) titles.add(k);
-    out.push({ ...n, title: decodeEntities(n.title), source: publisherFor(n.url, decodeEntities(n.source ?? "")) });
+    out.push({ ...n, title, source: sourceName(publisherFor(n.url, decodeEntities(n.source ?? ""))) });
   }
   return out;
 }

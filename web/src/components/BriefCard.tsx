@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Api, BriefEdition, DailyBrief } from "../lib/api";
 import { marketClock } from "../lib/format";
+import { pageHidden } from "../lib/poll";
 import { getSnapshot, load as loadTrack, loadSpeech, subscribe, toggle as togglePlayer } from "../lib/player";
 import { hasDeviceVoice } from "../lib/speech";
 import { Icon } from "./Icon";
@@ -140,6 +141,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
     if (!waitingAudio) return;
     let live = true;
     const t = setInterval(() => {
+      if (pageHidden()) return;   // a hidden page does not poll (lib/poll)
       api.getDailyBriefs().then((b) => { if (live && b.length) { memo.set(api, b); setBriefs(b); } }).catch(() => {});
     }, 60_000);
     return () => { live = false; clearInterval(t); };

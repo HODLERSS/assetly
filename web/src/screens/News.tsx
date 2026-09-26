@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
 import { labelParts, marketClock, timeAgo } from "../lib/format";
-import { decodeEntities, dedupeNews } from "../lib/news";
+import { cleanFeedTitle, decodeEntities, dedupeNews } from "../lib/news";
 import { InsightsCard } from "../components/InsightsCard";
 import { heldOnly, readRemovals } from "../lib/heldIntel";
 import { Icon } from "../components/Icon";
@@ -108,6 +108,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
   const [pulled] = useState(() => new Set<string>());   // one on-demand pull per scope per visit
   const [top5, setTop5] = useState<Insight | null>(null);          // Assetly Intelligence, portfolio-wide
   const [retryN, setRetryN] = useState(0);                         // Retry after a failed load, or a pull to refresh
+  const retrySeenRef = useRef(0);                                   // the retryN the feed effect last handled
   // pull to refresh bumps the same counter; its promise settles once the reload has landed
   const settled = useRef<(() => void) | null>(null);
   const refresh = () => new Promise<void>((resolve) => { settled.current = resolve; setRetryN((n) => n + 1); });
@@ -135,6 +136,11 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
     const hit = keptFor(key);
     if (hit) { setItems(hit.items); setState("ok"); }   // show instantly, refresh behind
     else { setItems([]); setState("loading"); }
+    // a list read under a minute ago is not read again just because the tab or chip was revisited (each visit
+    // re-read the feed; r11 server fan-out); Retry and pull to refresh always read
+    const asked = retryN !== retrySeenRef.current;
+    retrySeenRef.current = retryN;
+    if (hit && !asked && !offline() && Date.now() - hit.at < 60_000) { settled.current?.(); settled.current = null; return () => { live = false; }; }
     const held = newsRows.map((r) => r.symbol);
     const scope = filter ?? held;
     // one copy per story (URL or headline), entities decoded. Offline, a request can hang instead of failing,
@@ -253,7 +259,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
               <a key={n.id} className="row" href={n.url} target="_blank" rel="noreferrer noopener" style={{ textDecoration: "none", display: "flex" }}
                  onClick={(e) => { e.preventDefault(); void openExternal(n.url); }}>
                 <span>
-                  <span style={{ fontWeight: 500 }}>{n.title}</span><br />
+                  <span style={{ fontWeight: 500 }}>{cleanFeedTitle(n.title)}</span><br />
                   <span className="sub">{(() => { const rr = rows.find((x) => x.symbol === n.symbol); return rr ? labelParts(rr, dispKr === "KRW").main : n.symbol; })()} · {n.source} · {timeAgo(n.published_at)}</span>
                 </span>
               </a>
