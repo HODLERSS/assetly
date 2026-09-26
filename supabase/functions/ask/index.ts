@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, isDividendRankQuestion, dividendRankClaims, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -1110,6 +1110,16 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       if (top && line) leads.push({ line: line.split("\n")[0], keys: [top.name] });
     }
     if (!mentionedNow.length) { const bl = bookWindowLead(question, totalLines, ko); if (bl) leads.push(bl); }
+    // e2e P04-1: "Which holding pays the most?" answered BND, then SCHD, then "JNJ and KO trail", leaving out VZ and O:
+    // the model's partial ranking goes and the full code ranking (every payer, in order) stands
+    if (isDividendRankQuestion(question) && !divUnknown && payersL.length >= 2) {
+      const dl = dividendLead(question, payersL, ko);
+      if (dl) {
+        const rk = new Set(dividendRankClaims(guarded, payersL.map((p) => p.label)));
+        if (rk.size) guarded = perLine(guarded, (line) => splitSentences(line).filter((sen) => !rk.has(sen) || dl.includes(sen)).join(" ")).replace(/\n{2,}/g, "\n").trim();
+        leads.push({ line: dl, keys: payersL.filter((p) => p.annual > 0).map((p) => p.label) });
+      }
+    }
     guarded = ensureLeads(guarded, leads);
   }
   // e2e F2 (second guard): the honest fallback never follows a real answer

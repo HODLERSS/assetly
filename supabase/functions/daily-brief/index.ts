@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, tidyClauseEndings, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -82,12 +82,13 @@ const FAST_MODEL = "gpt-oss-120b";
 // 14 (r10 native): fragments and seams, no futures in a closing note
 // 15 (r11): stored rows held to the windows ("the week's biggest loser"), merged parentheticals
 // 16 (r11): live rows repaired in place, estimated watches kept, no "No confirmed date yet" placeholder
+// 20 (e2e P04): a risk line that lists strengths is replaced by the kind's code risk; cut-short and padded clauses tidied
 // 19 (r13 brief): stored notes held to their own yield (MSFT "0.7% yield adds meaningful income") and to the product
 //    versions in the headlines (AAPL "iPhone 17")
 // 18 (r13 M1): period figures relabelled to their true window (SOXL "347.4% this year" is its 1-year return)
 // 17 (r12 D): house-voice verdicts/forecasts ("A clean beat rerates the whole portfolio") and low-yield income claims
 //    dropped from stored rows; scripts re-made (card decimals, "~" / "(est)" in words, "Platforms'")
-const GEN_VERSION = 19;   // 4:
+const GEN_VERSION = 20;   // 4:
 const REPAIR_ROWS_PER_RUN = 12, REPAIR_ROWS_PER_USER = 6;   // r10 load: a GEN bump no longer rewrites every stored row in one run calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
@@ -319,7 +320,7 @@ function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: numbe
  *  (`live`: those are regenerated from current data, never patched). Returns the editions it patched, whose
  *  script and audio were cleared, so the caller can have them re-narrated. */
 // deno-lint-ignore no-explicit-any
-type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null; yieldPct?: number | null }[]; yields: number[]; ground?: string; wins?: { names: string[]; windows: Record<number, number | null> }[] };
+type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null; yieldPct?: number | null; kind?: string; theme?: string }[]; yields: number[]; ground?: string; wins?: { names: string[]; windows: Record<number, number | null> }[] };
 async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctxIn?: RepairCtx | (() => Promise<RepairCtx | undefined>)): Promise<{ edition: string; date: string }[]> {
   // Round 9 designer: the rows a reader SEES are the latest ones, not only today's. Over a weekend (or before the first
   // edition of a day) Home shows the last trading day's rows, and a repair keyed to today's date never reached them: the
@@ -443,8 +444,10 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     const own0 = ctx?.facts.find((f) => f.names.some((n) => n && n.toLowerCase() === String(p.name ?? "").toLowerCase()));
     const n0 = dropWrong(p.note);
     const lowY = own0 && typeof own0.yieldPct === "number" ? new Set(lowYieldIncomeClaims(n0, own0.yieldPct)) : new Set<string>();
-    const note = lowY.size ? splitSentences(n0).filter((x) => !lowY.has(x)).join(" ") || n0 : n0;
-    return { ...p, note, watch: !w0 ? "" : earn || estOk ? canon[0] ?? (estOk ? stripStrayEst(text(w0)).replace(/\s*\(est\)/i, "") + " (est)" : "") : dated || ungroundedItem(w0) ? "" : stripStrayEst(text(w0)) };
+    const note1 = tidyClauseEndings(lowY.size ? splitSentences(n0).filter((x) => !lowY.has(x)).join(" ") || n0 : n0);
+    // e2e P04-2: a stored assessment note whose risk line listed strengths (dropped above) gets the kind's code risk
+    const note = edition === "assessment" && own0 && !/\bthe risk:/i.test(note1) ? `${note1.trim().replace(/[.\s]+$/, "")}. ${codeRisk(own0.kind, own0.theme ?? "")}` : note1;
+    return { ...p, note, watch: tidyClauseEndings(!w0 ? "" : earn || estOk ? canon[0] ?? (estOk ? stripStrayEst(text(w0)).replace(/\s*\(est\)/i, "") + " (est)" : "") : dated || ungroundedItem(w0) ? "" : stripStrayEst(text(w0))) };
   });
   s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today).filter((c) => !weekendDated([c], today).length && !ungroundedItem(c));
   if (src.ideas) s.ideas = src.ideas.map(text).filter((i) => !repairDrops(i).length);
@@ -622,7 +625,7 @@ Deno.serve(async (req) => {
     return {
       wins,
       facts: hs.map((r) => ({ symbol: r.symbol, names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: toUsd(Number(r.value ?? 0), r.currency) / tot * 100, pct: r.change_pct === null ? null : Number(r.change_pct),
-        yieldPct: dv.has(r.symbol) ? Number(dv.get(r.symbol)?.div_yield ?? 0) || 0 : null })),
+        yieldPct: dv.has(r.symbol) ? Number(dv.get(r.symbol)?.div_yield ?? 0) || 0 : null, kind: String(r.kind ?? ""), theme: themeOf(r.symbol, r.kind) })),
       yields: cur > 0 ? [cur / tot * 100, ttm / tot * 100, ...each].map((v) => Number(v.toFixed(2))) : [],
     };
   };
@@ -2009,7 +2012,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           // r13 n2: AAPL (the #3 holding) shipped with no risk clause; after every pass, an assessment note still
           // without one gets the kind's code risk
           if (edition === "assessment" && r && !/\bthe risk:|\brisks?\b|\bbut\b|\bhowever\b|\bdownside\b|\bcould\b/i.test(note)) note = `${note.trim().replace(/[.\s]+$/, "")}. ${codeRisk(r.kind, themeOf(r.symbol, r.kind))}`;
-          return { ...p, note: nameFunds(note, heldSet), watch: nameFunds(watch, heldSet) };
+          return { ...p, note: tidyClauseEndings(nameFunds(note, heldSet)), watch: tidyClauseEndings(nameFunds(watch, heldSet)) };
         });
         // r13 M1: "It gained … 347.4% this year" (SOXL's 1-year return; YTD +260.3%) survived because the sentence names
         // no holding and the clean pass keeps a field it would empty: every period figure is relabelled to its window here

@@ -122,7 +122,7 @@ async function yahooSearch(qRaw: string): Promise<CatalogRow[]> {
 
 type ChartData = {
   price: number; prev_close: number | null; currency: string; market_state: string;
-  as_of: string; history: { ts: string; price: number }[]; name?: string | null;
+  as_of: string; history: { ts: string; price: number }[]; name?: string | null; dailyClosed?: { ts: string; price: number }[];
 };
 
 function chartPoints(res: Record<string, any>): { ts: string; price: number }[] {
@@ -138,16 +138,26 @@ function chartPoints(res: Record<string, any>): { ts: string; price: number }[] 
 
 async function fetchChart(yahoo: string, range: string, interval: string): Promise<Record<string, any> | null> {
   const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahoo)}?range=${range}&interval=${interval}`;
-  const r = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
-  if (!r.ok) return null;
+  // e2e P03: the first KRX add of a session took 63.8s; a chart read is capped so a slow upstream cannot hold the add
+  const r = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" }, signal: AbortSignal.timeout(12000) }).catch(() => null);
+  if (!r || !r.ok) return null;
   const body = await r.json().catch(() => null);
   return body?.chart?.result?.[0] ?? null;
 }
 
+/** e2e P03: the deep backfill (5y weekly + 5d 15-minute bars) runs AFTER the add has responded. */
+async function yahooBackfill(yahoo: string, dailyClosed: { ts: string; price: number }[]): Promise<{ ts: string; price: number }[]> {
+  const [weekly, intra] = await Promise.all([fetchChart(yahoo, "5y", "1wk"), fetchChart(yahoo, "5d", "15m")]);
+  const history: { ts: string; price: number }[] = [];
+  if (weekly) history.push(...parseYahooWeekly({ chart: { result: [weekly] } }, Date.now(), dailyClosed.length ? Date.parse(dailyClosed[0].ts) : Infinity));
+  if (intra) history.push(...chartPoints(intra));
+  return history;
+}
 async function yahooChart(yahoo: string): Promise<ChartData | null> {
   // Backfilled at register time so every range is meaningful the moment a ticker is added:
-  // 5y weekly (5Y/1Y context) + 1y daily (1Y/3M/1M) + 5d 15-minute bars (1W/1D).
-  const res = await fetchChart(yahoo, "1y", "1d");
+  // 1y daily (1Y/3M/1M) now, then 5y weekly (5Y/1Y context) + 5d 15-minute bars (1W/1D) after the response (e2e P03:
+  // the first KRX add of a session took 63.8s tap-to-saved with all four reads and the history write in the way)
+  const [res, day] = await Promise.all([fetchChart(yahoo, "1y", "1d"), fetchChart(yahoo, "1d", "1m")]);
   const meta = res?.meta;
   if (!meta || !(meta.regularMarketPrice > 0)) return null;
   // Stored history is stamped at each bar's CLOSE (a daily bar at its session close, a weekly bar at its
@@ -155,9 +165,6 @@ async function yahooChart(yahoo: string): Promise<ChartData | null> {
   // and a week's Friday close on its Monday. Weekly bars only fill what the daily year does not cover.
   const dailyClosed = parseYahooDaily({ chart: { result: [res!] } });
   const history = [...dailyClosed];
-  const [weekly, intra, day] = await Promise.all([fetchChart(yahoo, "5y", "1wk"), fetchChart(yahoo, "5d", "15m"), fetchChart(yahoo, "1d", "1m")]);
-  if (weekly) history.push(...parseYahooWeekly({ chart: { result: [weekly] } }, Date.now(), dailyClosed.length ? Date.parse(dailyClosed[0].ts) : Infinity));
-  if (intra) history.push(...chartPoints(intra));
   history.sort((a, b) => a.ts.localeCompare(b.ts));
   // Previous close = the close of the session BEFORE the quote's session (round 9 root cause). The old rule took the
   // last daily bar of a date other than the last bar's; after hours today's daily bar has a null close, so that was
@@ -181,6 +188,7 @@ async function yahooChart(yahoo: string): Promise<ChartData | null> {
     as_of: asOf,
     history,
     name: (meta.longName || meta.shortName || null) as string | null,
+    dailyClosed,
   };
 }
 
@@ -245,11 +253,20 @@ Deno.serve(async (req) => {
     const byTs = new Map<string, number>();
     for (const h of [...chart.history, { ts: chart.as_of, price: chart.price }]) byTs.set(h.ts, h.price);
     const hist = [...byTs.entries()].map(([ts, price]) => ({ symbol: row.symbol, ts, price }));
-    if (hist.length) {
-      const { error: hErr } = await admin.from("price_history").upsert(hist, { onConflict: "symbol,ts" });
-      if (hErr) return json({ ok: false, error: hErr.message }, 500);
-    }
-    return json({ ok: true, symbol: row, price: chart.price, history: hist.length });
+    // e2e P03: the add responds once the symbol and price rows exist; the daily year and the deep backfill are written
+    // after the response (waitUntil keeps the isolate alive; a bare promise would die with the response)
+    const after = (async () => {
+      try {
+        if (hist.length) { const { error: hErr } = await admin.from("price_history").upsert(hist, { onConflict: "symbol,ts" }); if (hErr) console.error("symbol-search: history", hErr.message); }
+        if (fixture) return;
+        const deep = await yahooBackfill(e.yahoo, chart.dailyClosed ?? []);
+        const seen = new Set(hist.map((h) => h.ts));
+        const more = deep.filter((h) => !seen.has(h.ts)).map((h) => ({ symbol: row.symbol, ts: h.ts, price: h.price }));
+        if (more.length) { const { error: dErr } = await admin.from("price_history").upsert(more, { onConflict: "symbol,ts" }); if (dErr) console.error("symbol-search: backfill", dErr.message); }
+      } catch (err) { console.error("symbol-search: backfill failed", String(err)); }
+    })();
+    try { (globalThis as unknown as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(after); } catch { /* ignore */ }
+    return json({ ok: true, symbol: row, price: chart.price, history: hist.length, backfill: "pending" });
   }
 
   // ---- search ----

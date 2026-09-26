@@ -56,6 +56,29 @@ Deno.test("r31 e2e p02: the honest fallback never trails an answer (F2); a compa
   assertEquals(cashDragClaims("Cash is 15.9% of assets."), []);
 });
 
+Deno.test("r31 e2e p04: strengths in the risk slot (P04-2), the full dividend ranking (P04-1), clause endings (P04-4)", async () => {
+  const { cleanNote, strengthAsRisk, isStrengthRisk, tidyClauseEndings, isDividendRankQuestion, dividendRankClaims, dividendLead, ensureLeads } = await import("./intel.ts");
+  const ko = "Coca-Cola is 10.2% of assets and pays $63 a year. The risk: iconic brand moat, low single-digit volume growth, premium margins, modest leverage, reliable dividend compounder.";
+  const c = cleanNote(ko);
+  assert(c.needsRisk && !/iconic brand moat/.test(c.note), c.note);
+  assert(strengthAsRisk("The risk: iconic brand moat, low single-digit volume growth, premium margins, modest leverage, reliable dividend compounder."));
+  assert(!strengthAsRisk("The risk: flat volumes and a payout above 70% of earnings."));
+  assert(!isStrengthRisk("a credit downturn or large insurance losses weigh on its earnings"));
+  assert(isStrengthRisk("net cash, strong brand, steady cash generation"));
+  assertEquals(tidyClauseEndings("Talc settlement rises above $5.5B or equity"), "Talc settlement rises above $5.5B");
+  assertEquals(tidyClauseEndings("Top-10 holdings rise above 45% fund."), "Top-10 holdings rise above 45%.");
+  assertEquals(tidyClauseEndings("The risk: but state-tax drag reduces the yield."), "The risk: state-tax drag reduces the yield.");
+  assertEquals(tidyClauseEndings("Volumes fell in recent periods, and margins held now overall."), "Volumes fell, and margins held now.");
+  assert(isDividendRankQuestion("Which holding pays the most?") && !isDividendRankQuestion("How much do I get in dividends?"));
+  const payers = [{ label: "BND", annual: 2342, yieldPct: 3.9 }, { label: "VZ", annual: 1678, yieldPct: 6.2 }, { label: "O", annual: 1623, yieldPct: 5.6 }, { label: "SCHD", annual: 1583, yieldPct: 3.6 }, { label: "JNJ", annual: 900, yieldPct: 3.0 }, { label: "KO", annual: 700, yieldPct: 2.9 }];
+  const model = "• BND pays the most at $2,342 a year.\n• SCHD pays about $1,583.\n• JNJ and KO trail.";
+  const bad = new Set(dividendRankClaims(model, payers.map((p) => p.label)));
+  assertEquals(bad.size, 3);
+  const dl = dividendLead("Which holding pays the most?", payers, false)!;
+  const out = ensureLeads("", [{ line: dl, keys: payers.map((p) => p.label) }]);
+  assert(out.startsWith("• Dividends, about $8,826 a year, largest first: BND $2,342 (3.90%), VZ $1,678 (6.20%), O $1,623 (5.60%), SCHD $1,583"), out);
+});
+
 Deno.test("r31 brief: the live row's exact wording is caught", async () => {
   const { productVersionClaims, lowYieldIncomeClaims } = await import("./intel.ts");
   assertEquals(productVersionClaims("Apple rose on iPhone 17 launch optimism.", "Apple's iPhone 18 lineup ships in stores").length, 1);
