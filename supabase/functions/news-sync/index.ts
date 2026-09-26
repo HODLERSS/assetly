@@ -13,7 +13,7 @@
 //    (_shared/news_rules.ts usableNews: every function that feeds headlines to a model, and the News tab)
 //    and admit it on its lead exactly as ingest did.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { aliasesFor, centrality, decodeEntities, isJunkNews, newsRelevant, publisherFor, titleKey, urlDate } from "../_shared/intel.ts";
+import { aliasesFor, centrality, decodeEntities, headlineOk, isJunkNews, newsRelevant, publisherFor, titleKey, urlDate } from "../_shared/intel.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
@@ -93,6 +93,11 @@ function gate(items: Parsed[], aliasBy: Map<string, string[]>, knownKeys: Set<st
   for (const i of items) {
     if (isJunkNews(i.title, i.url, i.source)) { dropped.junk++; continue; }
     if (!newsRelevant(i.title, aliasBy.get(i.symbol) ?? [i.symbol], i.lead, i.symbolFeed)) { dropped.offTopic++; continue; }
+    // r10 newcomer: the feed carried "82% Upside" pitches and a Hegseth story under BTC. Server-side gate (news_rules
+    // stays the web's shared rule): buy-framed, listicle and forecast titles, and a title that does not name the holding
+    // (a symbol feed's off-topic story), are not stored
+    if (!headlineOk(i.title)) { dropped.junk++; continue; }
+    if (!Number.isFinite(centrality(i.title, aliasBy.get(i.symbol) ?? [i.symbol]))) { dropped.offTopic++; continue; }
     kept.push(i);
   }
   // one row per story: the same headline under several tickers goes to the holding named earliest in it
@@ -187,5 +192,12 @@ Deno.serve(async (req) => {
     if (upErr) return json({ ok: false, error: upErr.message }, 500);
     wrote = count ?? rows.length;
   }
-  return json({ ok: true, symbols: targetCount, parsed: items.length, stored: wrote, dropped });
+  // the same gate over what is already stored (the last 14 days), a few hundred rows per run
+  let pruned = 0;
+  if (url.searchParams.get("fixture") !== "1" && !dry) {
+    const { data: recent } = await admin.from("news").select("id, symbol, title").gte("published_at", new Date(Date.now() - 14 * 86400000).toISOString()).order("published_at", { ascending: false }).limit(1500);
+    const bad = ((recent ?? []) as { id: number; symbol: string; title: string }[]).filter((r) => aliasBy.has(r.symbol) && (!headlineOk(String(r.title)) || !Number.isFinite(centrality(String(r.title), aliasBy.get(r.symbol)!)))).map((r) => r.id).slice(0, 400);
+    if (bad.length) { const { error } = await admin.from("news").delete().in("id", bad); if (!error) pruned = bad.length; }
+  }
+  return json({ ok: true, symbols: targetCount, parsed: items.length, stored: wrote, dropped, ...(pruned ? { pruned } : {}) });
 });
