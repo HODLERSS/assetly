@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -1087,6 +1087,22 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     const flat = new Set(flatClaims(guarded, held.map((r) => ({ names: namesOfR(r), day: r.change_pct === null ? null : Number(r.change_pct), week: perf.get(r.symbol)?.pct[7] ?? null })), weekQ));
     if (flat.size) guarded = perLine(guarded, (line) => splitSentences(line).filter((sen) => !flat.has(sen)).join(" ")).replace(/\n{2,}/g, "\n").trim() || guarded;
     guarded = relabelPeriodClaims(guarded, perfRows.filter((r) => !r.unknown).map((r) => ({ names: r.names, windows: r.pct }))) || guarded;
+  }
+  // final intelligence: judge-ok answers that lost their key line (C09 KR "largest holding" opened on a cut-off
+  // "**SemiAnalysis…" fragment and never named NVDA; C13 "portfolio YTD return" never gave +$351,034 (+11.5%)). A cut-off
+  // first line goes, and the code-computed lead goes first when the answer does not carry its figure or ticker.
+  guarded = stripLeadFragment(guarded) || guarded;
+  if (guarded.trim() && !builtInCode && !tradeQ && !pickQ) {
+    const leads: { line: string; keys: string[] }[] = [];
+    if (dataLead) leads.push({ line: dataLead, keys: [...dataLead.matchAll(/(\d+(?:\.\d)?)%/g)].map((m) => m[1] + "%") });
+    if (questionIntent(question) === "rank") {
+      const small = /smallest|tiniest|작은/i.test(question);
+      const top = [...intentRows()].sort((a, b) => small ? a.usd - b.usd : b.usd - a.usd)[0];
+      const line = intentAnswer(question, intentRows(), [], { totalUsd: assetsUsd, sessionLabel: sessLabel, athTracked: false }, ko);
+      if (top && line) leads.push({ line: line.split("\n")[0], keys: [top.name] });
+    }
+    if (!mentionedNow.length) { const bl = bookWindowLead(question, totalLines, ko); if (bl) leads.push(bl); }
+    guarded = ensureLeads(guarded, leads);
   }
   answer = unicodeMinus(plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(fixFractions(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), fracHold, fracGroupsA)), question, lastA, prevQ, decisionQ)))));
   void softFallback;

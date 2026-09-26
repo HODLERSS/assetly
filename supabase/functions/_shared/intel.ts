@@ -3695,3 +3695,47 @@ export function fixEquityBaseClaims(text: string, equityUsd: number, cryptoUsd: 
     });
   }).join(" "));
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// final intelligence: the key line survives every pass
+// ---------------------------------------------------------------------------------------------------------------
+/** A first line that is a cut-off fragment: it opens an unclosed "**" (C09: "**SemiAnalysis는 GPU 수요가 극단적이라
+ *  했고, Micron은 신제품 효과 지연을 경고"), or is under ~4 words and trails off with "...". */
+export function stripLeadFragment(text: string): string {
+  const lines = String(text ?? "").split("\n");
+  while (lines.length > 1) {
+    const f = lines[0].trim();
+    const bolds = (f.match(/\*\*/g) ?? []).length;
+    const unclosed = /^(?:•\s*)?\*\*/.test(f) && bolds % 2 === 1;
+    const trailing = f.split(/\s+/).filter(Boolean).length <= 4 && /(?:\.\.\.|…)$/.test(f);
+    if (!f || unclosed || trailing) { lines.shift(); continue; }
+    break;
+  }
+  return lines.join("\n").trim();
+}
+
+/** The book's own return over the window a question asks about ("What's my portfolio's YTD return?" → "YTD: +$351,034
+ *  (+11.5%)" from the computed totals), with the figure the answer must carry. */
+export function bookWindowLead(q: string, totalLines: string, ko = false): { line: string; keys: string[] } | null {
+  const t = String(q ?? "");
+  if (!/\b(?:portfolio|my returns?|overall|book|account|in total|all my)\b|포트폴리오|전체|내 수익/i.test(t)) return null;
+  const w = questionWindows(t)[0];
+  if (w === undefined) return null;
+  const lab = w === 7 ? "1W" : w === 30 ? "1M" : w === 90 ? "3M" : w === 365 ? "1Y" : "YTD";
+  const seg = String(totalLines ?? "").split(" · ").find((x) => x.startsWith(`${lab}:`));
+  const m = seg ? /^[^:]+:\s*([+−-]\$[\d,]+)\s*\(([+−-]?\d+(?:\.\d+)?%)\)/.exec(seg) : null;
+  if (!m) return null;
+  const name = ko ? { "1W": "1주", "1M": "1개월", "3M": "3개월", "1Y": "1년", YTD: "올해" }[lab] : { "1W": "over the past week", "1M": "over the past month", "3M": "over three months", "1Y": "over the past year", YTD: "this year" }[lab];
+  return { line: ko ? `• 포트폴리오 ${name}: ${m[1]} (${m[2]}).` : `• Your portfolio ${name}: ${m[1]} (${m[2]}).`, keys: [m[2].replace(/^[+−-]/, "")] };
+}
+
+/** The code-computed lead line goes first when the answer lost its key figure or ticker (C13 never gave +$351,034
+ *  (+11.5%); C09 never named NVDA). */
+export function ensureLeads(text: string, leads: { line: string; keys: string[] }[]): string {
+  let out = String(text ?? "");
+  for (const l of [...leads].reverse()) {
+    if (!l.keys.length || l.keys.every((k) => out.includes(k))) continue;
+    out = `${l.line}\n${out}`.trim();
+  }
+  return out;
+}

@@ -20,6 +20,23 @@ Deno.test("r31 final: ETF intent, honest fallback for non-performance questions,
   assertEquals(fixEquityBaseClaims("Stocks and funds: $20,150.", 20150, 2687), "Stocks and funds: $20,150.");
 });
 
+Deno.test("r31 final intelligence: cut-off first line goes; the lead is restored (C09, C13)", async () => {
+  const { stripLeadFragment, bookWindowLead, ensureLeads } = await import("./intel.ts");
+  const c09 = "**SemiAnalysis는 GPU 수요가 극단적이라 했고, Micron은 신제품 효과 지연을 경고\n• AAPL 13.6%, MSFT 13.2%, META 12.8% 순입니다.";
+  const s09 = stripLeadFragment(c09);
+  assertEquals(s09, "• AAPL 13.6%, MSFT 13.2%, META 12.8% 순입니다.");
+  const out09 = ensureLeads(s09, [{ line: "• 비중이 가장 큰 종목: NVDA 19.2% ($675,210), AAPL 13.6% ($478,000), MSFT 13.2% ($464,000).", keys: ["NVDA"] }]);
+  assert(out09.startsWith("• 비중이 가장 큰 종목: NVDA 19.2%"), out09);
+  assertEquals(stripLeadFragment("Well, it depends...\n• NVDA is 19.2%."), "• NVDA is 19.2%.");
+  assertEquals(stripLeadFragment("**NVDA** leads at 19.2%.\n• More."), "**NVDA** leads at 19.2%.\n• More.");
+  const totals = "1W: +$41,200 (+1.2%) · 1M: +$190,300 (+5.9%) · YTD: +$351,034 (+11.5%) · 1Y: +$802,000 (+29.5%)";
+  const bl = bookWindowLead("What's my portfolio's YTD return?", totals)!;
+  assertEquals(bl.line, "• Your portfolio this year: +$351,034 (+11.5%).");
+  const c13 = "• Leaders: NVDA +38.1%, AAPL +22.0%.\n• Drags: TSLA −12.3%, AVGO −4.0%.";
+  assert(ensureLeads(c13, [bl]).startsWith("• Your portfolio this year: +$351,034 (+11.5%)."));
+  assertEquals(ensureLeads("Your portfolio is up +11.5% this year.", [bl]), "Your portfolio is up +11.5% this year.");
+});
+
 Deno.test("r31 brief: the live row's exact wording is caught", async () => {
   const { productVersionClaims, lowYieldIncomeClaims } = await import("./intel.ts");
   assertEquals(productVersionClaims("Apple rose on iPhone 17 launch optimism.", "Apple's iPhone 18 lineup ships in stores").length, 1);
