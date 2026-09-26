@@ -3224,7 +3224,18 @@ export const plainLeverage = (t: string): string => String(t ?? "")
 /** "It pays income" / "adds income" for a holding that yields under 2%: that is not what it is for. */
 export function lowYieldIncomeClaims(text: string, yieldPct: number | null): string[] {
   if (yieldPct === null || yieldPct >= 2) return [];
-  return sentencesOf(text).filter((s) => /\b(?:it |which )?pays? (?:income|a dividend income)\b|\badds? (?:steady |some )?income\b|\bincome (?:stream|payer|engine|source)\b|\bprovides? income\b/i.test(s));
+  return sentencesOf(text).filter((s) => INCOME_CLAIM.test(s));
+}
+const INCOME_CLAIM = /\b(?:it |which )?pays? (?:income|a dividend income)\b|\badds? (?:steady |some |meaningful |real |useful |solid |reliable |welcome |a (?:steady |meaningful |nice )?(?:layer|stream|source) of )?income\b|\b(?:meaningful|steady|reliable|solid) (?:dividend )?income\b|\bincome (?:stream|payer|engine|source)\b|\bprovides? income\b/i;
+
+/** r12 D: "MSFT's yield adds meaningful income" for a 0.7% yielder (0.09% of the book) in a lede or desk view: an income
+ *  claim for a named holding whose own yield is under 2%. A yield that did not load (null) is unknown, not low. */
+export function holdingIncomeClaims(text: string, facts: { names: string[]; yieldPct: number | null }[]): string[] {
+  return sentencesOf(text).filter((s) => {
+    if (!INCOME_CLAIM.test(s)) return false;
+    const named = facts.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    return named.length > 0 && named.every((f) => typeof f.yieldPct === "number" && f.yieldPct < 2);
+  });
 }
 
 /** Two bullets on one card stating the same day move ("NVDA rose 0.5% today" twice in different words): the later goes. */
