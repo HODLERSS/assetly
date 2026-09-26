@@ -199,6 +199,7 @@ globalThis.addEventListener("unhandledrejection", (e) => {
 });
 const makeAdmin = () => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 let adminClient: ReturnType<typeof makeAdmin> | null = null;
+let keyCache = "";   // the model key, once read from the vault, for the life of the isolate
 const HARD_DEADLINE_MS = Number(Deno.env.get("ASK_HARD_DEADLINE_MS") ?? 28500);   // env override for local tests only
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -259,17 +260,61 @@ async function handle(req: Request): Promise<Response> {
   const winLabel = (d: number) => d === 7 ? "1W" : d === 30 ? "1M" : d === 90 ? "3M" : d === 365 ? "1Y" : "YTD";
   // each window is judged in the holding's own sessions (a Korean share by KRX closes, crypto by the day)
   // the per-holding reads run together (round 5 latency: they ran one after another before the model call)
+  // ---- deeper context for the holdings this conversation is about ----
+  // the question first, then the last turn ("why did that happen?" is about the holding just discussed)
+  const convo = [question, ...turns.slice(-1).flatMap((t) => [t.q, t.a])].join(" ");
+  const mentioned = held.filter((r) => {
+    const tick = r.symbol.replace(/\.(KS|KQ)$/, "");
+    // a short ticker counts only in capitals ("ON" the ticker, never "on" the word); names in any case
+    const tickHit = !/^\d+$/.test(tick) && new RegExp(`(^|[^A-Za-z0-9])${esc(tick)}($|[^A-Za-z0-9])`, tick.length <= 3 ? "" : "i").test(convo);
+    return tickHit || [r.nickname, ...aliasesFor(r.symbol, r.name).filter((a) => a !== tick)].some((n) => !!n && n.length >= 3 && new RegExp(`(^|[^\\p{L}\\p{N}])${esc(n)}($|[^\\p{L}\\p{N}])`, "iu").test(convo));
+  }).map((r) => r.symbol).slice(0, 3);
+  const mentionedNow = held.filter((r) => {
+    const tick = r.symbol.replace(/\.(KS|KQ)$/, "");
+    const tickHit = !/^\d+$/.test(tick) && new RegExp(`(^|[^A-Za-z0-9])${esc(tick)}($|[^A-Za-z0-9])`, tick.length <= 3 ? "" : "i").test(question);
+    return tickHit || [r.nickname, ...aliasesFor(r.symbol, r.name).filter((a) => a !== tick), ...koNamesFor(r.symbol)].some((n) => !!n && n.length >= 2 && new RegExp(`(^|[^\\p{L}\\p{N}])${esc(n)}($|[^\\p{L}\\p{N}])`, "iu").test(question));
+  }).map((r) => r.symbol);
+  // ---- r10 (v51 stall): every read after the book starts HERE, together, each capped. They ran as five sequential stages
+  // (windows, lots, digest, deep context, indexes); with a slow database (1-11s per read) a routed question passed the
+  // 28.5s deadline. A decision-shaped question (answered from code if the model is slow) waits at most 1.5s for them;
+  // anything else 3s. A read that misses its cap is treated as missing data, never waited on.
+  const quickQ = isTradeQuestion(question) || isDecisionFrame(question) || isScenarioRankQuestion(question) || isForecastQuestion(question) || (isPickQuestion(question) && !isDataRankQuestion(question));
+  const CAP = quickQ ? 1500 : 3000;
   const heldSyms = held.map((r) => r.symbol);
-  const [perfArr, quotesR, shareR, divRows] = await Promise.all([
-    Promise.all(held.slice(0, 20).map(async (r) => [r.symbol, await capped(windowReturns(admin, r.symbol, windows, Date.now(), marketOf(r.symbol, r.kind, r.currency)), 6000, { last: null, pct: {} as Record<number, number | null> })] as const)),
-    held.length ? admin.from("prices").select("symbol,prev_close").in("symbol", heldSyms).then((r) => r, () => ({ data: [] })) : Promise.resolve({ data: [] }),
-    held.length ? admin.from("symbols").select("symbol,shares_outstanding,shares_as_of").in("symbol", heldSyms).then((r) => r, () => ({ data: [] })) : Promise.resolve({ data: [] }),
-    dividendRows(admin, heldSyms),
-  ]);
+  const holdingIds0 = held.map((r) => (r as { holding_id?: string }).holding_id).filter((x): x is string => !!x);
+  const digSyms0 = held.slice(0, 12).map((r) => r.symbol);
+  const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
+  const none = { data: [] as never[] };
+  const noneE = { data: [] as never[] };
+  const deepNone = [{ data: [] }, { data: [] }, { data: [] }, { data: [] }] as unknown as [{ data: { title: string; url: string; source: string; summary: string | null; published_at: string }[] | null }, { data: { bullets: string[]; generated_at: string }[] | null }, { data: { form: string; filed_at: string; title: string | null }[] | null }, { data: { title: string; published_at: string | null; content: string | null }[] | null }];
+  const asP = <T,>(q: PromiseLike<T>): Promise<T> => Promise.resolve(q);
+  const pPerf = Promise.all(held.slice(0, 20).map(async (r) => [r.symbol, await capped(windowReturns(admin, r.symbol, windows, Date.now(), marketOf(r.symbol, r.kind, r.currency)), CAP, { last: null, pct: {} as Record<number, number | null> })] as const));
+  const pQuotes = held.length ? capped(asP(admin.from("prices").select("symbol,prev_close").in("symbol", heldSyms)) as Promise<{ data: unknown[] | null }>, CAP, { data: [] }) : Promise.resolve({ data: [] });
+  const pShares = held.length ? capped(asP(admin.from("symbols").select("symbol,shares_outstanding,shares_as_of").in("symbol", heldSyms)) as Promise<{ data: unknown[] | null }>, CAP, { data: [] }) : Promise.resolve({ data: [] });
+  const pDiv = capped(dividendRows(admin, heldSyms), CAP, new Map() as Awaited<ReturnType<typeof dividendRows>>);
+  const pLots = holdingIds0.length ? capped(asP(admin.from("lots").select("holding_id,qty,cost_per_share,acquired_on").in("holding_id", holdingIds0)
+    .gte("acquired_on", new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10))) as unknown as Promise<{ data: unknown[] | null }>, CAP, { data: [] }) : Promise.resolve({ data: [] as unknown[] });
+  const pDig = digSyms0.length ? Promise.all([
+    capped(asP(admin.from("news").select("symbol,title,url,source,summary,published_at").in("symbol", digSyms0).gte("published_at", since14).order("published_at", { ascending: false }).limit(160)) as unknown as Promise<{ data: unknown[] | null }>, CAP, none as { data: unknown[] | null }),
+    capped(asP(admin.from("transcripts").select("symbol,title,published_at").in("symbol", digSyms0).order("published_at", { ascending: false, nullsFirst: false }).limit(48)) as unknown as Promise<{ data: unknown[] | null }>, CAP, none as { data: unknown[] | null }),
+    // only the forms that date a report, 13 months deep (a page of "newest of any form" lost the year-ago quarter)
+    capped(earningsFilings(admin, digSyms0).then((data) => ({ data })), CAP, noneE as { data: unknown[] | null }),
+  ]) : Promise.resolve(null);
+  const pDeep = Promise.all(mentioned.map((sym) => capped(Promise.all([
+      asP(admin.from("news").select("title,url,source,summary,published_at").eq("symbol", sym).gte("published_at", new Date(Date.now() - 7 * 86400000).toISOString()).order("published_at", { ascending: false }).limit(24)),
+      asP(admin.from("insights").select("bullets,generated_at").eq("symbol", sym).order("generated_at", { ascending: false }).limit(1)),
+      asP(admin.from("filings").select("form,filed_at,title").eq("symbol", sym).order("filed_at", { ascending: false }).limit(6)),
+      asP(admin.from("transcripts").select("title,published_at,content").eq("symbol", sym).order("published_at", { ascending: false, nullsFirst: false }).limit(4)),
+    ]) as unknown as Promise<typeof deepNone>, CAP, deepNone)));
+  const pIdx = capped(asP(admin.from("prices").select("symbol,price,change_pct").in("symbol", ["^GSPC", "NQ=F", "^KS11"])) as unknown as Promise<{ data: { symbol: string; price: number; change_pct: number | null }[] | null }>, CAP, { data: [] });
+  // the model key: from the environment, this isolate's cache, or the vault (read in the same stage, capped)
+  const envKey = Deno.env.get("MARA_API_KEY") ?? "";
+  const pKey: Promise<string> = envKey || keyCache ? Promise.resolve(envKey || keyCache)
+    : capped(asP(admin.rpc("get_secret", { secret_name: "mara_api_key" })).then((r) => String((r as { data?: unknown }).data ?? "")), Math.max(CAP, 3000), "");
+  const [perfArr, quotesR, shareR, divRows] = await Promise.all([pPerf, pQuotes, pShares, pDiv]);
   const perf = new Map(perfArr);
   const holdingIds = held.map((r) => (r as { holding_id?: string }).holding_id).filter((x): x is string => !!x);
-  const sameDayLots = (holdingIds.length ? (await capped(admin.from("lots").select("holding_id,qty,cost_per_share,acquired_on").in("holding_id", holdingIds)
-    .gte("acquired_on", new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10)).then((r) => r) as unknown as Promise<{ data: unknown[] | null }>, 3000, { data: [] })).data ?? [] : []) as { holding_id: string; qty: number; cost_per_share: number; acquired_on: string | null }[];
+  const sameDayLots = ((await pLots).data ?? []) as { holding_id: string; qty: number; cost_per_share: number; acquired_on: string | null }[];
   // a held symbol whose history is too short to answer these windows is backfilled after the answer ships,
   // so the next question has them (bounded; the insights lap covers the rest)
   const shortSyms = held.filter((r) => windows.some((d) => (perf.get(r.symbol)?.pct[d] ?? null) === null)).map((r) => r.symbol);
@@ -379,16 +424,9 @@ async function handle(req: Request): Promise<Response> {
   let earnReadOk = true;
   const headlinesBy = new Map<string, string>();
   const digSyms = held.slice(0, 12).map((r) => r.symbol);
-  if (digSyms.length) {
-    const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
-    const none = { data: [] as never[] };
-    const noneE = { data: [] as never[] };
-    const [{ data: dn }, { data: dt }, { data: df }] = await Promise.all([
-      capped(admin.from("news").select("symbol,title,url,source,summary,published_at").in("symbol", digSyms).gte("published_at", since14).order("published_at", { ascending: false }).limit(160).then((r) => r) as unknown as Promise<{ data: unknown[] | null }>, 5000, none as { data: unknown[] | null }),
-      capped(admin.from("transcripts").select("symbol,title,published_at").in("symbol", digSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(48).then((r) => r) as unknown as Promise<{ data: unknown[] | null }>, 5000, none as { data: unknown[] | null }),
-      // only the forms that date a report, 13 months deep (a page of "newest of any form" lost the year-ago quarter)
-      capped(earningsFilings(admin, digSyms).then((data) => ({ data })), 5000, noneE as { data: unknown[] | null }),
-    ]) as unknown as [{ data: { symbol: string; title: string; url: string; source: string; summary: string | null; published_at: string }[] | null }, { data: { symbol: string; title: string; published_at: string | null }[] | null }, { data: { symbol: string; form: string; filed_at: string; items?: string | null }[] | null }];
+  const digRes = await pDig;
+  if (digSyms.length && digRes) {
+    const [{ data: dn }, { data: dt }, { data: df }] = digRes as unknown as [{ data: { symbol: string; title: string; url: string; source: string; summary: string | null; published_at: string }[] | null }, { data: { symbol: string; title: string; published_at: string | null }[] | null }, { data: { symbol: string; form: string; filed_at: string; items?: string | null }[] | null }];
     earnReadOk = df !== (noneE.data as unknown);
     // each holding's own recent headlines, for the cause check (round 8: META's drop "after a director sale filing" was AVGO's)
     for (const s of digSyms) {
@@ -416,29 +454,9 @@ async function handle(req: Request): Promise<Response> {
     }
   }
 
-  // ---- deeper context for the holdings this conversation is about ----
-  // the question first, then the last turn ("why did that happen?" is about the holding just discussed)
-  const convo = [question, ...turns.slice(-1).flatMap((t) => [t.q, t.a])].join(" ");
-  const mentioned = held.filter((r) => {
-    const tick = r.symbol.replace(/\.(KS|KQ)$/, "");
-    // a short ticker counts only in capitals ("ON" the ticker, never "on" the word); names in any case
-    const tickHit = !/^\d+$/.test(tick) && new RegExp(`(^|[^A-Za-z0-9])${esc(tick)}($|[^A-Za-z0-9])`, tick.length <= 3 ? "" : "i").test(convo);
-    return tickHit || [r.nickname, ...aliasesFor(r.symbol, r.name).filter((a) => a !== tick)].some((n) => !!n && n.length >= 3 && new RegExp(`(^|[^\\p{L}\\p{N}])${esc(n)}($|[^\\p{L}\\p{N}])`, "iu").test(convo));
-  }).map((r) => r.symbol).slice(0, 3);
-  const mentionedNow = held.filter((r) => {
-    const tick = r.symbol.replace(/\.(KS|KQ)$/, "");
-    const tickHit = !/^\d+$/.test(tick) && new RegExp(`(^|[^A-Za-z0-9])${esc(tick)}($|[^A-Za-z0-9])`, tick.length <= 3 ? "" : "i").test(question);
-    return tickHit || [r.nickname, ...aliasesFor(r.symbol, r.name).filter((a) => a !== tick), ...koNamesFor(r.symbol)].some((n) => !!n && n.length >= 2 && new RegExp(`(^|[^\\p{L}\\p{N}])${esc(n)}($|[^\\p{L}\\p{N}])`, "iu").test(question));
-  }).map((r) => r.symbol);
   let context = "";
   // the deep-context reads for the holdings this question is about run together, then are written in order
-  const deepNone = [{ data: [] }, { data: [] }, { data: [] }, { data: [] }] as unknown as [{ data: { title: string; url: string; source: string; summary: string | null; published_at: string }[] | null }, { data: { bullets: string[]; generated_at: string }[] | null }, { data: { form: string; filed_at: string; title: string | null }[] | null }, { data: { title: string; published_at: string | null; content: string | null }[] | null }];
-  const deep = await Promise.all(mentioned.map((sym) => capped(Promise.all([
-      admin.from("news").select("title,url,source,summary,published_at").eq("symbol", sym).gte("published_at", new Date(Date.now() - 7 * 86400000).toISOString()).order("published_at", { ascending: false }).limit(24),
-      admin.from("insights").select("bullets,generated_at").eq("symbol", sym).order("generated_at", { ascending: false }).limit(1),
-      admin.from("filings").select("form,filed_at,title").eq("symbol", sym).order("filed_at", { ascending: false }).limit(6),
-      admin.from("transcripts").select("title,published_at,content").eq("symbol", sym).order("published_at", { ascending: false, nullsFirst: false }).limit(4),
-    ]) as unknown as Promise<typeof deepNone>, 6000, deepNone)));
+  const deep = await pDeep;
   for (const [k, sym] of mentioned.entries()) {
     const [{ data: news }, { data: ins }, { data: fils }, { data: trAll }] = deep[k];
     const hr = held.find((h) => h.symbol === sym)!;
@@ -606,7 +624,7 @@ async function handle(req: Request): Promise<Response> {
   // round 9 C (and newcomer 6): a data question's figures are computed here and lead the answer
   const perfRows: PerfRow[] = held.map((r) => ({ symbol: r.symbol, label: nameOf(r), names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], usd: usd(Number(r.value ?? 0), r.currency), pct: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> }));
   // round 9 v44: "How did the market do today?" leads with the indexes; a dividend question with the payers ranked
-  const { data: idxRows } = await capped(admin.from("prices").select("symbol,price,change_pct").in("symbol", ["^GSPC", "NQ=F", "^KS11"]).then((r) => r) as unknown as Promise<{ data: { symbol: string; price: number; change_pct: number | null }[] | null }>, 2000, { data: [] });
+  const { data: idxRows } = await pIdx;
   const idx = (idxRows ?? []).filter((r) => r.symbol !== "^KS11" || korean || ko).map((r) => ({ label: r.symbol === "^GSPC" ? "S&P 500" : r.symbol === "NQ=F" ? (ko ? "나스닥100 선물" : "Nasdaq 100 futures") : "KOSPI", pct: r.change_pct === null ? null : Number(r.change_pct), price: Number(r.price) }));
   const payersL = divLines.map((x) => ({ label: nameOf(x.r), annual: x.d.annual, yieldPct: divRows.get(x.r.symbol)?.div_yield ?? null }));
   // r10 newcomer: "How did my portfolio do today?" said "+$70 today" on a whole-book base while Home showed "US + Crypto
@@ -620,7 +638,9 @@ async function handle(req: Request): Promise<Response> {
     const krState = marketState("KR");
     const krWhen = krState.tradingToday ? (ko ? "오늘" : "today") : (ko ? `${krState.lastSessionDate.slice(5).replace("-", "/")} 거래일` : `in ${weekdayOf(krState.lastSessionDate)}'s session`);
     const pp = (x: number) => `${x >= 0 ? "+" : "\u2212"}${Math.abs(x).toFixed(2)}%`;
-    const lines = [ko ? `• 미국 + 코인, 오늘: ${signedUsd(us.d)} (${pp(us.p)}).` : `• US + crypto today: ${signedUsd(us.d)} (${pp(us.p)}).`];
+    // the label names what the figure holds ("US + crypto" only when a coin is in it)
+    const hasCoin = held.some((r) => r.kind === "crypto" || /-USD$/.test(r.symbol));
+    const lines = [ko ? `• ${hasCoin ? "미국 + 코인" : "미국"}, 오늘: ${signedUsd(us.d)} (${pp(us.p)}).` : `• ${hasCoin ? "US + crypto" : "US stocks"} today: ${signedUsd(us.d)} (${pp(us.p)}).`];
     if (krRows.length) lines.push(ko ? `• 한국, ${krWhen}: ${signedUsd(kr.d)} (${pp(kr.p)}).` : `• Korea ${krWhen}: ${signedUsd(kr.d)} (${pp(kr.p)}).`);
     return lines.join("\n");
   })();
@@ -662,9 +682,13 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
 
   if (fixture) return json({ ok: true, answer: "FIXTURE\nTOTAL:" + Math.round(totNow) + "\n" + totalLines + "\nTURNS:" + turns.length + "\nKRW:" + korean, followups: ["Fixture follow-up one?", "Fixture follow-up two?"], mentioned, ...(url.searchParams.get("prompt") === "1" ? { prompt } : {}) });   // prompt=1: the caller's own data block, for tests
 
-  let key = Deno.env.get("MARA_API_KEY") ?? "";
-  if (!key) { const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" }); key = data ?? ""; }
-  if (!key) return json({ ok: false, error: "not configured" }, 500);
+  const key = await pKey;
+  if (key) keyCache = key;
+  // no model key reachable (a slow vault read): the answer is built in code, never an error the app shows as a failure
+  if (!key) {
+    const built = tradeQ || pickQ ? withNoCallLine(defaultInfo(), question, "", "", true) : dataFallback();
+    return json({ ok: true, answer: plainDataWords(tidyNumbers(built)), followups: [], mentioned, meta: { judge: "skipped" } });
+  }
   const system = `You are a direct, analytical portfolio assistant. You explain and inform; you never tell the user what to buy or sell. Respond ONLY with strict JSON: {"answer": "...", "followups": ["...", "..."]}. Your first character must be {. The answer value: plain text, • bullets and **bold** allowed, ${complex ? "170" : "80"} words MAX, no preamble, no repeated points, never narrate your reasoning, never invent numbers, never use em dashes, no boilerplate disclaimers.${korean ? " Refer to Korean companies by name, never numeric KRX codes; write won amounts with the ₩ sign." : " All money is US dollars; write won only when asked, converted at the USD/KRW rate given."} The followups value: AFTER writing the answer, reread it and offer 2-3 natural next questions this user would ask, each under 12 words, ending with ?, starting with Why, What or How, written in the language of the CURRENT question (a Korean question: in Korean, asking 왜, 무엇 or 어떻게), answerable from their portfolio stats, news, SEC filings, or earnings data, never repeating the question just answered, and NEVER asking whether or how much to buy, sell, add or trim.`;
   // Round 3 measured a 97.5s first answer: a 45s first attempt, backoff, a 35s retry and a 35s rewrite. Now the
   // primary model gets 20s, the fast lane (gpt-oss, same prompt and guards) whatever is left of ~29s, and the
