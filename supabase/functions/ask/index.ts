@@ -10,7 +10,7 @@
 //  2. EVERY NUMBER CARRIES ITS LABEL. Share price vs position value, the session a day move belongs to,
 //     the currency, and "not enough price history yet" instead of a window that silently reused a shorter one.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { dayTag, marketOf, marketState, weekdayOf } from "../_shared/calendar.ts";
+import { dayTag, isTradingDay, marketOf, marketState, weekdayOf } from "../_shared/calendar.ts";
 import { dividendLine, dividendRows, ensureHistory, refreshDividends, windowReturns, windowReturnsBatch } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
@@ -21,7 +21,8 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  TECH_THEMES,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -645,7 +646,7 @@ async function handle(req: Request): Promise<Response> {
     ? `Money: portfolio totals and position values are US dollars ($); Korean shares also show their won price. Write won amounts with the ₩ sign.`
     : `Money: every amount is in US dollars ($). This account holds nothing in Korean won: write ₩ only when the user asks for won, converting at the rate on file: USD/KRW ${Math.round(fxMap.get("KRW") ?? 1380).toLocaleString("en-US")} (₩ per $1); say it is a conversion at that rate.`;
   // round 9 C (and newcomer 6): a data question's figures are computed here and lead the answer
-  const TECH_A = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]);
+  const TECH_A = TECH_THEMES;
   const techShareA = held.filter((r) => TECH_A.has(themeOf(r.symbol, r.kind))).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
   const perfRows: PerfRow[] = held.map((r) => ({ symbol: r.symbol, label: nameOf(r), names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], usd: usd(Number(r.value ?? 0), r.currency), pct: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null>, unknown: perfUnknown.has(r.symbol) }));
   // round 9 v44: "How did the market do today?" leads with the indexes; a dividend question with the payers ranked
@@ -923,7 +924,17 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       && [...sen.matchAll(/([+\u2212-])?\$\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)/g)].some((m) => { const v = Number(m[2].replace(/,/g, "")); return Math.abs(v - Math.abs(bookDayUsd)) > Math.max(5, Math.abs(bookDayUsd) * 0.05) && Math.abs(v - totNow) > totNow * 0.01; })),
     ...rankPositionClaims(answer, perfRows.map((r) => ({ names: r.names, pct: r.pct, weight: r.usd / (assetsUsd || 1) * 100 })), questionWindows(question)[0] ?? null),
     ...smallMoveCauses(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], pct: r.change_pct === null ? null : Number(r.change_pct), fund: r.kind === "etf" || r.kind === "fund" }))),
-    ...metricSuperlativeClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], yieldPct: divRows.get(r.symbol)?.div_yield ?? null, weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100, annualDiv: divLines.find((x) => x.r.symbol === r.symbol)?.d.annual ?? 0 }))),
+    // r12 C: a 3-month return or the cash weight set against the yearly target; a move dated to a non-session day; a
+    // holding's day dollars that are not Home's figure
+    ...targetMismatchClaims(answer), ...nonSessionDatedMoves(answer, (ymd) => isTradingDay("US", ymd), Number(today.slice(0, 4))),
+    ...splitSentences(answer).filter((sen) => /\btoday\b|\bon the day\b|\bsession\b|오늘/i.test(sen) && held.some((r) => {
+      if (![nameOf(r), ...aliasesFor(r.symbol, r.name)].some((n) => n && new RegExp(`(?:^|[^A-Za-z0-9])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9])`).test(sen))) return false;
+      const m = /([+\u2212-])?\$\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?([Kk])?/.exec(sen);
+      if (!m) return false;
+      const v = Number(m[2].replace(/,/g, "")) * (m[3] ? 1000 : 1), want = Math.abs(dayOf(r));
+      return want > 50 && Math.abs(v - want) > want * 0.03 && Math.abs(v - usd(Number(r.value ?? 0), r.currency)) > 1;
+    })),
+    ...metricSuperlativeClaims(answer, [{ names: ["cash", "Cash", "현금"], weight: book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100 }, ...held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], yieldPct: divRows.get(r.symbol)?.div_yield ?? null, weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100, annualDiv: divLines.find((x) => x.r.symbol === r.symbol)?.d.annual ?? 0 }))]),
     ...crossMetricClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], pes: [...(peBy.get(r.symbol) ?? []), ...peFigures(headlinesBy.get(r.symbol) ?? "")] }))),
     ...(ko ? wonConversionClaims(answer, causeSource, fxMap.get("KRW") ?? 1380) : []),
     ...periodReturnMismatches(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], windows: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> })))]);
@@ -1025,9 +1036,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const cryptoShareA = held.filter((r) => r.kind === "crypto").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
   const fracGroupsA = [{ label: /\bcash\b/i, value: cashShare }, { label: /\bcrypto\b/i, value: cryptoShareA }];
   // round 8: "Tech makes up about 57% of assets" (it is ~97%)
-  const TECH = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]);
+  const TECH = TECH_THEMES;
   const techShare = held.filter((r) => TECH.has(themeOf(r.symbol, r.kind))).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
-  guarded = fixGroupShares(guarded, [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: techShare }]);
+  guarded = fixGroupShares(guarded, [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: techShare }], 5, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] })));
   answer = unicodeMinus(plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(fixFractions(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), fracHold, fracGroupsA)), question, lastA, prevQ, decisionQ)))));
   void softFallback;
   // the code-built answer is 4-5 checked bullets (~100 words with the opener): the phone cap must not cut its

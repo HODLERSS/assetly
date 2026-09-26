@@ -12,11 +12,12 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  superlativeClaims, periodReturnMismatches, YTD, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
   readerLevel,
+  TECH_THEMES,
 } from "../_shared/intel.ts";
 import { dividendLine, dividendRows, windowReturns } from "../_shared/history.ts";
 import { userIdFrom } from "../_shared/auth.ts";
@@ -1735,7 +1736,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             sections.positions.push({ name: nm, note: `${nm} is ${w < 0.05 ? "under 0.1" : w.toFixed(1)}% of assets. ${codeRisk(r.kind, themeOf(r.symbol, r.kind))}`, watch: "" });
           }
           // r11 P8: STRUCTURE states the tech and chip share, and a held leveraged fund's drawdown risk plainly
-          const TECH_S = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index", "leveraged semiconductors"]);
+          const TECH_S = TECH_THEMES;
           const techS = holdings.filter((r) => TECH_S.has(themeOf(r.symbol, r.kind))).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / total * 100;
           const lev = holdings.filter((r) => /leveraged/.test(themeOf(r.symbol, r.kind)) || /\b(?:2x|3x|ultra|bull 3x|leveraged)\b/i.test(String(r.name ?? "")));
           const add: string[] = [];
@@ -1836,7 +1837,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           { label: /\bcrypto\b/i, value: exposure.crypto }, { label: /\bcash\b/i, value: exposure.cash }, { label: /\bbonds?\b/i, value: exposure.bonds },
           { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity },
         ];
-        const TECH_T = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]);
+        const TECH_T = TECH_THEMES;
         // r10: "Today added $621 across US and Korean stocks" when the $621 has crypto and Korea's Wednesday move in it
         const bookYieldPct = divIncome > 0 ? divIncome / total * 100 : 0;
         const scopeMixed = holdings.some((r) => (r.kind === "crypto" || /-USD$/.test(r.symbol)) && r.change_pct !== null && Number(r.change_pct) !== 0)
@@ -1847,7 +1848,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           // round 8: a verdict TAIL leaves a one-sentence lede as a clause ("…, keeping the portfolio on track"), and a
           // tech share is held to the computed one ("Tech makes up about 57%" at ~97%)
           // round 9: the compact morning read "Portfolio up 0.5%" (+0.27%) and "What it means the AI chip rally adds..."
-          const x0 = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup);
+          const x0 = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup, 5, weightFacts);
           const x = ((t: string) => edition === "close" || edition === "kr_close" ? dropFuturesAfterClose(t) : t)(fixFragments(dropYieldPurpose(fixThemeShares(fixScopeLabels(fixThemeHeavy(fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB), themesArr), scopeMixed), themesArr), bookYieldPct)));
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
@@ -1860,7 +1861,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             ...(winFacts.length ? [...superlativeClaims(x, winFacts), ...periodReturnMismatches(x, winFacts)] : []), ...(edition === "assessment" ? [] : dayTargetClaims(x)),
             // round 9 intelligence: a dated event or a cause no source line carries ("MSFT Copilot revenue update
             // Monday", "Microsoft's AI spend boosted earnings")
-            ...(fixture ? [] : [...ungroundedEventSentences(x, groundSrc, bookNamesAll), ...ungroundedCauses(x, groundSrc, bookNamesAll)]),
+            ...(fixture ? [] : [...ungroundedEventSentences(x, groundSrc, bookNamesAll), ...ungroundedCauses(x, groundSrc, bookNamesAll), ...productVersionClaims(x, groundSrc)]),
             // round 6: "NVDA and QQQ pay no dividend" (both do), "SoFi fell after an article noted its drop"
             ...dividendContradictions(x, payerNames), ...circularCauses(x),
             // round 7: "META dropped 12.8%" (its weight), "a yield near 0.5%" (the book yields 0.30% / 0.34%)

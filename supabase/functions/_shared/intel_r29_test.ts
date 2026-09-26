@@ -7,6 +7,28 @@ Deno.test("r29 A: routing and lexicon", () => {
   for (const s of ["A clean beat rerates the whole portfolio.", "This is a retracement, not reversal.", "It's small enough to ride out a drawdown.", "The chart says otherwise.", "Shift some cash toward AAPL and MSFT.", "Cash is a light reserve.", "NVDA is not the engine.", "Concentration is your edge."]) assertEquals(softVerdicts(s).length, 1, s);
 });
 
+Deno.test("r29 E: '-heavy' keeps its article and capital; leveraged semis are tech", async () => {
+  const { fixThemeHeavy, themeOf, TECH_THEMES } = await import("./intel.ts");
+  assert(TECH_THEMES.has(themeOf("SOXL", "etf")));
+  const themes = [{ name: "broad US index", pct: 30 }, { name: "leveraged semiconductors", pct: 20 }, { name: "AI semiconductors", pct: 20 }, { name: "mega-cap platforms", pct: 15 }];
+  assertEquals(fixThemeHeavy("A tech-heavy book with one index core.", themes), "A tech-heavy book with one index core.");
+  const t2 = [{ name: "financials", pct: 28.5 }, { name: "healthcare", pct: 19.4 }];
+  assertEquals(fixThemeHeavy("A healthcare-heavy dividend book.", t2), "A financials-heavy dividend book.");
+});
+
+Deno.test("r29 C: member lists, targets, non-session dates, smallest sleeve", async () => {
+  const { fixGroupShares, targetMismatchClaims, nonSessionDatedMoves, metricSuperlativeClaims } = await import("./intel.ts");
+  const members = [{ names: ["NVDA"] }, { names: ["AMD"] }, { names: ["SOXL"] }];
+  assertEquals(fixGroupShares("Tech names NVDA, AMD and SOXL make up 48% together.", [{ label: /\btech(?: names)?/i, value: 13.2 }], 5, members), "Tech names NVDA, AMD and SOXL make up 48% together.");
+  assertEquals(targetMismatchClaims("Up 9% over 3 months, inside your 12-20% target.").length, 1);
+  assertEquals(targetMismatchClaims("Cash at 3% sits below your 12-20% target.").length, 1);
+  assertEquals(targetMismatchClaims("Up 14% over 1 year, inside your 12-20% target."), []);
+  const sat = (ymd: string) => !["2026-09-26", "2026-09-27"].includes(ymd);
+  assertEquals(nonSessionDatedMoves("MSFT 9/26 +4%.", sat, 2026).length, 1);
+  assertEquals(nonSessionDatedMoves("MSFT 9/25 +3.7%.", sat, 2026), []);
+  assertEquals(metricSuperlativeClaims("Smallest sleeve: cash.", [{ names: ["cash"], weight: 3.4 }, { names: ["AVGO"], weight: 1.2 }, { names: ["NVDA"], weight: 19 }]).length, 1);
+});
+
 Deno.test("r29 B: asked counts and the code summary", () => {
   assertEquals(askedCount("Summarize my portfolio in 3 bullet points"), 3);
   assertEquals(askedCount("How is NVDA doing?"), null);
