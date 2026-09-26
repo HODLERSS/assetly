@@ -19,6 +19,7 @@ type Sections = { lede: string; overnight: string; positions: { name: string; no
 /** The text a script may be made from. daily-brief also stores its BASIS on the row (as_of, day_sign, day_pct,
  *  day_usd, held, day_by_symbol) for the client's staleness check; those are not brief content and must never
  *  be spoken or offered as allowed figures. */
+const realWatch = (w: unknown): boolean => !!String(w ?? "").trim() && !/^\s*no confirmed date yet\.?\s*$|^\s*(?:none|n\/a|tbd)\s*$/i.test(String(w ?? ""));
 const briefText = (raw: unknown): Sections => {
   const { as_of: _a, day_sign: _s, day_pct: _p, day_usd: _u, held: _h, day_by_symbol: _d, ...rest } = (raw ?? {}) as Record<string, unknown>;
   return rest as unknown as Sections;
@@ -222,8 +223,9 @@ function fallbackScript(s: Sections, dayLine: string, edition: string): string {
     ...((s.ideas ?? []).length ? [`One thing worth looking into: ${say(firstSentence(String((s.ideas ?? [])[0])))}`] : []),
     // a DAILY brief has no horizon and no research ideas, so without its catalysts the fallback runs ~35
     // seconds against an intended 75-90; the watch items are the useful content that belongs there
-    ...(edition !== "assessment" && top.some((p) => String(p.watch ?? "").trim())
-      ? [`What to watch next: ${[...new Set(top.map((p) => say(String(p.watch ?? "").trim())).filter(Boolean))].slice(0, 2).join(", and ")}.`]
+    // r11 P3: a placeholder is not something to watch ("What to watch next: No confirmed date yet.")
+    ...(edition !== "assessment" && top.some((p) => realWatch(p.watch))
+      ? [`What to watch next: ${[...new Set(top.filter((p) => realWatch(p.watch)).map((p) => say(String(p.watch ?? "").trim())).filter(Boolean))].slice(0, 2).join(", and ")}.`]
       : []),
     edition === "assessment" ? "That's your assessment. Talk soon." : "That's your brief. Talk soon."];
   return parts.filter(Boolean).join(' <break time="0.7s" /> ');

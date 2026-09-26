@@ -80,7 +80,8 @@ const FAST_MODEL = "gpt-oss-120b";
 //    superlatives, grounded earnings watches; every stored script is re-made through narrate's card gates
 // 14 (r10 native): fragments and seams, no futures in a closing note
 // 15 (r11): stored rows held to the windows ("the week's biggest loser"), merged parentheticals
-const GEN_VERSION = 15;   // 4:
+// 16 (r11): live rows repaired in place, estimated watches kept, no "No confirmed date yet" placeholder
+const GEN_VERSION = 16;   // 4:
 const REPAIR_ROWS_PER_RUN = 12, REPAIR_ROWS_PER_USER = 6;   // r10 load: a GEN bump no longer rewrites every stored row in one run calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
@@ -330,9 +331,10 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
     && strandedEdition(o.edition, String(o.brief_date), o.generated_at ?? null, all.filter((x) => x.brief_date === o.brief_date)));
   for (const o of stranded) await admin.from("daily_briefs").delete().eq("id", o.id).then(() => {}, () => {});
   if (stranded.length) all = all.filter((o) => !stranded.includes(o));
+  // r11 P3: today's live edition gets the text-only repair too; regeneration is gated on its window, and the Sep 25
+  // close kept "the week's biggest loser" and "Nasdaq futures sit at…" all night because it was excluded here
   const stale = all.filter((o) => (o.brief_date === briefDate || o.brief_date === latestPast)
-    // a live edition of TODAY is regenerated, never patched; the latest past day's rows are all past-window
-    && !(o.brief_date === briefDate && live.includes(o.edition)) && Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
+    && Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
   if (!stale.length) return [];
   // r10 load: the repair context (dividends, weights) is read only for a user with rows to repair
   const ctx: RepairCtx | undefined = typeof ctxIn === "function" ? await ctxIn().catch(() => undefined) : ctxIn;
@@ -419,7 +421,12 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     const canon = canonicalCalendar([p.watch], ests, "", today);
     const earn = /\b(earnings|results|reports?|call|print|preview)\b/i.test(p.watch) && ests.some((e) => e.names.some((n) => n && String(p.watch).toLowerCase().includes(n.toLowerCase())));
     const dated = datesIn(p.watch, today).length > 0 || weekendDated([p.watch], today).length > 0;
-    return { ...p, note: dropWrong(p.note), watch: earn ? canon[0] ?? "No confirmed date yet" : dated || ungroundedItem(p.watch) ? "No confirmed date yet" : stripStrayEst(text(p.watch)) };
+    // r11 P3: an estimated date for a holding that has that estimate is grounded (NVDA mid to late Nov, AAPL ~Oct 29);
+    // an unusable watch is left empty (the card omits it), never a "No confirmed date yet" placeholder
+    const own = ests.find((e) => (e.est || e.range) && e.names.some((n) => n && String(p.watch).toLowerCase().includes(n.toLowerCase())));
+    const estOk = !!own && (canon.length > 0 || /\(est\)|\best(?:imate[sd]?)?\b|~/i.test(p.watch));
+    const w0 = /^\s*no confirmed date yet\.?\s*$/i.test(String(p.watch ?? "")) ? "" : String(p.watch ?? "");
+    return { ...p, note: dropWrong(p.note), watch: !w0 ? "" : earn || estOk ? canon[0] ?? (estOk ? stripStrayEst(text(w0)).replace(/\s*\(est\)/i, "") + " (est)" : "") : dated || ungroundedItem(w0) ? "" : stripStrayEst(text(w0)) };
   });
   s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today).filter((c) => !weekendDated([c], today).length && !ungroundedItem(c));
   if (src.ideas) s.ideas = src.ideas.map(text).filter((i) => !repairDrops(i).length);
@@ -826,7 +833,7 @@ Deno.serve(async (req) => {
       const watchFallback = (name: string): string => {
         const m = memosOut.find((x) => String(x.name).toLowerCase() === name.toLowerCase() || String(x.symbol).toLowerCase() === name.toLowerCase());
         const trip = String(m?.tripwire ?? "").trim().replace(/[.\s]+$/, "");
-        return trip && trip.split(/\s+/).length <= 14 && !datesIn(trip, briefDate).length ? trip : "No confirmed date yet";
+        return trip && trip.split(/\s+/).length <= 14 && !datesIn(trip, briefDate).length ? trip : "";
       };
       if (backfillOnly) {
         sections = backfillOnly;
@@ -1712,7 +1719,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             else { const row = rowOf(p.name); note = `${note.replace(/[.\s]+$/, "")}. ${codeRisk(row?.kind, row ? themeOf(row.symbol, row.kind) : "")}`; }
           }
           const watch = wordWatch(String(p.watch ?? "").replace(/\s*([<>])\s*consensus/gi, (_m, s) => s === ">" ? " above consensus" : " below consensus"));
-          return { ...p, name: plainCompanyName(p.name), note, watch: watch || "No confirmed date yet" };
+          return { ...p, name: plainCompanyName(p.name), note, watch: watch || "" };
         });
         if (edition === "assessment") {
           const covered = new Set(sections.positions.map((p) => rowOf(p.name)?.symbol).filter(Boolean));
@@ -1721,7 +1728,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             if (sections.positions.length >= 10) break;
             const nm = plainCompanyName(krName(r.symbol, r.nickname, r.name));
             const w = usd(Number(r.value ?? 0), r.currency) / total * 100;
-            sections.positions.push({ name: nm, note: `${nm} is ${w < 0.05 ? "under 0.1" : w.toFixed(1)}% of assets. ${codeRisk(r.kind, themeOf(r.symbol, r.kind))}`, watch: "No confirmed date yet" });
+            sections.positions.push({ name: nm, note: `${nm} is ${w < 0.05 ? "under 0.1" : w.toFixed(1)}% of assets. ${codeRisk(r.kind, themeOf(r.symbol, r.kind))}`, watch: "" });
           }
         }
         if (edition === "assessment") {
@@ -1787,7 +1794,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const { data: gNews } = fixture ? { data: [] } : await admin.from("news").select("title, summary").in("symbol", holdings.map((r) => r.symbol).slice(0, 25))
           .gte("published_at", new Date(Date.now() - 10 * 86400000).toISOString()).limit(400);
         // r10: the estimates as data lines too (their ISO dates read as "Nov 25"), so an earnings watch built from them
-        // is grounded (every watch had become "No confirmed date yet", NVDA and AAPL included)
+        // is grounded (every watch had become "", NVDA and AAPL included)
         const groundSrc = [...nextEarn, ...divData.map((x) => x.d.line), ...dlvFacts.filter((d) => d.est).map((d) => `${d.names[0]} deliveries ${d.est}`),
           ...earnEsts.filter((e) => e.est || e.range).map((e) => `${e.names.join(" ")} earnings results report expected ${e.est ?? ""} ${e.range ? e.range.join(" ") : ""}`),
           ...((gNews ?? []) as { title: string; summary?: string | null }[]).map((n) => `${n.title} ${n.summary ?? ""}`)].join("\n");
@@ -1896,7 +1903,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections.calendar = (sections.calendar ?? []).filter((c) => !offCal.has(c)).map((c) => tidyNumbers(plainScrub(c, PORTFOLIO_PLAIN)));
         sections.positions = sections.positions.map((p) => weekendDated([p.watch], briefDate).length || wrongDeliveriesDates(p.watch, dlvFacts, briefDate).length
           || (!fixture && !(/\b(?:earnings|results|reports?)\b/i.test(p.watch) && earnEsts.some((e) => (e.est || e.range) && e.names.some((n) => n && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(p.watch)))) && ungroundedEvents([p.watch], groundSrc, bookNamesAll).length)
-          ? { ...p, watch: ((w) => !fixture && ungroundedEvents([w], groundSrc, bookNamesAll).length ? "No confirmed date yet" : w)(watchFallback(p.name)) } : p);
+          ? { ...p, watch: ((w) => !fixture && ungroundedEvents([w], groundSrc, bookNamesAll).length ? "" : w)(watchFallback(p.name)) } : p);
       }
       snap("clean (plain words/exposure/weights/claims)", sections);
       // GRAMMAR PASS (round 3 newcomer: "Watch QQQ on sustained a shrinking price tag relative.", "Total assets
@@ -1946,7 +1953,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections.desk_view = keepOr(sections.desk_view, stripVerdictTails(sections.desk_view));
         if (sections.horizon) sections.horizon = keepOr(sections.horizon, sections.horizon);
         sections.ideas = (sections.ideas ?? []).map((i) => sanitize(i, { ideaSurface: true })).filter(Boolean);
-        sections.positions = sections.positions.map((p) => ({ ...p, note: keepOr(p.note, p.note), watch: sanitize(p.watch) || "No confirmed date yet" }));
+        sections.positions = sections.positions.map((p) => ({ ...p, note: keepOr(p.note, p.note), watch: sanitize(p.watch) || "" }));
         sections.calendar = (sections.calendar ?? []).map((c) => sanitize(c)).filter(Boolean);
       }
       // round 8: signed figures use the true minus sign, as the client renders them
