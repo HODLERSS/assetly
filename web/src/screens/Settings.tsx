@@ -128,12 +128,14 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
       </div>
       <div className="card" style={{ marginBottom: 14 }} data-testid="investor-card">
         <div className="row investor-row" style={{ alignItems: "center" }}>
-          <span>Investor profile<br /><span className="sub" data-testid="investor-label">{investorLabel(profile?.investor ?? INVESTOR_DEFAULT)}</span></span>
-          <button className="chip" onClick={() => setEditInv(!editInv)}>{editInv ? "Close" : "Edit"}</button>
+          {/* No profile loaded (a failed first load): the defaults are not this user's answers. Showing "Value"
+              over their "Growth", with Edit then Save, could overwrite the real one (r10 power-user). */}
+          <span>Investor profile<br /><span className="sub" data-testid="investor-label">{profile ? investorLabel(profile.investor ?? INVESTOR_DEFAULT) : "Not loaded yet"}</span></span>
+          <button className="chip" disabled={!profile} onClick={() => setEditInv(!editInv)}>{editInv ? "Close" : "Edit"}</button>
         </div>
-        {editInv && (
+        {editInv && profile && (
           <div style={{ padding: "10px 14px 14px" }}>
-            <InvestorQuiz initial={profile?.investor ?? INVESTOR_DEFAULT} doneLabel="Save"
+            <InvestorQuiz initial={profile.investor ?? INVESTOR_DEFAULT} doneLabel="Save"
               onDone={async (v) => { await api.updateInvestor(v); setEditInv(false); await onChanged(); }} />
             <p className="mutedc" style={{ fontSize: 12, margin: "10px 0 0" }}>Your next briefs, assessment and answers are written for this profile.</p>
           </div>

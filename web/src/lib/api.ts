@@ -42,8 +42,8 @@ const ASSESSMENT_FRESH_MS = 14 * 86400000;
 /**
  * The (at most) two briefs Home shows: from the latest brief date, the edition furthest into its session
  * (close > midday > morning, one row per edition, its newest), plus the Portfolio Assessment when it is recent,
- * else the next edition of that date. The card opens on the last one, so the ranked edition goes last unless the
- * assessment was written after it.
+ * else the next edition of that date. The card opens on the last one: the ranked edition, always, with the
+ * assessment as the chip before it (only a first assessment with no edition yet stands alone).
  */
 export function pickHomeBriefs(daily: DailyBrief[], assessment: DailyBrief | null, now: number = Date.now()): DailyBrief[] {
   const day = daily.reduce<string | null>((m, b) => (m === null || b.brief_date > m ? b.brief_date : m), null);
@@ -57,7 +57,10 @@ export function pickHomeBriefs(daily: DailyBrief[], assessment: DailyBrief | nul
   const top = ranked[0];
   const fresh = assessment && now - Date.parse(assessment.generated_at) < ASSESSMENT_FRESH_MS ? assessment : null;
   if (!top) return fresh ? [fresh] : [];
-  if (fresh) return fresh.generated_at > top.generated_at ? [top, fresh] : [fresh, top];
+  // the edition leads (the card opens on the last one); the assessment is a chip beside it. Ordering by write
+  // time opened Home on an evening re-run assessment (after an add or remove) until the next Morning (r10
+  // power-user). Only the FIRST assessment, with no edition yet, is the card on its own (the branch above).
+  if (fresh) return [fresh, top];
   return ranked[1] ? [ranked[1], top] : [top];
 }
 

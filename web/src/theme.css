@@ -259,7 +259,10 @@ body.has-miniplayer .ask-composer { bottom: calc(var(--as-tabbar-h) + var(--as-t
 /* Suggestion and follow-up pills. `.chips` alone keeps every pill on one nowrap line and scrolls
    sideways, which silently cuts a long question in half at the screen edge. These wrap instead. */
 .chips.wrap { flex-wrap: wrap; overflow-x: visible; }
-.chips.wrap .chip { white-space: normal; max-width: 100%; text-align: left; line-height: 1.35; padding: 4px 14px; flex: 0 1 auto; }
+.chips.wrap .chip { white-space: normal; max-width: 100%; text-align: left; line-height: 1.35; padding: 10px 16px; flex: 0 1 auto; }
+/* the pill is inset 4px from the button: the text's 10px leaves 6px of pill around a two-line question (at AX5
+   the lines touched the pill's edges; r10 designer), and a two-line pill rounds its corners instead of a stadium */
+.chips.wrap .chip::before { border-radius: 18px; }
 .bubble { max-width: 88%; padding: 10px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
 .bubble.user { justify-self: end; background: var(--as-primary); color: var(--as-on-primary); border-bottom-right-radius: 5px; }
 .bubble.ai { justify-self: start; background: var(--as-surface); border: 1px solid var(--as-rule); border-bottom-left-radius: 5px; }

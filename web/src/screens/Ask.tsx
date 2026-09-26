@@ -62,9 +62,21 @@ function loadTurns(): Turn[] {
   } catch { return []; }
 }
 
+const NARROW_Q = "(max-width: 359px)";
+const isNarrow = (): boolean => { try { return window.matchMedia(NARROW_Q).matches; } catch { return false; } };
+const subscribeNarrow = (cb: () => void) => {
+  try {
+    const m = window.matchMedia(NARROW_Q);
+    m.addEventListener?.("change", cb);
+    return () => m.removeEventListener?.("change", cb);
+  } catch { return () => {}; }
+};
+
 export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAnswered?: () => void; autoAsk?: { question: string; key: string } | null }) {
   const [q, setQ] = useState("");
   const largeText = useSyncExternalStore(subscribeTextScale, getTextScale) >= LARGE_TEXT;
+  // under 360pt wide the long placeholder is cut too ("Ask about your portfolic" at 320; r10 designer)
+  const narrow = useSyncExternalStore(subscribeNarrow, isNarrow, () => false);
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [busy, setBusy] = useState(false);
   const [wait, setWait] = useState<0 | 1 | 2>(0);   // how long the current answer has taken: see WAIT_COPY
@@ -174,7 +186,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
       </div>
       <form className="ask-composer" onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
         <input ref={inputRef} aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
-               placeholder={largeText ? "Ask a question…" : "Ask about your portfolio…"} enterKeyHint="send" autoComplete="off" />
+               placeholder={largeText || narrow ? "Ask a question…" : "Ask about your portfolio…"} enterKeyHint="send" autoComplete="off" />
         {/* the button keeps its width while an answer is on the way: "…" shrank it to 49px and the field jumped
             27px wider and back on every question (r5 designer m-g). The label stays for the width, hidden. */}
         <button className="btn ask-send" disabled={busy || !q.trim()} aria-busy={busy || undefined} aria-label={busy ? "Waiting for the answer" : undefined}>
