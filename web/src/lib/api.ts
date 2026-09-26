@@ -280,15 +280,18 @@ export function makeApi(sb: SupabaseClient = supabase) {
         .upsert({ user_id: uid, symbol, account, nickname }, { onConflict: "user_id,symbol,account,nickname" })
         .select("id").single();
       if (hErr) throw hErr;
-      const { error: lErr } = await sb.from("lots")
-        .insert({ holding_id: h.id, qty, cost_per_share, acquired_on: acquired_on ?? null, note: note || null });
+      const { data: l, error: lErr } = await sb.from("lots")
+        .insert({ holding_id: h.id, qty, cost_per_share, acquired_on: acquired_on ?? null, note: note || null })
+        .select("id").single();
       if (lErr) {
         // never leave an empty holding behind when the lot is rejected (qty<=0, cost<0)
         const { count } = await sb.from("lots").select("id", { count: "exact", head: true }).eq("holding_id", h.id);
         if (!count) await sb.from("holdings").delete().eq("id", h.id);
         throw lErr;
       }
-      return h.id as string;
+      // the lot as written, so the position screen can show it without a round trip (lib/lotsCache seedLots)
+      const lot: Lot = { id: String((l as { id?: unknown } | null)?.id ?? ""), holding_id: h.id as string, qty, cost_per_share, acquired_on: acquired_on ?? null, note: note || null };
+      return { holdingId: h.id as string, lot: lot.id ? lot : null };
     },
     async getLots(holding_id: string): Promise<Lot[]> {
       online();

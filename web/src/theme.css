@@ -129,6 +129,10 @@ input, select { font: inherit; }
   background: none; border-left: 0; border-right: 0; border-top: 0; text-align: left; color: inherit; }
 .row:last-child { border-bottom: 0; }
 .row:active { background: var(--as-hover); }
+/* a plain div row is information, not a control: no press tint and no pointer ("Base currency USD" in Settings
+   looked tappable and did nothing; e2e p04-10). Rows that act are buttons. */
+div.row { cursor: default; }
+div.row:active { background: none; }
 /* Two lines a side, never three: the name line truncates with an ellipsis instead of wrapping under the
    value column (the iPhone SE showed "Invesco Nasdaq 100" spilling onto a third line). */
 .row > span:first-child:has(> .sym) { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -337,7 +341,7 @@ svg.icon { display: inline-block; vertical-align: -0.15em; flex: none; }
 
 .mp-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 /* 44px is the iOS minimum touch target; the glyph inside is smaller but the tappable box is not */
-.mp-btn { min-width: 42px; min-height: 44px; display: inline-flex; align-items: center;
+.mp-btn { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center;
   justify-content: center; background: none; border: 0; color: var(--as-ink); padding: 0; border-radius: 999px; }
 .mp-btn:active { background: var(--as-hover); }
 .mp-btn:disabled { opacity: .4; }
@@ -348,7 +352,8 @@ svg.icon { display: inline-block; vertical-align: -0.15em; flex: none; }
 .mp-play { background: var(--as-primary); color: var(--as-on-primary); min-width: 44px; min-height: 44px; }
 .mp-play:active { background: var(--as-primary); opacity: .85; }
 .mp-rate { font: 600 12px var(--as-font-num); min-width: 44px; color: var(--as-primary); }
-.mp-close { color: var(--as-muted); min-width: 38px; }
+/* every icon control is a 44x44 target (skip and close were 42 and 38 wide; e2e p05 F3) */
+.mp-close { color: var(--as-muted); min-width: 44px; }
 
 .mp-seek { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
 .mp-time { font: 500 11px var(--as-font-num); font-feature-settings: "tnum"; color: var(--as-muted);

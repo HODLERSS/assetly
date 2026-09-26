@@ -13,8 +13,7 @@ import { AmountField, DateField, EntryPreview } from "../components/AmountField"
 import { onForeground } from "../lib/native";
 
 // Each position's lots as last read this session: offline, a position shows the lots it had instead of none.
-const lotsMemo = new WeakMap<Api, Map<string, Lot[]>>();
-const lotsFor = (api: Api) => { let m = lotsMemo.get(api); if (!m) { m = new Map(); lotsMemo.set(api, m); } return m; };
+import { lotsFor } from "../lib/lotsCache";
 
 /** A failed write, said in words the user can act on. supabase-js rejects with a PostgrestError (not an Error)
  *  whose message is the browser's "Load failed" / "The network connection was lost": the merge that died on a
@@ -347,6 +346,11 @@ function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", n
   }, [confirmDelete]);
   const [busy, run] = useInFlight();
   const sym = ccySymbol(currency).trim();
+  // the sheet names the position it edits ("Edit NVDA lot · 5 sh"): a trader juggling tickers could not tell which
+  // one the sheet was for (e2e p02 F9)
+  const sheetTitle = cashish
+    ? (lot ? `Edit ${name} balance` : `Add ${name} balance`)
+    : lot ? `Edit ${name} lot · ${formatQty(lot.qty)} ${unit}` : `Add ${name} lot`;
 
   if (confirmDelete && onDelete) {
     const last = confirmDelete.last;
@@ -376,7 +380,7 @@ function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", n
     void run(() => onSave(qv, cv, date, note, acct));
   };
   return (
-    <div className="sheet-back" role="dialog" aria-modal="true" aria-label={lot ? "Edit lot" : "Add lot"}>
+    <div className="sheet-back" role="dialog" aria-modal="true" aria-label={sheetTitle}>
       <div className="sheet" aria-busy={busy}>
         {/* the decimal pad has no Done key and covered Cancel (r4 native m4): while the keyboard is up the sheet
             carries its own Done, pinned to the top of the (scrolling) sheet. Pointer-down keeps the field's focus
@@ -385,7 +389,7 @@ function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", n
           <button type="button" className="chip" data-testid="sheet-kb-done" onPointerDown={(e) => e.preventDefault()}
             onClick={() => { const el = document.activeElement; if (el instanceof HTMLElement) el.blur(); }}>Done</button>
         </div>
-        <h2>{cashish ? (lot ? "Edit balance" : "Add balance") : lot ? "Edit lot" : "Add lot"}</h2>
+        <h2>{sheetTitle}</h2>
         <AmountField id="lot-qty" label={cashish ? `Amount (${sym})` : crypto ? "Quantity" : "Shares"} value={qty}
           onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} />
         {!cashish && (<>

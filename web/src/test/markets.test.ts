@@ -24,6 +24,13 @@ describe("market sessions", () => {
     expect(isMarketOpen("KR", BOTH_CLOSED)).toBe(false);
     expect(isMarketOpen("CRYPTO", BOTH_CLOSED)).toBe(true);
     expect(sessionLabel(BOTH_CLOSED)).toBe("markets closed");
+    // with live coins in the list the label says both (e2e p06): the stock market's last session is named
+    expect(sessionLabel(BOTH_CLOSED, ["US"], true)).toBe("crypto live · US Fri close");
+    expect(sessionLabel(BOTH_CLOSED, ["KR"], true)).toBe("crypto live · KRX Fri close");
+    expect(sessionLabel(BOTH_CLOSED, ["US", "KR"], true)).toBe("crypto live · stocks closed");
+    expect(sessionLabel(BOTH_CLOSED, [], true)).toBe("crypto trades 24/7");
+    // Chuseok Saturday (Sep 26 2026): KRX's last session was Wednesday
+    expect(sessionLabel(new Date("2026-09-26T15:00:00Z"), ["KR"], true)).toBe("crypto live · KRX Wed close");
   });
   it("full-closure holidays close the right market only", () => {
     expect(isMarketOpen("US", US_HOLIDAY)).toBe(false);          // Thanksgiving

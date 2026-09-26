@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Api, BriefEdition, DailyBrief } from "../lib/api";
+import { notAdvice } from "../lib/i18n";
 import { marketClock } from "../lib/format";
 import { pageHidden } from "../lib/poll";
 import { getSnapshot, load as loadTrack, loadSpeech, subscribe, toggle as togglePlayer } from "../lib/player";
@@ -20,7 +21,8 @@ const ED_META: Record<BriefEdition, { title: string; tape: string; positions: st
   close: { title: "Closing Note", tape: "Today", positions: "Your positions", desk: "Our read", watch: "Watch", read: "Read · 2 min", chip: "Close" },
   assessment: { title: "Portfolio Assessment", tape: "Your portfolio", positions: "Quality read", desk: "Structure & risk", watch: "What would change it", read: "Read · 2 min", chip: "Assessment" },
   // no session today (weekend or a market holiday): direction and company developments, never a tape
-  weekend: { title: "Weekend Read", tape: "The week that was", positions: "At your companies", desk: "Direction", watch: "Next", read: "Read · 2 min", chip: "Weekend" },
+  // "Direction" read as a forecast heading (e2e item 14): the section is what to watch into the next session
+  weekend: { title: "Weekend Read", tape: "The week that was", positions: "At your companies", desk: "What to watch", watch: "Next", read: "Read · 2 min", chip: "Weekend" },
   // Korea editions for books that hold Korean names: written on the KRX clock, dated in Korea time
   kr_open: { title: "Korea Open", tape: "Korea now", positions: "Your Korean names", desk: "Our read", watch: "Watch", read: "Read · 2 min", chip: "Korea open" },
   kr_close: { title: "Korea Close", tape: "Korea's session", positions: "Your Korean names", desk: "Into the US open", watch: "Watch", read: "Read · 2 min", chip: "Korea close" },
@@ -291,7 +293,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
             <p className="sub" style={{ margin: "10px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>Calendar</p>
             {s.calendar.map((c, i) => <p key={i} className="sub" style={{ margin: "0 0 2px", fontSize: 12.5 }}>{c}</p>)}
           </>)}
-          <p className="insights-foot">Not financial advice</p>
+          <p className="insights-foot">{notAdvice()}</p>
         </div>
       )}
     </section>

@@ -326,8 +326,9 @@ describe("C6 today never mixes sessions", () => {
     vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(FRI);   // the session label also reads the wall clock
     onTestFinished(() => { vi.useRealTimers(); });
     render(<App api={stubApi({ getPortfolio: vi.fn().mockResolvedValue(mixed()) })} />);
-    await waitFor(() => expect(screen.getByTestId("total-day").textContent).toBe("US +$11 (+1.09%) today"));
-    expect(screen.getByTestId("total-day-other").textContent).toBe("Korea +$291 (+3.00%) · Wed close");
+    // the bigger move leads (e2e p02 F7); each line still names its own session
+    await waitFor(() => expect(screen.getByTestId("total-day").textContent).toBe("Korea +$291 (+3.00%) · Wed close"));
+    expect(screen.getByTestId("total-day-other").textContent).toBe("US +$11 (+1.09%) today");
     expect(document.body.textContent).not.toMatch(/\+\$302/);   // the blended sum is gone
     const krRow = within(screen.getByTestId("positions-card")).getAllByRole("button").find((b) => /005930/.test(b.textContent ?? ""))!;
     expect(krRow.textContent).toMatch(/Wed close/);

@@ -115,7 +115,7 @@ describe("F3 one write per tap", () => {
     fireEvent.click(saving);   // even a click that reaches a disabled-looking button in the same frame
     expect(api.addLot).toHaveBeenCalledTimes(1);
     await act(async () => { d.resolve(); });
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: /add lot/i })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /add \w+ lot/i })).toBeNull());
     expect(api.addLot).toHaveBeenCalledTimes(1);
   });
   it("Edit lot: Save changes twice in a row updates once", async () => {
@@ -424,7 +424,7 @@ describe("F9 chart", () => {
     await openRddt(api);
     await userEvent.click(screen.getByRole("tab", { name: "1D" }));
     await waitFor(() => expect(screen.getByTestId("range-change").textContent).toBe("+5.26%"));   // row.change_pct
-    expect(screen.getByTestId("range-high").textContent).toBe("H $260.01");
+    expect(screen.getByTestId("range-high").textContent).toBe("chart high $260.01");   // 1D says its extremes are the chart's (e2e p02 F6)
   });
   it("touching the line shows the price and time under the finger", async () => {
     const api = stubApi();

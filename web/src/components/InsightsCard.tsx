@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 const insightCache = new Map<string, Insight | null>();
 import type { Api, Insight } from "../lib/api";
+import { notAdvice } from "../lib/i18n";
 import { timeAgo } from "../lib/format";
 import { pageHidden } from "../lib/poll";
 import { Icon } from "./Icon";
@@ -103,7 +104,7 @@ export function InsightsCard({ api, symbol, pollMs = 2000, onRefresh, refreshing
           {ins.windows.trend ?? [ins.windows.d7, ins.windows.y1].filter(Boolean).join(" ")}
         </p>
       )}
-      <p className="insights-foot">Not financial advice</p>
+      <p className="insights-foot">{notAdvice()}</p>
     </section>
   );
 }

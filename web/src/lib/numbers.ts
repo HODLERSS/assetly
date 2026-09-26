@@ -84,6 +84,16 @@ export function quoteInput(price: number, currency: string): string {
 /** The "Use today's price" button: its words and the purchase date it brings. A closed market's quote is its
  *  last close, so it says so and dates the lot on that session: Samsung on a KRX holiday filled Wednesday's
  *  ₩285,500 under "today's price" and dated it Friday (r6 power-user m3; US stocks on a weekend the same). */
+/** A typed cost per share far from the live price: over 4x or under a quarter of it. $100 per ETH against a $2,700
+ *  quote saved without a word and made a +209% gain on a same-day book (e2e p01 F3). A note, never a block: a
+ *  split, a decade-old lot or a typo all look the same from here. */
+export function farFromQuote(raw: string, price: number | null | undefined, currency?: string): boolean {
+  if (!price || !(price > 0)) return false;
+  const v = readAmount(raw, "cost", currency).value;
+  if (v === null || v <= 0) return false;
+  return v > price * 4 || v < price * 0.25;
+}
+
 export function quoteChoice(quote: { price: number; asOf: string | null }, picked: { symbol: string; kind: string; currency: string },
   now: Date = new Date()): { label: string; ymd: string } {
   const s = priceSession({ symbol: picked.symbol, kind: picked.kind, as_of: quote.asOf }, now);

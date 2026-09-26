@@ -1,7 +1,7 @@
 // Market sessions + full-closure holidays, mirroring assets.html's model.
 // Lunar KR holidays (Seollal, Buddha's Birthday, Chuseok) are listed explicitly through 2027; mirror of the edge functions' table.
 import type { PortfolioRow } from "./api";
-import { HOL } from "./calendar";
+import { HOL, isTradingDay, prevTradingDay } from "./calendar";
 
 export type Market = "US" | "KR" | "CRYPTO";
 
@@ -53,7 +53,18 @@ export function sessionLabel(now: Date = new Date(), held: ("US" | "KR")[] = ["U
   if (mode.kind === "afterglow") return mode.market === "US" ? "US just closed" : "KRX just closed";
   if (mode.kind === "pulse") return `US opens in ~${Math.max(1, Math.round(mode.opensInMin / 60))}h`;
   if (held.length === 0 && hasCrypto) return "crypto trades 24/7";
+  // a list that mixes live coins with closed stocks says both: "markets closed" sat over a Movers list that was
+  // two-thirds live crypto on a Saturday (e2e p06). One stock market names its last session; two say "stocks".
+  if (hasCrypto) return held.length === 1 ? `crypto live · ${held[0] === "US" ? "US" : "KRX"} ${lastSessionWeekday(held[0], now)} close` : "crypto live · stocks closed";
   return "markets closed";
+}
+
+/** The weekday of a market's last completed session ("Fri" on a weekend, "Wed" through Chuseok). */
+export function lastSessionWeekday(market: "US" | "KR", now: Date = new Date()): string {
+  const s = SESS[market]; const z = zoned(now, s.tz);
+  const closedToday = isTradingDay(market, z.ymd) && z.minutes >= s.close;
+  const ymd = closedToday ? z.ymd : prevTradingDay(market, z.ymd);
+  return new Date(`${ymd}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
 }
 
 const SESS = {

@@ -302,8 +302,10 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
           )}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
             {/* L/H show at once and only widen as the hourly week lands (r10 designer) */}
-            <span className="sub num" data-testid="range-low">L {moneyExact(view.low, currency)}</span>
-            <span className="sub num" data-testid="range-high">H {moneyExact(view.high, currency)}</span>
+            {/* 1D draws 5-minute closes, so its extremes are the chart's, not the session's range (Yahoo's day
+                range reaches a little further): say so (e2e p02 F6) */}
+            <span className="sub num" data-testid="range-low">{intraday ? "chart low" : "L"} {moneyExact(view.low, currency)}</span>
+            <span className="sub num" data-testid="range-high">{intraday ? "chart high" : "H"} {moneyExact(view.high, currency)}</span>
           </div>
           {partial && (
             <div className="sub" data-testid="partial-note" style={{ textAlign: "center", marginTop: 1 }}>
@@ -313,7 +315,7 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
         </>
       )}
 
-      <div className="chips" role="tablist" aria-label="Chart range" style={{ paddingBottom: 0, marginTop: 8 }}>
+      <div className="chips ranges" role="tablist" aria-label="Chart range" style={{ paddingBottom: 0, marginTop: 8 }}>
         {RANGE_KEYS.map((k) => (
           <button key={k} className="chip" role="tab" aria-selected={range === k}
                   aria-pressed={range === k} onClick={() => setRange(k)}>

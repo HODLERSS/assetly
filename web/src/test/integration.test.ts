@@ -45,7 +45,7 @@ describe("T2 onboarding — auth trigger + profile", () => {
 describe("T4/T5/T9 add + edit + portfolio math", () => {
   it("add position, derived qty/avg/cost are exact", async () => {
     const a = makeApi(alice);
-    const hid = await a.addPosition("RDDT", 10, 166.55, "2026-07-22");
+    const { holdingId: hid } = await a.addPosition("RDDT", 10, 166.55, "2026-07-22");
     await a.addLot(hid, 14, 168.25, "2026-07-24");
     const rows = await a.getPortfolio();
     const r = rows.find((x) => x.symbol === "RDDT")!;
@@ -98,7 +98,7 @@ describe("T3 RLS isolation", () => {
 describe("T6 remove", () => {
   it("removing a holding cascades its lots and empties the portfolio row", async () => {
     const a = makeApi(alice);
-    const hid = await a.addPosition("INTC", 220, 20.37);
+    const { holdingId: hid } = await a.addPosition("INTC", 220, 20.37);
     const before = await a.getLots(hid);
     expect(before.length).toBe(1);
     await a.removeHolding(hid);

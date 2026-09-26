@@ -11,7 +11,7 @@ import { convertCcy, glClass, labelParts, money, moneyClass, moneyExact, priceCo
 import { Icon } from "../components/Icon";
 import { accountTag, isRetirement } from "../lib/accounts";
 import { formatQty } from "../lib/numbers";
-import { dayGroups, isHeld, rowDayChange, rowDayPct } from "../lib/portfolio";
+import { dayGroups, isHeld, marketBreakdown, rowDayChange, rowDayPct } from "../lib/portfolio";
 
 // Canvas 2a: net worth, movers, market pulse.
 const DETAIL_KEY = "assetly-nw-detail";
@@ -21,13 +21,9 @@ export const asOfClock = (iso: string) =>
   `${new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET`;
 // The one-time "what next" hint: armed by the first run of adds (App), "done" once dismissed.
 export const NEXT_KEY = "assetly-next-steps";
-// crypto files under a market by its denomination, exactly as the old Holdings filter did:
-// a USD coin belongs with the US book, a KRW-quoted one with the Korean book
-const mktFor = (r: PortfolioRow): "US" | "KR" | null => {
-  const m = marketOf(r);
-  if (m === "CRYPTO") return r.currency === "KRW" ? "KR" : "US";
-  return m;
-};
+// A day move's colour: by its sign, except that a move rounding to 0.00% is neutral ("Crypto −$1 (0.00%)" led
+// an up day in red; e2e p02 F7).
+const dayTone = (day: number, basis: number): string => (Math.abs(basis !== 0 ? (day / basis) * 100 : 0) < 0.005 ? "mutedc" : moneyClass(day));
 
 export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dispUs = "USD", dispKr = "KRW" , briefBanner = null, onBriefBannerDone, loading = false,
   assessment = null, onAssessRetry, onAssessDismiss, onOpenNews, pricesAsOf = null, briefRev = 0, loadFailed = false }: {
@@ -121,7 +117,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   }
   // Holdings folded in: market / retirement filters with their own totals line
   // The filters name what they hold: "US" totals had BTC and ETH in them (r3 power-user). Crypto is its own
-  // chip; the headline and the breakdown still fold a dollar coin into the US line, and say so ("US + Crypto").
+  // chip, its own Breakdown line, and its own name in the headline ("US + Crypto" when both moved in a session).
   const order: Market[] = ["US", "KR", "CRYPTO"];
   const marketsHeld = order.filter((m) => rows.some((r) => marketOf(r) === m));
   const hasRet = rows.some((r) => isRetirement(r.account));
@@ -148,21 +144,24 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
   // The three supporting lines under the headline totals were the busiest thing on the screen and
   // none of them is what you open the app for. They fold away; the toggle only appears when there
   // is actually something folded, and the choice sticks.
-  const twoMarkets = new Set(rows.map(mktFor).filter(Boolean)).size > 1 && !!totals.fx;
+  const fxRates = typeof totals.fx === "number" ? { USD: 1, KRW: totals.fx } : totals.fx;
+  const groups = dayGroups(rows, baseCurrency, fxRates);
+  // the same rows and math as the headline, by market (lib/portfolio marketBreakdown): header and Breakdown agree
+  const marketLines = totals.fx ? marketBreakdown(rows, baseCurrency, fxRates) : [];
+  const twoMarkets = marketLines.length > 1;
   const hasDetail = totals.debt > 0 || twoMarkets;
-  const groups = dayGroups(rows, baseCurrency, typeof totals.fx === "number" ? { USD: 1, KRW: totals.fx } : totals.fx);
   return (
     <>
       <section aria-label="Net worth" style={{ margin: "8px 0 18px" }}>
         <div className="net num" data-testid="net-worth">{money(totals.value, baseCurrency)}</div>
         {groups.length <= 1 ? (
-          <div className={`day num ${moneyClass(totals.day)}`} data-testid="total-day">
+          <div className={`day num ${dayTone(totals.day, totals.value - totals.day)}`} data-testid="total-day">
             {signedMoney(totals.day, baseCurrency)} ({signedPct(totals.value - totals.day !== 0 ? (totals.day / (totals.value - totals.day)) * 100 : 0)}) {groups[0] && !groups[0].today ? `· ${groups[0].label}` : "today"}
           </div>
         ) : (
           // moves from different sessions are never summed into one "today": each market says which session it is
           groups.map((g, i) => (
-            <div key={g.label} className={`day num ${moneyClass(g.day)}${i ? " day-split" : ""}`} data-testid={i ? "total-day-other" : "total-day"}
+            <div key={g.label} className={`day num ${dayTone(g.day, g.basis)}${i ? " day-split" : ""}`} data-testid={i ? "total-day-other" : "total-day"}
               style={i ? { fontSize: 13.5 } : undefined}>
               {g.markets.join(" + ")} {signedMoney(g.day, baseCurrency)} ({signedPct(g.basis !== 0 ? (g.day / g.basis) * 100 : 0)}) {g.today ? "today" : `· ${g.label}`}
             </div>
@@ -177,27 +176,13 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
             assets {money(totals.assets, baseCurrency)} · debt {signedMoney(-totals.debt, baseCurrency)}
           </div>
         )}
-        {(() => {
-          // Crypto folds into the market of its pricing currency ($ -> US), same as Holdings.
-          const bucketOf = (r: PortfolioRow): "US" | "KR" | null => {
-            const m = marketOf(r);
-            if (m === "CRYPTO") return r.currency === "KRW" ? "KR" : "US";
-            return m;
-          };
-          const buckets: ["US" | "KR", string][] = [["US", "US"], ["KR", "KRX"]];
-          const held = buckets.filter(([m]) => rows.some((r) => bucketOf(r) === m));
-          if (held.length < 2 || !totals.fx) return null;
-          // debt has no market performance: keep it out of the per-market lines
-          const agg = (m: string, f: (r: PortfolioRow) => number) => rows.filter((r) => bucketOf(r) === m && r.kind !== "debt")
-            .reduce((a, r) => a + (convertCcy(f(r), r.currency, baseCurrency, totals.fx) ?? 0), 0);
-          const line = (f: (r: PortfolioRow) => number, base: (r: PortfolioRow) => number) => held.map(([m, label]) => {
-            const d = agg(m, f), b = agg(m, base);
-            return `${label} ${signedMoney(d, baseCurrency)} (${signedPct(b !== 0 ? (d / b) * 100 : 0)})`;
-          }).join(" · ");
+        {twoMarkets && (() => {
+          // one line per market, the headline's own figures and names (US / Korea / Crypto)
+          const fig = (d: number, b: number) => `${signedMoney(d, baseCurrency)} (${signedPct(b !== 0 ? (d / b) * 100 : 0)})`;
           return (
             <div data-testid="market-breakdown">
-              <div className="status-line num">{groups.length > 1 ? "latest sessions" : "today"}: {line((r) => rowDayChange(r) ?? 0, (r) => (r.value ?? 0) - (rowDayChange(r) ?? 0))}</div>
-              <div className="status-line num">all time: {line((r) => r.total_gl ?? 0, (r) => r.cost_basis ?? 0)}</div>
+              <div className="status-line num" data-testid="market-breakdown-day">{groups.length > 1 ? "latest sessions" : "today"}: {marketLines.map((m) => `${m.label} ${fig(m.day, m.basis)}`).join(" · ")}</div>
+              <div className="status-line num" data-testid="market-breakdown-all">all time: {marketLines.map((m) => `${m.label} ${fig(m.gl, m.cost)}`).join(" · ")}</div>
             </div>
           );
         })()}
@@ -247,7 +232,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           </div>
         </section>
       )}
-      {(showMovers || showPulse) && <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {pricesAsOf ? `as of ${asOfClock(pricesAsOf)}` : sessionLabel(new Date(), heldMkts, hasCrypto)}</span></h2>}
+      {(showMovers || showPulse) && <h2 className="h1" style={{ fontSize: 16 }}>Movers <span className="sub" data-testid="session-label" style={{ fontWeight: 400 }}>· {pricesAsOf ? `as of ${asOfClock(pricesAsOf)}` : sessionLabel(new Date(), heldMkts, hasCrypto && (showPulse || moverList.some((r) => marketOf(r) === "CRYPTO")))}</span></h2>}
       {showPulse && (
         <div className="card" style={{ marginBottom: 16 }} data-testid="pulse-card">
           {pulse.map((p) => (

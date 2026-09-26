@@ -42,8 +42,20 @@
 .date-wrap input { display: block; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; text-align: left;
   color: var(--as-ink); min-height: 3.1em; }   /* iOS tints an unstyled date blue and sets it shorter than a text field */
 .date-wrap input::-webkit-date-and-time-value { text-align: left; }
-.date-wrap[data-empty] input::-webkit-datetime-edit { color: transparent; }
-.date-wrap[data-empty] input:focus::-webkit-datetime-edit { color: inherit; }
+/* WebKit's ghost "09 26 2026" is painted by the field pseudo-elements, which keep their own colour: making the
+   wrapper transparent alone left it showing under "No date" (e2e p02 F8) */
+.date-wrap[data-empty] input::-webkit-datetime-edit,
+.date-wrap[data-empty] input::-webkit-datetime-edit-fields-wrapper,
+.date-wrap[data-empty] input::-webkit-datetime-edit-text,
+.date-wrap[data-empty] input::-webkit-datetime-edit-month-field,
+.date-wrap[data-empty] input::-webkit-datetime-edit-day-field,
+.date-wrap[data-empty] input::-webkit-datetime-edit-year-field { color: transparent; -webkit-text-fill-color: transparent; }
+.date-wrap[data-empty] input:focus::-webkit-datetime-edit,
+.date-wrap[data-empty] input:focus::-webkit-datetime-edit-fields-wrapper,
+.date-wrap[data-empty] input:focus::-webkit-datetime-edit-text,
+.date-wrap[data-empty] input:focus::-webkit-datetime-edit-month-field,
+.date-wrap[data-empty] input:focus::-webkit-datetime-edit-day-field,
+.date-wrap[data-empty] input:focus::-webkit-datetime-edit-year-field { color: inherit; -webkit-text-fill-color: currentColor; }
 .date-empty { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--as-muted); pointer-events: none; }
 .date-wrap[data-empty] input:focus + .date-empty { display: none; }
 /* "Use today's price" sits under the cost it fills */
@@ -138,6 +150,11 @@
 .text-large .investor-row > span:first-child { flex: 1 1 100%; }
 .insights-head > .sub, .insights-head > .insights-toggle { flex: none; white-space: nowrap; }
 .text-large .insights-head .insights-brand { flex: 1 1 auto; }
+/* the chart's range chips: nine of them scroll sideways at normal size; under large text they wrap onto two rows
+   instead of clipping "1D" at the left edge (e2e p04-12). A fade at the right edge says the row scrolls. */
+.chips.ranges { scroll-padding-inline: 4px; padding-inline: 2px;
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), rgba(0, 0, 0, .15)); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), rgba(0, 0, 0, .15)); }
+.text-large .chips.ranges { flex-wrap: wrap; overflow-x: visible; row-gap: 0; mask-image: none; -webkit-mask-image: none; }
 .text-large .insights-head .brief-title { display: block; overflow: visible; text-overflow: clip; flex: 1 1 auto; min-width: 0; }
 /* AX5 on a 16e still cut the date ("SEP …"; r10 native): the date is one unbreakable unit that drops to its own
    line when it does not fit, and nothing around it clips */

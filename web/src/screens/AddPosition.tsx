@@ -6,10 +6,11 @@ import { ConnectNote, connectMsg, type ConnectMsg } from "../components/ConnectN
 import { Icon } from "../components/Icon";
 import { AmountField, DateField, EntryPreview } from "../components/AmountField";
 import { ACCOUNTS, accountLabel, defaultAccount } from "../lib/accounts";
-import { entryPreview, quoteChoice, quoteInput, readAmount } from "../lib/numbers";
-import { ccySymbol, companyName, displayName, qtyUnit } from "../lib/format";
+import { entryPreview, farFromQuote, quoteChoice, quoteInput, readAmount } from "../lib/numbers";
+import { ccySymbol, companyName, displayName, moneyExact, qtyUnit } from "../lib/format";
 import { useInFlight } from "../lib/inflight";
 import { useSymbolSearch } from "../lib/search";
+import { seedLots } from "../lib/lotsCache";
 
 /** The company as people say it, unless that only repeats the ticker ("MARA Holdings, Inc." -> "MARA"). */
 const shortName = (r: SymbolRow) => { const n = companyName(r.name); return n && n.toUpperCase() !== r.symbol.toUpperCase() ? n : r.name; };
@@ -39,6 +40,7 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
   const [connMsg, setConnMsg] = useState<ConnectMsg | null>(null);   // Import tap result: under the card, with its gutter
   const [fieldErr, setFieldErr] = useState<{ qty?: string; cost?: string }>({});
   const [quote, setQuote] = useState<{ symbol: string; price: number; asOf: string | null } | null>(null);   // for "Use today's price"
+  const [quoteWait, setQuoteWait] = useState<string | null>(null);   // the symbol whose quote is still on its way
   const [, once] = useInFlight();   // the save's re-entry guard; `busy` above is what the screen shows
 
   // Everything about the form is derived from what was picked, never inherited from the previous add:
@@ -50,10 +52,12 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
     setCcy(r.currency || "USD");
     // someone buying today, or who does not remember the price, can take the current quote as the cost
     // (asked for since r2: the cost hint was text only)
-    setQuote(null);
+    setQuote(null); setQuoteWait(null);
     if (r.kind !== "cash" && r.kind !== "debt") {
+      setQuoteWait(r.symbol);   // "Fetching price…" until it answers: a fast typer out-ran the chip (e2e p03 F2)
       void Promise.resolve().then(() => api.getQuote(r.symbol))
-        .then((p) => { if (p) setQuote((q) => q ?? { symbol: r.symbol, ...p }); }).catch(() => {});
+        .then((p) => { if (p) setQuote((q) => q ?? { symbol: r.symbol, ...p }); }).catch(() => {})
+        .finally(() => setQuoteWait((w) => (w === r.symbol ? null : w)));
     }
   };
 
@@ -162,16 +166,26 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
             onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} autoFocus />
           <AmountField id="add-cost" label={`Cost per ${picked.kind === "crypto" ? "coin" : "share"} (${ccySymbol(picked.currency).trim()})`} value={cost}
             onChange={(v) => { setCost(v); setFieldErr((f) => ({ ...f, cost: undefined })); }} error={fieldErr.cost} placeholder="What you paid" />
+          {quoteWait === picked.symbol && !quote && (
+            <p className="sub" data-testid="quote-wait" aria-live="polite" style={{ margin: "0 2px 8px" }}>Fetching price…</p>
+          )}
           {quote && quote.symbol === picked.symbol && (() => {
             // the quote's session comes with it as the date unless one was already set (the lot was saved "no
             // date" beside a price that said today; r5 power-user): today, or a closed market's last close day
             const use = quoteChoice(quote, picked);
-            return (
-              <button type="button" className="chip use-quote" data-testid="use-quote"
-                onClick={() => { setCost(quoteInput(quote.price, picked.currency)); setDate((d) => d || use.ymd); setFieldErr((f) => ({ ...f, cost: undefined })); }}>
+            const takeQuote = () => { setCost(quoteInput(quote.price, picked.currency)); setDate((d) => d || use.ymd); setFieldErr((f) => ({ ...f, cost: undefined })); };
+            return (<>
+              {!fieldErr.cost && farFromQuote(cost, quote.price, picked.currency) && (
+                // far from the live price: said, never blocked (e2e p01 F3)
+                <p className="info-note inline-note" data-testid="cost-far" role="status" style={{ margin: "0 0 8px" }}>
+                  <span>That's far from today's price of {moneyExact(quote.price, picked.currency)}. Double-check it, or use today's price.</span>
+                  <button type="button" className="chip" onClick={takeQuote}>Use today's price</button>
+                </p>
+              )}
+              <button type="button" className="chip use-quote" data-testid="use-quote" onClick={takeQuote}>
                 {use.label}
               </button>
-            );
+            </>);
           })()}
           <DateField id="add-date" label="Purchase date (optional)" value={date} onChange={setDate} />
           </>)}
@@ -192,7 +206,8 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
             const root = picked.symbol.split(".")[0];
             const sym = isCash ? (ccy === "USD" ? root : `${root}.${ccy}`) : picked.symbol;
             try {
-              await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "", note.trim());
+              // the position screen shows the lot from the add itself, no "Loading lots…" round trip (e2e p02 F11)
+              seedLots(api, await api.addPosition(sym, nq, nc, date || undefined, account, isCash ? label.trim() : "", note.trim()));
               if (!sym.startsWith("$")) void api.warmup(sym);   // first-look intelligence, fire-and-forget
               if (!isCash) void api.refreshNews([picked.symbol]);        // stories land while the user looks around
               onAdded?.();                                               // the app batches this run of adds into one pipeline (intelligence + assessment)
