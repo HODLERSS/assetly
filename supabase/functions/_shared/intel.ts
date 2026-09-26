@@ -309,7 +309,9 @@ export function valuationHits(text: string): string[] {
     if (s && /\b(?:could|would|will|should|might) (?:double|triple|quadruple)\b|\b(?:doubles?|triples?) (?:from here|in value)\b/i.test(s) && !namedSource) { hits.push(raw); continue; }
     // round 7 cards: reassurance and verdicts in the app's voice ("a cooldown after a 31.9% surge, not a thesis
     // break", "a legal headline, not a near-term financial hit", "makes Google Cloud the clear second growth engine")
-    if (s && /\bnot a thesis break\b|\bthesis (?:is |remains |stays )?(?:still )?(?:intact|unchanged|holds|on track)\b|\bnot a (?:near-term |real |material |lasting )?(?:financial )?hit\b|\bthe clear (?:second |next |new |main )?(?:growth )?(?:engine|winner|leader)\b|\ba (?:credible|real|proven|clear) (?:second |next |new )?growth engine\b|\b(?:a )?(?:real |big |huge )?optionality story\b|\b(?:powerful|strong|healthy|intact) (?:longer-term |long-term )?uptrend\b|\batop a (?:powerful|strong|longer-term|long-term)\b|\b(?:stay|staying|remain|remaining|keep|keeping) (?:weighted|overweight|invested|exposed|heavy|concentrated)\b[^.]{0,50}\b(?:beneficial|pays? off|makes sense|wise|smart|the right)\b|\bremains? (?:significantly |very |highly )?beneficial\b|\bjust a (?:cooldown|breather|pause)\b|\ba (?:normal|healthy) (?:breather|pullback|cooldown)\b|\b(?:keeps?|keeping) (?:the |your )?(?:portfolio|book|plan|goals?) on track\b/i.test(s) && !namedSource) { hits.push(raw); continue; }
+    // round 8 newcomer: "Long-term AI and robotics thesis … is intact" (TSLA −17.3% YTD): the CONCEPT, in any order
+    if (s && /\b(?:thesis|story|case|narrative)\b/i.test(s) && /\b(?:intact|holds|holding|unchanged|unbroken|on track|still valid|remains? valid|not broken|still (?:stands|works))\b/i.test(s) && !namedSource && !/\b(?:if|whether|unless|would|could|might|test|tests|tested)\b/i.test(s)) { hits.push(raw); continue; }
+    if (s && /\bnot a thesis break\b|\bthesis (?:is |remains |stays )?(?:still )?(?:intact|unchanged|holds|on track)\b|\bnot a (?:near-term |real |material |lasting )?(?:financial )?hit\b|\bthe clear (?:second |next |new |main )?(?:growth )?(?:engine|winner|leader)\b|\ba (?:credible|real|proven|clear) (?:second |next |new )?growth engine\b|\b(?:a )?(?:real |big |huge )?optionality story\b|\b(?:powerful|strong|healthy|intact) (?:longer-term |long-term )?uptrend\b|\batop a (?:powerful|strong|longer-term|long-term)\b|\b(?:stay|staying|remain|remaining|keep|keeping) (?:weighted|overweight|invested|exposed|heavy|concentrated)\b[^.]{0,50}\b(?:beneficial|pays? off|makes sense|wise|smart|the right)\b|\bremains? (?:significantly |very |highly )?beneficial\b|\bjust a (?:cooldown|breather|pause)\b|\ba (?:normal|healthy) (?:breather|pullback|cooldown)\b|\b(?:keeps?|keeping) (?:the |your )?(?:portfolio|book|plan|goals?) on track\b/i.test(s) && !namedSource && !/\b(?:if|whether|unless)\b/i.test(s)) { hits.push(raw); continue; }
     if (!s || (ATTRIBUTED.test(s) && (!valuationWord || namedSource || debate))) continue;
     // round 4: "a hidden asset the market isn't fully pricing", "17x versus the S&P's 25x leaves cushion", "the
     // long-term story still looks solid" (to "is it on sale?"): verdicts in the app's voice
@@ -1063,7 +1065,8 @@ export function scriptProblems(script: string, sectionsText: string, todayYmd: s
     || historicalClaims(s, src, todayYmd).length > 0
     // round 8 close script: a figure spoken for the wrong subject ("Oracle … more than five point one percent" was the
     // VIX change), checked with spelled numbers read as digits
-    || misplacedScriptFigures(s, src).length > 0);
+    || misplacedScriptFigures(s, src).length > 0
+    || productPushHits(s).length > 0 || promoCharacterisations(s).length > 0);
 }
 
 /** Calendar lines built from the computed estimates, never from the model's wording: "Microsoft earnings
@@ -1240,15 +1243,19 @@ export function parseDividends(body: { chart?: { result?: { events?: { dividends
   const freqDays = gaps.length ? gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : null;
   let nextEx: string | null = null;
   if (freqDays && freqDays >= 20) {
-    let t = Date.parse(last.ymd + "T12:00:00Z") + freqDays * 86400000;
-    // strictly AFTER today (round 6: VOO's "~Sep 25" on Sep 25 read as "buy today to get the dividend")
-    while (t <= Date.parse(todayYmd + "T12:00:00Z")) t += freqDays * 86400000;
-    nextEx = new Date(t).toISOString().slice(0, 10);
-    // the same quarter a year earlier sets the date when it is on file (round 5: KO's Q4 ex-date comes around
-    // Dec 1, not "last + 91" Dec 18): the payment a year before the rhythm's date, plus 364 days
-    const want = t - 364 * 86400000;
-    const yearAgo = pts.map((p) => Date.parse(p.ymd + "T12:00:00Z")).filter((x) => Math.abs(x - want) <= 25 * 86400000).sort((a, b) => Math.abs(a - want) - Math.abs(b - want))[0];
-    if (yearAgo && yearAgo + 364 * 86400000 > Date.parse(todayYmd + "T12:00:00Z")) nextEx = new Date(yearAgo + 364 * 86400000).toISOString().slice(0, 10);
+    // Each rhythm candidate (last + freq, + 2·freq, …) takes the same quarter a year earlier + 364 days when that is on
+    // file (round 5: KO's Q4 ex-date comes around Dec 1, not "last + 91" Dec 18), THEN the first date strictly after
+    // today wins. Round 8: VOO's rhythm date was today (Sep 25), so it stepped to December before the year-ago
+    // check could say Sep 28 (Sep 29 2025 + 364), and the husk said "none in 45 days".
+    const todayT = Date.parse(todayYmd + "T12:00:00Z");
+    const stamps = pts.map((p) => Date.parse(p.ymd + "T12:00:00Z"));
+    for (let k = 1; k <= 8 && !nextEx; k++) {
+      const t = Date.parse(last.ymd + "T12:00:00Z") + k * freqDays * 86400000;
+      const want = t - 364 * 86400000;
+      const yearAgo = stamps.filter((x) => Math.abs(x - want) <= 25 * 86400000).sort((a, b) => Math.abs(a - want) - Math.abs(b - want))[0];
+      const cand = yearAgo ? yearAgo + 364 * 86400000 : t;
+      if (cand > todayT) nextEx = new Date(cand).toISOString().slice(0, 10);
+    }
   }
   // Round 7: a KRX quarterly payer's record date is the quarter's last day and its ex-date the KRX session before
   // it (T+2): Samsung's Q3 2026 ex-date is Tue Sep 29 (record Wed Sep 30), not the year-ago date + 364 (Sep 28)
@@ -1540,7 +1547,7 @@ export function buildHusk(inp: HuskInput, ko: boolean): string {
   const crypto = hs.filter((h) => themeOf(h.symbol, h.kind) === "crypto").reduce((a, h) => a + h.usd, 0) / A * 100;
   const cashPct = inp.cashUsd / A * 100;
   // a theme under half a percent is noise in a mix line ("AI semiconductors 0.0%", round 6 mock)
-  const topThemes = [...themes.entries()].filter(([t, v]) => t !== "other" && v / A * 100 >= 0.5).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const topThemes = [...themes.entries()].filter(([t, v]) => t !== "other" && v / A * 100 >= 0.5).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const cryptoListed = topThemes.some(([t]) => t === "crypto");
   // in date order (round 7: "TSLA Oct 21, AAPL Oct 29, MSFT Oct 28")
   const reports = inp.reports.filter((r) => within(r.range ? r.range[0] : r.est, inp.today, 45) || within(r.est, inp.today, 45))
@@ -2117,4 +2124,82 @@ export function misplacedScriptFigures(script: string, sectionsText: string): st
       return !homes.some((b) => [...subj].some((w) => b.includes(w)));
     });
   });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 8 newcomer: one sanitize() for every generated surface, a product denylist, parenthetical glosses,
+// stale news, headline-anchored news lines
+// ---------------------------------------------------------------------------------------------------------------
+/** Product categories the app never points a reader to (round 8: "Crypto risk: hedge with stablecoin yield platforms to
+ *  smooth volatility" in GAPS & IDEAS). Flagged when suggested (a verb of use, an idea's "gap: product" shape, or a
+ *  purpose like "to smooth / for yield"), or in any idea line. */
+const PRODUCTS = /\b(?:(?:stablecoin |crypto |defi )?yield (?:platforms?|farming|products?|accounts?|vaults?)|stablecoin yields?|staking (?:platforms?|services?|pools?|rewards? programs?)|(?:crypto |defi |p2p )?lending (?:platforms?|protocols?|products?)|leveraged (?:ETFs?|funds?|products?|tokens?)|inverse (?:ETFs?|funds?)|(?:2x|3x|triple|double)[- ]leveraged|(?:covered[- ]call|options?|put[- ]selling|straddle|collar|spread|wheel) (?:strateg(?:y|ies)|income|funds?|ETFs?)|(?:buying|selling|writing|trading) (?:calls|puts|options)|margin (?:loans?|trading|accounts?|borrowing)|on margin|buy now,? pay later|crypto loans?)\b/i;
+export function productPushHits(text: string, ideaSurface = false): string[] {
+  return sentencesOf(text).filter((s) => PRODUCTS.test(s) && (ideaSurface
+    || /\b(?:consider|try|use|using|look (?:at|into)|research|explore|add|adding|via|through|hedge with|switch to|move (?:it |cash )?(?:to|into)|put (?:it |cash )?(?:in|into))\b|:\s*\S|\bto (?:smooth|boost|earn|protect|hedge|juice|enhance)\b|\bfor (?:yield|income|protection|extra return)\b|활용|고려|알아보/i.test(s)));
+}
+
+/** ONE pipeline for every piece of generated reader copy (Ask, briefs incl. ideas and watch items, cards, News lines,
+ *  narration scripts). It removes whole sentences only, keeps lines and bullets, and returns "" when nothing
+ *  survives, so a caller can drop an idea or a card line instead of shipping it. Context-free guards only:
+ *  advice and verdicts (incl. valuation), promo and product pushes, return forecasts, target pace, payment lag,
+ *  circular causes and our own prompt words; then verdict tails, digits and true minus signs. Figure checks that
+ *  need the book (moves, weights, periods) stay at each surface. */
+export function sanitize(text: string, opts: { verdictQuestion?: boolean; ideaSurface?: boolean } = {}): string {
+  const src = stripVerdictTails(dropInstructionEcho(String(text ?? "")));
+  const bad = new Set([...adviceHits(src, { verdictQuestion: opts.verdictQuestion }), ...promoClaims(src), ...promoCharacterisations(src), ...productPushHits(src, opts.ideaSurface),
+    ...returnForecasts(src), ...targetPaceClaims(src), ...paymentLagClaims(src), ...circularCauses(src)].map((x) => bare(x)));
+  const out = bad.size ? perLine(src, (line) => splitSentences(line).filter((x) => !bad.has(bare(x))).join(" ")) : src;
+  return out.trim() ? unicodeMinus(digitsForWritten(out)) : "";
+}
+
+/** A beginner gloss that cannot break grammar: the term stays and its plain meaning follows once, in parentheses
+ *  ("moat (a lasting edge over competitors)"). Round 8: substituted glosses read "defends Amazon's retail lasting
+ *  edge over competitors" and "a wide the biggest companies gap". */
+export function glossParenthetical(text: string, keep: string[] = []): string {
+  let x = String(text ?? "");
+  const done = new Set<string>();
+  // the context-only variants (lookbehind entries: "wide moat" -> "edge") are for substitution; a parenthesis gives the full meaning
+  for (const g of NOVICE_PLAIN.filter((e) => !keep.includes(e.sample) && !e.re.source.startsWith("(?<="))) {
+    if (done.has(g.plain)) continue;
+    const re = new RegExp(g.re.source, g.re.flags.replace("g", ""));
+    const m = re.exec(x);
+    if (!m || m.index === undefined) continue;
+    const after = x.slice(m.index + m[0].length, m.index + m[0].length + 3);
+    if (/^\s?\(/.test(after) || done.has(m[0].toLowerCase())) continue;   // already explained
+    const plain = g.plain.replace(/^(?:its|their) /, "").replace(/^the /, "");
+    x = x.slice(0, m.index + m[0].length) + ` (${plain})` + x.slice(m.index + m[0].length);
+    done.add(g.plain); done.add(m[0].toLowerCase());
+  }
+  return x;
+}
+
+/** A headline about a quarter whose report has already passed ("Ahead Of Q2 Report" in late September, round 8), or
+ *  older than `maxDays`: not news for today. */
+export function staleNewsTitle(title: string, publishedAt: string | null, todayYmd: string, maxDays = 10): boolean {
+  if (publishedAt && Date.parse(todayYmd + "T12:00:00Z") - Date.parse(publishedAt) > maxDays * 86400000) return true;
+  const m = /\b(?:ahead of|before|into|preview(?:ing)?|awaits?|upcoming|expected)\b[^.]{0,30}\bQ([1-4])\b|\bQ([1-4])\b[^.]{0,20}\b(?:preview|expectations|estimates|report (?:is )?(?:coming|due|ahead))\b/i.exec(String(title ?? ""));
+  if (!m) return false;
+  const q = Number(m[1] ?? m[2]);
+  const mo = Number(todayYmd.slice(5, 7));
+  // the quarter whose reports come next: Q3 in Sep-Nov, Q4 in Dec-Feb, Q1 in Mar-May, Q2 in Jun-Aug
+  const upcoming = mo % 3 === 0 ? mo / 3 : Math.ceil(mo / 3) - 1 || 4;
+  return q !== upcoming;
+}
+
+/** News lines stay anchored to their source (round 8: "NVDA CEO warns AI slowdown risk despite hype" for "Nvidia CEO
+ *  Pushes Back On The 'AI Apocalypse'"). Each line is REPLACED by the best-matching source headline for the holding
+ *  it names, cleaned and shortened; a line with no matching headline is dropped. */
+export function anchorNewsLine(line: string, heads: { symbol: string; names: string[]; title: string }[], maxLen = 96): string | null {
+  const named = heads.filter((h) => h.names.some((n) => n && nameIn(line, n)));
+  if (!named.length) return null;
+  const toks = (t: string) => new Set((t.toLowerCase().match(/[a-z0-9$%.]{3,}/g) ?? []).filter((w) => !/^(?:the|and|for|with|its|after|from|this|that|stock|shares)$/.test(w)));
+  const L = toks(line);
+  const best = named.map((h) => { const T = toks(h.title); let n = 0; for (const w of L) if (T.has(w)) n++; return { h, sc: n / Math.max(1, Math.min(L.size, T.size)) }; }).sort((a, b) => b.sc - a.sc)[0];
+  // a line about a holding takes that holding's best-matching headline; one sharing almost nothing is not its source
+  if (!best || best.sc < 0.1) return null;
+  let t = String(best.h.title).replace(/\s*[-|–]\s*(?:Yahoo Finance|Reuters|Bloomberg|MarketBeat|Investing\.com|Seeking Alpha|The Motley Fool|Benzinga|CNBC|Barron's)\s*$/i, "").replace(/\s*\((?:NASDAQ|NYSE|KRX|KOSPI):[A-Z0-9.]+\)/gi, "").trim();
+  if (t.length > maxLen) t = t.slice(0, maxLen).replace(/\s+\S*$/, "") + "…";
+  const sym = best.h.symbol.replace(/\.(?:KS|KQ)$/, "");
+  return [sym, ...best.h.names].some((n) => n && t.toLowerCase().includes(n.toLowerCase())) ? t : `${best.h.names[0]}: ${t}`;
 }
