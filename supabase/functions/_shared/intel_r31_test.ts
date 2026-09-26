@@ -2,6 +2,24 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { fixBookDayClaims, fixCurrentPriceClaims, fixGroupSharePctFirst, intentAnswer, type IntentRow, sessionDayLine, TECH_GROUP_LABEL, dualClassFacts } from "./intel.ts";
 
+Deno.test("r31 final: ETF intent, honest fallback for non-performance questions, stocks-and-funds base", async () => {
+  const { isPerformanceQuestion, honestFallback, fixEquityBaseClaims } = await import("./intel.ts");
+  const rs: IntentRow[] = [
+    { name: "SOXL", symbol: "SOXL", kind: "etf", usd: 6058, weight: 23.4, qty: 40, currency: "USD", price: 151.45, avgCost: 35, costUsd: 1400, glUsd: 4658, dayPct: 3.5, dayUsd: 204, leveraged: true, tech: true },
+    { name: "VOO", symbol: "VOO", kind: "etf", usd: 3554, weight: 13.8, qty: 5, currency: "USD", price: 710, avgCost: 450, costUsd: 2250, glUsd: 1304, dayPct: 0.5, dayUsd: 18 },
+    { name: "AAPL", symbol: "AAPL", kind: "stock", usd: 3411, weight: 13.2, qty: 10, currency: "USD", price: 341, avgCost: 180, costUsd: 1800, glUsd: 1611, dayPct: 0.1, dayUsd: 3 },
+    { name: "ETH", symbol: "ETH", kind: "crypto", usd: 2687, weight: 10.4, qty: 1, currency: "USD", price: 2687, avgCost: 2500, costUsd: 2500, glUsd: 187, dayPct: -0.4, dayUsd: -11 },
+  ];
+  const e = intentAnswer("What is an ETF, and which of mine are ETFs?", rs, [], { totalUsd: 25837, sessionLabel: "in Friday's session", athTracked: false })!;
+  assert(e.includes("An ETF (exchange-traded fund)") && e.includes("Your ETFs and funds: SOXL 23.4% (a 3x leveraged fund), VOO 13.8%") && e.includes("Single stocks: AAPL") && e.includes("Crypto: ETH"), e);
+  assert(!isPerformanceQuestion("What is an ETF, and which of mine are ETFs?"));
+  assert(isPerformanceQuestion("How did I do this week?"));
+  const h = honestFallback(rs, 11.6);
+  assert(h.startsWith("I couldn't put a complete answer together just now. Here's what I can tell you:") && h.includes("SOXL (leveraged ETF) 23.4%") && h.includes("ETH (crypto)"), h);
+  assertEquals(fixEquityBaseClaims("Stocks and funds lose about $9,700 from the $22,837 invested there.", 20150, 2687), "Stocks and funds lose about $9,700 from the $20,150 invested there.");
+  assertEquals(fixEquityBaseClaims("Stocks and funds: $20,150.", 20150, 2687), "Stocks and funds: $20,150.");
+});
+
 Deno.test("r31 brief: the live row's exact wording is caught", async () => {
   const { productVersionClaims, lowYieldIncomeClaims } = await import("./intel.ts");
   assertEquals(productVersionClaims("Apple rose on iPhone 17 launch optimism.", "Apple's iPhone 18 lineup ships in stores").length, 1);

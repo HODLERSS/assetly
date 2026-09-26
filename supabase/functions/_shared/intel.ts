@@ -1807,7 +1807,8 @@ function focusHusk(inp: HuskInput, ko: boolean): string {
   }
   return [
     `• ${f.name} is ${pct1(f.weight)} of your portfolio (${usdText(f.usd)})${f.gainUsd !== null ? `, ${f.gainUsd >= 0 ? "up" : "down"} ${money(f.gainUsd)} since you bought` : ""}.`,
-    `• Moves: ${[f.dayPct !== null ? `today ${signed1(f.dayPct)}` : "", f.r1m !== null ? `1 month ${signed1(f.r1m)}` : "", f.r3m !== null ? `3 months ${signed1(f.r3m)}` : ""].filter(Boolean).join(", ") || "no window figures yet"}.`,
+    // final n2: "Moves: no window figures yet." read as broken; with no figure loaded the line is left out
+    ((m) => m ? `• Moves: ${m}.` : "")([f.dayPct !== null ? `today ${signed1(f.dayPct)}` : "", f.r1m !== null ? `1 month ${signed1(f.r1m)}` : "", f.r3m !== null ? `3 months ${signed1(f.r3m)}` : ""].filter(Boolean).join(", ")),
     f.report ? `• Next report expected ${f.report} (estimate).` : "",
     f.divAnnual ? `• Dividend: about ${usdText(f.divAnnual)} a year${f.divCurrent ? " at the current rate" : ""}.` : "",
     sell ? `• What a seller usually weighs here: the tax on the gain, whether ${pct1(f.weight)} in ${f.name} is more than you want in one name, and whether the reason you bought it still holds.`
@@ -3498,13 +3499,15 @@ const INTENT = {
   stress: /\b(?:if|what happens|what if|suppose|say)\b[^?]{0,60}?\b(?:falls?|drops?|crash(?:es)?|declines?|tanks?|loses?|goes down|is down|plunges?|sinks?|corrects?)\s+(?:by\s+|another\s+)?(\d+(?:\.\d+)?)\s?%|(\d+(?:\.\d+)?)\s?%\s*(?:drop|fall|crash|decline|correction|하락|폭락|빠지)/i,
   ath: /\ball[- ]time highs?\b|\brecord (?:high|close)s?\b|\bnew highs?\b|\bATH\b|신고가|사상 최고/i,
   rank: /\b(smallest|largest|biggest|tiniest)\b[^?]{0,25}?\b(?:holding|position|stake|investment)s?\b|가장 (작은|큰) (?:종목|보유|비중)/i,
+  // final M1: "What is an ETF, and which of mine are ETFs?" got the generic performance summary
+  etf: /\bwhat(?:'s| is| are)\s+(?:an?\s+)?(?:ETFs?|index funds?|funds?)\b|\bwhich\b[^?]{0,30}\b(?:ETFs?|funds?)\b|\b(?:do i|i)\s+(?:own|have|hold)\s+(?:any\s+)?(?:ETFs?|funds?)\b|\bmy (?:ETFs|funds)\b|ETF(?:가|는|이)?\s*(?:뭐|무엇)|어떤 ETF/i,
   // r14 A: "What's my biggest risk right now?" (a starter chip) got the generic performance summary
   risk: /\b(?:biggest|main|largest|top|key|greatest|major)\s+risks?\b|\bhow risky\b|\btoo risky\b|\brisk(?:s|iest)? (?:in|to|of) my\b|가장 큰 (?:위험|리스크)|위험한가|리스크가/i,
 };
 /** The intent of a data question the code can answer on its own, or null. */
 export function questionIntent(q: string): keyof typeof INTENT | null {
   const t = String(q ?? "");
-  for (const k of ["tax", "basis", "why", "stress", "ath", "rank", "risk"] as const) if (INTENT[k].test(t)) return k;
+  for (const k of ["tax", "basis", "why", "stress", "ath", "etf", "rank", "risk"] as const) if (INTENT[k].test(t)) return k;
   return null;
 }
 
@@ -3589,6 +3592,16 @@ export function intentAnswer(q: string, rows: IntentRow[], focus: IntentRow[], c
     L.push(ko ? "• 기준: 저장된 약 5년치 종가입니다." : "• Based on the roughly five years of closes on file.");
     return L.join("\n");
   }
+  if (intent === "etf") {
+    const isFund = (r: IntentRow) => /^(?:etf|fund|mutual ?fund|index)$/i.test(r.kind);
+    const funds = bySize.filter(isFund), stocks = bySize.filter((r) => /^(?:stock|equity)$/i.test(r.kind)), coins = bySize.filter((r) => r.kind === "crypto");
+    L.push(ko ? "• ETF(상장지수펀드)는 여러 주식이나 자산을 한 바구니에 담아 주식처럼 거래되는 펀드입니다." : "• An ETF (exchange-traded fund) is one fund holding many stocks or other assets, and it trades like a single stock.");
+    L.push(funds.length ? (ko ? `• 보유 ETF/펀드: ${funds.map((r) => `${r.name} ${w(r)}${r.leveraged ? " (레버리지)" : ""}`).join(", ")}.` : `• Your ETFs and funds: ${funds.map((r) => `${r.name} ${w(r)}${r.leveraged ? " (a 3x leveraged fund)" : ""}`).join(", ")}.`)
+      : (ko ? "• 보유 중인 ETF나 펀드는 없습니다." : "• You don't hold any ETFs or funds."));
+    if (stocks.length) L.push(ko ? `• 개별 주식: ${stocks.map((r) => r.name).join(", ")}.` : `• Single stocks: ${stocks.map((r) => r.name).join(", ")}.`);
+    if (coins.length) L.push(ko ? `• 코인: ${coins.map((r) => r.name).join(", ")}.` : `• Crypto: ${coins.map((r) => r.name).join(", ")}.`);
+    return L.join("\n");
+  }
   if (intent === "risk") {
     // r14 A: the structure facts a risk answer rests on: the largest holding, the tech and chip share (one TECH_THEMES
     // set), a held leveraged fund, and the cash cushion
@@ -3657,3 +3670,28 @@ export function fixGroupSharePctFirst(text: string, groups: { label: RegExp; val
 }
 /** One label for the tech-and-chip group, every surface. */
 export const TECH_GROUP_LABEL = /\b(?:tech(?:nology)?(?:\s+(?:and|&)\s+(?:chips?|semiconductors?|semis))?|(?:chips?|semiconductors?)\s+(?:and|&)\s+tech(?:nology)?)(?: stocks| names| holdings| exposure| share| companies)?/i;
+
+/** final M1: the generic performance summary is for performance questions only. */
+export const isPerformanceQuestion = (q: string): boolean => /\b(?:perform\w*|returns?|gain(?:s|ed)?|los(?:s|ses|t|ing)|up|down|mov(?:e|es|ed|ing)|how (?:did|am|is|are|was|were|have) (?:i|my|we|it|they)|doing|today|this (?:week|month|year)|YTD|year to date|change[sd]?|rall\w*|drop\w*|fell|rose)\b|수익|손익|올랐|내렸|성과|어땠/i.test(String(q ?? ""));
+
+/** final M1: when no code answer fits the question, an honest short answer with the book's basic facts. */
+export function honestFallback(rows: IntentRow[], cashPct: number | null, ko = false): string {
+  const kindWord = (r: IntentRow) => r.kind === "crypto" ? (ko ? "코인" : "crypto") : /^(?:etf|fund|mutual ?fund|index)$/i.test(r.kind) ? (r.leveraged ? (ko ? "레버리지 ETF" : "leveraged ETF") : "ETF") : (ko ? "주식" : "stock");
+  const list = [...rows].sort((a, b) => b.usd - a.usd).slice(0, 8).map((r) => `${r.name} (${kindWord(r)}) ${r.weight.toFixed(1)}%`);
+  return (ko ? ["지금은 완전한 답변을 드리지 못했습니다. 확실히 말씀드릴 수 있는 것은 이렇습니다:", `• 보유 종목: ${list.join(", ")}.`, ...(cashPct !== null ? [`• 현금: ${cashPct.toFixed(1)}%.`] : []), "• 질문을 조금 바꿔 다시 물어봐 주세요."]
+    : ["I couldn't put a complete answer together just now. Here's what I can tell you:", `• Your holdings: ${list.join(", ")}.`, ...(cashPct !== null ? [`• Cash: ${cashPct.toFixed(1)}% of assets.`] : []), "• Try asking again, or rephrase the question."]).join("\n");
+}
+
+/** final M2: "Stocks and funds lose about $9,700 from the $22,837 invested there" ($20,150; $22,837 added ETH, which the
+ *  next line keeps flat). A stocks-and-funds base that equals stocks + funds + crypto is set to stocks + funds. */
+export function fixEquityBaseClaims(text: string, equityUsd: number, cryptoUsd: number): string {
+  if (!(cryptoUsd > 0) || !(equityUsd > 0)) return String(text ?? "");
+  const wrong = equityUsd + cryptoUsd;
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => {
+    if (!/\bstocks?\s*(?:and|&|\+|,)\s*(?:funds?|ETFs?)\b|\b(?:funds?|ETFs?)\s*(?:and|&)\s*stocks?\b|주식(?:과|와)?\s*(?:펀드|ETF)/i.test(sen)) return sen;
+    return sen.replace(/\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g, (m: string, d: string) => {
+      const v = Number(d.replace(/,/g, ""));
+      return Math.abs(v - wrong) <= wrong * 0.01 && Math.abs(v - equityUsd) > equityUsd * 0.03 ? `$${Math.round(equityUsd).toLocaleString("en-US")}` : m;
+    });
+  }).join(" "));
+}
