@@ -60,3 +60,28 @@ Deno.test("r9 prev: implausible bases are rejected", () => {
   assertEquals(resolvePrevClose({ ...base, historyClose: 5.05, providerPrev: 505.18 }), 505.18);
   assertEquals(resolvePrevClose({ ...base, providerPrev: 1200 }), null);
 });
+
+Deno.test("r9 prev (root cause): after hours, today's daily bar has a null close; the base is still yesterday's close", async () => {
+  const { parseYahooDaily } = await import("./history.ts");
+  const { prevCloseFromBars } = await import("./prevclose.ts");
+  // Yahoo 1y daily: bars start at 9:30 ET; Friday's close is null until the next morning
+  const at = (ymd: string) => Date.parse(ymd + "T13:30:00Z") / 1000;
+  const body = { chart: { result: [{ meta: { exchangeTimezoneName: "America/New_York", currency: "USD" },
+    timestamp: [at("2026-09-22"), at("2026-09-23"), at("2026-09-24"), at("2026-09-25")],
+    indicators: { quote: [{ close: [250, 251.0, 252.2, null] }] } }] } };
+  const bars = parseYahooDaily(body, Date.parse("2026-09-26T00:30:00Z"));
+  const asOf = "2026-09-25T20:00:00Z";                       // Friday 4:00 PM ET print
+  // the old rule ("last bar of a different date than the last bar") gave 251.0, the Wednesday close
+  assertEquals(prevCloseFromBars(bars, asOf, "US"), 252.2);
+  assertEquals(resolvePrevClose({ price: 256.06, asOf, providerPrev: 252.2, stored: null, historyClose: prevCloseFromBars(bars, asOf, "US"), mkt: "US" }), 252.2);
+  // Saturday: the same series, the same base
+  assertEquals(prevCloseFromBars(bars, "2026-09-26T15:00:00Z", "US"), 252.2);
+  // the previous session's bar missing: no bar-based base (the caller falls back to the provider's range=1d prev)
+  assertEquals(prevCloseFromBars(bars.filter((b) => !b.ts.startsWith("2026-09-24")), asOf, "US"), null);
+});
+
+Deno.test("r9 prev: a wrong same-session stored base loses to the provider and to history", () => {
+  const wrong = { price: 256.0, prev_close: 251.0, as_of: "2026-09-25T19:00:00Z" };     // written by the old symbol-search
+  assertEquals(resolvePrevClose({ ...base, price: 256.06, asOf: "2026-09-25T20:00:00Z", stored: wrong, providerPrev: 252.2 }), 252.2);
+  assertEquals(resolvePrevClose({ ...base, price: 256.06, asOf: "2026-09-25T20:00:00Z", stored: wrong, providerPrev: null, historyClose: 252.2 }), 252.2);
+});

@@ -157,57 +157,57 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Own-data previous close: when the session date (UTC) rolls over, yesterday's final
-  // stored price IS the previous close; within a session, keep the stored prev. Yahoo's
-  // prev/changePercent fields have repeatedly shipped garbage (BTC 110k, META year-ago
-  // close) — our own tick history is the source of truth the charts already use.
+  // Own-data previous close: our history's close of the previous session first (see below). Yahoo's
+  // prev/changePercent fields have shipped garbage (BTC 110k, META year-ago close), so the provider's
+  // previousClose is a plausibility-checked fallback, not the first source.
   const { data: stored } = await admin.from("prices")
     .select("symbol, price, prev_close, as_of").in("symbol", [...quotes.keys()]);
   const byStored = new Map((stored ?? []).map((s) => [s.symbol, s]));
   const kindOf = new Map((symbols ?? []).map((s) => [s.symbol, { kind: s.kind as string | null, currency: (s as { currency?: string | null }).currency ?? null }]));
   // Round 9: the previous close is the LAST COMPLETED SESSION's close (_shared/prevclose.ts), never a stale stored row.
-  // Our own close for that session is looked up when the base can change: a new symbol, a new session, a missing base,
-  // or the one-off correction (?fixprev=1 / body.fixprev with the internal token) for rows written by the old rule.
-  let fixAll = false;
-  {
-    const b = req.method === "POST" ? await req.clone().json().catch(() => ({})) : {};
-    if (url.searchParams.get("fixprev") === "1" || b?.fixprev === true) {
-      let itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
-      if (!itok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itok = data ?? ""; }
-      fixAll = !!itok && req.headers.get("x-internal-token") === itok;
-    }
-  }
-  const histClose = async (sym: string, asOf: string, mkt: "US" | "KR" | null): Promise<number | null> => {
-    const w = prevSessionWindow(asOf, mkt);
-    const { data } = await admin.from("price_history").select("price, ts").eq("symbol", sym)
-      .gte("ts", new Date(w.from).toISOString()).lte("ts", new Date(w.to).toISOString()).order("ts", { ascending: true }).limit(400);
-    const rows = (data ?? []) as { price: number; ts: string }[];
-    if (!rows.length) return null;
-    // the bar stamped at (or the last tick before) the close
-    const closeT = w.from + 30 * 60000;
-    const atOrBefore = rows.filter((r) => Date.parse(r.ts) <= (mkt === null ? w.to : closeT + 60000));
-    const pick = atOrBefore.length ? atOrBefore[atOrBefore.length - 1] : rows[0];
-    return Number(pick.price) > 0 ? Number(pick.price) : null;
-  };
-  let fixed = 0;
-  const needs: Promise<void>[] = [];
+  // It is RECOMPUTED on every run from our own history (the close tick / daily bar of the session before the quote's
+  // session), so a wrong stored base heals on the next run with no manual trigger: symbol-search wrote the close of
+  // two sessions back after hours (Yahoo's daily bar for today has a null close until the next morning), and the old
+  // rule kept that stored prev all weekend. One batched history read per market window, not one per symbol.
+  const byWindow = new Map<string, { from: number; cut: number; syms: string[] }>();
+  const ctx = new Map<string, { mkt: "US" | "KR" | null; key: string }>();
   for (const q of quotes.values()) {
     if (q.symbol.endsWith("=F") || q.symbol.startsWith("^") || /^USD[A-Z]{3}$/.test(q.symbol)) continue;   // futures / indices / FX keep their own rules below
     const k = kindOf.get(q.symbol);
     const mkt = marketOf(q.symbol, k?.kind ?? null, k?.currency ?? q.currency);
-    const st = byStored.get(q.symbol) ?? null;
-    const sameSession = !!st?.as_of && sessionsOf(String(st.as_of), mkt).session === sessionsOf(q.as_of, mkt).session;
-    const lookup = fixAll || !st || !sameSession || st.prev_close === null;
-    needs.push((async () => {
-      const hc = lookup ? await histClose(q.symbol, q.as_of, mkt).catch(() => null) : null;
-      const prev = resolvePrevClose({ price: q.price, asOf: q.as_of, providerPrev: q.prev_close, stored: st ? { price: Number(st.price), prev_close: st.prev_close === null ? null : Number(st.prev_close), as_of: st.as_of } : null, historyClose: hc, mkt });
-      if (fixAll && st && prev !== null && st.prev_close !== null && Math.abs(prev - Number(st.prev_close)) > 1e-9) fixed++;
-      q.prev_close = prev;
-      q.change_pct = prev !== null ? ((q.price / prev) - 1) * 100 : null;
-      (q as Quote & { _done?: boolean })._done = true;
-    })());
+    const w = prevSessionWindow(q.as_of, mkt);
+    // the close tick (price-sync stamps it at regularMarketTime = the close) or the daily bar stamped at the close
+    const cut = mkt === null ? w.to : w.from + 31 * 60000;
+    const key = `${w.from}:${cut}`;
+    const g = byWindow.get(key) ?? { from: w.from, cut, syms: [] };
+    g.syms.push(q.symbol);
+    byWindow.set(key, g);
+    ctx.set(q.symbol, { mkt, key });
   }
-  await Promise.all(needs);
+  const closeOf = new Map<string, number>();
+  await Promise.all([...byWindow.values()].map(async (g) => {
+    for (let off = 0; off < 20000; off += 1000) {
+      const { data } = await admin.from("price_history").select("symbol, price, ts").in("symbol", g.syms)
+        .gte("ts", new Date(g.from).toISOString()).lte("ts", new Date(g.cut).toISOString())
+        .order("ts", { ascending: true }).range(off, off + 999);
+      const rows = (data ?? []) as { symbol: string; price: number; ts: string }[];
+      for (const r of rows) if (Number(r.price) > 0) closeOf.set(`${g.from}:${g.cut}|${r.symbol}`, Number(r.price));   // ascending: the last write wins
+      if (rows.length < 1000) break;
+    }
+  })).catch(() => {});
+  let corrected = 0;
+  for (const q of quotes.values()) {
+    const c = ctx.get(q.symbol);
+    if (!c) continue;
+    const st = byStored.get(q.symbol) ?? null;
+    const hc = closeOf.get(`${c.key}|${q.symbol}`) ?? null;
+    const prev = resolvePrevClose({ price: q.price, asOf: q.as_of, providerPrev: q.prev_close, stored: st ? { price: Number(st.price), prev_close: st.prev_close === null ? null : Number(st.prev_close), as_of: st.as_of } : null, historyClose: hc, mkt: c.mkt });
+    const sameSession = !!st?.as_of && sessionsOf(String(st.as_of), c.mkt).session === sessionsOf(q.as_of, c.mkt).session;
+    if (sameSession && prev !== null && st?.prev_close != null && Math.abs(prev - Number(st.prev_close)) > 1e-9) corrected++;
+    q.prev_close = prev;
+    q.change_pct = prev !== null ? ((q.price / prev) - 1) * 100 : null;
+    (q as Quote & { _done?: boolean })._done = true;
+  }
   for (const q of quotes.values()) {
     if ((q as Quote & { _done?: boolean })._done) { delete (q as Quote & { _done?: boolean })._done; continue; }
     const st = byStored.get(q.symbol);
@@ -243,5 +243,5 @@ Deno.serve(async (req) => {
     const hist = rows.map((q) => ({ symbol: q.symbol, ts: q.as_of, price: q.price }));
     await admin.from("price_history").upsert(hist, { onConflict: "symbol,ts" });
   }
-  return Response.json({ ok: true, requested: targets.length, wrote, missed: targets.length - wrote, ...(fixAll ? { corrected: fixed } : {}) });
+  return Response.json({ ok: true, requested: targets.length, wrote, missed: targets.length - wrote, corrected });
 });

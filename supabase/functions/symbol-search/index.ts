@@ -5,6 +5,7 @@
 // The 1-min price cron then keeps it fresh (held or recently-created symbols).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { parseYahooDaily, parseYahooWeekly } from "../_shared/history.ts";
+import { prevCloseFromBars, resolvePrevClose } from "../_shared/prevclose.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
@@ -147,32 +148,35 @@ async function yahooChart(yahoo: string): Promise<ChartData | null> {
   const res = await fetchChart(yahoo, "1y", "1d");
   const meta = res?.meta;
   if (!meta || !(meta.regularMarketPrice > 0)) return null;
-  const daily = chartPoints(res!);
-  // Previous close = the last daily close of the session BEFORE the latest one in the
-  // series. meta.chartPreviousClose is the close before the RANGE START (a year ago
-  // here) — using it produced fake -26% day changes. Derive from the data instead.
-  let prevClose: number | null = null;
-  if (daily.length >= 2) {
-    const lastDay = daily[daily.length - 1].ts.slice(0, 10);
-    for (let i = daily.length - 1; i >= 0; i--) {
-      if (daily[i].ts.slice(0, 10) !== lastDay) { prevClose = daily[i].price; break; }
-    }
-  }
   // Stored history is stamped at each bar's CLOSE (a daily bar at its session close, a weekly bar at its
   // Friday close). Yahoo stamps both at the bar's START, and storing that put the Aug 25 close at 13:30 UTC
   // and a week's Friday close on its Monday. Weekly bars only fill what the daily year does not cover.
   const dailyClosed = parseYahooDaily({ chart: { result: [res!] } });
   const history = [...dailyClosed];
-  const [weekly, intra] = await Promise.all([fetchChart(yahoo, "5y", "1wk"), fetchChart(yahoo, "5d", "15m")]);
+  const [weekly, intra, day] = await Promise.all([fetchChart(yahoo, "5y", "1wk"), fetchChart(yahoo, "5d", "15m"), fetchChart(yahoo, "1d", "1m")]);
   if (weekly) history.push(...parseYahooWeekly({ chart: { result: [weekly] } }, Date.now(), dailyClosed.length ? Date.parse(dailyClosed[0].ts) : Infinity));
   if (intra) history.push(...chartPoints(intra));
   history.sort((a, b) => a.ts.localeCompare(b.ts));
+  // Previous close = the close of the session BEFORE the quote's session (round 9 root cause). The old rule took the
+  // last daily bar of a date other than the last bar's; after hours today's daily bar has a null close, so that was
+  // the close of TWO sessions back, written to the shared prices row for every user. Now: the daily bar of the
+  // previous session, else Yahoo's range=1d chartPreviousClose. (meta.chartPreviousClose of the 1y range is the close
+  // before the range start, a year ago: it produced fake -26% moves and is never used.)
+  const asOf = new Date((meta.regularMarketTime ?? Date.now() / 1000) * 1000).toISOString();
+  const tz = String(meta.exchangeTimezoneName ?? "");
+  const mkt = meta.instrumentType === "CRYPTOCURRENCY" || tz === "UTC" ? null : tz === "Asia/Seoul" ? "KR" as const : "US" as const;
+  const dm = day?.meta;
+  const prevClose = resolvePrevClose({
+    price: meta.regularMarketPrice, asOf, stored: null, mkt,
+    historyClose: prevCloseFromBars(dailyClosed, asOf, mkt),
+    providerPrev: Number(dm?.chartPreviousClose ?? dm?.previousClose) > 0 ? Number(dm?.chartPreviousClose ?? dm?.previousClose) : null,
+  });
   return {
     price: meta.regularMarketPrice,
     prev_close: prevClose,
     currency: meta.currency ?? "USD",
     market_state: "unknown",
-    as_of: new Date((meta.regularMarketTime ?? Date.now() / 1000) * 1000).toISOString(),
+    as_of: asOf,
     history,
     name: (meta.longName || meta.shortName || null) as string | null,
   };
@@ -219,9 +223,13 @@ Deno.serve(async (req) => {
     };
     const { error: sErr } = await admin.from("symbols").upsert(row, { onConflict: "symbol" });
     if (sErr) return json({ ok: false, error: sErr.message }, 500);
+    // a row price-sync already wrote for the same or a later time is not overwritten (round 9: adding a held ticker
+    // after hours replaced the shared, correct row for every user)
+    const { data: cur } = await admin.from("prices").select("as_of").eq("symbol", row.symbol).maybeSingle();
+    const fresher = !!cur?.as_of && Date.parse(String(cur.as_of)) >= Date.parse(chart.as_of);
     const rawPrev = chart.prev_close;
     const prev = rawPrev !== null && rawPrev > 0 && Math.abs(chart.price / rawPrev - 1) <= 0.5 ? rawPrev : null;
-    const { error: pErr } = await admin.from("prices").upsert({
+    const { error: pErr } = fresher ? { error: null } : await admin.from("prices").upsert({
       symbol: row.symbol, price: chart.price, prev_close: prev,
       change_pct: prev ? ((chart.price / prev) - 1) * 100 : null,
       currency, market_state: chart.market_state, as_of: chart.as_of, source: "yahoo-v8-chart",
