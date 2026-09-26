@@ -321,6 +321,21 @@ Deno.serve(async (req) => {
     // run in (body.tts_test) to produce real audio for a demo, which is the only way to hear a fixture book.
     if (!scriptOnly && testIds.has(row.user_id) && !(isInternal && body.tts_test === true)) continue;
     if (elapsed() > 110) { errors.push("wall clock; remaining rows next sweep"); break; }
+    // Round 9 intelligence: the showcase's Listen read a script written for an EARLIER version of the row (a narration
+    // started at 00:32:08 landed on the text rewritten at 00:32:28). The script and audio are written only while the
+    // row still carries the text they were made from; otherwise the newer version's own narration owns the row.
+    const readText = JSON.stringify(row.sections);
+    const unchanged = async () => {
+      try {
+        const { data } = await admin.from("daily_briefs").select("sections").eq("id", row.id).maybeSingle();
+        return !!data && JSON.stringify((data as { sections?: unknown }).sections) === readText;
+      } catch { return false; }
+    };
+    const writeIfSame = async (patch: Record<string, unknown>) => {
+      if (!(await unchanged())) { errors.push(`${String(row.user_id).slice(0, 8)}: text changed while narrating; left to the newer version`); return false; }
+      await admin.from("daily_briefs").update(patch).eq("id", row.id);
+      return true;
+    };
     try {
       const s = briefText(row.sections);
       const dayLine = new Date(String(row.brief_date) + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
@@ -498,7 +513,7 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
           const heard = kept.join(" ").replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
           console.log(`narrate: ${bad.length} script sentence(s) failed the brief guards; ${heard} words left`);
           spoken = heard >= Math.round(spec.floor * 0.7) ? kept.join(" ") : null;
-          if (savedScript && spoken) await admin.from("daily_briefs").update({ script: spoken }).eq("id", row.id);
+          if (savedScript && spoken && !(await writeIfSame({ script: spoken }))) continue;
         }
       }
       if (!spoken) { spoken = fallbackScript(s, dayLine, ed); usedFallback = true; }
@@ -508,7 +523,7 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
         spoken = roundEar(spoken);
         spoken = sayNames(earNumbers(spoken.replace(/(\d+(?:\.\d+)?)\s?percent/gi, "$1%").replace(/(\d[\d,]*(?:\.\d+)?)\s?dollars/gi, "$$$1")), names);   // normalize then round: every spoken number comes out rounded, tickers come out as company names
         if (!/(talk soon|see you|that's your|that’s your)/i.test(spoken.slice(-120))) spoken += ` <break time="0.6s" /> ${isAssess ? "That's your assessment." : "That's your brief."} Talk soon.`;
-        await admin.from("daily_briefs").update({ script: spoken }).eq("id", row.id);
+        if (!(await writeIfSame({ script: spoken }))) continue;
       }
       if (scriptOnly) { scripts[`${row.brief_date}-${ed}`] = spoken; narrated++; continue; }
       if (ttsLeft !== null && ttsLeft < spoken.length + 100) { errors.push(`${String(row.user_id).slice(0, 8)}: tts quota (${ttsLeft} chars left); script saved for the device voice`); continue; }
@@ -529,7 +544,7 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
       const path = `${row.user_id}/${row.brief_date}-${ed}.mp3`;
       const { error: upE } = await admin.storage.from("briefs-audio").upload(path, audio, { contentType: "audio/mpeg", upsert: true });
       if (upE) { errors.push(`${String(row.user_id).slice(0, 8)}: upload ${upE.message}`); continue; }
-      await admin.from("daily_briefs").update({ audio_path: path }).eq("id", row.id);
+      if (!(await writeIfSame({ audio_path: path }))) continue;
       if (ttsLeft !== null) ttsLeft -= spoken.length;
       narrated++;
       if (usedFallback) errors.push(`${String(row.user_id).slice(0, 8)}: fallback script`);   // informational
