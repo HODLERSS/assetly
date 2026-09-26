@@ -19,6 +19,14 @@ export function rowDayPct(r: Pick<PortfolioRow, "value" | "change_pct" | "day_ch
   return basis > 0 ? (r.day_change / basis) * 100 : r.change_pct;
 }
 
+/** When the same-day rule zeroes a row's move (every lot bought in that session at its price), the move is not the
+ *  market's: "AAPL 0.00%" on a weekend beside a +1.53% Friday read as wrong data (e2e p10). The label says what the
+ *  figure is: "since your buy (Fri)". Null when the row moved, or has no same-day lot. */
+export function sinceBuyLabel(r: Pick<PortfolioRow, "symbol" | "kind" | "as_of" | "value" | "change_pct" | "day_change">, now: Date = new Date()): string | null {
+  if (r.day_change === undefined || rowDayPct(r) !== 0) return null;
+  return `since your buy (${priceSession(r, now).weekday})`;
+}
+
 /** Lots bought in the session the row's move belongs to move from their cost, not from the prior close. NVDA and
  *  QQQ bought at the close with "Use today's price" showed "+$20 today" beside "$0 all time" (r6 newcomer m5).
  *  The session date is the market's own (priceSession), which is how "Use today's price" dates a lot. Rows with

@@ -63,6 +63,10 @@ function loadTurns(): Turn[] {
   } catch { return []; }
 }
 
+/** The server's honest fallback ("I couldn't put a complete answer together…", or its Korean form): a mirror of
+ *  _shared/intel.ts isHonestFallback, so the client can offer to ask again. */
+export const isHonestFallback = (t: string): boolean => /^(?:I couldn't put a complete answer together|지금은 완전한 답변을 드리지 못했습니다)/.test(String(t ?? "").trim());
+
 const NARROW_Q = "(max-width: 359px)";
 const isNarrow = (): boolean => { try { return window.matchMedia(NARROW_Q).matches; } catch { return false; } };
 const subscribeNarrow = (cb: () => void) => {
@@ -166,6 +170,12 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
               <div className="bubble ai" data-testid="ask-answer" role="status" aria-live="polite" aria-atomic="true">
                 <Md text={t.a} />
                 <p className="bubble-foot">{notAdvice()}</p>
+              </div>
+            )}
+            {/* the honest fallback is a stub, not an answer: one tap asks the same question again (e2e p10 F2) */}
+            {i === turns.length - 1 && !busy && t.a && !t.error && isHonestFallback(t.a) && (
+              <div className="chips" style={{ padding: 0 }}>
+                <button className="chip" data-testid="ask-try-again" onClick={() => retry(i)}>Try again</button>
               </div>
             )}
             {t.error && (

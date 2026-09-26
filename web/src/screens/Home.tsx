@@ -11,7 +11,7 @@ import { convertCcy, glClass, labelParts, money, moneyClass, moneyExact, priceCo
 import { Icon } from "../components/Icon";
 import { accountTag, isRetirement } from "../lib/accounts";
 import { formatQty } from "../lib/numbers";
-import { dayGroups, isHeld, marketBreakdown, rowDayChange, rowDayPct } from "../lib/portfolio";
+import { dayGroups, isHeld, marketBreakdown, rowDayChange, rowDayPct, sinceBuyLabel } from "../lib/portfolio";
 
 // Canvas 2a: net worth, movers, market pulse.
 const DETAIL_KEY = "assetly-nw-detail";
@@ -318,7 +318,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
                 <span className="num">{r.kind === "debt" ? signedMoney(-(rv ?? 0), rc) : money(rv, rc)}</span>
                 {/* a balance has no daily move: "0.00% ($0) today" on cash was noise */}
                 {r.kind !== "cash" && r.kind !== "debt" && (<><br />
-                <span className={`num sub ${glClass(rowDayPct(r))}`}>{signedPct(rowDayPct(r))}{r.change_pct !== null && (() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} <span className="row-session">{moveSession(r).label}</span>{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
+                <span className={`num sub ${glClass(rowDayPct(r))}`}>{signedPct(rowDayPct(r))}{r.change_pct !== null && (() => { const [dv, dc] = show(rowDayChange(r), r); return <> ({signedMoneyCompact(dv, dc)})</>; })()} <span className="row-session">{sinceBuyLabel(r) ?? moveSession(r).label}</span>{isLive(r) && <span className="live-dot" aria-hidden="true" />}</span></>)}
               </span>
             </button>
           );

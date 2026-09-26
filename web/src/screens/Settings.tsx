@@ -3,6 +3,7 @@ import type { Api, PortfolioRow, Profile } from "../lib/api";
 import { INVESTOR_DEFAULT } from "../lib/api";
 import { InvestorQuiz, investorLabel } from "../components/InvestorQuiz";
 import { ConnectNote, connectMsg, type ConnectMsg } from "../components/ConnectNote";
+import { Icon } from "../components/Icon";
 import { timeAgo } from "../lib/format";
 import { getTheme, setTheme, THEME_CHOICES, type ThemeChoice } from "../lib/theme";
 import { isNative, openConnectPortal, openExternal, platformTag } from "../lib/native";
@@ -48,6 +49,7 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
   }, [api]);
   const [busy, setBusy] = useState(false);
   const [editInv, setEditInv] = useState(false);
+  const [invSaved, setInvSaved] = useState(false);
   const [push, setPush] = useState<boolean>(() => pushEnabled());
   const [pushBusy, setPushBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);          // confirm sheet
@@ -139,8 +141,17 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
         {editInv && profile && (
           <div style={{ padding: "10px 14px 14px" }}>
             <InvestorQuiz initial={profile.investor ?? INVESTOR_DEFAULT} doneLabel="Save"
-              onDone={async (v) => { await api.updateInvestor(v); setEditInv(false); await onChanged(); }} />
+              onDone={async (v) => {
+                await api.updateInvestor(v); setEditInv(false);
+                setInvSaved(true); setTimeout(() => setInvSaved(false), 4000);   // a word of confirmation (e2e p10 F5)
+                await onChanged();
+              }} />
             <p className="mutedc" style={{ fontSize: 12, margin: "10px 0 0" }}>Your next briefs, assessment and answers are written for this profile.</p>
+          </div>
+        )}
+        {invSaved && (
+          <div className="status-note ok" role="status" data-testid="investor-saved" style={{ margin: "0 14px 12px" }}>
+            <span className="lead"><Icon name="check" />Saved. Your next brief and assessment are written for this profile.</span>
           </div>
         )}
       </div>
