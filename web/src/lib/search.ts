@@ -70,6 +70,55 @@ const LEVERED = /\b(-?\d(\.\d+)?x|ultra\w*|bull|bear|leveraged|inverse|short(?![
 /** The query itself names such a product ("tqqq", "nvda 2x", "bear", "ultrapro"): then it ranks normally. */
 const asksForLevered = (q: string) => LEVERED.test(q);
 
+/** A class share's one spelling, the dotted one: BRKB / BRK-B / BRK.B (Yahoo BRK-B) are all BRK.B. Mirror of the
+ *  server's canonicalSymbol (_shared/intel.ts), which registers every spelling under it on ensure. Korean codes,
+ *  coins, indices, futures and FX are left alone. */
+export function canonicalSymbol(symbol: string, yahoo?: string | null): string {
+  const s = String(symbol ?? "").toUpperCase().trim();
+  if (/\.(?:KS|KQ)$|-USD$|^\^|=F$|^USD[A-Z]{3}$/.test(s)) return s;
+  const y = String(yahoo ?? "").toUpperCase();
+  const m = /^([A-Z]{1,4})-([A-Z])$/.exec(y);
+  if (m && (s === `${m[1]}${m[2]}` || s === `${m[1]}-${m[2]}` || s === `${m[1]}.${m[2]}`)) return `${m[1]}.${m[2]}`;
+  if (/^[A-Z]{1,4}-[A-Z]$/.test(s)) return s.replace("-", ".");
+  return s;
+}
+
+/** A listing name without a feed's trailing separator: "Berkshire Hathaway Inc. -" -> "Berkshire Hathaway Inc.". */
+export const cleanListingName = (name: string): string => String(name ?? "").replace(/[\s–—-]+$/u, "").trim() || String(name ?? "");
+
+/**
+ * The catalog and the universal search, merged into one row per listing (r10 newcomer M3: "berkshire" led with
+ * the alias "BRKB Berkshire Hathaway Inc. -", and the holding became BRKB). A row's identity is its Yahoo ticker
+ * (else its canonical symbol); among a listing's spellings the canonical dotted one wins, and an alias that only
+ * differs by the class dot (BRKB beside BRK.B) is the same listing. Names lose a trailing " -".
+ */
+export function mergeListings(local: SymbolRow[], remote: SymbolRow[]): SymbolRow[] {
+  const all = [...local, ...remote].map((r) => {
+    const symbol = canonicalSymbol(r.symbol, r.yahoo);
+    return { ...r, symbol, name: cleanListingName(r.name) };
+  });
+  // an undotted alias whose dotted form is also listed ("BRKB" and "BRK.B") is that listing
+  const dotted = new Map<string, string>();
+  for (const r of all) if (/^[A-Z]{1,4}\.[A-Z]$/.test(r.symbol)) dotted.set(r.symbol.replace(".", ""), r.symbol);
+  const out: SymbolRow[] = [];
+  const at = new Map<string, number>();
+  for (const r0 of all) {
+    const r = dotted.has(r0.symbol) ? { ...r0, symbol: dotted.get(r0.symbol)! } : r0;
+    const key = canonicalSymbol(r.symbol, r.yahoo);
+    const yKey = r.yahoo ? r.yahoo.toUpperCase() : null;
+    const hit = at.get(key) ?? (yKey ? at.get(`y:${yKey}`) : undefined);
+    if (hit === undefined) {
+      at.set(key, out.length); if (yKey) at.set(`y:${yKey}`, out.length);
+      out.push(r);
+      continue;
+    }
+    // same listing: keep the first (the catalog's), but its symbol is always the canonical spelling
+    const kept = out[hit];
+    if (kept.symbol !== key && r.symbol === key) out[hit] = { ...kept, symbol: key, yahoo: kept.yahoo ?? r.yahoo };
+  }
+  return out;
+}
+
 /** Order and filter a merged result list for a query. Exact ticker, then exact name, then ticker prefix,
  *  then a name word starting with the query, then contains; leveraged/inverse products sink below
  *  plain listings at the same level; cash rows lead with the reader's own currency. Stable otherwise. */

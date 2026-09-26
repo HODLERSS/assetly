@@ -2,7 +2,7 @@
 // against the real local Supabase stack, UI tests stub this module.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
-import { rankSymbols, searchQuery } from "./search";
+import { canonicalSymbol, cleanListingName, mergeListings, rankSymbols, searchQuery } from "./search";
 import { cleanNews } from "./news";
 import { FAIL_FAST_MS, failFast, OfflineError, offlineNow } from "./net";
 
@@ -243,20 +243,25 @@ export function makeApi(sb: SupabaseClient = supabase) {
           remote = (fx.results as SymbolRow[]).map((r) => ({ ...r, remote: true }));
         }
       } catch { /* search still works from the catalog when the function is unreachable */ }
-      const seen = new Set(local.map((r) => r.symbol));
-      // rank the merged list BEFORE the cut, so an exact ticker from the remote search is never sliced off
-      return rankSymbols(raw, [...local, ...remote.filter((r) => !seen.has(r.symbol))], preferCcy).slice(0, 12);
+      // one row per listing, class-share aliases folded into the dotted symbol (lib/search mergeListings); rank
+      // the merged list BEFORE the cut, so an exact ticker from the remote search is never sliced off
+      return rankSymbols(raw, mergeListings(local, remote), preferCcy).slice(0, 12);
     },
-    async ensureSymbol(row: SymbolRow): Promise<void> {
+    /** Verifies and registers a listing; returns the symbol it is registered under (the canonical one: a pick of
+     *  "BRKB" is held as BRK.B, r10 newcomer M3). */
+    async ensureSymbol(row: SymbolRow): Promise<string> {
       // Always ensure — also for catalog hits: it verifies the ticker, refreshes the price,
       // and guarantees the 5Y daily-close backfill exists before the user lands on the chart.
+      const canon = canonicalSymbol(row.symbol, row.yahoo);
       const { data, error } = await sb.functions.invoke("symbol-search", {
-        body: { ensure: { symbol: row.symbol, name: row.name, exchange: row.exchange,
+        body: { ensure: { symbol: canon, name: cleanListingName(row.name), exchange: row.exchange,
                           currency: row.currency, kind: row.kind, yahoo: row.yahoo ?? row.symbol } },
       });
       if (error || !data?.ok) {
         throw new Error(data?.error ?? `Could not add ${row.symbol} right now. Try again.`);
       }
+      const back = (data.symbol as { symbol?: unknown } | undefined)?.symbol;
+      return typeof back === "string" && back ? back : canon;
     },
     async getPortfolio(): Promise<PortfolioRow[]> {
       online();   // offline, a pull to refresh says so at once instead of spinning out the load's time limit

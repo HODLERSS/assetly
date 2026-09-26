@@ -7,7 +7,9 @@ import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { App } from "../App";
 import { PriceChart } from "../components/PriceChart";
-import { pickHomeBriefs, type Api, type DailyBrief, type HistoryPoint, type PortfolioRow } from "../lib/api";
+import { makeApi, pickHomeBriefs, type Api, type DailyBrief, type HistoryPoint, type PortfolioRow, type SymbolRow } from "../lib/api";
+import { canonicalSymbol, cleanListingName, mergeListings } from "../lib/search";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { setPricesDown } from "../lib/net";
 import { row, stubApi } from "./fixtures";
 
@@ -143,5 +145,59 @@ describe("7 Ask at 320 and AX5", () => {
     const css = readFileSync(`${process.cwd()}/src/theme.css`, "utf8");
     expect(css).toMatch(/\.chips\.wrap \.chip \{[^}]*padding: 10px 16px;/);
     expect(css).toMatch(/\.chips\.wrap \.chip::before \{ border-radius: 18px; \}/);
+  });
+});
+
+describe("M3 (newcomer) class shares: one listing, the canonical dotted symbol", () => {
+  const alias: SymbolRow = { symbol: "BRKB", name: "Berkshire Hathaway Inc. -", exchange: "NYSE", currency: "USD", kind: "equity", yahoo: "BRK-B" };
+  const canon: SymbolRow = { symbol: "BRK.B", name: "Berkshire Hathaway Inc.", exchange: "NYSE", currency: "USD", kind: "equity", yahoo: "BRK-B" };
+  const classA: SymbolRow = { symbol: "BRK-A", name: "Berkshire Hathaway Inc. -", exchange: "NYSE", currency: "USD", kind: "equity", yahoo: "BRK-A" };
+  it("canonicalSymbol mirrors the server: BRKB / BRK-B / BRK.B -> BRK.B; codes, coins and plain tickers untouched", () => {
+    expect(canonicalSymbol("BRKB", "BRK-B")).toBe("BRK.B");
+    expect(canonicalSymbol("BRK-B", "BRK-B")).toBe("BRK.B");
+    expect(canonicalSymbol("brk.b", null)).toBe("BRK.B");
+    expect(canonicalSymbol("BRK-B")).toBe("BRK.B");
+    expect(canonicalSymbol("005930.KS", "005930.KS")).toBe("005930.KS");
+    expect(canonicalSymbol("BTC-USD", "BTC-USD")).toBe("BTC-USD");
+    expect(canonicalSymbol("NVDA", "NVDA")).toBe("NVDA");
+    expect(cleanListingName("Berkshire Hathaway Inc. -")).toBe("Berkshire Hathaway Inc.");
+    expect(cleanListingName("Coca-Cola")).toBe("Coca-Cola");
+  });
+  it("the catalog alias and the remote listing merge into one BRK.B row with a clean name", () => {
+    const out = mergeListings([alias], [canon, classA]);
+    expect(out.map((r) => r.symbol)).toEqual(["BRK.B", "BRK.A"]);
+    expect(out.map((r) => r.name)).toEqual(["Berkshire Hathaway Inc.", "Berkshire Hathaway Inc."]);
+    // a dotless alias with no Yahoo field still folds into its dotted listing
+    expect(mergeListings([{ ...alias, yahoo: null }], [canon]).map((r) => r.symbol)).toEqual(["BRK.B"]);
+  });
+  it("api: 'berkshire' leads with BRK.B, never BRKB; ensure registers and returns the canonical symbol", async () => {
+    const q: Record<string, unknown> = {};
+    for (const k of ["select", "or", "eq", "limit"]) q[k] = () => q;
+    q.then = (res: (v: unknown) => void) => res({ data: [alias], error: null });
+    const invoke = vi.fn(async (_fn: string, o: { body: Record<string, unknown> }) =>
+      o.body.ensure ? { data: { ok: true, symbol: { symbol: "BRK.B" } }, error: null } : { data: { ok: true, results: [canon, classA] }, error: null });
+    const api = makeApi({ from: () => q, functions: { invoke } } as unknown as SupabaseClient);
+    const res = await api.searchSymbols("berkshire");
+    expect(res[0].symbol).toBe("BRK.B");
+    expect(res.some((r) => r.symbol === "BRKB")).toBe(false);
+    expect(res.every((r) => !/ -$/.test(r.name))).toBe(true);
+    expect(await api.ensureSymbol(alias)).toBe("BRK.B");
+    expect((invoke.mock.calls.at(-1)![1].body.ensure as { symbol: string; name: string })).toMatchObject({ symbol: "BRK.B", name: "Berkshire Hathaway Inc." });
+  });
+  it("Add position holds the pick under the symbol ensure returns", async () => {
+    const api = stubApi({
+      searchSymbols: vi.fn().mockResolvedValue([alias]),
+      ensureSymbol: vi.fn().mockResolvedValue("BRK.B"),
+    });
+    render(<App api={api} />);
+    await screen.findByTestId("positions-card");
+    await userEvent.click(screen.getByRole("button", { name: "Add position" }));
+    await userEvent.type(screen.getByLabelText(/ticker or name/i), "berkshire");
+    await userEvent.click(await screen.findByRole("button", { name: /Berkshire/i }));
+    await userEvent.type(await screen.findByLabelText(/^shares$/i), "3");
+    await userEvent.type(screen.getByLabelText(/cost per share/i), "480");
+    await userEvent.click(screen.getByRole("button", { name: /^add position$/i }));
+    await waitFor(() => expect(api.addPosition).toHaveBeenCalled());
+    expect((api.addPosition as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("BRK.B");
   });
 });

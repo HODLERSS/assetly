@@ -98,10 +98,12 @@ export function AddPosition({ api, onDone, onRefresh, onCancel, onAdded, baseCur
               <button key={r.symbol} className="row" disabled={busy} onClick={async () => {
                 setErr(null); setBusy(true);
                 try {
-                  await api.ensureSymbol(r);
-                  pick(r);
+                  // held under the symbol ensure registered (the canonical BRK.B for a "BRKB" pick; r10 newcomer M3)
+                  const sym = (await api.ensureSymbol(r)) || r.symbol;
+                  const row = sym === r.symbol ? r : { ...r, symbol: sym };
+                  pick(row);
                   // head start: intelligence generates WHILE they type shares and cost
-                  if (!r.symbol.startsWith("$")) void api.warmup(r.symbol);
+                  if (!row.symbol.startsWith("$")) void api.warmup(row.symbol);
                 }
                 catch (e) { setErr(e instanceof Error ? e.message : "Could not add that ticker."); }
                 finally { setBusy(false); }

@@ -249,7 +249,13 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
                 setErr(null); setBusy(true);
                 // a different ticker starts from empty fields: Back from step 2 must not carry NVDA's
                 // shares and cost onto the next pick (r2 newcomer audit)
-                try { await api.ensureSymbol(r); if (r.symbol !== picked?.symbol) { setQty(""); setCost(""); setFieldErr({}); } setPicked(r); setStep(2); }
+                try {
+                  // held under the symbol ensure registered (canonical BRK.B for "BRKB"; r10 newcomer M3)
+                  const sym = (await api.ensureSymbol(r)) || r.symbol;
+                  const row = sym === r.symbol ? r : { ...r, symbol: sym };
+                  if (row.symbol !== picked?.symbol) { setQty(""); setCost(""); setFieldErr({}); }
+                  setPicked(row); setStep(2);
+                }
                 catch (e) { setErr(e instanceof Error ? e.message : "Could not add that ticker."); }
                 finally { setBusy(false); }
               }}>
