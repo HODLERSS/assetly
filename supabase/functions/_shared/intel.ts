@@ -3063,10 +3063,12 @@ export function rankPositionClaims(text: string, facts: { names: string[]; pct: 
     if (named.length !== 1) return false;
     const me = named[0];
     const ws = questionWindows(s);
-    const w = ws.length === 1 ? ws[0] : ws.length ? null : defaultWindow;
+    // e2e p06: with no window stated the day figures (pct[0], when the caller supplies them) decide "the only positive coin"
+    const w0 = ws.length === 1 ? ws[0] : ws.length ? null : defaultWindow;
+    const w = w0 === null && /\bthe only\b/i.test(s) && facts.some((f) => typeof f.pct[0] === "number") ? 0 : w0;
     const vals = (w === null ? [] : facts.map((f) => f.pct[w]).filter((v): v is number => typeof v === "number"));
     const mine = w === null ? null : me.pct[w];
-    if (/\bthe only (?:drag|loser|decliner|laggard|holding (?:down|in the red|negative)|one (?:down|in the red|negative))\b/i.test(s)) {
+    if (/\bthe only (?:\w+ ){0,2}(?:drag|loser|decliner|laggard|negative|down|red|in the red|holding (?:down|in the red|negative)|one (?:down|in the red|negative))\b/i.test(s)) {
       if (typeof mine !== "number" || vals.length < 2) return false;
       return vals.filter((v) => v < 0).length !== 1 || mine >= 0;
     }
@@ -3075,7 +3077,7 @@ export function rankPositionClaims(text: string, facts: { names: string[]; pct: 
       const contrib = facts.map((f) => (typeof f.pct[w as number] === "number" ? (f.pct[w as number] as number) * (f.weight ?? 1) : Infinity));
       return (mine * (me.weight ?? 1)) > Math.min(...contrib) + 1e-9;
     }
-    if (/\bthe only (?:gainer|winner|holding up|one up)\b/i.test(s)) {
+    if (/\bthe only (?:\w+ ){0,2}(?:gainer|winner|positive|green|in the green|holding up|one up|up)\b/i.test(s)) {
       if (typeof mine !== "number" || vals.length < 2) return false;
       return vals.filter((v) => v > 0).length !== 1 || mine <= 0;
     }
@@ -3514,6 +3516,8 @@ const INTENT = {
   stress: /\b(?:if|what happens|what if|suppose|say)\b[^?]{0,60}?\b(?:falls?|drops?|crash(?:es)?|declines?|tanks?|loses?|goes down|is down|plunges?|sinks?|corrects?)\s+(?:by\s+|another\s+)?(\d+(?:\.\d+)?)\s?%|(\d+(?:\.\d+)?)\s?%\s*(?:drop|fall|crash|decline|correction|하락|폭락|빠지)/i,
   ath: /\ball[- ]time highs?\b|\brecord (?:high|close)s?\b|\bnew highs?\b|\bATH\b|신고가|사상 최고/i,
   rank: /\b(smallest|largest|biggest|tiniest)\b[^?]{0,25}?\b(?:holding|position|stake|investment)s?\b|가장 (작은|큰) (?:종목|보유|비중)/i,
+  // e2e p06 F1: "what's my crypto share" is computed here (it got the honest fallback with the breakdown after it)
+  share: /\b(?:crypto|coins?|cash|stocks?|funds?|ETFs?|bonds?|tech)\b[^?]{0,25}\b(?:share|weight|allocation|percent(?:age)?|portion|slice|exposure|%)\b|\bhow much\b[^?]{0,30}\bin (?:crypto|coins?|cash|stocks?|funds?|ETFs?|bonds?|tech)\b|(?:코인|암호화폐|현금|주식|기술주)[^?]{0,10}비중/i,
   // final M1: "What is an ETF, and which of mine are ETFs?" got the generic performance summary
   etf: /\bwhat(?:'s| is| are)\s+(?:an?\s+)?(?:ETFs?|index funds?|funds?)\b|\bwhich\b[^?]{0,30}\b(?:ETFs?|funds?)\b|\b(?:do i|i)\s+(?:own|have|hold)\s+(?:any\s+)?(?:ETFs?|funds?)\b|\bmy (?:ETFs|funds)\b|ETF(?:가|는|이)?\s*(?:뭐|무엇)|어떤 ETF/i,
   // r14 A: "What's my biggest risk right now?" (a starter chip) got the generic performance summary
@@ -3522,7 +3526,7 @@ const INTENT = {
 /** The intent of a data question the code can answer on its own, or null. */
 export function questionIntent(q: string): keyof typeof INTENT | null {
   const t = String(q ?? "");
-  for (const k of ["tax", "basis", "why", "stress", "ath", "etf", "rank", "risk"] as const) if (INTENT[k].test(t)) return k;
+  for (const k of ["tax", "basis", "why", "stress", "ath", "share", "etf", "rank", "risk"] as const) if (INTENT[k].test(t)) return k;
   return null;
 }
 
@@ -3606,6 +3610,17 @@ export function intentAnswer(q: string, rows: IntentRow[], focus: IntentRow[], c
     if (near.length) L.push(ko ? `• 가장 가까운 종목: ${near.map((x) => `${x.r.name} 최고가 대비 −${x.gap.toFixed(1)}%`).join(", ")}.` : `• Closest: ${near.map((x) => `${x.r.name} ${x.gap.toFixed(1)}% below its high of $${(x.r.maxClose as number).toFixed(2)}`).join(", ")}.`);
     L.push(ko ? "• 기준: 저장된 약 5년치 종가입니다." : "• Based on the roughly five years of closes on file.");
     return L.join("\n");
+  }
+  if (intent === "share") {
+    const g = /\b(crypto|coins?|cash|stocks?|funds?|ETFs?|bonds?|tech)\b|(코인|암호화폐|현금|주식|기술주)/i.exec(q);
+    const word = (g?.[1] ?? g?.[2] ?? "").toLowerCase();
+    const isCrypto = /crypto|coin|코인|암호/.test(word), isCash = /cash|현금/.test(word), isFund = /fund|etf/.test(word), isTech = /tech|기술/.test(word), isBond = /bond/.test(word);
+    if (isCash) return typeof ctx.cashPct === "number" ? (ko ? `• 현금: 자산의 ${ctx.cashPct.toFixed(1)}%.` : `• Cash: ${ctx.cashPct.toFixed(1)}% of assets.`) : null;
+    const members = bySize.filter((r) => isCrypto ? r.kind === "crypto" : isFund ? /^(?:etf|fund|mutual ?fund|index)$/i.test(r.kind) : isTech ? !!r.tech : isBond ? /bond/i.test(r.kind) : /^(?:stock|equity)$/i.test(r.kind));
+    const label = ko ? (isCrypto ? "코인" : isFund ? "펀드·ETF" : isTech ? "기술주와 반도체" : isBond ? "채권" : "주식") : (isCrypto ? "Crypto" : isFund ? "Funds and ETFs" : isTech ? "Tech and chip holdings" : isBond ? "Bonds" : "Single stocks");
+    if (!members.length) return ko ? `• ${label}: 보유하고 있지 않습니다.` : `• ${label}: none held.`;
+    const share = members.reduce((a, r) => a + r.weight, 0), usdT = members.reduce((a, r) => a + r.usd, 0);
+    return ko ? `• ${label}: 자산의 ${share.toFixed(1)}% (${usd0(usdT)}): ${members.map((r) => `${r.name} ${w(r)}`).join(", ")}.` : `• ${label}: ${share.toFixed(1)}% of assets (${usd0(usdT)}): ${members.map((r) => `${r.name} ${w(r)} (${usd0(r.usd)})`).join(", ")}.`;
   }
   if (intent === "etf") {
     const isFund = (r: IntentRow) => /^(?:etf|fund|mutual ?fund|index)$/i.test(r.kind);
@@ -3895,4 +3910,14 @@ export function aboutUsd(v: number): string {
 export function roundBookTotal(text: string, total: number): string {
   const exact = `$${Math.round(total).toLocaleString("en-US")}`;
   return String(text ?? "").split(exact).join(aboutUsd(total)).replace(/\babout about\b/g, "about").replace(/\b(?:roughly|around|approximately|some)\s+about\b/gi, "about");
+}
+
+/** e2e p06 F1: the honest "couldn't answer" text is only ever the WHOLE answer. Whenever other content stands beside it,
+ *  before or after, the honest block (its opener, holdings line, cash line and rephrase line) goes. */
+export function stripHonestBlock(text: string): string {
+  const lines = String(text ?? "").split("\n");
+  const isBlock = (l: string) => isHonestFallback(l) || /^\s*•\s*(?:Your holdings|보유 종목|Cash|현금|Try asking again|질문을 조금)\b/.test(l);
+  if (!lines.some((l) => isHonestFallback(l))) return String(text ?? "");
+  const rest = lines.filter((l) => l.trim() && !isBlock(l));
+  return rest.length ? rest.join("\n") : String(text ?? "");
 }
