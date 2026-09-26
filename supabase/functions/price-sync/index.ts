@@ -171,15 +171,23 @@ Deno.serve(async (req) => {
   // rule kept that stored prev all weekend. One batched history read per market window, not one per symbol.
   const byWindow = new Map<string, { from: number; cut: number; syms: string[] }>();
   const ctx = new Map<string, { mkt: "US" | "KR" | null; key: string }>();
+  // r11 load: the history read runs only where the base can change (a new session, no stored base, a symbol with no
+  // row) plus a full re-check twice an hour (minute 0 and 30), and it reads only the 10 minutes up to the close; it read
+  // every symbol's last 31 minutes of ticks every minute
+  const fullCheck = new Date().getUTCMinutes() % 30 === 0;
   for (const q of quotes.values()) {
     if (q.symbol.endsWith("=F") || q.symbol.startsWith("^") || /^USD[A-Z]{3}$/.test(q.symbol)) continue;   // futures / indices / FX keep their own rules below
     const k = kindOf.get(q.symbol);
     const mkt = marketOf(q.symbol, k?.kind ?? null, k?.currency ?? q.currency);
+    const stq = byStored.get(q.symbol);
+    const sameSess = !!stq?.as_of && sessionsOf(String(stq.as_of), mkt).session === sessionsOf(q.as_of, mkt).session;
+    const needHistory = fullCheck || !stq || !sameSess || stq.prev_close === null;
     const w = prevSessionWindow(q.as_of, mkt);
     // the close tick (price-sync stamps it at regularMarketTime = the close) or the daily bar stamped at the close
     const cut = mkt === null ? w.to : w.from + 31 * 60000;
-    const key = `${w.from}:${cut}`;
-    const g = byWindow.get(key) ?? { from: w.from, cut, syms: [] };
+    const key = needHistory ? `${w.from}:${cut}` : `none:${q.symbol}`;
+    if (!needHistory) { ctx.set(q.symbol, { mkt, key }); continue; }
+    const g = byWindow.get(key) ?? { from: mkt === null ? w.from : cut - 11 * 60000, cut, syms: [] };
     g.syms.push(q.symbol);
     byWindow.set(key, g);
     ctx.set(q.symbol, { mkt, key });
@@ -201,7 +209,9 @@ Deno.serve(async (req) => {
     if (!c) continue;
     const st = byStored.get(q.symbol) ?? null;
     const hc = closeOf.get(`${c.key}|${q.symbol}`) ?? null;
-    const prev = resolvePrevClose({ price: q.price, asOf: q.as_of, providerPrev: q.prev_close, stored: st ? { price: Number(st.price), prev_close: st.prev_close === null ? null : Number(st.prev_close), as_of: st.as_of } : null, historyClose: hc, mkt: c.mkt });
+    // within a session already based (checked at the session's first tick and twice an hour), the stored base stands
+    const keep = c.key.startsWith("none:") && st?.prev_close != null && Number(st.prev_close) > 0 && Math.abs(q.price / Number(st.prev_close) - 1) <= 0.5;
+    const prev = keep ? Number(st!.prev_close) : resolvePrevClose({ price: q.price, asOf: q.as_of, providerPrev: q.prev_close, stored: st ? { price: Number(st.price), prev_close: st.prev_close === null ? null : Number(st.prev_close), as_of: st.as_of } : null, historyClose: hc, mkt: c.mkt });
     const sameSession = !!st?.as_of && sessionsOf(String(st.as_of), c.mkt).session === sessionsOf(q.as_of, c.mkt).session;
     if (sameSession && prev !== null && st?.prev_close != null && Math.abs(prev - Number(st.prev_close)) > 1e-9) corrected++;
     q.prev_close = prev;

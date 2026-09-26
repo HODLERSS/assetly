@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
   }
   // the same gate over what is already stored (the last 14 days), a few hundred rows per run
   let pruned = 0;
-  if (url.searchParams.get("fixture") !== "1" && !dry) {
+  if (url.searchParams.get("fixture") !== "1" && !dry && new Date().getUTCMinutes() < 15) {   // r11 load: once an hour
     const { data: recent } = await admin.from("news").select("id, symbol, title").gte("published_at", new Date(Date.now() - 14 * 86400000).toISOString()).order("published_at", { ascending: false }).limit(300);
     const bad = ((recent ?? []) as { id: number; symbol: string; title: string }[]).filter((r) => aliasBy.has(r.symbol) && (!headlineOk(String(r.title)) || !Number.isFinite(centrality(String(r.title), aliasBy.get(r.symbol)!)))).map((r) => r.id).slice(0, 50);   // r10 load: small batches
     if (bad.length) { const { error } = await admin.from("news").delete().in("id", bad); if (!error) pruned = bad.length; }
