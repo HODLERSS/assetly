@@ -1532,6 +1532,8 @@ export type HuskInput = {
   reports: { name: string; est: string | null; range?: [string, string] }[];
   /** round 9: the estimates read failed (timed out): say nothing about reports rather than "no holding reports" */
   reportsUnknown?: boolean;
+  /** r11: the dividends read failed: say nothing about dividends rather than "no holding pays a dividend" */
+  dividendsUnknown?: boolean;
   dividends: { name: string; annualUsd: number; nextEx: string | null; current?: boolean }[];
   // round 7: the husk fits the question. sell/trim/dump questions get a SELLER's frame, "rank my holdings" a ranking
   // by stated metrics, and a trade question about ONE holding an answer built around that holding
@@ -1574,7 +1576,7 @@ export function buildHusk(inp: HuskInput, ko: boolean): string {
     if (top.length) out.push(top.length === 1 ? `• 집중도: 보유 종목은 ${top[0].name} 하나로 자산의 ${topShare.toFixed(0)}%입니다.` : `• 집중도: 상위 ${top.length}개 종목(${top.map((h) => `${h.name} ${pct1(h.usd / A * 100, true)}`).join(", ")})이 자산의 ${topShare.toFixed(0)}%입니다.`);
     out.push(`• 구성: ${[...topThemes.map(([t, v]) => `${THEME_KO[t] ?? t} ${pct1(v / A * 100, true)}`), ...(crypto > 0 && !cryptoListed ? [`암호화폐 ${pct1(crypto, true)}`] : []), `현금 ${pct1(cashPct, true)}(${usdText(inp.cashUsd)})`].join(", ")}입니다.`);
     if (!inp.reportsUnknown) out.push(reports.length ? `• 45일 안에 예상되는 실적 발표(추정): ${reports.map((r) => `${r.name} ${r.range ? spanOfMonthKo(r.range) : md(r.est!) + "경"}`).join(", ")}.` : "• 45일 안에 실적 발표가 예상되는 보유 종목은 없습니다.");
-    out.push(payers.length ? `• 배당: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` 외 ${payers.length - 4}개` : ""}에서 연 약 ${usdText(income)}이 나옵니다${payers.some((d) => d.current) ? "(현재 배당률 기준)" : ""}. ${soonEx.length ? `45일 안의 배당락(추정): ${soonEx.map((d) => `${d.name} ${md(d.nextEx!)}경`).join(", ")}.` : "45일 안에 배당락이 예상되는 종목은 없습니다."}` : "• 배당: 기록상 배당을 주는 보유 종목이 없습니다.");
+    if (!inp.dividendsUnknown) out.push(payers.length ? `• 배당: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` 외 ${payers.length - 4}개` : ""}에서 연 약 ${usdText(income)}이 나옵니다${payers.some((d) => d.current) ? "(현재 배당률 기준)" : ""}. ${soonEx.length ? `45일 안의 배당락(추정): ${soonEx.map((d) => `${d.name} ${md(d.nextEx!)}경`).join(", ")}.` : "45일 안에 배당락이 예상되는 종목은 없습니다."}` : "• 배당: 기록상 배당을 주는 보유 종목이 없습니다.");
     if (inp.mode === "sell") { out.push(`• 파는 쪽에서 보통 따지는 것: 차익에 붙는 세금, 한 종목(상위 ${top[0]?.name ?? ""} ${pct1((top[0]?.usd ?? 0) / A * 100, true)})에 원하는 것보다 많이 실려 있는지, 처음 산 이유가 아직 유효한지.`); return out.join("\n"); }
     out.push(`• 이런 결정에서 보통 따지는 것: 새 돈이 이미 ${topShare.toFixed(0)}%인 ${top.length === 1 ? top[0].name : "상위 종목"} 비중을 더 키우는지, ${crypto > 0 ? `포트폴리오가 암호화폐(현재 ${pct1(crypto)})에 얼마나 흔들리길 원하는지` : `현금(현재 ${pct1(cashPct)})을 얼마나 남겨둘지`}, 투자 기간과 세금.`);
     return out.join("\n");
@@ -1583,7 +1585,7 @@ export function buildHusk(inp: HuskInput, ko: boolean): string {
   const mix = [...topThemes.map(([t, v]) => `${t} ${pct1(v / A * 100)}`), ...(crypto > 0 && !cryptoListed ? [`crypto ${pct1(crypto)}`] : [])];
   out.push(`• Mix: ${mix.length ? mix.join(", ") + ", and " : ""}cash ${pct1(cashPct)} (${usdText(inp.cashUsd)}).`);
   if (!inp.reportsUnknown) out.push(reports.length ? `• Reports expected in the next 45 days (estimates): ${reports.map((r) => `${r.name} ${r.range ? spanOfMonth(r.range) : "~" + md(r.est!)}`).join(", ")}.` : "• No holding has an earnings report expected in the next 45 days.");
-  out.push(payers.length ? `• Dividends: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` and ${payers.length - 4} more` : ""} pay about ${usdText(income)} a year together${payers.some((d) => d.current) ? " at the current rate" : ""}; ${soonEx.length ? `ex-dates expected in the next 45 days: ${soonEx.map((d) => `${d.name} ~${md(d.nextEx!)}`).join(", ")}.` : "none has an ex-date expected in the next 45 days."}` : "• Dividends: no holding pays a dividend on record.");
+  if (!inp.dividendsUnknown) out.push(payers.length ? `• Dividends: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` and ${payers.length - 4} more` : ""} pay about ${usdText(income)} a year together${payers.some((d) => d.current) ? " at the current rate" : ""}; ${soonEx.length ? `ex-dates expected in the next 45 days: ${soonEx.map((d) => `${d.name} ~${md(d.nextEx!)}`).join(", ")}.` : "none has an ex-date expected in the next 45 days."}` : "• Dividends: no holding pays a dividend on record.");
   if (inp.mode === "sell") {
     out.push(`• What a seller usually weighs here: the tax on any gain, whether one holding (${top[0]?.name ?? "the largest"} is ${pct1((top[0]?.usd ?? 0) / A * 100)}) is more of the portfolio than you want, and whether the reason you bought still holds.`);
     return out.join("\n");
@@ -2601,7 +2603,7 @@ export function applyJudge(answer: string, chips: string[], items: { where: { li
 // ---------------------------------------------------------------------------------------------------------------
 // Round 9 C: data questions answered from computed data
 // ---------------------------------------------------------------------------------------------------------------
-export type PerfRow = { symbol: string; label: string; names: string[]; usd: number; pct: Record<number, number | null> };
+export type PerfRow = { symbol: string; label: string; names: string[]; usd: number; pct: Record<number, number | null>; unknown?: boolean };
 /** The return windows a question asks about, in the order written: 7, 30, 90, 365 or YTD (-1). */
 export function questionWindows(q: string): number[] {
   const t = String(q ?? "");
@@ -2615,7 +2617,7 @@ export function questionWindows(q: string): number[] {
   return [...new Set(found.sort((a, b) => a.at - b.at).map((f) => f.w))];
 }
 const wLabel = (w: number, ko: boolean) => ko ? ({ 7: "1주", 30: "1개월", 90: "3개월", 365: "1년", [-1]: "올해" } as Record<number, string>)[w] : ({ 7: "1 week", 30: "1 month", 90: "3 months", 365: "1 year", [-1]: "this year" } as Record<number, string>)[w];
-const pctS = (v: number | null | undefined, ko: boolean) => typeof v === "number" ? `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}%` : (ko ? "데이터 부족" : NO_HISTORY);
+const pctS = (v: number | null | undefined, ko: boolean, unknown = false) => typeof v === "number" ? `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}%` : unknown ? (ko ? "지금은 불러오지 못했습니다" : "couldn't load just now") : (ko ? "데이터 부족" : NO_HISTORY);
 const usdS = (v: number) => `${v >= 0 ? "+" : "−"}$${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
 /** The dollar move of a position over a window at today's size: value now minus value at the window's start. */
 export const windowUsd = (usd: number, pct: number | null | undefined): number | null => typeof pct === "number" && pct > -100 ? usd - usd / (1 + pct / 100) : null;
@@ -2669,11 +2671,11 @@ export function computedDataLead(q: string, rows: PerfRow[], mentionedNow: strin
   if (!named.length) return null;
   if (named.length === 1 && ws.length === 1) {
     const r = named[0], v = r.pct[ws[0]];
-    if (typeof v !== "number") return ko ? `• ${r.label}의 ${wLabel(ws[0], ko)} 수익률은 데이터가 부족합니다.` : `• ${r.label}: ${wLabel(ws[0], ko)}, ${NO_HISTORY}.`;
+    if (typeof v !== "number") return r.unknown ? (ko ? `• ${r.label}의 ${wLabel(ws[0], ko)} 수익률은 지금 불러오지 못했습니다.` : `• ${r.label}: ${wLabel(ws[0], ko)} returns couldn't be loaded just now.`) : ko ? `• ${r.label}의 ${wLabel(ws[0], ko)} 수익률은 데이터가 부족합니다.` : `• ${r.label}: ${wLabel(ws[0], ko)}, ${NO_HISTORY}.`;
     const lbl = ws[0] === YTD ? (ko ? "올해" : "this year") : (ko ? `최근 ${wLabel(ws[0], ko)}` : `over ${wLabel(ws[0], ko)}`);
     return ko ? `• ${r.label}는 ${lbl} ${pctS(v, ko)}입니다.` : `• ${r.label} is ${v >= 0 ? "up" : "down"} ${Math.abs(v).toFixed(1)}% ${lbl}.`;
   }
-  return named.map((r) => `• ${r.label}: ${ws.map((w) => `${wLabel(w, ko)} ${pctS(r.pct[w], ko)}`).join(", ")}.`).join("\n");
+  return named.map((r) => `• ${r.label}: ${ws.map((w) => `${wLabel(w, ko)} ${pctS(r.pct[w], ko, !!r.unknown)}`).join(", ")}.`).join("\n");
 }
 
 /** Does the answer already state the computed figures? (every percent of the lead appears in it) */
