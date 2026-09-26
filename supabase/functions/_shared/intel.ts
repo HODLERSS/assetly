@@ -3739,3 +3739,28 @@ export function ensureLeads(text: string, leads: { line: string; keys: string[] 
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// e2e p02: F2 (the honest fallback never trails a real answer), F3 (a compare covers every named holding), F5
+// ---------------------------------------------------------------------------------------------------------------
+export const isHonestFallback = (t: string) => /^(?:I couldn't put a complete answer together|지금은 완전한 답변을 드리지 못했습니다)/.test(String(t ?? "").trim());
+/** The code lead plus at most two fallback lines, unless the fallback is the honest "couldn't answer" text (F2: the 3M
+ *  negatives were listed correctly and then "I couldn't put a complete answer together… Your holdings: …" followed). */
+export function mergeLeadAndFallback(lead: string, fallback: string): string {
+  if (!lead) return fallback;
+  if (isHonestFallback(fallback)) return lead;
+  return [lead, String(fallback ?? "").split("\n").filter((l) => !lead.includes(l)).slice(0, 2).join("\n")].filter(Boolean).join("\n");
+}
+
+/** F5: "Cash … earns nothing, so it drags the total down" under a window return that excludes cash. */
+export function cashDragClaims(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\bcash\b|현금/i.test(s) && /\b(?:drags?|dragging|weighs?|weighing|pulls?|pulling|holds? back|holding back|dilut\w*|lowers?|reduces?)\b[^.]{0,30}\b(?:total|return|returns|figure|number|performance|gain|result|it)\b|(?:총|전체|수익률)[^.]{0,10}(?:끌어내|낮추|깎)/i.test(s));
+}
+
+/** F3: a ticker-looking token in a compare question that is not a holding (AVGO when only NVDA is held). */
+const NOT_TICKERS = new Set(["ETF", "ETFS", "YTD", "USD", "KRW", "AI", "US", "UK", "EU", "KR", "NYSE", "KRX", "IPO", "CEO", "CFO", "GPU", "GPUS", "CPU", "HBM", "EV", "EVS", "PE", "PS", "EPS", "ROE", "ROIC", "SEC", "FED", "FOMC", "CPI", "GDP", "ATH", "MTD", "QTD", "OK", "VS", "AND", "OR", "THE", "MY", "IN", "ON", "TO", "OF", "FOR", "VOO", "S&P", "NASDAQ", "SP", "DOW", "IRA", "RSU", "RSUS", "KOSPI", "PM", "AM"]);
+export function unheldTickersIn(q: string, heldSyms: string[]): string[] {
+  if (!/\bcompare\b|\bvs\.?\b|\bversus\b|\bagainst\b|비교/i.test(String(q ?? ""))) return [];
+  const held = new Set(heldSyms.map((x) => x.replace(/\.(?:KS|KQ)$/, "").toUpperCase()));
+  return [...new Set([...String(q ?? "").matchAll(/(?<![A-Za-z0-9$])([A-Z]{2,5})(?![A-Za-z0-9])/g)].map((m) => m[1]))].filter((t) => !held.has(t) && !NOT_TICKERS.has(t));
+}

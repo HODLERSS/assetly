@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -714,7 +714,11 @@ async function handle(req: Request): Promise<Response> {
     const dated = pick.filter((e) => e.est || e.range).map((e) => ({ n: e.names[0], k: (e.range ? e.range[0] : e.est) ?? "", txt: e.range ? (ko ? spanOfMonthKo(e.range) : spanOfMonth(e.range)) : "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }) }))
       .sort((a, b) => a.k.localeCompare(b.k));
     if (!dated.length) return null;
-    return ko ? `• 실적 발표 예상 (추정, 날짜순): ${dated.map((d) => `${d.n} ${d.txt}`).join(", ")}.` : `• Expected earnings reports (estimates, soonest first): ${dated.map((d) => `${d.n} ${d.txt}`).join(", ")}.`;
+    // e2e F4: holdings with no estimate on file (Samsung, SK hynix) are named, not silently left out
+    const asked = mentionedNow.length ? held.filter((r) => mentionedNow.includes(r.symbol)) : held.filter((r) => r.kind !== "crypto" && r.kind !== "cash" && !r.symbol.startsWith("$") && !/-USD$/.test(r.symbol));
+    const undated = asked.map((r) => nameOf(r)).filter((n) => !dated.some((d) => d.n === n)).slice(0, 6);
+    const tail = undated.length ? (ko ? ` ${undated.join(", ")}: 아직 예상일이 없습니다.` : ` No date on file yet for ${undated.join(", ")}.`) : "";
+    return (ko ? `• 실적 발표 예상 (추정, 날짜순): ${dated.map((d) => `${d.n} ${d.txt}`).join(", ")}.` : `• Expected earnings reports (estimates, soonest first): ${dated.map((d) => `${d.n} ${d.txt}`).join(", ")}.`) + tail;
   })();
   const dataLead = tradeQ ? null : (computedDataLead(question, perfRows, mentionedNow, ko) ?? earnLead ?? dayLead ?? marketLead(question, idx, ko) ?? (/\b(?:which|what|how much|per holding|each|from which|largest|biggest)\b|얼마|어느|어떤|종목별|제일|가장/i.test(question) && !divUnknown ? dividendLead(question, payersL, ko) : null));
   const prompt = `TODAY is ${today} (US Eastern date).
@@ -772,7 +776,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const ytdLine = (() => { const m = /YTD: ([^·]+)/.exec(totalLines); return m && !/not enough|couldn't/i.test(m[1]) ? m[1].trim() : null; })();
   const summaryLead = () => portfolioSummaryLead({ total: totNow, dayUsd: sessDay, dayPct: sessPct, dayLabel: sessLabel,
     top: held.map((r) => ({ label: nameOf(r), weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100 })).sort((a, b) => b.weight - a.weight), ytd: ytdLine }, ko);
-  const codeAnswer = (): string => summaryQ ? summaryLead() : dataLead ? [dataLead, dataFallback().split("\n").filter((l) => !dataLead.includes(l)).slice(0, 2).join("\n")].filter(Boolean).join("\n") : dataFallback();
+  // e2e F2: the honest "couldn't answer" text only ever REPLACES an empty answer; it never trails a computed lead
+  const codeAnswer = (): string => summaryQ ? summaryLead() : dataLead ? mergeLeadAndFallback(dataLead, dataFallback()) : dataFallback();
   // r12 B: a report-date question is answered from the calendar, before (and without) the model
   if (earnLead && !tradeQ && !pickQ && !fixture) {
     const dlvs = held.map((r) => { const d = deliveriesEstimate(r.symbol, today); return d && (mentionedNow.length === 0 || mentionedNow.includes(r.symbol)) ? `${nameOf(r)} ${d.quarter} deliveries ~${new Date(d.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" })} (est)` : null; }).filter(Boolean);
@@ -1094,7 +1099,10 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   guarded = stripLeadFragment(guarded) || guarded;
   if (guarded.trim() && !builtInCode && !tradeQ && !pickQ) {
     const leads: { line: string; keys: string[] }[] = [];
-    if (dataLead) leads.push({ line: dataLead, keys: [...dataLead.matchAll(/(\d+(?:\.\d)?)%/g)].map((m) => m[1] + "%") });
+    // e2e F3: a compare's lead is keyed on every named holding too ("compare NVDA and AVGO" answered NVDA only)
+    if (dataLead) leads.push({ line: dataLead, keys: [...[...dataLead.matchAll(/(\d+(?:\.\d)?)%/g)].map((m) => m[1] + "%"), ...(mentionedNow.length >= 2 ? mentionedNow.map((sy) => nameOf(held.find((h) => h.symbol === sy)!)) : [])] });
+    // a compared ticker that is not held is said so, never silently dropped
+    for (const tk of unheldTickersIn(question, held.map((r) => r.symbol)).slice(0, 2)) leads.push({ line: ko ? `• ${tk}는 보유 종목이 아니라 비교할 수 없습니다.` : `• ${tk} isn't in your portfolio, so there is nothing of yours to compare it with.`, keys: [tk] });
     if (questionIntent(question) === "rank") {
       const small = /smallest|tiniest|작은/i.test(question);
       const top = [...intentRows()].sort((a, b) => small ? a.usd - b.usd : b.usd - a.usd)[0];
@@ -1104,6 +1112,10 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     if (!mentionedNow.length) { const bl = bookWindowLead(question, totalLines, ko); if (bl) leads.push(bl); }
     guarded = ensureLeads(guarded, leads);
   }
+  // e2e F2 (second guard): the honest fallback never follows a real answer
+  if (guarded.split("\n").some((l, i) => i > 0 && isHonestFallback(l))) guarded = guarded.split("\n").slice(0, guarded.split("\n").findIndex((l, i) => i > 0 && isHonestFallback(l))).join("\n").trim() || guarded;
+  // e2e F5: cash "drags the total down" under a return that excludes cash
+  { const cd = new Set(cashDragClaims(guarded)); if (cd.size) guarded = perLine(guarded, (line) => splitSentences(line).filter((sen) => !cd.has(sen)).join(" ")).replace(/\n{2,}/g, "\n").trim() || guarded; }
   answer = unicodeMinus(plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(fixFractions(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), fracHold, fracGroupsA)), question, lastA, prevQ, decisionQ)))));
   void softFallback;
   // the code-built answer is 4-5 checked bullets (~100 words with the opener): the phone cap must not cut its
