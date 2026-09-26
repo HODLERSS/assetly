@@ -63,3 +63,9 @@ Deno.test("r28 P8: quality-read wording", async () => {
   assertEquals(lowYieldIncomeClaims("It pays income.", 3.4), []);
   assertEquals(fixFragments("Demand must persist across market cycles for the portfolio."), "Demand must persist across market cycles.");
 });
+
+Deno.test("r28 P9: card verdicts and duplicate day moves", async () => {
+  const { softVerdicts, duplicateMoveBullets } = await import("./intel.ts");
+  for (const s of ["The dip is not a reversal signal.", "The bull thesis has visible cracks.", "NVDA may be over-extended, raising write-off risk.", "Hype drives a valuation stretch to $7T."]) assertEquals(softVerdicts(s).length, 1, s);
+  assertEquals(duplicateMoveBullets(["NVDA rose 0.5% today on AI demand.", "Up 0.5% on the day as chips firm.", "The next report is ~Nov 25 (est)."]), ["NVDA rose 0.5% today on AI demand.", "The next report is ~Nov 25 (est)."]);
+});

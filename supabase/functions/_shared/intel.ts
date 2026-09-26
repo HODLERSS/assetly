@@ -3021,7 +3021,7 @@ export function isForecastQuestion(q: string): boolean {
 /** Soft verdicts that slipped through when the judge timed out (r10 intelligence): "the setup has real weight",
  *  "structural drivers for a multi-year hold", "still far below the target", "$350 is the line to watch". */
 export function softVerdicts(text: string): string[] {
-  return sentencesOf(text).filter((s) => /\bpriced in\b|\bargues? against\b|\b(?:has |finds? |forms? |adds? |provides? |gives? )(?:a |some )?(?:floor|cushion|support)\b|\b(?:a |the )?floor (?:under|beneath|at)\b|\bsupport (?:at|near|around) \$?\d|\brecovery phase\b|\bcompounding (?:is )?(?:intact|alive|on track)\b|\bmomentum (?:has )?(?:stalled|is alive|alive|intact|fading|broken)\b|\bthe story (?:is|remains|still|holds)\b|\bopportunity cost is real\b|\bmeaningful but not extreme\b|\bsetup (?:has|carries) (?:real )?weight\b|\bstructural drivers? for a (?:multi-year|long-term) hold\b|\bfor a (?:multi-year|long-term) hold\b|\b(?:still )?(?:far |well )?(?:below|above|short of|ahead of) (?:the |your )?(?:\d+\s?(?:-|–|to)\s?\d+\s?% )?(?:target|goal)\b|\bis the (?:line|level) to watch\b|\bkey (?:line|level) (?:is|at)\s*\$|\bsetup is (?:mixed|constructive|favorable|strong|weak)\b|\bmomentum (?:is )?strong\b/i.test(s) && !/\b(?:if|whether|unless)\b/i.test(s));
+  return sentencesOf(text).filter((s) => /\bnot a (?:reversal|buy|sell|breakdown|breakout|trend) signal\b|\b(?:bull|bear) (?:thesis|case) (?:has|shows|is showing) (?:visible |clear |some )?cracks\b|\bover-?extended\b|\bwrite-?off risk\b|\bvaluation stretch(?:es|ed)? to\b|\bstretched to \$\d|\bpriced in\b|\bargues? against\b|\b(?:has |finds? |forms? |adds? |provides? |gives? )(?:a |some )?(?:floor|cushion|support)\b|\b(?:a |the )?floor (?:under|beneath|at)\b|\bsupport (?:at|near|around) \$?\d|\brecovery phase\b|\bcompounding (?:is )?(?:intact|alive|on track)\b|\bmomentum (?:has )?(?:stalled|is alive|alive|intact|fading|broken)\b|\bthe story (?:is|remains|still|holds)\b|\bopportunity cost is real\b|\bmeaningful but not extreme\b|\bsetup (?:has|carries) (?:real )?weight\b|\bstructural drivers? for a (?:multi-year|long-term) hold\b|\bfor a (?:multi-year|long-term) hold\b|\b(?:still )?(?:far |well )?(?:below|above|short of|ahead of) (?:the |your )?(?:\d+\s?(?:-|–|to)\s?\d+\s?% )?(?:target|goal)\b|\bis the (?:line|level) to watch\b|\bkey (?:line|level) (?:is|at)\s*\$|\bsetup is (?:mixed|constructive|favorable|strong|weak)\b|\bmomentum (?:is )?strong\b/i.test(s) && !/\b(?:if|whether|unless)\b/i.test(s));
 }
 
 /** "TSLA was the only drag" (AVGO lost more), "MSFT is #2" (AAPL is), "MSFT lagging the rest" (META and TSLA did worse):
@@ -3210,4 +3210,17 @@ export const plainLeverage = (t: string): string => String(t ?? "")
 export function lowYieldIncomeClaims(text: string, yieldPct: number | null): string[] {
   if (yieldPct === null || yieldPct >= 2) return [];
   return sentencesOf(text).filter((s) => /\b(?:it |which )?pays? (?:income|a dividend income)\b|\badds? (?:steady |some )?income\b|\bincome (?:stream|payer|engine|source)\b|\bprovides? income\b/i.test(s));
+}
+
+/** Two bullets on one card stating the same day move ("NVDA rose 0.5% today" twice in different words): the later goes. */
+export function duplicateMoveBullets(bullets: string[]): string[] {
+  const seen = new Set<string>();
+  return bullets.filter((b) => {
+    const m = /\b(?:today|on the day|this session|in the session|intraday|day's)\b/i.test(b) ? /([+−-]?\d+(?:\.\d+)?)\s?%/.exec(b) : null;
+    if (!m) return true;
+    const k = String(Math.abs(Number(m[1].replace("−", "-"))));
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
