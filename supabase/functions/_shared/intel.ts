@@ -2734,3 +2734,99 @@ export function bothDateClaims(text: string, ests: { names: string[]; est: strin
     return months.size > 1 || covered.length < asked.length;
   });
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 9 v44 re-check (items 4-6): ordering, metric superlatives, cross-holding metrics, won conversions, index lead
+// ---------------------------------------------------------------------------------------------------------------
+/** "YTD leader is NVDA at +20.7%, followed by AAPL +25.5%": an ordering stated in a sentence ("followed by", "then",
+ *  "leader", "ahead of") whose own figures are not in that order. */
+export function orderingClaims(text: string, facts: { names: string[] }[]): string[] {
+  return sentencesOf(text).filter((s) => {
+    if (!/\bfollowed by\b|\bthen\b|\bnext is\b|\bahead of\b|\bleader\b|\bleads\b|\btops\b|,\s*then\b|순으로|다음은|뒤를 이/i.test(s)) return false;
+    const pairs: { at: number; v: number }[] = [];
+    for (const f of facts) for (const n of f.names) {
+      if (!n || n.length < 2) continue;
+      const m = new RegExp(`(?:^|[^\\p{L}\\p{N}])${esc(n)}(?![\\p{L}\\p{N}])[^%\\d]{0,20}?([+\\u2212-]?\\d+(?:\\.\\d+)?)\\s?%`, "u").exec(s);
+      if (m) { pairs.push({ at: m.index, v: Number(m[1].replace("−", "-")) }); break; }
+    }
+    if (pairs.length < 2) return false;
+    pairs.sort((a, b) => a.at - b.at);
+    const asc = /\blaggard|\bworst\b|\bweakest\b|가장 부진/i.test(s);
+    return pairs.some((p, i) => i > 0 && (asc ? p.v < pairs[i - 1].v - 0.05 : p.v > pairs[i - 1].v + 0.05));
+  });
+}
+
+/** "MSFT has the highest yield at 0.7%" when AVGO yields 0.74%: a highest/lowest claim on a metric we compute. */
+export function metricSuperlativeClaims(text: string, facts: { names: string[]; yieldPct?: number | null; weight?: number | null; annualDiv?: number | null }[]): string[] {
+  return sentencesOf(text).filter((s) => {
+    const m = /\b(highest|lowest|biggest|largest|smallest|top|most)\b[^.]{0,20}?\b(yield|dividend yield|weight|position|holding|dividend payer|payer|dividend)\b|(?:배당(?:수익)?률|비중|배당금?)(?:이|은|가)? 가장 (높|낮|큰|많|적)/i.exec(s);
+    if (!m) return false;
+    const low = /lowest|smallest|낮|적/i.test(m[0]);
+    const metric = /yield|수익률|률/i.test(m[0]) ? "yieldPct" : /weight|position|holding|비중/i.test(m[0]) ? "weight" : "annualDiv";
+    const vals = facts.filter((f) => typeof f[metric] === "number" && (f[metric] as number) > 0);
+    if (vals.length < 2) return false;
+    const named = vals.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    if (named.length !== 1) return false;
+    const best = [...vals].sort((a, b) => ((b[metric] as number) - (a[metric] as number)) * (low ? -1 : 1))[0];
+    return best !== named[0] && Math.abs((best[metric] as number) - (named[0][metric] as number)) > 0.005;
+  });
+}
+
+/** P/E figures found in text about each holding (its headlines, its card): "17x P/E", "P/E of 32", "trades at 28 times". */
+export function peFigures(text: string): number[] {
+  return [...String(text ?? "").matchAll(/(\d+(?:\.\d+)?)\s?(?:x|times)\s+(?:forward |trailing |next-year |20\d\d )?(?:earnings|P\/E|PE)\b|\bP\/E(?: ratio)?(?: of| at| near| around|:)?\s+(\d+(?:\.\d+)?)/gi)].map((m) => Number(m[1] ?? m[2]));
+}
+/** A P/E figure put on the wrong holding (GOOGL's 17x attributed to MSFT): the value is another holding's, not its own. */
+export function crossMetricClaims(text: string, facts: { names: string[]; pes: number[] }[]): string[] {
+  return sentencesOf(text).filter((s) => {
+    const vals = peFigures(s);
+    if (!vals.length) return false;
+    const named = facts.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    if (named.length !== 1) return false;
+    const me = named[0];
+    return vals.some((v) => !me.pes.some((p) => Math.abs(p - v) <= 0.5) && facts.some((f) => f !== me && f.pes.some((p) => Math.abs(p - v) <= 0.5)));
+  });
+}
+
+/** Korean "걸프 10조" for a "$10 billion" source: a dollar figure written as the same number of 조 won. */
+export function wonConversionClaims(text: string, source: string, krwPerUsd: number): string[] {
+  const usdB = [...String(source ?? "").matchAll(/\$\s?(\d+(?:\.\d+)?)\s?(?:billion|bn|B)\b/gi)].map((m) => Number(m[1]));
+  if (!usdB.length || !(krwPerUsd > 100)) return [];
+  return sentencesOf(text).filter((s) => [...s.matchAll(/(\d+(?:\.\d+)?)\s?조/g)].some((m) => {
+    const jo = Number(m[1]);
+    return usdB.some((b) => Math.abs(b - jo) < 0.01 && Math.abs(b * krwPerUsd / 1000 - jo) > 0.5);
+  }));
+}
+
+/** "How did the market do today?": the index figures lead the answer (round 9: no S&P figure was given). */
+export function marketLead(q: string, idx: { label: string; pct: number | null; price?: number | null }[], ko: boolean): string | null {
+  if (!/\b(?:the )?(?:market|markets|stock market|s&p|nasdaq|dow|index|indices|kospi)\b[^?]{0,40}\b(?:do|did|doing|today|now|move|moved)\b|\bhow (?:was|is) the market\b|시장(?:은|이)? (?:오늘|어땠|어때)|증시/i.test(String(q ?? ""))) return null;
+  const xs = idx.filter((i) => typeof i.pct === "number");
+  if (!xs.length) return null;
+  const f = (i: { label: string; pct: number | null; price?: number | null }) => `${i.label} ${(i.pct as number) >= 0 ? "+" : "−"}${Math.abs(i.pct as number).toFixed(1)}%${i.price ? ` (${i.price.toLocaleString("en-US", { maximumFractionDigits: 2 })})` : ""}`;
+  return ko ? `• 지수: ${xs.map(f).join(", ")}.` : `• The market: ${xs.map(f).join(", ")}.`;
+}
+
+/** Dividend payers ranked by yearly income, for dividend questions (round 9: the list jumped from MSFT to "AAPL third";
+ *  the Korean answer lost its per-holding lines). */
+export function dividendLead(q: string, payers: { label: string; annual: number; yieldPct: number | null }[], ko: boolean): string | null {
+  if (!/\bdividends?\b|\byield\b|\bincome\b|배당/i.test(String(q ?? ""))) return null;
+  const ps = payers.filter((p) => p.annual > 0).sort((a, b) => b.annual - a.annual);
+  if (!ps.length) return null;
+  const tot = ps.reduce((a, p) => a + p.annual, 0);
+  const each = ps.map((p) => `${p.label} $${Math.round(p.annual).toLocaleString("en-US")}${p.yieldPct ? ` (${p.yieldPct.toFixed(2)}%)` : ""}`).join(", ");
+  return ko ? `• 연간 배당 약 $${Math.round(tot).toLocaleString("en-US")} (많은 순): ${each}.` : `• Dividends, about $${Math.round(tot).toLocaleString("en-US")} a year, largest first: ${each}.`;
+}
+
+/** "Two holdings are in the red" with one name listed: a count of holdings that does not match the names given. */
+export function countClaims(text: string, facts: { names: string[] }[]): string[] {
+  const W: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5 };
+  return sentencesOf(text).filter((s) => {
+    const m = /\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+) (?:of your )?(?:holdings|stocks|positions|names|payers)\b|(한|두|세|네|다섯|\d+) ?(?:종목|개 종목)/i.exec(s);
+    if (!m) return false;
+    const n = W[(m[1] ?? m[2] ?? "").toLowerCase()] ?? Number(m[1] ?? m[2]);
+    if (!(n >= 2)) return false;
+    const named = facts.filter((f) => f.names.some((x) => x && nameIn(s, x))).length;
+    return named > 0 && named !== n;
+  });
+}
