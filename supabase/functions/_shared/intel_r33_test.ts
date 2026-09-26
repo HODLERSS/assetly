@@ -30,3 +30,16 @@ Deno.test("r33 p06: 'the only positive coin' is held to the day signs", () => {
   assertEquals(rankPositionClaims("AVAX is the only positive coin this week.", facts, null), []);
   assertEquals(rankPositionClaims("ETH is the only coin down.", facts, null), []);
 });
+
+Deno.test("r33 p10 F2: every risk / safety wording gets the code risk lead, with the crypto share", async () => {
+  const { questionIntent } = await import("./intel.ts");
+  for (const q of ["is my portfolio risky", "Is my portfolio too risky?", "How risky is my portfolio?", "Is it safe?", "Am I safe here?", "Is my portfolio safe for a beginner?", "What's my biggest risk right now?", "내 포트폴리오 위험해?", "너무 위험한가요?", "지금 안전한가요?"]) assertEquals(questionIntent(q), "risk", q);
+  assertEquals(questionIntent("What's my cost basis in TSLA?"), "basis");
+  const rs: IntentRow[] = [
+    { name: "BTC", symbol: "BTC", kind: "crypto", usd: 6500, weight: 25.2, qty: 0.06, currency: "USD", price: 108000, avgCost: null, costUsd: null, glUsd: null, dayPct: 1.1, dayUsd: 70 },
+    { name: "NVDA", symbol: "NVDA", kind: "stock", usd: 4950, weight: 19.2, qty: 22, currency: "USD", price: 225, avgCost: null, costUsd: null, glUsd: null, dayPct: 0.2, dayUsd: 10, tech: true },
+    { name: "SOXL", symbol: "SOXL", kind: "etf", usd: 3000, weight: 11.6, qty: 20, currency: "USD", price: 150, avgCost: null, costUsd: null, glUsd: null, dayPct: 3.5, dayUsd: 100, leveraged: true, tech: true },
+  ];
+  const a = intentAnswer("is my portfolio risky", rs, [], { totalUsd: 25800, sessionLabel: "today", athTracked: false, cashPct: 3.4 })!;
+  assert(a.includes("Largest holding: BTC, 25.2%") && a.includes("Tech and chip holdings: 30.8%") && a.includes("Crypto: 25.2% of assets (BTC)") && a.includes("SOXL is a leveraged fund") && a.includes("Cash: 3.4%"), a);
+});
