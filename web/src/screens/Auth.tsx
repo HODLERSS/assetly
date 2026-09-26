@@ -82,9 +82,12 @@ export function AuthScreen() {
         <span style={{ flex: 1, height: 1, background: "var(--as-rule)" }} /><span className="mutedc" style={{ fontSize: 12 }}>or</span><span style={{ flex: 1, height: 1, background: "var(--as-rule)" }} />
       </div>
       {state === "sent" ? (
-        <p role="status" className="card" style={{ padding: 14, textAlign: "center" }} data-testid="link-sent">
-          Link sent to <b>{email.trim()}</b>. Open it on this device to sign in.
-        </p>
+        <div role="status" className="card" style={{ padding: 14, textAlign: "center" }} data-testid="link-sent">
+          <p style={{ margin: 0 }}>Link sent to <b>{email.trim()}</b>. Open it on this device to sign in.</p>
+          {/* a way back without a reload: a wrong address, or a password after all (e2e p10 F3) */}
+          <button type="button" className="linky" data-testid="link-sent-back" style={{ marginTop: 6 }}
+            onClick={() => { setState("idle"); setMsg(null); }}>Use a different email or a password</button>
+        </div>
       ) : (
         <form noValidate data-testid="email-form"
           onSubmit={(ev) => { ev.preventDefault(); if (usePassword) void signInPassword(); else void sendLink(); }}>

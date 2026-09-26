@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Account, Api, Lot, PortfolioRow } from "../lib/api";
 import { mutatedSince, mutationMark } from "../lib/mutations";
+import { sinceBuyLabel } from "../lib/portfolio";
 import { ccySymbol, displayName, formatDate, glClass, labelParts, marketClock, money, moneyExact, priceAsOf, qtyUnit, signedMoney, signedPct } from "../lib/format";
 import { ACCOUNTS, accountHeading, accountLabel, shownAccount } from "../lib/accounts";
 import { isMarketOpen, marketOf, moveSession } from "../lib/markets";
@@ -136,6 +137,7 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   const session = moveSession(row);
   const mkt = marketOf(row);
   const closedNow = !!row.as_of && mkt !== null && mkt !== "CRYPTO" && !isMarketOpen(mkt);
+  const sinceBuy = sinceBuyLabel(row);
 
   return (
     <>
@@ -148,7 +150,10 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
           <div className={`num ${glClass(row.change_pct)}`}>
             {/* the session is dated in the market's own zone: a KRX close is "Wed close" in Seoul, not Pacific's Tuesday */}
             {/* after the close the price is the close: "4h ago" made it look stale; say when it closed (r9 designer) */}
-            {signedPct(row.change_pct)} {session.today ? `today · ${closedNow ? `closed ${marketClock(row.as_of!, mkt)}` : priceAsOf(row.as_of)}` : `since last close · ${session.label}`}
+            {/* every lot bought in this session: the move is from the buy, and says so (e2e p10) */}
+            {sinceBuy
+              ? `0.00% · ${sinceBuy}${closedNow ? ` · closed ${marketClock(row.as_of!, mkt)}` : ""}`
+              : <>{signedPct(row.change_pct)} {session.today ? `today · ${closedNow ? `closed ${marketClock(row.as_of!, mkt)}` : priceAsOf(row.as_of)}` : `since last close · ${session.label}`}</>}
           </div>
         )}
       </div>
