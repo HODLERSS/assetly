@@ -190,8 +190,37 @@ const signedUsd = (v: number) => `${v >= 0 ? "+" : "-"}$${Math.round(Math.abs(v)
 const capped = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
   Promise.race([p.catch(() => fallback), new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
 
+// Round 9 re-check: 2 of 97 asks got NO response at all (6.9s and 10.5s; both worked on retry). Whatever the path, every
+// request now ends in a 200 with a body: a rejection nobody awaited no longer takes the isolate down, a throw anywhere in
+// the handler becomes a short answer, and a hard deadline (28.5s from the request) answers if nothing else has.
+globalThis.addEventListener("unhandledrejection", (e) => {
+  e.preventDefault();
+  console.error("ask: unhandled rejection", String((e as PromiseRejectionEvent).reason).slice(0, 300));
+});
+const HARD_DEADLINE_MS = Number(Deno.env.get("ASK_HARD_DEADLINE_MS") ?? 28500);   // env override for local tests only
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const peek = req.clone();
+  const sorry = async (why: string) => {
+    const b = await peek.json().catch(() => ({})) as { question?: unknown };
+    const ko = /[\uac00-\ud7a3]/.test(String(b.question ?? ""));
+    console.error("ask: degraded answer", why);
+    return json({ ok: true, degraded: true, followups: [],
+      answer: ko ? "지금은 이 답을 끝내지 못했습니다. 잠시 후 다시 물어봐 주세요." : "I couldn't finish this answer just now. Please ask again in a moment." });
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const late = new Promise<"late">((r) => { timer = setTimeout(() => r("late"), HARD_DEADLINE_MS); });
+    const out = await Promise.race([handle(req), late]);
+    return out === "late" ? await sorry("hard deadline") : out;
+  } catch (e) {
+    return await sorry(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+async function handle(req: Request): Promise<Response> {
   const tReq = Date.now();
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const uid = await userIdFrom(admin, bearerOf(req));
@@ -843,4 +872,4 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const modelChips = builtInCode || !parsedA ? [] : (judgedChips ?? (parsedA?.followups ?? []).map(deDash));
   const followups = cleanFollowups(modelChips.filter((f) => chipInLanguage(question, f)), fallbacks);
   return json({ ok: true, answer, followups, mentioned });
-});
+}
