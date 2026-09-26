@@ -34,7 +34,9 @@ Deno.test("r16: glosses are parenthetical and cannot break grammar", () => {
 
 Deno.test("r16: news lines are the source headline; stale quarter previews go", () => {
   const heads = [{ symbol: "NVDA", names: ["NVDA", "Nvidia"], title: "Nvidia CEO Pushes Back On The 'AI Apocalypse' Narrative - Yahoo Finance" }, { symbol: "TSLA", names: ["TSLA", "Tesla"], title: "TSLA Stock Jumps 3% Ahead Of Q2 Report" }];
-  assertEquals(anchorNewsLine("NVDA CEO warns AI slowdown risk despite hype", heads), "Nvidia CEO Pushes Back On The 'AI Apocalypse' Narrative");
+  // round 9: a line sharing one word with the headline is not its paraphrase: dropped, never swapped for it
+  assertEquals(anchorNewsLine("NVDA CEO warns AI slowdown risk despite hype", heads), null);
+  assertEquals(anchorNewsLine("Nvidia CEO pushes back on the AI apocalypse narrative", heads), "Yahoo Finance: Nvidia CEO Pushes Back On The 'AI Apocalypse' Narrative".replace("Yahoo Finance: ", ""));
   assertEquals(anchorNewsLine("AAPL iPhone demand firm", heads), null);
   assert(staleNewsTitle("TSLA Stock Jumps 3% Ahead Of Q2 Report", "2026-09-25T10:00:00Z", "2026-09-25"));
   assertFalse(staleNewsTitle("Tesla stock slides ahead of Q3 deliveries", "2026-09-25T10:00:00Z", "2026-09-25"));

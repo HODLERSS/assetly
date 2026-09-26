@@ -3,6 +3,7 @@
 // Each helper exists because a model got a number, a date or a framing wrong in production; the
 // comment on each names the failure it closes.
 import { CLOSE_MIN, HOL, OPEN_MIN, TZ, type Mkt, zonedEpoch, zonedParts, isTradingDay, prevTradingDay } from "./calendar.ts";
+import { decodeEntities } from "./news_rules.ts";
 export { aliasesFor, centrality, decodeEntities, isJunkNews, newsRelevant, type NewsRow, publisherFor, staleRedated, titleKey, urlDate, usableNews } from "./news_rules.ts";
 
 // ---------------------------------------------------------------------------------------------
@@ -2193,21 +2194,100 @@ export function staleNewsTitle(title: string, publishedAt: string | null, todayY
   return q !== upcoming;
 }
 
+/** A headline that may stand in a News line (round 9 designer: the verbatim anchoring put "Is Meta the Best Magnificent
+ *  Seven Stock to Buy…?" and "Apple Stock Price Up 1.5% - Time to Buy?" into the card in Assetly's voice). Buy/sell
+ *  framing, listicles, "if you invest $X" and "could be worth" forecasts, price-target calls, insider-filing boilerplate
+ *  and question-form clickbait are not news lines. */
+export function headlineOk(title: string): boolean {
+  const t = decodeHtml(String(title ?? "")).replace(/[‘’]/g, "'").trim();
+  if (!t) return false;
+  if (/(?:…|\.\.\.)\s*$/.test(t)) return false;                                            // cut by the feed ("renewa...")
+  if (/\?\s*(?:[-|–—]\s*[^?]{2,40})?$/.test(t)) return false;                        // question-form titles
+  if (/(?:^|[.:]\s+)(?:could|can|will|is|are|should|would|where|what|why|how (?:much|high|low|far))\b[^?]{3,80}\?/i.test(t)) return false;   // a question heading the title
+  if (/\b(?:this|these) (?:\w+ )?stocks? (?:may|could|might|is|are)\b|\b(?:may|could) be the best\b/i.test(t)) return false;
+  if (/\b(?:(?:to|a|a better|still a|strong|top|best)\s+buy|buy(?:ing)? (?:now|the dip|opportunity)|time to (?:buy|sell)|(?:should|would) you (?:buy|sell)|worth buying|to sell now|(?:better|best) (?:stock|pick|buy)|is (?:a )?(?:buy|sell)\b|sell[- ]off alert|on sale\b|bargain|no[- ]brainer|millionaire|retire (?:rich|early))/i.test(t)) return false;
+  if (/^\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:(?:[A-Z][\w-]*|AI|top|great|dividend|growth|unstoppable|magnificent)\s+){0,3}(?:stocks?|etfs?|reasons?|things|ways|picks)\b/i.test(t)) return false;   // listicles
+  if (/:\s*(?:\d+|one)\s+(?:\w+\s+){0,2}stocks?\b|\b\d+\s+(?:AI\s+)?stocks?\s+to\b/i.test(t)) return false;
+  if (/\bif you (?:had )?invest(?:ed)?\s+\$|\bcould be worth\b|\bwhat (?:it|they) could be worth|\bhere'?s (?:what|how much)\b|\bprice (?:target|prediction|forecast)\b|\bstock forecast\b|\bby 20[3-9]\d\b/i.test(t)) return false;
+  if (/\bForm\s*4\b|\bSEC Form\b|\b(?:director|officer|insider|10% owner|ceo|cfo|evp|svp)\b[^.]{0,40}\b(?:reported|reports|files?|filed)\b[^.]{0,40}\b(?:sale|sales|purchase|purchases|gift|acquisition)s?\b|\bshare gift\b|\bsells? [\d,]+ shares\b|\bbuys? [\d,]+ shares\b/i.test(t)) return false;
+  if (/\bwhat'?s (?:going on|next|happening)\b|\bwhy (?:is|are|did|does)\b[^.]{0,40}\bstock\b/i.test(t)) return false;
+  return true;
+}
+
+/** HTML entities in a feed title ("&amp;", "&#39;", "&quot;"): the shared rule, plus numeric entities. */
+const decodeHtml = (t: string): string => decodeEntities(String(t ?? "")).replace(/&nbsp;|&#160;/g, " ").replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(Number(n)));
+
+const PUBLISHERS = "Yahoo Finance|Reuters|Bloomberg|MarketBeat|Investing\\.com(?: Canada)?|Seeking Alpha|The Motley Fool|Motley Fool|Benzinga|CNBC|Barron's|MarketWatch|TipRanks|Zacks(?: Investment Research)?|Forbes|TheStreet|Barchart|GuruFocus|Stocktwits|24/7 Wall St\\.|Investor's Business Daily|Stock Titan|TradingKey|Fox Business|Financial Post";
+/** A feed title in the card's typography: entities decoded, publisher suffixes ("- Yahoo Finance", "By Investing.com")
+ *  and ticker parentheticals ("Apple (AAPL)", "(NASDAQ:AAPL)") removed, em and en dashes made commas or colons (house
+ *  style has no em dashes), curly quotes straightened, a trailing "…" removed. */
+export function cleanHeadline(title: string, names: string[] = []): string {
+  let t = decodeHtml(String(title ?? "")).replace(/\s+/g, " ").trim();
+  t = t.replace(new RegExp(`\\s*(?:[-|–—]\\s*|\\bBy\\s+)(?:${PUBLISHERS})\\s*$`, "i"), "");
+  // a trailing " - <holding name>" section tag ("What's Going On With Microsoft Stock Friday? - Microsoft")
+  for (const n of names) if (n && n.length >= 3) t = t.replace(new RegExp(`\\s+[-|–—]\\s+${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i"), "");
+  t = t.replace(/\s*\((?:NASDAQ|NYSE|NYSEARCA|AMEX|KRX|KOSPI|KOSDAQ|OTC|TSX|LSE)\s*:\s*[A-Z0-9.\-]+\)/gi, "")
+    .replace(/\s*\((?:[A-Z]{1,5}(?:\.[A-Z])?|\d{6}(?:\.K[SQ])?)\)/g, "");
+  t = t.replace(/[‘’‛]/g, "'").replace(/[“”‟]/g, '"');
+  // "Market—While": a comma; spaced "X — Y" / "X -- Y" / "X - Y": a colon when nothing punctuates before it, else a comma
+  t = t.replace(/(\S)[—–](\S)/g, "$1, $2")
+    .replace(/\s+(?:—|–|--?)\s+/g, (_m, at: number, whole: string) => (/[:,;]/.test(whole.slice(0, at)) ? ", " : ": "))
+    .replace(/[—–]/g, ", ");
+  t = t.replace(/\s*(?:…|\.\.\.)\s*$/, "").replace(/\s+([,.:;!])/g, "$1").replace(/[,:;]\s*$/, "").trim();
+  return t;
+}
+
+/** The first day-move percent a headline states ("Apple Stock Price Up 1.5%", "Meta Slides 4%"), signed, or null.
+ *  Monthly / yearly / weekly figures ("32% monthly run") are not day moves. */
+function headlineDayMove(t: string): number | null {
+  const m = /\b(up|down|rises?|rose|gains?|gained|climbs?|climbed|jumps?|jumped|soars?|soared|surges?|surged|rall(?:y|ies|ied)|falls?|fell|drops?|dropped|slides?|slid|slips?|slipped|sinks?|sank|tumbles?|tumbled|plunges?|plunged|dips?|dipped|sheds?|lower|higher)\s+(?:by\s+|nearly\s+|almost\s+|over\s+|more than\s+|about\s+)?(\d+(?:\.\d+)?)%(?!\s*(?:in|over|this|a|for|since)?\s*(?:the\s+)?(?:past\s+)?(?:month|monthly|year|yearly|week|weekly|ytd|quarter|\d+\s*(?:days|weeks|months)))/i.exec(t);
+  if (!m) return null;
+  const down = /^(?:down|falls?|fell|drops?|dropped|slides?|slid|slips?|slipped|sinks?|sank|tumbles?|tumbled|plunges?|plunged|dips?|dipped|sheds?|lower)$/i.test(m[1]);
+  return (down ? -1 : 1) * Number(m[2]);
+}
+
 /** News lines stay anchored to their source (round 8: "NVDA CEO warns AI slowdown risk despite hype" for "Nvidia CEO
- *  Pushes Back On The 'AI Apocalypse'"). Each line is REPLACED by the best-matching source headline for the holding
- *  it names, cleaned and shortened; a line with no matching headline is dropped. */
-export function anchorNewsLine(line: string, heads: { symbol: string; names: string[]; title: string }[], maxLen = 96): string | null {
-  const named = heads.filter((h) => h.names.some((n) => n && nameIn(line, n)));
+ *  Pushes Back On The 'AI Apocalypse'"). Each line is REPLACED by the source headline it paraphrases, attributed
+ *  ("Reuters: …"), or dropped. Round 9 designer: only headlines that pass headlineOk are candidates; the match must share
+ *  most of the line's words besides the holding's names (0.35, was 0.1, which took "Apple (AAPL) Reaches $250 Million
+ *  Siri Settlement" for "Apple climbs toward 350 dollars"); a headline whose day move disagrees with the live move by
+ *  more than half a point goes ("Meta Slides 4%" at -3.3%); a title too long for the line is cut at a clause or not used,
+ *  never cut mid-phrase with "…". `dayMoves`: live day % by symbol. */
+export function anchorNewsLine(line: string, heads: { symbol: string; names: string[]; title: string; source?: string | null }[], maxLen = 96, dayMoves: Record<string, number | null | undefined> = {}): string | null {
+  const named = heads.filter((h) => h.names.some((n) => n && nameIn(line, n)) && headlineOk(h.title));
   if (!named.length) return null;
-  const toks = (t: string) => new Set((t.toLowerCase().match(/[a-z0-9$%.]{3,}/g) ?? []).filter((w) => !/^(?:the|and|for|with|its|after|from|this|that|stock|shares)$/.test(w)));
-  const L = toks(line);
-  const best = named.map((h) => { const T = toks(h.title); let n = 0; for (const w of L) if (T.has(w)) n++; return { h, sc: n / Math.max(1, Math.min(L.size, T.size)) }; }).sort((a, b) => b.sc - a.sc)[0];
-  // a line about a holding takes that holding's best-matching headline; one sharing almost nothing is not its source
-  if (!best || best.sc < 0.1) return null;
-  let t = String(best.h.title).replace(/\s*[-|–]\s*(?:Yahoo Finance|Reuters|Bloomberg|MarketBeat|Investing\.com|Seeking Alpha|The Motley Fool|Benzinga|CNBC|Barron's)\s*$/i, "").replace(/\s*\((?:NASDAQ|NYSE|KRX|KOSPI):[A-Z0-9.]+\)/gi, "").trim();
-  if (t.length > maxLen) t = t.slice(0, maxLen).replace(/\s+\S*$/, "") + "…";
-  const sym = best.h.symbol.replace(/\.(?:KS|KQ)$/, "");
-  return [sym, ...best.h.names].some((n) => n && t.toLowerCase().includes(n.toLowerCase())) ? t : `${best.h.names[0]}: ${t}`;
+  const STOP = /^(?:the|and|for|with|its|after|from|this|that|stock|stocks|shares|share|inc|corp|company|today|says|said|amid|over|into|than|more|on|as|at|by|of|to|in|an|a)$/;
+  const toks = (t: string, names: string[]) => {
+    const nameToks = new Set(names.flatMap((n) => String(n).toLowerCase().match(/[a-z0-9]+/g) ?? []));
+    return new Set((t.toLowerCase().replace(/(\d),(\d{3})/g, "$1$2").match(/[a-z0-9$%.]{3,}|\d+(?:\.\d+)?%?/g) ?? [])
+      .map((w) => w.replace(/\.$/, "").replace(/'s$/, "")).filter((w) => w.length >= 2 && !STOP.test(w) && !nameToks.has(w.replace(/[$%]/g, ""))));
+  };
+  const cands = named.map((h) => {
+    const t = cleanHeadline(h.title, [h.symbol.replace(/\.(?:KS|KQ)$/, ""), ...h.names]);
+    const L = toks(line, [h.symbol, ...h.names]), T = toks(t, [h.symbol, ...h.names]);
+    let n = 0; for (const w of L) if (T.has(w)) n++;
+    return { h, t, sc: n / Math.max(1, Math.min(L.size, T.size)), n };
+  }).filter((c) => {
+    if (c.sc < 0.35 || c.n < 2) return false;
+    const live = dayMoves[c.h.symbol];
+    const said = headlineDayMove(c.t);
+    return !(typeof live === "number" && said !== null && Math.abs(said - live) > 0.5);
+  }).sort((a, b) => (b.sc - a.sc) || ((a.t.length <= maxLen ? 0 : 1) - (b.t.length <= maxLen ? 0 : 1)));
+  for (const c of cands) {
+    let t = c.t;
+    if (t.length > maxLen) {
+      // cut at the last clause boundary that fits, or skip this headline
+      const cut = t.slice(0, maxLen + 1).match(/^(.{30,}?)(?:[,;:]\s|\s(?:as|after|while|amid|but|despite)\s)(?!.*(?:[,;:]\s|\s(?:as|after|while|amid|but|despite)\s))/);
+      if (!cut) continue;
+      t = cut[1].trim();
+    }
+    const sym = c.h.symbol.replace(/\.(?:KS|KQ)$/, "");
+    const src = String(c.h.source ?? "").replace(/\.(?:com|io|net|org)$/i, "").trim();
+    const mentions = [sym, ...c.h.names].some((n) => n && nameIn(t, n));
+    if (src) return mentions ? `${src}: ${t}` : `${src} on ${c.h.names[0]}: ${t}`;
+    return mentions ? t : `${c.h.names[0]}: ${t}`;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

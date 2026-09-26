@@ -616,16 +616,20 @@ ${VALUE_LAW}`;
       }
       if (bullets.length < 2) { errors.push("user " + uid.slice(0, 8) + ": take contradicted the live book; kept the previous one"); continue; }
       const heldBook = bookNames.map((b) => b.symbol).filter((sy) => !gone.has(sy));
-      const tagged = { bullet_symbols: bullets.map((b) => mentionedSymbols(b, bookNames)), news5_symbols: news5 ? news5.map((b) => mentionedSymbols(b, bookNames)) : null, held_symbols: heldBook };
       bullets = bullets.map((b) => sanitize(b)).filter(Boolean);
       // round 8 newcomer: a News line reversed its source ("NVDA CEO warns AI slowdown risk despite hype" for "Nvidia CEO
       // Pushes Back On The 'AI Apocalypse'"): each line is replaced by the matching source headline, verbatim and cleaned
       if (news5) {
         const heads = (nws ?? []).filter((x) => !staleNewsTitle(String(x.title), x.published_at, todayEt) && usableNews(x, akaOf.get(x.symbol) ?? aliasesFor(x.symbol)))
-          .map((x) => ({ symbol: String(x.symbol), names: akaOf.get(x.symbol) ?? aliasesFor(x.symbol), title: String(x.title) }));
+          .map((x) => ({ symbol: String(x.symbol), names: akaOf.get(x.symbol) ?? aliasesFor(x.symbol), title: String(x.title), source: x.source ? String(x.source) : null }));
+        // round 9 designer: headlines are attributed quotes ("Yahoo Finance: ..."), filtered for buy framing, listicles,
+        // forecasts and filings, matched on most of the line's words, and held to the live day move
+        const dayMoves = Object.fromEntries(assets.filter((r) => r.change_pct !== null).map((r) => [r.symbol, Number(r.change_pct)]));
         const seen = new Set<string>();
-        news5 = news5.map((l) => anchorNewsLine(l, heads)).filter((l): l is string => !!l && !seen.has(l) && (seen.add(l), true)).map((l) => sanitize(l)).filter(Boolean);
+        news5 = news5.map((l) => anchorNewsLine(l, heads, 96, dayMoves)).filter((l): l is string => !!l && !seen.has(l) && (seen.add(l), true)).map((l) => sanitize(l)).filter(Boolean);
       }
+      // the symbol tags follow the FINAL lines (anchoring drops and replaces lines; tags taken before it went out of step)
+      const tagged = { bullet_symbols: bullets.map((b) => mentionedSymbols(b, bookNames)), news5_symbols: news5 ? news5.map((b) => mentionedSymbols(b, bookNames)) : null, held_symbols: heldBook };
       const row = { user_id: uid, bullets, news5, model };
       // the symbol tags arrive with migration 38; before it the row is written without them
       let { error: piErr } = await admin.from("portfolio_insights").insert({ ...row, ...tagged });
