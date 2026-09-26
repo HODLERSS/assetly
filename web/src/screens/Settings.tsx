@@ -16,8 +16,10 @@ const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? 
 
 // Gap screen g2: account, currency matrix, markets, sign out. The matrix (totals / US assets /
 // KR assets, each USD or KRW) appears once the book actually holds KRW — no clutter before that.
-export function SettingsScreen({ api, profile, rows, email = null, onChanged, onSignedOut }: {
+export function SettingsScreen({ api, profile, rows, email = null, onChanged, onSignedOut, bookUnknown = false }: {
   api: Api; profile: Profile | null; rows: PortfolioRow[]; email?: string | null;
+  /** no book has loaded yet: the markets row says so instead of a placeholder dash */
+  bookUnknown?: boolean;
   onChanged: () => Promise<void> | void; onSignedOut: () => void;
 }) {
   const [theme, setThemeState] = useState<ThemeChoice>(() => getTheme());
@@ -120,7 +122,8 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
           </span>
         </div>
         {/* the markets actually held, not the ones picked at setup ("Markets: US" with two KRX holdings) */}
-        <div className="row"><span>Markets</span><span className="sub" data-testid="markets-row">{heldMarkets.length ? heldMarkets.join(" · ") : (profile?.markets ?? []).join(" · ") || "—"}</span></div>
+        <div className="row"><span>Markets</span><span className="sub" data-testid="markets-row">{heldMarkets.length ? heldMarkets.join(" · ")
+          : bookUnknown ? "Not loaded yet" : (profile?.markets ?? []).join(" · ") || "None yet"}</span></div>
         <div className="row"><span>Price updates</span><span className="sub">Every minute, market hours</span></div>
       </div>
       <div className="card" style={{ marginBottom: 14 }} data-testid="investor-card">

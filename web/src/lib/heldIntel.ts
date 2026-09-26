@@ -53,7 +53,7 @@ export function mentions(text: string, symbol: string, name?: string | null): bo
   return false;
 }
 
-export type HeldIntel = { bullets: string[]; news5: string[]; hidden: number };
+export type HeldIntel = { bullets: string[]; news5: { text: string; source: string | null }[]; hidden: number };
 
 /** The insight's bullets minus the ones about holdings that are gone. */
 export function heldOnly(ins: Insight, rows: PortfolioRow[], removals: Removal[] = []): HeldIntel {
@@ -62,11 +62,16 @@ export function heldOnly(ins: Insight, rows: PortfolioRow[], removals: Removal[]
     ? ins.held_symbols.filter((s) => !held.has(s)).map((s) => ({ symbol: s, name: removals.find((r) => r.symbol === s)?.name ?? null }))
     : removals.filter((r) => !held.has(r.symbol));
   let hidden = 0;
-  const keep = (list: string[], tags: string[][] | null | undefined) => list.filter((b, i) => {
+  const keepIdx = (list: string[], tags: string[][] | null | undefined) => list.map((_, i) => i).filter((i) => {
     const t = tags?.[i];
-    const ok = Array.isArray(t) ? t.every((s) => held.has(s)) : !gone.some((g) => mentions(b, g.symbol, g.name));
+    const ok = Array.isArray(t) ? t.every((s) => held.has(s)) : !gone.some((g) => mentions(list[i], g.symbol, g.name));
     if (!ok) hidden++;
     return ok;
   });
-  return { bullets: keep(ins.bullets ?? [], ins.bullet_symbols), news5: keep(ins.news5 ?? [], ins.news5_symbols), hidden };
+  const bullets = ins.bullets ?? [], news = ins.news5 ?? [];
+  return {
+    bullets: keepIdx(bullets, ins.bullet_symbols).map((i) => bullets[i]),
+    news5: keepIdx(news, ins.news5_symbols).map((i) => ({ text: news[i], source: ins.news5_sources?.[i] ?? null })),
+    hidden,
+  };
 }

@@ -60,6 +60,15 @@ export function priceAsOf(iso: string | null): string {
   return `${d.toLocaleDateString("en-US", { weekday: "short" })} close`;   // market closed since
 }
 
+/** A market-facing clock, in the market's own zone with its label: "4:00 PM ET", "3:30 PM KST". The app's
+ *  ET stamps sat beside device-local ones with no zone ("7:12 PM" in Chicago; r9 designer m-3). Crypto and
+ *  anything without a market read in ET, the app's reference clock. */
+export function marketClock(iso: string | number, market: "US" | "KR" | "CRYPTO" | null = "US"): string {
+  const kr = market === "KR";
+  const t = new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: kr ? "Asia/Seoul" : "America/New_York" });
+  return `${t} ${kr ? "KST" : "ET"}`;
+}
+
 export function timeAgo(iso: string | null): string {
   if (!iso) return "";
   const s = (Date.now() - new Date(iso).getTime()) / 1000;

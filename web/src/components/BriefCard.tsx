@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Api, BriefEdition, DailyBrief } from "../lib/api";
+import { marketClock } from "../lib/format";
 import { getSnapshot, load as loadTrack, loadSpeech, subscribe, toggle as togglePlayer } from "../lib/player";
 import { hasDeviceVoice } from "../lib/speech";
 import { Icon } from "./Icon";
@@ -29,10 +30,14 @@ const INTRADAY = new Set<BriefEdition>(["morning", "midday", "kr_open"]);
 const STALE_AFTER_MS = 2 * 3600_000;   // no recorded day move (older rows): an intraday read this old is dated
 const signOf = (v: number, dead: number) => (Math.abs(v) < dead ? 0 : v > 0 ? 1 : -1);
 
+// ET with its label, as every other market time in the app ("Prices as of 4:00 PM ET"); a device-local clock with
+// no zone sat beside them (r9 designer m-3). The day is judged in New York too.
+const ET = "America/New_York";
 function clock(iso: string, now: Date): string {
   const d = new Date(iso);
-  const t = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  return d.toDateString() === now.toDateString() ? t : `${d.toLocaleDateString("en-US", { weekday: "short" })} ${t}`;
+  const t = marketClock(iso, "US");
+  const day = (x: Date) => x.toLocaleDateString("en-US", { timeZone: ET });
+  return day(d) === day(now) ? t : `${d.toLocaleDateString("en-US", { weekday: "short", timeZone: ET })} ${t}`;
 }
 
 /** Whether a brief still describes the book on screen, and the line that dates it when it doesn't.

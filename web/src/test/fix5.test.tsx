@@ -159,7 +159,7 @@ describe("K3 News offline keeps its list and says so quietly (r5 designer m-1, m
     await screen.findByTestId("prices-error");
     await tab(/news/i);
     const kept = await screen.findByTestId("news-kept");
-    expect(kept.textContent).toMatch(/^Showing news from \d{1,2}:\d{2} [AP]M\.$/);
+    expect(kept.textContent).toMatch(/^Showing news from \d{1,2}:\d{2} [AP]M ET\.$/);
     expect(screen.queryByTestId("news-error")).toBeNull();
     expect(screen.getAllByRole("alert")).toHaveLength(1);        // the app's banner only
     expect(screen.getByText("Reddit posts strong quarter")).toBeTruthy();
@@ -291,9 +291,12 @@ describe("K6 a coin's week is drawn by the hour (r5 native m3); the daily ranges
     await userEvent.click(screen.getByRole("tab", { name: "1W" }));
     await waitFor(() => expect(screen.getByTestId("range-change").textContent).toBe(`+${((84_000 / (80_000 + 7) - 1) * 100).toFixed(2)}%`));
     const coarse = screen.getByTestId("price-chart").querySelector("path")!.getAttribute("d")!.split("L").length;
-    const calls = getHistory.mock.calls.slice(-2);   // the 1W pair (1M, the default, came first)
-    expect(calls.map((c) => c[2]!.recentHours)).toEqual([0, hourlyRecentHours(new Date(now), "UTC")]);
-    expect(calls[1][2]).toMatchObject({ maxPages: 14, wave: 4 });
+    // the hourly week is read once, as soon as the coin chart opens (on 1M, the default; r9 designer m-5), and
+    // 1W reuses it; 1W's own call is the daily first pass
+    const hourly = getHistory.mock.calls.filter((c) => c[2]?.maxPages);
+    expect(hourly).toHaveLength(1);
+    expect(hourly[0][2]).toMatchObject({ recentHours: hourlyRecentHours(new Date(now), "UTC"), maxPages: 14, wave: 4 });
+    expect(getHistory.mock.calls.at(-1)![2]!.recentHours).toBe(0);
     await act(async () => { finish([...base, ...fine]); });
     await waitFor(() => expect(screen.getByTestId("price-chart").querySelector("path")!.getAttribute("d")!.split("L").length).toBeGreaterThan(100));
     expect(coarse).toBeLessThan(12);
