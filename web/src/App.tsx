@@ -600,7 +600,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
         )}
         {view.kind === "tab" && view.tab === "home" && (
           <PullToRefresh onRefresh={load}>
-          <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"} loading={!booted} loadFailed={!hasBook && !!error}
+          <Home api={api} rows={rows} totals={totals} baseCurrency={profile?.base_currency ?? "USD"} loading={!booted || (!hasBook && !error)} loadFailed={!hasBook && !!error}
             dispUs={profile?.display_us ?? "USD"} dispKr={profile?.display_kr ?? "KRW"}
             onOpen={(id) => go({ kind: "position", holdingId: id })} onAdd={() => go({ kind: "add" })}
             briefBanner={briefBanner} onBriefBannerDone={() => setBriefBanner(null)} briefRev={briefRev}
