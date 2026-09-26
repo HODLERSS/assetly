@@ -29,7 +29,62 @@ export type Insight = {
   bullets: string[]; windows: Record<string, string> | null; news5?: string[] | null; model: string; generated_at: string;
   /** portfolio card only (migration 38; absent on older rows): the holdings each bullet is about, and the book it was written for */
   bullet_symbols?: string[][] | null; news5_symbols?: string[][] | null; held_symbols?: string[] | null;
+  /** the outlet each news5 line quotes, when the server attributes it (null where it doesn't) */
+  news5_sources?: (string | null)[] | null;
 };
+
+// Where an edition sits in the session it belongs to: the later in the day, the higher. A row's generated_at is
+// NOT its place: a Morning regenerated at 7:28 PM ET outranked the 4:05 PM Close by time and pushed it off Home,
+// so the chips read [Assessment, Morning] and the Close was unreachable (r9 native, MAJOR).
+const EDITION_RANK: Record<string, number> = { close: 6, midday: 5, morning: 4, weekend: 3, kr_close: 2, kr_open: 1 };
+const ASSESSMENT_FRESH_MS = 14 * 86400000;
+
+/**
+ * The (at most) two briefs Home shows: from the latest brief date, the edition furthest into its session
+ * (close > midday > morning, one row per edition, its newest), plus the Portfolio Assessment when it is recent,
+ * else the next edition of that date. The card opens on the last one, so the ranked edition goes last unless the
+ * assessment was written after it.
+ */
+export function pickHomeBriefs(daily: DailyBrief[], assessment: DailyBrief | null, now: number = Date.now()): DailyBrief[] {
+  const day = daily.reduce<string | null>((m, b) => (m === null || b.brief_date > m ? b.brief_date : m), null);
+  const byEdition = new Map<string, DailyBrief>();
+  for (const b of daily) {
+    if (b.brief_date !== day) continue;
+    const had = byEdition.get(b.edition);
+    if (!had || b.generated_at > had.generated_at) byEdition.set(b.edition, b);
+  }
+  const ranked = [...byEdition.values()].sort((x, y) => (EDITION_RANK[y.edition] ?? 0) - (EDITION_RANK[x.edition] ?? 0) || (y.generated_at > x.generated_at ? 1 : -1));
+  const top = ranked[0];
+  const fresh = assessment && now - Date.parse(assessment.generated_at) < ASSESSMENT_FRESH_MS ? assessment : null;
+  if (!top) return fresh ? [fresh] : [];
+  if (fresh) return fresh.generated_at > top.generated_at ? [top, fresh] : [fresh, top];
+  return ranked[1] ? [ranked[1], top] : [top];
+}
+
+/** A headline line with its trailing "…" / "..." cut: a clipped title reads as a sentence that stops. */
+export const cleanHeadline = (s: string): string => s.replace(/\s*(?:…|\.{3})\s*$/u, "").trim();
+
+/**
+ * news5 as the client shows it. The server is moving to attributed headlines (r9 designer M-1); until its field
+ * names are settled this takes either shape: a plain string, or an object with the line under
+ * text/title/headline/line and the outlet under source/publisher/outlet. Anything else is dropped.
+ */
+export function newsLines(raw: unknown): { news5: string[] | null; news5_sources: (string | null)[] | null } {
+  if (!Array.isArray(raw)) return { news5: null, news5_sources: null };
+  const news5: string[] = [], src: (string | null)[] = [];
+  for (const it of raw) {
+    let text: unknown = it, source: unknown = null;
+    if (it && typeof it === "object") {
+      const o = it as Record<string, unknown>;
+      text = o.text ?? o.title ?? o.headline ?? o.line;
+      source = o.source ?? o.publisher ?? o.outlet ?? null;
+    }
+    if (typeof text !== "string" || !cleanHeadline(text)) continue;
+    news5.push(cleanHeadline(text));
+    src.push(typeof source === "string" && source.trim() ? source.trim() : null);
+  }
+  return { news5, news5_sources: src.some(Boolean) ? src : null };
+}
 /** One earlier Ask exchange: the question and the answer the user saw. */
 export type AskTurn = { q: string; a: string };
 export type NewsItem ={ id: string; symbol: string; title: string; url: string; source: string; published_at: string | null; summary?: string | null };
@@ -395,7 +450,7 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (!r) return null;
       const tags = (v: unknown) => Array.isArray(v) && v.every(Array.isArray) ? (v as string[][]) : null;
       return { bullets: (r.bullets as string[]) ?? [], windows: null,
-               news5: Array.isArray(r.news5) ? (r.news5 as string[]) : null,
+               ...newsLines(r.news5),
                model: String(r.model), generated_at: String(r.generated_at),
                bullet_symbols: tags(r.bullet_symbols), news5_symbols: tags(r.news5_symbols),
                held_symbols: Array.isArray(r.held_symbols) ? (r.held_symbols as string[]) : null };
@@ -444,16 +499,11 @@ export function makeApi(sb: SupabaseClient = supabase) {
       // a network failure comes back as { error }, not a rejection: throw it, or the caller saves [] over
       // the copy kept on this device and the offline brief vanishes (r4 designer)
       if (e1 || e2) throw e1 ?? e2;
-      const daily = (d1 ?? []) as R[];
-      const day = daily.length ? String(daily[0].brief_date) : null;
+      const toBrief = (r: R): DailyBrief => ({ brief_date: String(r.brief_date), edition: (r.edition ?? "morning") as BriefEdition,
+        sections: r.sections as BriefSections, generated_at: String(r.generated_at),
+        audio_path: (r.audio_path as string | null) ?? null, script: (r.script as string | null) ?? null });
       const a = ((d2 ?? []) as R[])[0];
-      const fresh = a && Date.now() - +new Date(String(a.generated_at)) < 14 * 86400000 ? [a] : [];
-      return [...daily.filter((r) => String(r.brief_date) === day), ...fresh]
-        .map((r) => ({ brief_date: String(r.brief_date), edition: (r.edition ?? "morning") as BriefEdition,
-                       sections: r.sections as BriefSections, generated_at: String(r.generated_at),
-                       audio_path: (r.audio_path as string | null) ?? null, script: (r.script as string | null) ?? null }))
-        .sort((x, y) => (x.generated_at < y.generated_at ? -1 : x.generated_at > y.generated_at ? 1 : 0))
-        .slice(-2);   // Home shows the TWO most recent briefs only; older editions retire as new ones land
+      return pickHomeBriefs(((d1 ?? []) as R[]).map(toBrief), a ? toBrief(a) : null);
     },
     /** Short-lived playback URL for a brief's narration. */
     async getBriefAudioUrl(path: string): Promise<string | null> {

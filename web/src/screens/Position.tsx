@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Account, Api, Lot, PortfolioRow } from "../lib/api";
 import { mutatedSince, mutationMark } from "../lib/mutations";
-import { ccySymbol, displayName, formatDate, glClass, labelParts, money, moneyExact, priceAsOf, qtyUnit, signedMoney, signedPct } from "../lib/format";
+import { ccySymbol, displayName, formatDate, glClass, labelParts, marketClock, money, moneyExact, priceAsOf, qtyUnit, signedMoney, signedPct } from "../lib/format";
 import { ACCOUNTS, accountHeading, accountLabel, shownAccount } from "../lib/accounts";
-import { moveSession } from "../lib/markets";
+import { isMarketOpen, marketOf, moveSession } from "../lib/markets";
 import { entryPreview, formatAmountInput, formatQty, readAmount } from "../lib/numbers";
 import { useInFlight } from "../lib/inflight";
 import { PriceChart } from "../components/PriceChart";
@@ -123,6 +123,8 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   });
   const qtyLabel = row.kind === "crypto" ? "Quantity" : "Shares";
   const session = moveSession(row);
+  const mkt = marketOf(row);
+  const closedNow = !!row.as_of && mkt !== null && mkt !== "CRYPTO" && !isMarketOpen(mkt);
 
   return (
     <>
@@ -134,7 +136,8 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
         {!cashish && (
           <div className={`num ${glClass(row.change_pct)}`}>
             {/* the session is dated in the market's own zone: a KRX close is "Wed close" in Seoul, not Pacific's Tuesday */}
-            {signedPct(row.change_pct)} {session.today ? `today · ${priceAsOf(row.as_of)}` : `since last close · ${session.label}`}
+            {/* after the close the price is the close: "4h ago" made it look stale; say when it closed (r9 designer) */}
+            {signedPct(row.change_pct)} {session.today ? `today · ${closedNow ? `closed ${marketClock(row.as_of!, mkt)}` : priceAsOf(row.as_of)}` : `since last close · ${session.label}`}
           </div>
         )}
       </div>

@@ -244,13 +244,13 @@ describe("F5 intelligence only about what you hold", () => {
   it("per-bullet symbols (server): a bullet naming a holding no longer held is dropped", () => {
     const v = heldOnly(ins({ bullet_symbols: [["PEP"], ["RDDT"]], news5_symbols: [["F"], ["RDDT"]] }), book);
     expect(v.bullets).toEqual(["RDDT up 5% on ad revenue."]);
-    expect(v.news5).toEqual(["Reddit adds AI search."]);
+    expect(v.news5).toEqual([{ text: "Reddit adds AI search.", source: null }]);
     expect(v.hidden).toBe(2);
   });
   it("held_symbols only: the removed ones are found by ticker or company name in the text", () => {
     const v = heldOnly(ins({ held_symbols: ["RDDT", "PEP", "F"] }), book, [{ symbol: "PEP", name: "PepsiCo, Inc.", at: new Date().toISOString() }, { symbol: "F", name: "Ford Motor Company", at: new Date().toISOString() }]);
     expect(v.bullets).toEqual(["RDDT up 5% on ad revenue."]);
-    expect(v.news5).toEqual(["Reddit adds AI search."]);
+    expect(v.news5).toEqual([{ text: "Reddit adds AI search.", source: null }]);
   });
   it("older rows: this device's removals are the fallback", () => {
     noteRemoval("u-x", { symbol: "PEP", name: "PepsiCo, Inc." });
@@ -286,7 +286,7 @@ describe("F6 a brief is dated against the live book", () => {
   it("the day flipped from red to green since it was written: stale, with its time", () => {
     const f = briefFreshness(midday({ as_of: "2026-09-25T16:31:00Z", day_sign: -1, day_pct: -0.4 }), { now, liveDayPct: 0.17 });
     expect(f.stale).toBe(true);
-    expect(f.note).toMatch(/^Written at \d{1,2}:31 [AP]M, before the latest moves\.$/);
+    expect(f.note).toMatch(/^Written at \d{1,2}:31 [AP]M ET, before the latest moves\.$/);
   });
   it("same direction: current, still dated", () => {
     const f = briefFreshness(midday({ as_of: "2026-09-25T16:31:00Z", day_sign: 1 }), { now, liveDayPct: 0.6 });
