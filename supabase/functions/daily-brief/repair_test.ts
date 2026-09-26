@@ -15,8 +15,10 @@ const T: Record<string, unknown[]> = {
   profiles: [{ id: UID, investor: null }],
   prices: [{ symbol: "USDKRW", price: 1357 }],
   price_history: [
-    { symbol: "TSLA", ts: day(7), price: 360 }, { symbol: "TSLA", ts: day(0), price: 380 },
-    { symbol: "VOO", ts: day(7), price: 690 }, { symbol: "VOO", ts: day(0), price: 700 },
+    // a base on each of the 7-11 days back: on a weekend or a Monday the 7-day cutoff is an earlier session's close, and a
+    // single base stamped exactly now-7d fell after it (every window read null on Saturday 2026-09-26)
+    ...[7, 8, 9, 10, 11].flatMap((n) => [{ symbol: "TSLA", ts: day(n), price: 360 }, { symbol: "VOO", ts: day(n), price: 690 }]),
+    { symbol: "TSLA", ts: day(0), price: 380 }, { symbol: "VOO", ts: day(0), price: 700 },
   ],
   daily_briefs: [{ id: 1, user_id: UID, edition: "close", brief_date: etToday, gen_version: 11, generated_at: day(0.05),
     sections: { lede: "A $9,447 (as of the 4:00 PM ET close) (+0.3%) gain. TSLA was the week's biggest loser.",
