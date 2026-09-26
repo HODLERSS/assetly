@@ -7,6 +7,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { parseYahooDaily, parseYahooWeekly } from "../_shared/history.ts";
 import { prevCloseFromBars, resolvePrevClose } from "../_shared/prevclose.ts";
 import { canonicalSymbol } from "../_shared/intel.ts";
+import { withCryptoTicker } from "./crypto.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
@@ -274,5 +275,5 @@ Deno.serve(async (req) => {
   const results = fixture
     ? (body.results ?? []).map((r: Record<string, unknown>) => mapQuote(r)).filter(Boolean)
     : await yahooSearch(q);
-  return json({ ok: true, results });
+  return json({ ok: true, results: withCryptoTicker(q, results) });
 });

@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, driversLead, krxDollarTargets, isDividendRankQuestion, dividendRankClaims, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, stripHonestBlock, driversLead, krxDollarTargets, isDividendRankQuestion, dividendRankClaims, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -960,7 +960,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     // r10: "Portfolio up $70 today" (whole-book base, Korea's move left out): the book's day dollars must be today's figure
     ...splitSentences(answer).filter((sen) => /\b(?:portfolio|book|account|holdings)\b/i.test(sen) && /\btoday\b|오늘/i.test(sen) && !/\bKorea|한국/i.test(sen)
       && [...sen.matchAll(/([+\u2212-])?\$\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)/g)].some((m) => { const v = Number(m[2].replace(/,/g, "")); return Math.abs(v - Math.abs(bookDayUsd)) > Math.max(5, Math.abs(bookDayUsd) * 0.05) && Math.abs(v - totNow) > totNow * 0.01; })),
-    ...rankPositionClaims(answer, perfRows.map((r) => ({ names: r.names, pct: r.pct, weight: r.usd / (assetsUsd || 1) * 100 })), questionWindows(question)[0] ?? null),
+    ...rankPositionClaims(answer, perfRows.map((r) => { const h = held.find((x) => x.symbol === r.symbol); return { names: r.names, pct: { ...r.pct, 0: h && h.change_pct !== null ? Number(h.change_pct) : null }, weight: r.usd / (assetsUsd || 1) * 100 }; }), questionWindows(question)[0] ?? null),
     ...smallMoveCauses(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], pct: r.change_pct === null ? null : Number(r.change_pct), fund: r.kind === "etf" || r.kind === "fund" }))),
     // r12 C: a 3-month return or the cash weight set against the yearly target; a move dated to a non-session day; a
     // holding's day dollars that are not Home's figure
@@ -1130,8 +1130,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     }
     guarded = ensureLeads(guarded, leads);
   }
-  // e2e F2 (second guard): the honest fallback never follows a real answer
-  if (guarded.split("\n").some((l, i) => i > 0 && isHonestFallback(l))) guarded = guarded.split("\n").slice(0, guarded.split("\n").findIndex((l, i) => i > 0 && isHonestFallback(l))).join("\n").trim() || guarded;
+  // e2e F2 / p06 F1: the honest "couldn't answer" text is only ever the whole answer, never beside other content
+  // (it trailed the 3M negatives in p02 and led the crypto breakdown in p06)
+  guarded = stripHonestBlock(guarded);
   // e2e F5: cash "drags the total down" under a return that excludes cash
   { const cd = new Set(cashDragClaims(guarded)); if (cd.size) guarded = perLine(guarded, (line) => splitSentences(line).filter((sen) => !cd.has(sen)).join(" ")).replace(/\n{2,}/g, "\n").trim() || guarded; }
   answer = unicodeMinus(plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(fixFractions(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), fracHold, fracGroupsA)), question, lastA, prevQ, decisionQ)))));
