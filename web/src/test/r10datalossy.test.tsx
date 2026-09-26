@@ -45,6 +45,7 @@ async function openVoo(api: ReturnType<typeof stubApi>) {
 const deleteLotRow = async (qty: string) => {
   await userEvent.click(await screen.findByRole("button", { name: new RegExp(`^Edit lot ${qty.replace(".", "\\.")} shares$`) }));
   await userEvent.click(screen.getByRole("button", { name: /^Delete (this lot|lot and position)$/ }));
+  await waitFor(() => expect(screen.getByTestId("confirm-delete-lot").hasAttribute("disabled")).toBe(false));
   await userEvent.click(within(screen.getByRole("dialog", { name: "Confirm delete" })).getByRole("button", { name: /^(Delete lot|Remove position)$/ }));
 };
 

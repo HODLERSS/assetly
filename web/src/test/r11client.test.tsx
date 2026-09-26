@@ -123,6 +123,7 @@ describe("4 a lot delete says what it did", () => {
   const del = async () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Edit lot 0\.001 shares$/ }));
     await userEvent.click(screen.getByRole("button", { name: /^Delete (this lot|lot and position)$/ }));
+    await waitFor(() => expect(screen.getByTestId("confirm-delete-lot").hasAttribute("disabled")).toBe(false));
     await userEvent.click(within(screen.getByRole("dialog", { name: "Confirm delete" })).getByRole("button", { name: /^(Delete lot|Remove position)$/ }));
   };
   const open = async (api: ReturnType<typeof stubApi>) => {

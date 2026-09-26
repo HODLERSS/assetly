@@ -127,6 +127,22 @@ describe("F3 one write per tap", () => {
     expect(api.updateLot).toHaveBeenCalledTimes(1);
     await act(async () => { d.resolve(); });
   });
+  it("Delete this lot: a double tap opens the confirm but the second tap cannot delete (the confirm arms after 500ms)", async () => {
+    const api = stubApi({ deleteLot: vi.fn().mockResolvedValue(undefined), getLots: vi.fn().mockResolvedValue([
+      { id: "l1", holding_id: "h1", qty: 10, cost_per_share: 166.55, acquired_on: "2024-06-14", note: null },
+      { id: "l2", holding_id: "h1", qty: 14, cost_per_share: 168, acquired_on: null, note: null },
+    ]) });
+    await openRddt(api);
+    await userEvent.click(screen.getByRole("button", { name: /edit lot 10 shares/i }));
+    await userEvent.dblClick(screen.getByRole("button", { name: /delete this lot/i }));
+    const confirm = screen.getByTestId("confirm-delete-lot");
+    expect(confirm.hasAttribute("disabled")).toBe(true);                 // the spot under the finger takes no tap yet
+    await userEvent.click(confirm);
+    expect(api.deleteLot).not.toHaveBeenCalled();
+    await waitFor(() => expect(confirm.hasAttribute("disabled")).toBe(false));
+    await userEvent.click(confirm);
+    await waitFor(() => expect(api.deleteLot).toHaveBeenCalledTimes(1));
+  });
   it("Delete lot: the confirm button deletes once", async () => {
     const d = deferred();
     const api = stubApi({ deleteLot: vi.fn().mockReturnValue(d.promise), getLots: vi.fn().mockResolvedValue([
@@ -136,6 +152,7 @@ describe("F3 one write per tap", () => {
     await openRddt(api);
     await userEvent.click(screen.getByRole("button", { name: /edit lot 10 shares/i }));
     await userEvent.click(screen.getByRole("button", { name: /delete this lot/i }));
+    await waitFor(() => expect(screen.getByTestId("confirm-delete-lot").hasAttribute("disabled")).toBe(false));
     await userEvent.dblClick(screen.getByRole("button", { name: /^delete lot$/i }));
     expect(api.deleteLot).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: /deleting/i }).hasAttribute("disabled")).toBe(true);

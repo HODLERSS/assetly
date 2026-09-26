@@ -337,6 +337,14 @@ function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", n
   // the delete confirm, with its target frozen as it opened: which lot, which holding, and whether it read as the
   // last lot. Nothing that lands while it is open (a fresh read, a ghost row) changes what the button does.
   const [confirmDelete, setConfirmDelete] = useState<{ lotId: string; holdingId: string; last: boolean } | null>(null);
+  // the confirm's red button opens under the finger that just tapped "Delete this lot": it takes no taps for the
+  // first 500ms, so a double tap cannot skip the confirmation (e2e p02 F1)
+  const [confirmArmed, setConfirmArmed] = useState(false);
+  useEffect(() => {
+    if (!confirmDelete) { setConfirmArmed(false); return; }
+    const t = setTimeout(() => setConfirmArmed(true), 500);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
   const [busy, run] = useInFlight();
   const sym = ccySymbol(currency).trim();
 
@@ -352,7 +360,7 @@ function LotSheet({ currency, cashish = false, crypto = false, unit = "coins", n
               ? `This is the only ${cashish ? "balance" : "lot"}, so deleting it removes ${name} from your portfolio.`
               : "The position's shares and average cost update without it. This can't be undone."}
           </p>
-          <button className="btn danger" disabled={busy} data-testid="confirm-delete-lot" onClick={() => run(() => onDelete(target))}>
+          <button className="btn danger" disabled={busy || !confirmArmed} aria-disabled={!confirmArmed || undefined} data-testid="confirm-delete-lot" onClick={() => { if (confirmArmed) run(() => onDelete(target)); }}>
             {busy ? (last ? "Removing…" : "Deleting…") : last ? "Remove position" : "Delete lot"}</button>
           <button className="btn secondary" style={{ marginTop: 8 }} disabled={busy} onClick={() => setConfirmDelete(null)}>Keep it</button>
         </div>

@@ -209,6 +209,7 @@ describe("C3 lot deletion", () => {
     await userEvent.click(screen.getByRole("button", { name: /keep it/i }));
     expect(api.deleteLot).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: /delete this lot/i }));
+    await waitFor(() => expect(screen.getByTestId("confirm-delete-lot").hasAttribute("disabled")).toBe(false));
     await userEvent.click(screen.getByRole("button", { name: /^delete lot$/i }));
     await waitFor(() => expect(api.deleteLot).toHaveBeenCalledWith("l1"));
     expect(api.removeHolding).not.toHaveBeenCalled();
@@ -219,6 +220,7 @@ describe("C3 lot deletion", () => {
     await userEvent.click(await screen.findByRole("button", { name: /edit lot 10 shares/i }));
     await userEvent.click(screen.getByRole("button", { name: /delete lot and position/i }));
     expect(screen.getByText(/deleting it removes RDDT from your portfolio/i)).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId("confirm-delete-lot").hasAttribute("disabled")).toBe(false));
     await userEvent.click(within(screen.getByRole("dialog", { name: /confirm delete/i })).getByRole("button", { name: /^remove position$/i }));
     await waitFor(() => expect(api.removeHolding).toHaveBeenCalledWith("h1"));
     expect(api.deleteLot).not.toHaveBeenCalled();
