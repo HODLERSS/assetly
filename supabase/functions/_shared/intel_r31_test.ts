@@ -1,6 +1,31 @@
 // r13 intelligence M1: code answers that answer the question, and a weekend-aware "Today" line.
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { intentAnswer, type IntentRow, sessionDayLine } from "./intel.ts";
+import { fixBookDayClaims, fixCurrentPriceClaims, fixGroupSharePctFirst, intentAnswer, type IntentRow, sessionDayLine, TECH_GROUP_LABEL, dualClassFacts } from "./intel.ts";
+
+Deno.test("r31 r14 A+B: risk intent, share classes, tech-and-chip share figure-first", () => {
+  const rs: IntentRow[] = [
+    { name: "SOXL", symbol: "SOXL", kind: "etf", usd: 6045, weight: 23.4, qty: 40, currency: "USD", price: 151.45, avgCost: 35, costUsd: 1400, glUsd: 4645, dayPct: 3.5, dayUsd: 204, leveraged: true, tech: true },
+    { name: "AAPL", symbol: "AAPL", kind: "stock", usd: 3410, weight: 13.2, qty: 10, currency: "USD", price: 341, avgCost: 180, costUsd: 1800, glUsd: 1610, dayPct: 0.1, dayUsd: 3, tech: true },
+    { name: "TSLA", symbol: "TSLA", kind: "stock", usd: 2971, weight: 11.5, qty: 8, currency: "USD", price: 371, avgCost: 250, costUsd: 2000, glUsd: 971, dayPct: -1.5, dayUsd: -45, tech: false },
+  ];
+  const r = intentAnswer("What's my biggest risk right now?", rs, [], { totalUsd: 25837, sessionLabel: "in Friday's session", athTracked: false, cashPct: 11.6 })!;
+  assert(r.includes("Largest holding: SOXL, 23.4%") && r.includes("Tech and chip holdings: 36.6%") && r.includes("SOXL is a leveraged fund") && r.includes("Cash: 11.6%"), r);
+  assert(dualClassFacts("What's the difference between BRK.B and BRK.A?").length > 0);
+  const g = [{ label: TECH_GROUP_LABEL, value: 48.1 }];
+  assertEquals(fixGroupSharePctFirst("About 70% of your money sits in tech and chip stocks.", g), "About 48.1% of your money sits in tech and chip stocks.");
+  assertEquals(fixGroupSharePctFirst("About 49% of your money sits in tech stocks.", g), "About 49% of your money sits in tech stocks.");
+});
+
+Deno.test("r31 M2: the whole-book day figure is Home's; a current price is the latest price", () => {
+  const hs = [{ names: ["AMZN"] }, { names: ["NVDA"] }];
+  assertEquals(fixBookDayClaims("Portfolio gained ≈ $11,155 on Friday, about 0.32%.", { usd: 9447, pct: 0.27 }, hs), "Portfolio gained $9,447 on Friday, about 0.27%.");
+  assertEquals(fixBookDayClaims("Your portfolio was +$9,450 (+0.27%) in Friday's session.", { usd: 9447, pct: 0.27 }, hs), "Your portfolio was +$9,450 (+0.27%) in Friday's session.");
+  assertEquals(fixBookDayClaims("AMZN added $377 to the portfolio on Friday.", { usd: 9447, pct: 0.27 }, hs), "AMZN added $377 to the portfolio on Friday.");
+  assertEquals(fixBookDayClaims("The portfolio is up $410,000 this year.", { usd: 9447, pct: 0.27 }, hs), "The portfolio is up $410,000 this year.");
+  const f = [{ names: ["NVDA"], price: 225.07, prevClose: 224.58 }];
+  assertEquals(fixCurrentPriceClaims("NVDA's current price: previous session close $224.58, up 0.2%.", f), "NVDA's current price: latest close $225.07, up 0.2%.");
+  assertEquals(fixCurrentPriceClaims("NVDA closed Thursday at $224.58.", f), "NVDA closed Thursday at $224.58.");
+});
 
 const row = (o: Partial<IntentRow> & { name: string; usd: number }): IntentRow => ({ symbol: o.name, kind: "stock", weight: 0, qty: 10, currency: "USD", price: 100, avgCost: null, costUsd: null, glUsd: null,
   dayPct: 0, dayUsd: 0, heads: [], ...o });

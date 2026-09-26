@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -570,7 +570,7 @@ async function handle(req: Request): Promise<Response> {
     return { name: nameOf(r), symbol: r.symbol, kind: String(r.kind ?? ""), usd: v, weight: v / (assetsUsd || 1) * 100, qty: Number(r.qty ?? 0), currency: String(r.currency ?? "USD"),
       price: r.price === null || r.price === undefined ? null : Number(r.price), avgCost: hasCost ? Number(r.avg_cost) : null, costUsd: hasCost ? v - (gl as number) : null, glUsd: hasCost ? gl : null,
       dayPct: r.change_pct === null ? null : Number(r.change_pct), dayUsd: dayOf(r), leveraged: /leveraged/.test(themeOf(r.symbol, r.kind)),
-      heads: headsBy.has(r.symbol) ? headsBy.get(r.symbol)! : null, maxClose: athMax?.get(r.symbol) ?? null };
+      heads: headsBy.has(r.symbol) ? headsBy.get(r.symbol)! : null, maxClose: athMax?.get(r.symbol) ?? null, tech: TECH_THEMES.has(themeOf(r.symbol, r.kind)) };
   });
   const defaultInfo = (): string => buildHusk({
     holdings: held.map((r) => ({ name: nameOf(r), symbol: r.symbol, kind: r.kind, usd: usd(Number(r.value ?? 0), r.currency) })),
@@ -593,7 +593,11 @@ async function handle(req: Request): Promise<Response> {
   const dataFallback = (): string => {
     // r13 M1(a): 7 of 17 fallbacks ignored the question ("smallest holding" listed the largest, "TSLA cost basis" gave
     // no basis, "Why did META drop" never named META, tax / "Nasdaq −20%" / all-time highs got the generic dump)
-    const ia = intentAnswer(question, intentRows(), intentRows().filter((r) => mentionedNow.includes(r.symbol)), { totalUsd: assetsUsd, sessionLabel: sessLabel, athTracked: !!athMax }, ko);
+    // r14 A: share-class questions ("difference between BRK.B and BRK.A") are answered from the class facts
+    const dcf = dualClassFacts(question);
+    if (dcf.length && /\bdifferen|\bvs\.?\b|\bversus\b|\bclass(?:es)?\b|\bcompare\b|\bsame\b|\bwhich one\b|차이|클래스/i.test(question)) return dcf.map((f) => `• ${f}`).join("\n");
+    const cashPctA = book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
+    const ia = intentAnswer(question, intentRows(), intentRows().filter((r) => mentionedNow.includes(r.symbol)), { totalUsd: assetsUsd, sessionLabel: sessLabel, athTracked: !!athMax, cashPct: cashPctA }, ko);
     if (ia) return ia;
     // Round 8: the fallback was the same generic block for every question ("TSLA is up 20% today, why?" got no TSLA
     // figure and no correction). It now answers the question's own subject first, from code.
@@ -1060,7 +1064,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // round 8: "Tech makes up about 57% of assets" (it is ~97%)
   const TECH = TECH_THEMES;
   const techShare = held.filter((r) => TECH.has(themeOf(r.symbol, r.kind))).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
-  guarded = fixGroupShares(guarded, [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: techShare }], 5, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] })));
+  guarded = fixGroupShares(guarded, [{ label: TECH_GROUP_LABEL, value: techShare }], 5, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] })));
+  // r14 B: the figure-first order ("About 70% of your money sits in tech and chip stocks", truth 48.1%)
+  guarded = fixGroupSharePctFirst(guarded, [{ label: TECH_GROUP_LABEL, value: techShare }]);
   // r13 M2 ("How did I do this week?", a starter chip): the model copied the day tag onto week figures (TSLA "+2.2%
   // (Fri)" while Friday was −1.54%; "SOXL fell 40% (Fri) over three months"), called VOO flat at +1.28% on the week, and
   // gave a mood cause no headline carries. Last word on figures, after the judge and every sanitizer.
@@ -1068,6 +1074,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     const namesOfR = (r: typeof held[number]) => [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)];
     const weekQ = questionWindows(question).includes(7) || /\bweek\b|이번 주/i.test(question);
     guarded = fixDayTags(guarded, held.map((r) => ({ names: namesOfR(r), dayPct: r.change_pct === null ? null : Number(r.change_pct) })));
+    // r13 intelligence M2: the whole-book day figure is Home's; a "current price" is the latest price, not the prior close
+    guarded = fixBookDayClaims(guarded, { usd: sessDay, pct: sessPct }, held.map((r) => ({ names: namesOfR(r) })));
+    guarded = fixCurrentPriceClaims(guarded, held.map((r) => ({ names: namesOfR(r), price: r.price === null || r.price === undefined ? null : Number(r.price), prevClose: prevClose.get(r.symbol) ?? null })));
     guarded = stripUngroundedMoodCauses(guarded, causeSource, held.map((r) => nameOf(r))).replace(/\s+([.,;])/g, "$1");
     const flat = new Set(flatClaims(guarded, held.map((r) => ({ names: namesOfR(r), day: r.change_pct === null ? null : Number(r.change_pct), week: perf.get(r.symbol)?.pct[7] ?? null })), weekQ));
     if (flat.size) guarded = perLine(guarded, (line) => splitSentences(line).filter((sen) => !flat.has(sen)).join(" ")).replace(/\n{2,}/g, "\n").trim() || guarded;
