@@ -274,7 +274,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
           {s.positions.map((p, i) => (
             <p key={i} style={{ margin: "0 0 7px", fontSize: 13, lineHeight: 1.5 }}>
               <strong>{p.name}</strong>: {p.note}{" "}
-              <span className="sub">{meta.watch}: {p.watch}</span>
+              {p.watch?.trim() && !/^no confirmed date yet\.?$/i.test(p.watch.trim()) && <span className="sub">{meta.watch}: {p.watch}</span>}
             </p>
           ))}
           <p className="sub" style={{ margin: "6px 0 2px", fontWeight: 700, textTransform: "uppercase", fontSize: 11 }}>{meta.desk}</p>
