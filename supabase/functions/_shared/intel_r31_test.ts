@@ -37,6 +37,25 @@ Deno.test("r31 final intelligence: cut-off first line goes; the lead is restored
   assertEquals(ensureLeads("Your portfolio is up +11.5% this year.", [bl]), "Your portfolio is up +11.5% this year.");
 });
 
+Deno.test("r31 e2e p02: the honest fallback never trails an answer (F2); a compare covers every named holding (F3); cash drag (F5)", async () => {
+  const { mergeLeadAndFallback, isHonestFallback, ensureLeads, cashDragClaims, unheldTickersIn } = await import("./intel.ts");
+  const lead = "• 3 of your holdings are negative over 3 months: SK hynix −27.1%, Samsung −7.9%, TSLA −0.8%.";
+  const honest = "I couldn't put a complete answer together just now. Here's what I can tell you:\n• Your holdings: BTC (crypto) 25.2%, NVDA (stock) 19.2%.\n• Try asking again, or rephrase the question.";
+  assertEquals(mergeLeadAndFallback(lead, honest), lead);
+  assertEquals(mergeLeadAndFallback("", honest), honest);
+  assertEquals(mergeLeadAndFallback(lead, "• Today your portfolio is +0.27% (+$9,447).\n• Longer windows: 1M +5.9%."), `${lead}\n• Today your portfolio is +0.27% (+$9,447).\n• Longer windows: 1M +5.9%.`);
+  assert(isHonestFallback(honest) && !isHonestFallback(lead));
+  const cmpLead = "• NVDA: 1M +5.6%, 1Y +26.7%.\n• AVGO: 1M +2.1%, 1Y +40.3%.";
+  const modelOnlyNvda = "• NVDA: 1 month +5.6%, 1 year +26.7%. It is 19.2% of your portfolio.";
+  const fixed = ensureLeads(modelOnlyNvda, [{ line: cmpLead, keys: ["5.6%", "26.7%", "2.1%", "40.3%", "NVDA", "AVGO"] }]);
+  assert(fixed.startsWith(cmpLead) && fixed.includes("AVGO: 1M +2.1%"), fixed);
+  assertEquals(unheldTickersIn("Compare NVDA and AVGO over 1M and 1Y", ["NVDA", "AAPL"]), ["AVGO"]);
+  assertEquals(unheldTickersIn("Compare NVDA and AVGO over 1M and 1Y", ["NVDA", "AVGO"]), []);
+  assertEquals(unheldTickersIn("How is my YTD ETF return vs the S&P?", ["VOO"]), []);
+  assertEquals(cashDragClaims("Up 13.6% this year ($11,781). Cash in your emergency fund earns nothing, so it drags the total down.").length, 1);
+  assertEquals(cashDragClaims("Cash is 15.9% of assets."), []);
+});
+
 Deno.test("r31 brief: the live row's exact wording is caught", async () => {
   const { productVersionClaims, lowYieldIncomeClaims } = await import("./intel.ts");
   assertEquals(productVersionClaims("Apple rose on iPhone 17 launch optimism.", "Apple's iPhone 18 lineup ships in stores").length, 1);
