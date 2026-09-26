@@ -2020,7 +2020,7 @@ export function superlativeClaims(text: string, facts: { names: string[]; window
   const WIN: [RegExp, number][] = [[/\b(?:year to date|YTD|this year|since January)\b|올해|연초/i, -1], [/\b(?:1-year|one-year|over (?:the )?(?:past |last )?year|12-month|1Y)\b|1년/i, 365],
     [/\b(?:three months|3-month|3M|quarter)\b|3개월/i, 90], [/\b(?:this month|one-month|1-month|30-day|1M|past month)\b|한 달|1개월/i, 30], [/\b(?:this week|one-week|1-week|1W|past week)\b|이번 주|1주/i, 7]];
   return sentencesOf(text).filter((s) => {
-    const up = /\b(?:strongest|best|biggest|top|largest|leading|highest)\s+(?:gain|gainer|performer|performance|return|returner|rise|winner|mover)s?\b|\b(?:leads|tops) (?:your|the) (?:portfolio|holdings|pack|book)\b|가장 (?:많이 오른|큰 상승|수익률이 높은)/i.test(s);
+    const up = /\b(?:strongest|best|biggest|top|largest|leading|highest)\s+(?:gain|gainer|performer|performance|return|returner|rise|winner|mover)s?\b|\b(?:leads|tops) (?:your|the) (?:portfolio|holdings|pack|book)\b|\b(?:leads|is leading|tops|is ahead)\b(?=[^.]{0,30}(?:\bYTD\b|this year|year to date|\b1Y\b|past year|3-month|3M|this month|1M|this week))|가장 (?:많이 오른|큰 상승|수익률이 높은)/i.test(s);
     const down = /\b(?:weakest|worst|biggest|largest)\s+(?:loser|performer|performance|return|drop|decline|laggard)s?\b|\b(?:lags|trails) (?:your|the) (?:portfolio|holdings|pack|book)\b|가장 (?:많이 내린|부진한)/i.test(s);
     if (!up && !down) return false;
     const w = WIN.find(([re]) => re.test(s))?.[1];
@@ -2090,7 +2090,7 @@ export function misattributedCauses(text: string, facts: { names: string[]; head
     const me = named[0];
     // round 9: "No META headline explains today's 3.3% drop" (Forbes and Yahoo carried two), "none in file", "No fresh
     // headlines available" (NVDA had 40): a no-news claim for a holding that HAS headlines goes
-    if (/\bon no (?:clear |obvious )?news\b|\bno (?:clear |obvious |specific |single )?(?:[A-Z][\w.&-]* )?(?:headlines?|news)\b[^.]{0,40}\b(?:explains?|behind|available|points? to|in (?:the )?file|on file|cites?|gives?)\b|\bnone (?:in|on) file\b|\bno fresh (?:headlines?|news)\b|뚜렷한 (?:뉴스|이유) 없이|(?:헤드라인|뉴스)(?:이|가|은|는)? 없/i.test(s)) return me.headlines.trim().length > 0;
+    if (/\bon no (?:clear |obvious )?news\b|\bno (?:clear |obvious |specific |single )?(?:[A-Z][\w.&-]* )?(?:headlines?|news)\b[^.]{0,40}\b(?:explains?|behind|available|points? to|in (?:the )?file|on file|cites?|gives?)\b|\bnone (?:in|on) file\b|\bno fresh (?:headlines?|news)\b|뚜렷한 (?:뉴스|이유) 없이|(?:헤드라인|뉴스)(?:이|가|은|는|에)?[^.]{0,20}(?:없|부재)|원인(?:은|이)? (?:없|불분명|확인되지 않)|원인 없음|설명하는 (?:헤드라인|뉴스)(?:이|가|는)? 없/i.test(s)) return me.headlines.trim().length > 0;
     const m = /\b(?:after|on|following|as|because of|due to|amid)\s+(?:a |an |the )?([^.,;]{6,80})/i.exec(s);
     if (!m) return false;
     const words = (m[1].toLowerCase().match(/[a-z][a-z-]{4,}/g) ?? []).filter((w) => !STOP.has(w) && !me.names.some((n) => n.toLowerCase().includes(w)));
@@ -2515,6 +2515,8 @@ export function isDecisionFrame(q: string): boolean {
   if (/\b(?:most|least) (?:attractive|promising|compelling|investable)\b|\bwrite\b[^?]{0,40}\brecommendation\b/i.test(t)) return true;
   // which one is safer / to dump / to keep, and "goes up most"
   if (/\bwhich\b[^?]{0,50}\b(?:safer|safest|riskier|riskiest|steadier|better (?:bet|buy|hold|choice|option|add)|stronger bet|worse bet|to dump|to ditch|to cut|to keep|goes? up (?:the )?most|would (?:rise|gain|go up|benefit) (?:the )?most|benefits? most)\b/i.test(t)) return true;
+  // ranking the holdings by a scenario's benefit ("If the Fed cuts, which of my stocks goes up the most?")
+  if (isScenarioRankQuestion(t)) return true;
   if (/\bonly (?:keep|hold|own|pick|choose) one\b|\bkeep (?:just|only) one\b|\bdump\b|\bditch\b|\bget rid of\b/i.test(t)) return true;
   if (/\b(?:hold|keep|have|carry) (?:more|less) cash\b|\bmore cash\b[^?]{0,30}\?|\bneeds? a (?:sleeve|bond|hedge|cushion)\b|\b60\/40\b|\bbonds? (?:instead|for the)\b|\bpark (?:the |my )?cash\b/i.test(t)) return true;
   // hypothetical / role-play / third-party framing, around any portfolio decision vocabulary
@@ -2535,10 +2537,12 @@ export function isVerdictQuestion(q: string): boolean {
 export const JUDGE_POLICY = `You are the compliance reviewer for an investing app that may give INFORMATION only, never advice. You get numbered items: sentences of an answer, and suggested follow-up questions. Flag an item when, in the app's own voice, it does ANY of:
 1. tells or nudges the user to buy, sell, hold, keep, add, trim, switch, rebalance, allocate, park cash or size a position ("consider", "could park cash in", "fits your plan", "a small slice into bonds improves stability", "your wife is right", "the plan needs a bond sleeve");
 2. names or suggests a specific stock, fund, ETF, bond, Treasury, money-market fund, option strategy or other product as something to buy, add, use or switch into (describing a product the user already holds is fine; recommending any product is not);
-3. passes a verdict on a holding, a thesis or the portfolio in the app's own voice ("the thesis is not broken", "a credible second engine", "the growth story is real", "the steadier of the two", "carries the strongest signal", "cheap", "a buy", "in good shape", "cash level is neutral");
+3. passes a verdict on a holding, a thesis or the portfolio in the app's own voice, INCLUDING soft praise of a holding's quality or execution ("the thesis is not broken", "a credible second engine", "the growth story is real", "the steadier of the two", "carries the strongest signal", "cheap", "a buy", "in good shape", "cash level is neutral", "showing solid growth", "execution mostly positive", "reinforcing compounding for a multi-year hold");
+3b. frames holding, adding or keeping something as a BENEFIT to the user ("cash adds flexibility for opportunistic moves", "gives you room to buy dips", "a small kicker on a growth book");
+3c. ranks the user's holdings by how much they would gain, benefit or suffer in a scenario ("NVDA and MSFT feel rate cuts most; AAPL is more defensive");
 4. forecasts returns, prices, yields or outcomes ("bonds typically return 3-5% a year", "lands near 7-8%", "will recover");
 5. is a follow-up question that asks which product to buy, how much to allocate, or invites a pick ("What bond ETFs fit a 60/40?", "Which funds have the lowest fees?", "Other candidates worth holding besides NVDA?").
-Do NOT flag: figures, returns and history; a ranking by a stated metric over a stated window; what a price did; news attributed to its source; risks, scenarios and what to watch; what a buy case or a sell case would rest on; a sentence saying the decision is the user's. Items can be in Korean or English; apply the same rules. Return ONLY JSON {"flag": [item numbers]} with an empty list when nothing breaks the rules.`;
+Do NOT flag: figures, returns and history; a ranking by a stated metric over a stated window; what a price did; news attributed to its source; risks, scenarios and what to watch; what a buy case or a sell case would rest on; a sentence saying the decision is the user's. Items can be in Korean or English; apply the same rules. Reply with the JSON only, no reasoning: {"flag": [item numbers]}, an empty list when nothing breaks the rules.`;
 
 /** The judge's item list: every sentence of the answer (line by line, bullets kept apart) and then each chip. */
 export function judgeItems(answer: string, chips: string[]): { list: string[]; where: { line: number; sen: number }[]; chipAt: number } {
@@ -2692,3 +2696,31 @@ export function glossedCardHits(lines: string[]): string[] {
 }
 /** Cards older than this are not served (the add strip showed a 26-day-old BRKB card with a valuation verdict). */
 export const CARD_MAX_AGE_DAYS = 14;
+
+/** A scenario-ranking question ("which of my stocks goes up the most if…"): answered like a pick (never a shortlist). */
+export function isScenarioRankQuestion(q: string): boolean {
+  const t = String(q ?? "");
+  // a past window makes it a data ranking ("which gained the most this year?")
+  if (questionWindows(t).length) return false;
+  return /\bwhich\b[^?]{0,60}\b(?:go(?:es)? up|benefits?|gains?|rises?|suffers?|falls?|drops?|would (?:rise|gain|benefit|fall|drop|suffer))\b[^?]{0,20}\bmost\b|\bwho (?:wins|benefits)\b|어떤 종목이 (?:가장|제일) (?:오를|수혜|떨어질)/i.test(t);
+}
+
+/** After the judge or the guards removed sentences, what is left may point at what is gone ("Both report late
+ *  October", "AAPL is third"), or a holding the question compares may have vanished (round 9: "Which is safer, NVDA or
+ *  AMZN?" kept only the NVDA line). Returns the dangling sentences, and whether a compared holding is missing. */
+export function danglingAfterDrop(text: string, asked: { names: string[] }[]): { dangling: string[]; missing: boolean } {
+  const dangling = sentencesOf(text).filter((s) => /^\s*(?:•\s*)?(?:Both|Each of them|Neither|The other|The former|The latter|Together|They both)\b|\b(?:is|ranks?|comes?|sits?) (?:second|third|fourth|fifth|next)\b|\bin (?:second|third) place\b|둘 다|나머지 하나/i.test(s));
+  const missing = asked.length >= 2 && asked.some((a) => !a.names.some((n) => n && nameIn(text, n)));
+  return { dangling, missing };
+}
+
+/** A "Both … report …" sentence whose date fits only one of the holdings it covers (round 9: "Both report late October
+ *  (~Oct 29)" for AMZN and NVDA; NVDA reports mid to late November). */
+export function bothDateClaims(text: string, ests: { names: string[]; est: string | null; range?: [string, string] }[], asked: { names: string[] }[]): string[] {
+  return sentencesOf(text).filter((s) => {
+    if (!/^\s*(?:•\s*)?(?:Both|They both|Each)\b|둘 다/i.test(s) || !/\b(?:report|reports|earnings|results)\b|실적/i.test(s)) return false;
+    const covered = ests.filter((e) => asked.some((a) => a.names.some((n) => e.names.includes(n))));
+    const months = new Set(covered.map((e) => (e.range ? e.range[0] : e.est ?? "").slice(0, 7)).filter(Boolean));
+    return months.size > 1 || covered.length < asked.length;
+  });
+}

@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -373,7 +373,7 @@ Deno.serve(async (req) => {
       const talks = ts.filter((x) => !isEarningsCallTitle(x.title)).slice(0, 1).map((x) => `conference talk (not an earnings report) ${String(x.published_at).slice(0, 10)}`);
       const ff = fs.slice(0, 2).map((x) => `${x.form} ${String(x.filed_at).slice(5, 10)}`);
       // judged again at read time: rows stored before the ingest gate still hold option chains and off-topic stories
-      const nn = (dn ?? []).filter((x) => x.symbol === s && usableNews(x, aka) && !staleNewsTitle(String(x.title), x.published_at, today)).slice(0, 2).map((x) => `"${String(x.title).slice(0, 90)}" [${x.source} ${String(x.published_at).slice(5, 10)}]`);
+      const nn = (dn ?? []).filter((x) => x.symbol === s && usableNews(x, aka) && !staleNewsTitle(String(x.title), x.published_at, today) && headlineOk(String(x.title)) && centrality(String(x.title), aka) <= 40).slice(0, 2).map((x) => `"${String(x.title).slice(0, 90)}" [${x.source} ${String(x.published_at).slice(5, 10)}]`);
       const dlv = deliveriesEstimate(s, today);
       const bits = [...(earn ? [earn.replace(/^[^:]+:\s*/, "")] : ["no earnings date known"]),
         // a deliveries report is not earnings (round 3: "Q3 deliveries due late October"; Tesla's came Oct 2)
@@ -412,7 +412,8 @@ Deno.serve(async (req) => {
     const nm = nameOf(hr);
     // round 9 D: buy-framed and clickbait titles no longer crowd the causes out of the 12 (META's jury loss and the
     // Forbes "$9 billion in a day" story were there, and the answer said no headline explained the drop)
-    const heads = (news ?? []).filter((n) => usableNews(n, aliasesFor(hr.symbol, hr.name)) && !staleNewsTitle(String(n.title), n.published_at, today) && headlineOk(String(n.title))).slice(0, 12);
+    const heads = (news ?? []).filter((n) => usableNews(n, aliasesFor(hr.symbol, hr.name)) && !staleNewsTitle(String(n.title), n.published_at, today) && headlineOk(String(n.title))
+      && centrality(String(n.title), [hr.symbol, nameOf(hr), ...aliasesFor(hr.symbol, hr.name)]) <= 40).slice(0, 12);
     context += `\n[${nm}] 7d headlines:\n${heads.map((n) => `- [${n.source}, ${String(n.published_at).slice(5, 10)}] ${n.title}`).join("\n") || "- none"}`;
     if (ins?.[0]) context += `\n[${nm}] current desk take (written ${String(ins[0].generated_at).slice(0, 16).replace("T", " ")} UTC; its prices may be older than the stats above, which win): ${(ins[0].bullets as string[]).join(" | ")}`;
     if (fils?.length) context += `\n[${nm}] SEC filings: ${fils.map((f) => `${f.form} ${f.filed_at}`).join(", ")}`;
@@ -471,7 +472,7 @@ Deno.serve(async (req) => {
   // and a pick / "N best" question never focuses.
   const nowSyms = mentionedNow;
   const focusRow = tradeQ && !isPickQuestion(question) && nowSyms.length === 1 ? held.find((h) => h.symbol === nowSyms[0])! : null;
-  const estOf = (sym: string) => { const r = held.find((h) => h.symbol === sym); const e = r ? askEsts.find((x) => x.names[0] === nameOf(r)) : undefined; return e ? (e.range ? spanOfMonth(e.range) : e.est ? "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : null) : null; };
+  const estOf = (sym: string) => { const r = held.find((h) => h.symbol === sym); const e = r ? askEsts.find((x) => x.names[0] === nameOf(r)) : undefined; return e ? (e.range ? (ko ? spanOfMonthKo(e.range) : spanOfMonth(e.range)) : e.est ? "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : null) : null; };
   const defaultInfo = (): string => buildHusk({
     holdings: held.map((r) => ({ name: nameOf(r), symbol: r.symbol, kind: r.kind, usd: usd(Number(r.value ?? 0), r.currency) })),
     cashUsd: book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0),
@@ -549,9 +550,12 @@ Deno.serve(async (req) => {
   const prevA = turns.length ? turns[turns.length - 1].a : "";
   const prevWasHusk = /usually weighs here|보통 따지는 것/.test(prevA);
   const followDecision = turns.length > 0 && (isTradeQuestion(prevQ) || isPickQuestion(prevQ) || isDecisionFrame(prevQ) || prevWasHusk)
-    && /\b(?:cash|money|\$\s?\d|what about|how about|and if|instead|where would|what would|if you had|the rest|with that|yes or no|just say|good plan|which wins|had to|then)\b|현금|돈|그럼|대신|나머지|네 아니오|예 아니오/i.test(question);
+    // round 9: "How much cash do I have?" after a husk got the buyer template. A follow-up is a decision only when it
+    // carries decision or cash-deployment wording itself; a plain data question stays a data question.
+    && !/^\s*(?:how much|what(?:'s| is) my|what are my|when|how many)\b|얼마(?:야|예요|인가요|나 있)/i.test(question)
+    && (isDecisionFrame(question) || /\b(?:put|invest|deploy|buy|use|spend|park|move|do with|where would|what would|instead|what about|how about|and if|if you had|the rest|with that|yes or no|just say|good plan|which wins|had to)\b|그럼|대신|나머지|넣|살|사면|네 아니오|예 아니오/i.test(question));
   // a ranking by a stated metric ("best 3-month return") is data, not a pick (round 9 M7)
-  const pickQ = (isPickQuestion(question) && !isDataRankQuestion(question)) || followDecision
+  const pickQ = (isPickQuestion(question) && !isDataRankQuestion(question)) || isScenarioRankQuestion(question) || followDecision
     || /(현금|돈)[^?]{0,12}(뭘|무엇을|어디에|어떤)[^?]{0,8}(사|넣|투자)/.test(question);
   // Korean names too, so a Korean shortlist ("애플은… 마이크로소프트는…") is recognised (round 7)
   const bookNames = held.map((r) => ({ symbol: r.symbol, names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)] }));
@@ -579,7 +583,8 @@ ${divLines.map((x) => "- " + x.d.line).join("\n")}
 ${divPending ? `Portfolio dividend income: still loading for ${divPending} holding(s); say the figures are being fetched and to ask again in a minute, never state $0 or a partial total as the portfolio's income.` : `Portfolio dividend income ≈ ${money(divIncome)} a year (shares × last 12 months' payments per holding)${assetsUsd > 0 ? `, ${(divIncome / assetsUsd * 100).toFixed(2)}% of assets` : ""}.`}
 Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
 ${context}
-${dataLead ? `\nCOMPUTED ANSWER (from the stats; open the answer with exactly these figures, then add context):\n${dataLead}\n` : ""}CAUSES: when a holding's 7d headlines give a reason for its move, name it and its source; never say no headline explains a move when its headlines are listed above.
+${dataLead ? `\nCOMPUTED ANSWER (from the stats; open the answer with exactly these figures, then add context):\n${dataLead}\n` : ""}USER STATEMENTS: what the user says about their own money, plans or life ("I have ₩100M in cash", "we're buying a house in 2 years") is context to use, never a claim about the portfolio to correct.
+CAUSES: when a holding's 7d headlines give a reason for its move, name it and its source; never say no headline explains a move when its headlines are listed above.
 
 ${convoBlock}Question: "${question}"
 
@@ -615,7 +620,10 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   }
   // round 7 newcomer: a 502 at 27.9s (Korean 1-year question). The whole non-decision answer now ships inside 26s, well
   // under the gateway, with the code-built figures as the fallback
-  const FAST = "gpt-oss-120b", BUDGET = decisionQ ? 15000 : 26000;
+  // round 9: the long house-plan question hit the 15s decision budget and got only the generic husk; a long question
+  // routed by its framing alone (not a direct trade or pick) gets the full budget, the judge guarding the answer
+  const frameOnly = isDecisionFrame(question) && !isTradeQuestion(question) && !isPickQuestion(question) && !isScenarioRankQuestion(question);
+  const FAST = "gpt-oss-120b", BUDGET = decisionQ && !(frameOnly && complex) ? 15000 : 26000;
   const left = () => BUDGET - (Date.now() - t0);
   // round 9: the compliance judge runs after the answer, inside the same budget; the answer stage leaves it room
   const JUDGE_MS = 3500;
@@ -643,7 +651,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
     const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {
       signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: FAST, temperature: 0, max_tokens: 900, response_format: { type: "json_object" },
+      body: JSON.stringify({ model: FAST, temperature: 0, max_tokens: 400, reasoning_effort: "low", response_format: { type: "json_object" },
         messages: [{ role: "system", content: JUDGE_POLICY }, { role: "user", content: `Items:\n${list.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] }),
     }).catch(() => null);
     if (!r || !r.ok) { clearTimeout(timer); return null; }
@@ -727,7 +735,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...superlativeClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], windows: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> }))),
     ...costBasisClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], gainPct: Number(r.avg_cost ?? 0) > 0 && r.price !== null ? (Number(r.price) / Number(r.avg_cost) - 1) * 100 : null }))),
     ...targetBandClaims(answer),
-    ...misattributedCauses(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], headlines: headlinesBy.get(r.symbol) ?? "" }))),
+    ...misattributedCauses(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], headlines: headlinesBy.get(r.symbol) ?? "" }))),
+    ...bothDateClaims(answer, askEsts, mentionedNow.map((sy) => held.find((h) => h.symbol === sy)!).map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] }))),
     // round 7 newcomer: "339% this year" for Samsung (YTD +138%): a period claim is held to the holding's own window
     // round 9 C: a window's dollar move held to the holding's own ("TSLA −$35,896" over 1M was its 1Y figure)
     ...windowDollarMismatches(answer, perfRows, questionWindows(question)[0] ?? null),
@@ -764,6 +773,18 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     // no verdict from the judge: the model's chips are not shown either (they asked for products in round 9)
     if (flags === null) { judgedChips = []; if (decisionQ) guarded = ""; }
     else { const r = applyJudge(guarded, chips0, items, flags); guarded = r.text; judgedChips = r.chips; }
+    // round 9: what the drops left may point at what is gone ("Both report late October", "AAPL is third"), or a
+    // compared holding may have vanished: a decision falls to the husk; a data answer loses the dangling sentences and
+    // leads with the computed figures
+    if (flags !== null && flags.size && guarded.trim()) {
+      const asked = mentionedNow.map((sy) => held.find((h) => h.symbol === sy)!).map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)] }));
+      const d = danglingAfterDrop(guarded, asked);
+      if (decisionQ && (d.dangling.length || d.missing)) guarded = "";
+      else if (d.dangling.length) {
+        guarded = perLine(guarded, (line) => splitSentences(line).filter((sen) => !d.dangling.includes(sen)).join(" "));
+        if (dataLead && !statesLead(guarded, dataLead)) guarded = `${dataLead}\n${guarded}`;
+      }
+    }
   }
   // Round 4: after the guards, "What should I buy with $10K?" was left with one unrelated line and "top pick"
   // with a ten-holding dump. When the guards took most of an answer to a trade or pick question, the model
@@ -806,7 +827,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // last bullet, which is the one about what a buyer weighs
   answer = trimAnswer(answer, builtInCode ? 150 : cap + 10);
   // chips follow the CURRENT question's holding (round 9: a Korean NVDA question got TSLA chips)
-  const focus = (focusRow ? [focusRow.symbol] : mentionedNow.length ? mentionedNow : mentioned.length ? mentioned : held.slice(0, 1).map((r) => r.symbol)).map((s) => nameOf(held.find((h) => h.symbol === s)!));
+  // round 9 re-check: a husk or a timed-out answer carried TSLA chips none of them mentioned; only the current
+  // question's holding (or none) is named in a chip
+  const focus = (focusRow ? [focusRow.symbol] : mentionedNow).slice(0, 1).map((s) => nameOf(held.find((h) => h.symbol === s)!));
   const fallbacks = ko ? [
     ...(focus[0] ? [`${focus[0]} 주가를 움직이는 요인은 뭔가요?`, `${focus[0]} 전망을 바꿀 변수는 뭔가요?`] : []),
     "내 포트폴리오는 얼마나 집중돼 있나요?", "내 포트폴리오의 가장 큰 위험은 뭔가요?",
@@ -815,6 +838,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     "How concentrated is my portfolio?", "What are the biggest risks in my portfolio?",
   ];
   // chips follow the question's language too
-  const followups = cleanFollowups((judgedChips ?? (parsedA?.followups ?? []).map(deDash)).filter((f) => chipInLanguage(question, f)), fallbacks);
+  const modelChips = builtInCode || !parsedA ? [] : (judgedChips ?? (parsedA?.followups ?? []).map(deDash));
+  const followups = cleanFollowups(modelChips.filter((f) => chipInLanguage(question, f)), fallbacks);
   return json({ ok: true, answer, followups, mentioned });
 });
