@@ -83,13 +83,15 @@ export function PositionScreen({ api, row, onChanged, onRemoved, onBack, onMoved
   if (!row) return <p className="empty">Position not found. <button className="chip" onClick={onBack}>Back</button></p>;
 
   const reload = async () => {
+    // the lots and the book (Avg cost, the totals) are read together: one after the other, Avg cost lagged the
+    // lot list by ~2.5s on a slow link (r10 power-user). The lots paint once both are back.
     const mark = mutationMark();
-    const l = await api.getLots(row.holding_id);
+    const [lotsRead] = await Promise.allSettled([api.getLots(row.holding_id), Promise.resolve().then(() => onChanged())]);
+    if (lotsRead.status === "rejected") throw lotsRead.reason;
     if (!mutatedSince(mark)) {   // another write went out meanwhile: its own reload paints
-      lotsFor(api).set(row.holding_id, l);
-      setLots(l); setLotsLoaded(true); setLotsFailed(false);
+      lotsFor(api).set(row.holding_id, lotsRead.value);
+      setLots(lotsRead.value); setLotsLoaded(true); setLotsFailed(false);
     }
-    await onChanged();
   };
   const cashish = row.kind === "cash" || row.kind === "debt";
   const name = displayName(row);

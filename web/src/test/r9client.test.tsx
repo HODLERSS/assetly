@@ -40,7 +40,7 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); setPricesDown(false
 const tabs = () => within(screen.getByRole("navigation", { name: "Tabs" }));
 
 describe("1 / 8 a coin's 1M H/L are final the first time they show", () => {
-  it("1M (the default) waits for the hourly week, then shows H at least 1W's; it never changes after", async () => {
+  it("1M (the default) shows at once, widens once the hourly week is in to at least 1W's H, and never changes after", async () => {
     const now = Date.now();
     const pts: HistoryPoint[] = [];
     for (let h = 40 * 24; h >= 1; h--) pts.push({ ts: new Date(now - h * 3600e3).toISOString(), price: 80_000 + (40 * 24 - h) * 0.5 });
@@ -50,11 +50,11 @@ describe("1 / 8 a coin's 1M H/L are final the first time they show", () => {
     const getHistory = vi.fn((_s: string, _h: number, o?: { maxPages?: number }) => (o?.maxPages ? gate.then(() => pts) : Promise.resolve(pts)));
     render(<PriceChart api={{ getHistory } as unknown as Api} symbol="BTC-USD" currency="USD" livePrice={80_600} liveAsOf={new Date(now).toISOString()} crypto />);
     await screen.findByTestId("price-chart");
-    // the week was asked for at once, alongside 1M, and 1M's H/L hold back until it is in
+    // the week was asked for at once, alongside 1M; 1M's H/L show the drawn closes meanwhile (r10), then widen
     expect(getHistory.mock.calls.some((c) => c[2]?.maxPages)).toBe(true);
-    expect(screen.getByTestId("range-high").style.visibility).toBe("hidden");
+    expect(screen.getByTestId("range-high").textContent).not.toBe("H $90,000.00");
     await act(async () => { release(); });
-    await waitFor(() => expect(screen.getByTestId("range-high").style.visibility).toBe(""));
+    await waitFor(() => expect(screen.getByTestId("range-high").textContent).toBe("H $90,000.00"));
     const first = screen.getByTestId("range-high").textContent;
     expect(first).toBe("H $90,000.00");
     await userEvent.click(screen.getByRole("tab", { name: "1W" }));
@@ -158,14 +158,14 @@ describe("10 Home's briefs are chosen by edition and session, not by write time 
     // without an assessment the next edition fills the second slot, and the Close still opens
     expect(pickHomeBriefs([close, lateMorning], null, now).map((x) => x.edition)).toEqual(["morning", "close"]);
   });
-  it("close > midday > morning; one row per edition (its newest); only the latest date; an assessment written later goes last", () => {
+  it("close > midday > morning; one row per edition (its newest); only the latest date; the edition goes last even when the assessment was written after it (r10)", () => {
     const midday = b("midday", "2026-09-25", "2026-09-25T17:00:00Z");
     const olderClose = b("close", "2026-09-24", "2026-09-24T20:05:00Z");
     const regenClose = b("close", "2026-09-25", "2026-09-25T21:00:00Z", "Regenerated close.");
     const lateAssessment = b("assessment", "2026-09-25", "2026-09-26T00:30:00Z");
     const picked = pickHomeBriefs([olderClose, midday, close, regenClose, lateMorning], lateAssessment, now);
-    expect(picked.map((x) => x.edition)).toEqual(["close", "assessment"]);
-    expect(picked[0].sections.lede).toBe("Regenerated close.");
+    expect(picked.map((x) => x.edition)).toEqual(["assessment", "close"]);
+    expect(picked[1].sections.lede).toBe("Regenerated close.");
     expect(pickHomeBriefs([midday, lateMorning], null, now).map((x) => x.edition)).toEqual(["morning", "midday"]);
     // a stale assessment (over 14 days) is not offered
     expect(pickHomeBriefs([close], b("assessment", "2026-09-01", "2026-09-01T12:00:00Z"), now).map((x) => x.edition)).toEqual(["close"]);

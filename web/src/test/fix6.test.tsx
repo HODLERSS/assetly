@@ -117,7 +117,7 @@ describe("L2 a coin's week (r6 power-user m1, designer m-2)", () => {
     const utc = scrubLabel(liveAt, "1W", "UTC", true);
     if (utc !== scrubLabel(liveAt, "1W", undefined, true)) expect(text).not.toContain(utc);
   });
-  it("its high and low come from the drawn hourly line (r7 design n-5), and stay hidden until that line lands", async () => {
+  it("its high and low come from the drawn hourly line (r7 design n-5); before it lands they show the daily pass's, and only widen (r10)", async () => {
     const { pts, live, liveAt } = coinWeek();
     // the daily first pass answers at once; the hourly read waits until released
     let release!: () => void;
@@ -127,10 +127,14 @@ describe("L2 a coin's week (r6 power-user m1, designer m-2)", () => {
     render(<PriceChart api={{ getHistory } as unknown as Api} symbol="BTC-USD" currency="USD" livePrice={live} liveAsOf={liveAt} crypto />);
     await userEvent.click(screen.getByRole("tab", { name: "1W" }));
     await screen.findByTestId("price-chart");
-    // daily line drawn, L/H held back (hidden, row reserved) so they never jump when the hourly line replaces it
-    await waitFor(() => expect(screen.getByTestId("range-high").style.visibility).toBe("hidden"));
+    // daily line drawn: L/H show at once, from the daily closes (a subset of the hourly ones)
+    const num = (id: string) => Number((screen.getByTestId(id).textContent ?? "").replace(/[^\d.]/g, ""));
+    await waitFor(() => expect(screen.getByTestId("range-high").textContent).toMatch(/^H \$/));
+    const h0 = num("range-high"), l0 = num("range-low");
     await act(async () => { release(); });
-    await waitFor(() => expect(screen.getByTestId("range-high").style.visibility).toBe(""));
+    await waitFor(() => expect(num("range-high")).toBe(90_000));
+    expect(num("range-high")).toBeGreaterThanOrEqual(h0);   // widened, never narrowed
+    expect(num("range-low")).toBeLessThanOrEqual(l0);
     // the hourly spike is on the drawn line, so H names it: the line never pokes past its own label
     expect(screen.getByTestId("range-high").textContent).toBe("H $90,000.00");
   });

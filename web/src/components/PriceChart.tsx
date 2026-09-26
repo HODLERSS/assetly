@@ -178,20 +178,21 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
     const daily = anchorRange(dailyCloses(raw, zone, livePrice, liveAsOf), start, zone);
     if (!hourlyRange(range, crypto)) {
       if (!crypto) return { ...daily, closes: daily.pts };
-      // a coin's longer range folds in the hourly week, on the same basis 1W draws it (the last print of each
-      // hour), so its L/H are never narrower than 1W's (r8 designer). They wait for the week (r9 designer m-5).
-      if (weekPts === undefined) return { ...daily, closes: daily.pts, hlReady: false };
+      // A coin's longer range folds in the hourly week, on the same basis 1W draws it (the last print of each
+      // hour), so its L/H are never narrower than 1W's (r8 designer). Until the week is in, L/H are the drawn
+      // daily closes, shown at once (they sat blank ~3s on a cold open; r10 designer). The week can only ADD
+      // points to that set, so on arrival H can only rise and L only fall: they widen, never shrink.
       const extra = weekPts ? hourlyCloses(weekPts, livePrice, liveAsOf).filter((pt) => ymdIn(pt.ts, zone) > start) : [];
       return { ...daily, closes: extra.length ? [...daily.pts, ...extra] : daily.pts };
     }
-    // A coin's week draws by the hour, and its L and H come from that same hourly line: closing ones let the
-    // drawn line dip below the "L" it printed (r7 design n-5). They show only once the hourly line is the one
-    // drawn, so they never jump when it replaces the daily first pass (r6 designer m-2).
-    if (res !== "hourly") return { ...anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone), closes: daily.pts, hlReady: res === "daily" };
+    // A coin's week draws by the hour, and its L and H come from that same hourly line (r7 design n-5). Before the
+    // hourly line lands they are the daily first pass's, shown at once. Every daily close is the last print of its
+    // day, so also the last print of its hour: the daily set is inside the hourly one, and the H/L only widen
+    // when the hourly line replaces it (never the r6 m-2 jump inward).
+    if (res !== "hourly") return { ...anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone), closes: daily.pts };
     const hourly = anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone);
     return { ...hourly, closes: hourly.pts };
   }, [raw, range, zone, crypto, livePrice, liveAsOf, res, weekPts]);
-  const hlReady = !(series && "hlReady" in series && series.hlReady === false);
   const pts = series?.pts ?? null;
   const closes = series?.closes ?? null;
 
@@ -300,9 +301,9 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
             <div className="sub num" style={{ textAlign: "right", marginTop: 1 }}>avg {moneyExact(avgCost, currency)}</div>
           )}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
-            {/* the row keeps its height while an hourly week's L/H wait for the hourly line */}
-            <span className="sub num" data-testid="range-low" style={hlReady ? undefined : { visibility: "hidden" }}>L {moneyExact(view.low, currency)}</span>
-            <span className="sub num" data-testid="range-high" style={hlReady ? undefined : { visibility: "hidden" }}>H {moneyExact(view.high, currency)}</span>
+            {/* L/H show at once and only widen as the hourly week lands (r10 designer) */}
+            <span className="sub num" data-testid="range-low">L {moneyExact(view.low, currency)}</span>
+            <span className="sub num" data-testid="range-high">H {moneyExact(view.high, currency)}</span>
           </div>
           {partial && (
             <div className="sub" data-testid="partial-note" style={{ textAlign: "center", marginTop: 1 }}>

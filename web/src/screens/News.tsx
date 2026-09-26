@@ -216,6 +216,14 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
           <button className="chip" onClick={() => setRetryN((n) => n + 1)}>Retry</button>
         </div>
       ))}
+      {state === "loading" && items.length === 0 && (
+        // the first read of the feed: say so, and hold the list's shape (blank under the chips for up to 11s
+        // under load; r10 designer)
+        <div aria-busy="true" data-testid="news-loading">
+          <p className="empty" style={{ padding: "18px 0 10px" }}>Loading news{filter ? ` for ${filter}` : ""}…</p>
+          {[0, 1, 2].map((i) => <div key={i} className="skel-line" style={{ height: 40, width: "100%" }} />)}
+        </div>
+      )}
       {state === "pulling" && (
         <p className="empty" aria-busy="true">Pulling the latest stories{filter ? ` for ${filter}` : ""}…</p>
       )}
