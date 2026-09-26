@@ -3466,3 +3466,129 @@ export function stripUngroundedMoodCauses(text: string, sources: string, names: 
     return lines.some((l) => toks.filter((w) => stemIn(l, w)).length >= Math.min(2, toks.length)) ? m : "";
   });
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// r13 intelligence M1: the code-built answers (judge timeout / error) answer the question that was asked
+// ---------------------------------------------------------------------------------------------------------------
+const usd0 = (v: number) => `${v < 0 ? "−" : ""}$${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
+const sUsd = (v: number) => `${v >= 0 ? "+" : "−"}$${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
+const sPct = (v: number, d = 1) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}%`;
+const bigUsd = (v: number) => Math.abs(v) >= 1e6 ? `${v < 0 ? "−" : ""}$${(Math.abs(v) / 1e6).toFixed(2)}M` : usd0(v);
+
+/** r13 M1(b): "Today your portfolio is +0.00% (+$0)" on a Saturday while Home showed +$9,447. On a closed day the line
+ *  names the session the figure is from, with Home's figure. */
+export function sessionDayLine(s: { open: boolean; usd: number; pct: number; weekday: string }, ko = false): string {
+  if (s.open) return ko ? `• 오늘 포트폴리오: ${sUsd(s.usd)} (${sPct(s.pct, 2)}).` : `• Today your portfolio is ${sPct(s.pct, 2)} (${sUsd(s.usd)}).`;
+  return ko ? `• 오늘은 미국 시장이 휴장입니다. ${s.weekday} 거래일 포트폴리오: ${sUsd(s.usd)} (${sPct(s.pct, 2)}).`
+    : `• Markets are closed; in ${s.weekday}'s session your portfolio was ${sUsd(s.usd)} (${sPct(s.pct, 2)}).`;
+}
+
+export type IntentRow = {
+  name: string; symbol: string; kind: string; usd: number; weight: number; qty: number; currency: string;
+  price: number | null; avgCost: number | null; costUsd: number | null; glUsd: number | null;
+  dayPct: number | null; dayUsd: number; leveraged?: boolean;
+  heads?: { title: string; source: string; date: string }[] | null;   // null: the read failed (unknown, not none)
+  maxClose?: number | null;
+};
+const INTENT = {
+  tax: /\btax(?:es|ed)?\b|\bcapital gains?\b|세금|양도(?:소득)?세/i,
+  basis: /\bcost basis\b|\bbasis\b|\bwhat did i pay\b|\bhow much did i pay\b|\bavg\.? cost\b|\baverage (?:cost|price)\b|\bbreak ?even\b|평단|매수가|원가|평균 ?단가/i,
+  why: /\bwhy\b[^?]{0,40}?\b(?:drop|dropp|fall|fell|down|slid|slide|sink|sank|tank|plung|rise|rose|up|jump|surg|rall|climb|move|moving|moved|spik|pop|crash|dip)|왜[^?]{0,20}(?:떨어|내렸|내려|올랐|올라|급등|급락|하락|상승|빠졌)/i,
+  stress: /\b(?:if|what happens|what if|suppose|say)\b[^?]{0,60}?\b(?:falls?|drops?|crash(?:es)?|declines?|tanks?|loses?|goes down|is down|plunges?|sinks?|corrects?)\s+(?:by\s+|another\s+)?(\d+(?:\.\d+)?)\s?%|(\d+(?:\.\d+)?)\s?%\s*(?:drop|fall|crash|decline|correction|하락|폭락|빠지)/i,
+  ath: /\ball[- ]time highs?\b|\brecord (?:high|close)s?\b|\bnew highs?\b|\bATH\b|신고가|사상 최고/i,
+  rank: /\b(smallest|largest|biggest|tiniest)\b[^?]{0,25}?\b(?:holding|position|stake|investment)s?\b|가장 (작은|큰) (?:종목|보유|비중)/i,
+};
+/** The intent of a data question the code can answer on its own, or null. */
+export function questionIntent(q: string): keyof typeof INTENT | null {
+  const t = String(q ?? "");
+  for (const k of ["tax", "basis", "why", "stress", "ath", "rank"] as const) if (INTENT[k].test(t)) return k;
+  return null;
+}
+
+/** r13 M1(a): the code-built answer for the question's intent, always naming the holding. `focus` = the holdings the
+ *  question names. Null when the question has none of these intents (the caller's generic figures stand). */
+export function intentAnswer(q: string, rows: IntentRow[], focus: IntentRow[], ctx: { totalUsd: number; sessionLabel: string; athTracked: boolean }, ko = false): string | null {
+  const intent = questionIntent(q);
+  if (!intent) return null;
+  const L: string[] = [];
+  const bySize = [...rows].sort((a, b) => b.usd - a.usd);
+  const w = (r: IntentRow) => `${r.weight.toFixed(1)}%`;
+  if (intent === "tax") {
+    L.push(ko ? "• Assetly는 세금 조언을 하지 않습니다. 세액은 세율, 보유 기간, 계좌 종류에 따라 달라집니다. 평가 손익은 이렇습니다." : "• Assetly doesn't give tax advice: what you'd owe depends on your tax rate, how long you've held each lot, and the account type. Here is the unrealized gain or loss it would be figured on.");
+    for (const r of (focus.length ? focus : [...rows].filter((x) => x.glUsd !== null).sort((a, b) => Math.abs(b.glUsd ?? 0) - Math.abs(a.glUsd ?? 0)).slice(0, 3))) {
+      if (r.glUsd === null || r.costUsd === null) { L.push(ko ? `• ${r.name}: 매수 원가가 없습니다.` : `• ${r.name}: no cost basis on file.`); continue; }
+      L.push(ko ? `• ${r.name}: 평가 손익 ${sUsd(r.glUsd)} (원가 ${usd0(r.costUsd)}, ${sPct(r.glUsd / r.costUsd * 100)}).` : `• ${r.name}: unrealized ${r.glUsd >= 0 ? "gain" : "loss"} ${sUsd(r.glUsd)} on a cost of ${usd0(r.costUsd)} (${sPct(r.glUsd / r.costUsd * 100)}).`);
+    }
+    return L.join("\n");
+  }
+  if (intent === "basis") {
+    if (focus.length) {
+      for (const r of focus) {
+        if (r.costUsd === null) { L.push(ko ? `• ${r.name}: 매수 원가가 없습니다.` : `• ${r.name}: no cost basis on file.`); continue; }
+        const per = r.avgCost !== null ? (ko ? ` (${r.qty}주, 주당 ${r.avgCost.toFixed(2)})` : ` (${r.qty} shares at $${r.avgCost.toFixed(2)})`) : "";
+        L.push(ko ? `• ${r.name}: 매수 원가 ${usd0(r.costUsd)}${per}, 현재 ${usd0(r.usd)}, 평가 손익 ${sUsd(r.usd - r.costUsd)} (${sPct((r.usd - r.costUsd) / r.costUsd * 100)}).`
+          : `• ${r.name}: cost basis ${usd0(r.costUsd)}${per}; now worth ${usd0(r.usd)}, ${sUsd(r.usd - r.costUsd)} (${sPct((r.usd - r.costUsd) / r.costUsd * 100)}).`);
+      }
+      return L.join("\n");
+    }
+    const known = rows.filter((r) => r.costUsd !== null);
+    const cost = known.reduce((a, r) => a + (r.costUsd ?? 0), 0), val = known.reduce((a, r) => a + r.usd, 0);
+    if (!known.length || cost <= 0) return ko ? "• 매수 원가가 기록된 종목이 없습니다." : "• No cost basis is on file for your holdings.";
+    L.push(ko ? `• 전체 매수 원가 ${bigUsd(cost)}, 현재 ${bigUsd(val)}, 평가 손익 ${sUsd(val - cost)} (${sPct((val - cost) / cost * 100)}).`
+      : `• Total cost basis ${bigUsd(cost)}; those holdings are now worth ${bigUsd(val)}, ${sUsd(val - cost)} (${sPct((val - cost) / cost * 100)}).`);
+    const top = [...known].sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0)).slice(0, 3).map((r) => `${r.name} ${usd0(r.costUsd ?? 0)}`);
+    L.push(ko ? `• 원가가 큰 종목: ${top.join(", ")}.` : `• Largest cost bases: ${top.join(", ")}.`);
+    if (known.length < rows.length) L.push(ko ? `• 원가가 없는 종목 ${rows.length - known.length}개는 제외했습니다.` : `• ${rows.length - known.length} holding(s) with no cost on file are left out.`);
+    return L.join("\n");
+  }
+  if (intent === "why") {
+    if (!focus.length) return null;
+    for (const r of focus.slice(0, 2)) {
+      if (r.dayPct === null) L.push(ko ? `• ${r.name}: 오늘 등락 데이터가 없습니다.` : `• ${r.name}: no day move on file.`);
+      else L.push(ko ? `• ${r.name}: ${ctx.sessionLabel} ${sPct(r.dayPct)} (${sUsd(r.dayUsd)}).` : `• ${r.name} ${r.dayPct >= 0 ? "rose" : "fell"} ${Math.abs(r.dayPct).toFixed(1)}% ${ctx.sessionLabel} (${sUsd(r.dayUsd)} on your position).`);
+      if (r.heads === null || r.heads === undefined) L.push(ko ? "• 뉴스를 지금 불러오지 못했습니다." : "• The headlines couldn't be loaded just now.");
+      else if (!r.heads.length) L.push(ko ? `• 지난 7일 ${r.name} 헤드라인 중 원인을 설명하는 것이 없습니다.` : `• No ${r.name} headline in the last 7 days gives a cause.`);
+      else L.push(ko ? `• 관련 헤드라인: ${r.heads.slice(0, 2).map((h) => `"${h.title}" (${h.source}, ${h.date})`).join("; ")}.` : `• Headlines on file: ${r.heads.slice(0, 2).map((h) => `"${h.title}" (${h.source}, ${h.date})`).join("; ")}.`);
+    }
+    return L.join("\n");
+  }
+  if (intent === "stress") {
+    const m = INTENT.stress.exec(q)!;
+    const n = Number(m[1] ?? m[2]);
+    if (!(n > 0 && n <= 100)) return null;
+    const hit = (r: IntentRow) => Math.min(r.usd, r.usd * n / 100 * (r.leveraged ? 3 : 1));
+    if (focus.length) {
+      for (const r of focus.slice(0, 3)) {
+        const loss = hit(r);
+        L.push(ko ? `• ${r.name}이(가) ${n}% 하락하면: ${sUsd(-loss)}, 포트폴리오 ${usd0(ctx.totalUsd - loss)} (${sPct(-loss / ctx.totalUsd * 100)}).`
+          : `• If ${r.name} fell ${n}%: ${sUsd(-loss)} on your position${r.leveraged ? " (it moves about 3× its index, so an index fall of that size would cost more)" : ""}, taking the portfolio to ${usd0(ctx.totalUsd - loss)} (${sPct(-loss / ctx.totalUsd * 100)}).`);
+      }
+      return L.join("\n");
+    }
+    const eq = rows.filter((r) => r.kind !== "crypto" && r.kind !== "cash" && !r.symbol.startsWith("$"));
+    const loss = eq.reduce((a, r) => a + hit(r), 0);
+    const lev = eq.filter((r) => r.leveraged).map((r) => r.name);
+    L.push(ko ? `• 보유 주식과 펀드가 모두 ${n}% 하락한다고 단순 가정하면: ${sUsd(-loss)}, 포트폴리오 ${usd0(ctx.totalUsd - loss)} (${sPct(-loss / ctx.totalUsd * 100)}).`
+      : `• If every stock and fund you hold fell ${n}% with it (a simple estimate: single stocks move more or less than an index): ${sUsd(-loss)}, taking the portfolio to ${usd0(ctx.totalUsd - loss)} (${sPct(-loss / ctx.totalUsd * 100)}).`);
+    if (lev.length) L.push(ko ? `• ${lev.join(", ")}은(는) 레버리지 펀드라 3배로 계산했습니다.` : `• ${lev.join(" and ")} ${lev.length > 1 ? "are leveraged funds" : "is a leveraged fund"}, counted at 3× the fall.`);
+    L.push(ko ? "• 현금과 코인은 포함하지 않았습니다." : "• Cash and crypto are left out of the estimate.");
+    return L.join("\n");
+  }
+  if (intent === "ath") {
+    if (!ctx.athTracked) return ko ? "• 사상 최고가는 아직 추적하지 않습니다." : "• Record highs aren't tracked yet.";
+    const known = rows.filter((r) => typeof r.maxClose === "number" && r.maxClose > 0 && r.price !== null);
+    if (!known.length) return ko ? "• 사상 최고가는 아직 추적하지 않습니다." : "• Record highs aren't tracked yet.";
+    const at = known.filter((r) => (r.price as number) >= (r.maxClose as number) * 0.999);
+    L.push(at.length ? (ko ? `• 저장된 기록 중 최고 종가: ${at.map((r) => `${r.name} ${(r.price as number).toFixed(2)}`).join(", ")}.` : `• At their highest close on file: ${at.map((r) => `${r.name} ($${(r.price as number).toFixed(2)})`).join(", ")}.`)
+      : (ko ? "• 저장된 기록 중 최고 종가에 있는 종목은 없습니다." : "• None of your holdings is at its highest close on file."));
+    const near = known.filter((r) => !at.includes(r)).map((r) => ({ r, gap: ((r.maxClose as number) - (r.price as number)) / (r.maxClose as number) * 100 })).sort((a, b) => a.gap - b.gap).slice(0, 3);
+    if (near.length) L.push(ko ? `• 가장 가까운 종목: ${near.map((x) => `${x.r.name} 최고가 대비 −${x.gap.toFixed(1)}%`).join(", ")}.` : `• Closest: ${near.map((x) => `${x.r.name} ${x.gap.toFixed(1)}% below its high of $${(x.r.maxClose as number).toFixed(2)}`).join(", ")}.`);
+    L.push(ko ? "• 기준: 저장된 약 5년치 종가입니다." : "• Based on the roughly five years of closes on file.");
+    return L.join("\n");
+  }
+  // rank: smallest / largest holding
+  const small = /smallest|tiniest|작은/i.test(q);
+  const pick = (small ? [...bySize].reverse() : bySize).slice(0, 3);
+  return ko ? `• ${small ? "비중이 가장 작은" : "비중이 가장 큰"} 종목: ${pick.map((r) => `${r.name} ${w(r)} (${usd0(r.usd)})`).join(", ")}.`
+    : `• Your ${small ? "smallest" : "largest"} holding${pick.length > 1 ? "s" : ""}: ${pick.map((r) => `${r.name} ${w(r)} (${usd0(r.usd)})`).join(", ")}.`;
+}

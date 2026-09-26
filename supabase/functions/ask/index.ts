@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -427,6 +427,12 @@ async function handle(req: Request): Promise<Response> {
   };
   const bookDayUsd = held.filter(tradesToday).reduce((a, r) => a + dayOf(r), 0);
   const bookDayPct = totNow - bookDayUsd > 0 ? bookDayUsd / (totNow - bookDayUsd) * 100 : 0;
+  // r12 C / r13 M1(b): on a weekend or holiday "today +$0" is no answer: the last session's figures, labelled with the
+  // session (Home's figure)
+  const usOpenToday = marketState("US").tradingToday;
+  const lastUs = marketState("US").lastSessionDate;
+  const sessDay = usOpenToday ? bookDayUsd : held.reduce((a, r) => a + dayOf(r), 0);
+  const sessPct = totNow - sessDay > 0 ? sessDay / (totNow - sessDay) * 100 : 0;
   const totalLines = windows.map((d) => {
     const m = moved[d];
     const label = winLabel(d);
@@ -478,6 +484,7 @@ async function handle(req: Request): Promise<Response> {
   }
 
   let context = "";
+  const headsBy = new Map<string, { title: string; source: string; date: string }[] | null>();
   // the deep-context reads for the holdings this question is about run together, then are written in order
   const deep = await pDeep;
   for (const [k, sym] of mentioned.entries()) {
@@ -489,6 +496,7 @@ async function handle(req: Request): Promise<Response> {
     const heads = (news ?? []).filter((n) => usableNews(n, aliasesFor(hr.symbol, hr.name)) && !staleNewsTitle(String(n.title), n.published_at, today) && headlineOk(String(n.title))
       && centrality(String(n.title), [hr.symbol, nameOf(hr), ...aliasesFor(hr.symbol, hr.name)]) <= 40).slice(0, 12);
     // r11: a read that missed its cap is not "no headlines"
+    headsBy.set(sym, deep[k] === deepNone ? null : heads.slice(0, 2).map((n) => ({ title: String(n.title).slice(0, 110), source: String(n.source ?? ""), date: String(n.published_at).slice(5, 10).replace("-", "/") })));
     context += `\n[${nm}] 7d headlines:\n${heads.map((n) => `- [${n.source}, ${String(n.published_at).slice(5, 10)}] ${n.title}`).join("\n") || (deep[k] === deepNone ? "- couldn't be loaded just now (NOT none: never say no headline explains a move)" : "- none")}`;
     if (ins?.[0]) peBy.set(sym, [...(peBy.get(sym) ?? []), ...peFigures((ins[0].bullets as string[]).join(" "))]);
     if (ins?.[0]) context += `\n[${nm}] current desk take (written ${String(ins[0].generated_at).slice(0, 16).replace("T", " ")} UTC; its prices may be older than the stats above, which win): ${(ins[0].bullets as string[]).join(" | ")}`;
@@ -512,6 +520,8 @@ async function handle(req: Request): Promise<Response> {
   // the language of the QUESTION decides the answer's language, trade questions included (round 2: "테슬라
   // 팔까요?" came back in English because the example opener below was English and the model copied it)
   const ko = questionIsKorean(question);
+  const sessLabel = usOpenToday ? (ko ? "오늘" : "today") : ko ? `${lastUs.slice(5).replace("-", "/")} 거래일` : `in ${weekdayOf(lastUs)}'s session`;
+  const todayLine = () => sessionDayLine({ open: usOpenToday, usd: sessDay, pct: sessPct, weekday: ko ? `${lastUs.slice(5).replace("-", "/")}` : weekdayOf(lastUs) }, ko);
   // today's move per holding and for the portfolio, for the number check (±0.15 point, sign)
   const moveFacts: LiveFact[] = [
     ...held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], pct: r.change_pct === null || !tradesToday(r) ? null : Number(r.change_pct) })),
@@ -547,8 +557,21 @@ async function handle(req: Request): Promise<Response> {
   // turn's symbol), and "Should I buy the dip on META?" got the generic husk. Focus follows the CURRENT question only,
   // and a pick / "N best" question never focuses.
   const nowSyms = mentionedNow;
+  // r13 M1(a): "Which of my stocks hit an all-time high?" is answered from the highest stored close (one capped read)
+  const athMax = questionIntent(question) === "ath" ? await capped(Promise.all(held.map((r) => asP(admin.from("price_history").select("price").eq("symbol", r.symbol).order("price", { ascending: false }).limit(1))
+    .then((x) => [r.symbol, Number((x as { data?: { price: number }[] | null }).data?.[0]?.price ?? 0) || null] as const))).then((a) => new Map(a)), 1500, null) : null;
   const focusRow = tradeQ && !isPickQuestion(question) && nowSyms.length === 1 ? held.find((h) => h.symbol === nowSyms[0])! : null;
   const estOf = (sym: string) => { const r = held.find((h) => h.symbol === sym); const e = r ? askEsts.find((x) => x.names[0] === nameOf(r)) : undefined; return e ? (e.range ? (ko ? spanOfMonthKo(e.range) : spanOfMonth(e.range)) : e.est ? "~" + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : null) : null; };
+  // r13 M1(a): the figures the intent answers are built from
+  const intentRows = (): IntentRow[] => held.map((r) => {
+    const v = usd(Number(r.value ?? 0), r.currency);
+    const gl = r.total_gl === null || r.total_gl === undefined ? null : usd(Number(r.total_gl), r.currency);
+    const hasCost = Number(r.avg_cost ?? 0) > 0 && gl !== null;
+    return { name: nameOf(r), symbol: r.symbol, kind: String(r.kind ?? ""), usd: v, weight: v / (assetsUsd || 1) * 100, qty: Number(r.qty ?? 0), currency: String(r.currency ?? "USD"),
+      price: r.price === null || r.price === undefined ? null : Number(r.price), avgCost: hasCost ? Number(r.avg_cost) : null, costUsd: hasCost ? v - (gl as number) : null, glUsd: hasCost ? gl : null,
+      dayPct: r.change_pct === null ? null : Number(r.change_pct), dayUsd: dayOf(r), leveraged: /leveraged/.test(themeOf(r.symbol, r.kind)),
+      heads: headsBy.has(r.symbol) ? headsBy.get(r.symbol)! : null, maxClose: athMax?.get(r.symbol) ?? null };
+  });
   const defaultInfo = (): string => buildHusk({
     holdings: held.map((r) => ({ name: nameOf(r), symbol: r.symbol, kind: r.kind, usd: usd(Number(r.value ?? 0), r.currency) })),
     cashUsd: book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0),
@@ -568,6 +591,10 @@ async function handle(req: Request): Promise<Response> {
   // Round 7: three 502s ("lost the thread") on plain data questions. A non-decision question whose model lanes both
   // failed now gets the figures built in code (today, the windows, the reports ahead, the largest holdings)
   const dataFallback = (): string => {
+    // r13 M1(a): 7 of 17 fallbacks ignored the question ("smallest holding" listed the largest, "TSLA cost basis" gave
+    // no basis, "Why did META drop" never named META, tax / "Nasdaq −20%" / all-time highs got the generic dump)
+    const ia = intentAnswer(question, intentRows(), intentRows().filter((r) => mentionedNow.includes(r.symbol)), { totalUsd: assetsUsd, sessionLabel: sessLabel, athTracked: !!athMax }, ko);
+    if (ia) return ia;
     // Round 8: the fallback was the same generic block for every question ("TSLA is up 20% today, why?" got no TSLA
     // figure and no correction). It now answers the question's own subject first, from code.
     const one = mentionedNow.length === 1 ? held.find((h) => h.symbol === mentionedNow[0])! : null;
@@ -582,7 +609,7 @@ async function handle(req: Request): Promise<Response> {
         lines.push(ko ? `• ${nm}: 오늘 ${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%${px !== null ? `, 현재 ${money(px, cur)}` : ""}.` : `• ${nm} is ${chg >= 0 ? "up" : "down"} ${Math.abs(chg).toFixed(1)}% today${px !== null ? `, at ${money(px, cur)}` : ""}.`);
       }
       const w = usd(Number(one.value ?? 0), one.currency) / (assetsUsd || 1) * 100;
-      lines.push(ko ? `• 자산의 ${w.toFixed(1)}%(${money(usd(Number(one.value ?? 0), one.currency))})입니다.` : `• It is ${w.toFixed(1)}% of your portfolio (${money(usd(Number(one.value ?? 0), one.currency))}).`);
+      lines.push(ko ? `• ${nm}는 자산의 ${w.toFixed(1)}%(${money(usd(Number(one.value ?? 0), one.currency))})입니다.` : `• ${nm} is ${w.toFixed(1)}% of your portfolio (${money(usd(Number(one.value ?? 0), one.currency))}).`);
       if (/\b(?:dividend|pay(?:s|out)?|per share|quarter)\b|배당/i.test(question)) {
         const dl = divLines.find((x) => x.r.symbol === one.symbol)?.d.line;
         if (dl) lines.push(`• ${dl.replace(/^[^:]+:\s*/, `${nm}: `)}.`);
@@ -601,12 +628,12 @@ async function handle(req: Request): Promise<Response> {
       .map((e) => `${e.names[0]} ${e.range ? (ko ? spanOfMonthKo(e.range) : spanOfMonth(e.range)) : (ko ? "" : "~") + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }) + (ko ? "경" : "")}`);
     const tops = [...held].sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency)).slice(0, 3).map((r) => `${nameOf(r)} ${weight(usd(Number(r.value ?? 0), r.currency))}`);
     return ko ? [
-      `• 오늘 포트폴리오: ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%(${signedUsd(bookDayUsd)}).`,
+      todayLine(),
       `• 기간별: ${totalLines}.`,
       reps.length ? `• 다가오는 실적 발표(추정): ${reps.join(", ")}.` : "",
       tops.length ? `• 비중 상위: ${tops.join(", ")}.` : "",
     ].filter(Boolean).join("\n") : [
-      `• Today your portfolio is ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}% (${signedUsd(bookDayUsd)}).`,
+      todayLine(),
       `• Longer windows: ${totalLines}.`,
       reps.length ? `• Reports expected (estimates): ${reps.join(", ")}.` : "",
       tops.length ? `• Largest holdings: ${tops.join(", ")}.` : "",
@@ -736,12 +763,6 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // r12 B: the code-built answer for this question's type: the computed lead, a portfolio summary, or the figures
   const summaryQ = /\bsummar(?:y|ize|ise)\b|\boverview\b|\bin (?:\d|one|two|three|four|five) (?:bullet|point)|요약|한눈에/i.test(question);
   const ytdLine = (() => { const m = /YTD: ([^·]+)/.exec(totalLines); return m && !/not enough|couldn't/i.test(m[1]) ? m[1].trim() : null; })();
-  // r12 C: on a weekend or holiday "today +$0" is no answer: the last session's figures, labelled with the session (Home's)
-  const usOpenToday = marketState("US").tradingToday;
-  const lastUs = marketState("US").lastSessionDate;
-  const sessDay = usOpenToday ? bookDayUsd : held.reduce((a, r) => a + dayOf(r), 0);
-  const sessPct = totNow - sessDay > 0 ? sessDay / (totNow - sessDay) * 100 : 0;
-  const sessLabel = usOpenToday ? (ko ? "오늘" : "today") : ko ? `${lastUs.slice(5).replace("-", "/")} 거래일` : `in ${weekdayOf(lastUs)}'s session`;
   const summaryLead = () => portfolioSummaryLead({ total: totNow, dayUsd: sessDay, dayPct: sessPct, dayLabel: sessLabel,
     top: held.map((r) => ({ label: nameOf(r), weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100 })).sort((a, b) => b.weight - a.weight), ytd: ytdLine }, ko);
   const codeAnswer = (): string => summaryQ ? summaryLead() : dataLead ? [dataLead, dataFallback().split("\n").filter((l) => !dataLead.includes(l)).slice(0, 2).join("\n")].filter(Boolean).join("\n") : dataFallback();
@@ -969,7 +990,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     // the computed lead is code, not model text: it is not judged (a shorter input answers faster)
     const toJudge = dataLead && guarded.startsWith(dataLead) ? guarded.slice(dataLead.length).replace(/^\n+/, "") : guarded;
     const items = judgeItems(toJudge, chips0);
-    const flags = await judge(items.list);
+    let flags = await judge(items.list);
+    // r13 M1(c): one retry when a timeout or gateway error left 3s or more (a fallback answers less than the model)
+    if (flags === null && left() >= 3000) flags = await judge(items.list);
     // no verdict from the judge: the model's chips are not shown either (they asked for products in round 9)
     // round 9 v44: a verdict question whose judge did not answer leaked on the non-decision path; it goes to the husk too
     // r12 A: an answer the judge did not read is never shipped: a decision or verdict gets the code-built answer (husk),
@@ -1016,8 +1039,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   if (husk(guarded) || !guarded) {
     builtInCode = true;
     // a data question whose every sentence failed the number checks gets the verified figures instead
-    const day = ko ? `• 오늘 포트폴리오는 ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%(${signedUsd(bookDayUsd)})입니다.`
-      : `• Today your portfolio is ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}% (${signedUsd(bookDayUsd)}).`;
+    const day = todayLine();
     guarded = tradeQ || pickQ || verdictQ ? defaultInfo() : [day, defaultInfo().split("\n")[0]].join("\n");
   }
   // a closed market's day move is labelled with its session, or dropped when it is called today's (round 6)
