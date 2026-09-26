@@ -1,0 +1,47 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Signing in · Assetly</title>
+<link rel="icon" href="./icon.svg">
+<link rel="stylesheet" href="./_legal.css">
+<style>
+  .box{padding:64px 0 36px}
+  .box h1{font-size:28px;letter-spacing:-.02em;margin-top:18px}
+  .box p{color:var(--as-muted);margin-top:10px;max-width:36ch}
+  .btn{display:inline-flex;align-items:center;min-height:46px;padding:0 22px;border-radius:999px;font-weight:600;text-decoration:none;margin-top:22px;background:var(--as-primary);color:var(--as-bg)}
+</style></head>
+<body><div class="wrap"><main class="box">
+  <span class="brand"><svg width="26" height="12" viewBox="0 0 32 12" aria-hidden="true"><rect x="0" y="3" width="14" height="6" rx="3" fill="currentColor"/><rect x="17" y="3" width="14" height="6" rx="3" fill="currentColor" opacity=".45"/></svg>Assetly</span>
+  <h1 id="t">Signing you in…</h1>
+  <p id="m">One moment.</p>
+  <a class="btn" id="go" href="./" hidden>Continue</a>
+</main></div>
+<script>
+// Email links point here instead of at the auth server's own domain: Gmail silently dropped Assetly's sign-in
+// and confirmation emails whose button linked to *.supabase.co (a domain phishing kits reuse). This page only
+// forwards the one-time token to the auth server's verify endpoint, which checks redirect_to against its own
+// allow list, so it adds no trust of its own.
+(function () {
+  var AUTH = "https://hhdpthrfmsdmxdrfckxq.supabase.co/auth/v1/verify";
+  var TYPES = { signup: 1, magiclink: 1, recovery: 1, email_change: 1, invite: 1, email: 1 };
+  var q = new URLSearchParams(location.search);
+  var token = q.get("token") || "", type = q.get("type") || "", to = q.get("redirect_to") || "";
+  if (!/^[A-Za-z0-9_-]{8,}$/.test(token) || !TYPES[type]) {
+    document.getElementById("t").textContent = "This link isn't valid";
+    document.getElementById("m").textContent = "Open Assetly and request a new sign-in email.";
+    document.getElementById("go").hidden = false;
+    return;
+  }
+  var url = AUTH + "?token=" + encodeURIComponent(token) + "&type=" + encodeURIComponent(type) +
+    (to ? "&redirect_to=" + encodeURIComponent(to) : "");
+  var go = document.getElementById("go");
+  go.href = url;
+  location.replace(url);
+  setTimeout(function () {
+    document.getElementById("m").textContent = "If nothing happens, tap Continue.";
+    go.hidden = false;
+  }, 2500);
+})();
+</script>
+</body></html>
