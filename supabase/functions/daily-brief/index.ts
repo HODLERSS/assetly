@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, tidyClauseEndings, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, tidyClauseEndings, krxDollarTargets, taxRemarkClaims, bondValueClaims, isTaxAdvantaged, plainForBeginner, roundBookTotal, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -82,13 +82,14 @@ const FAST_MODEL = "gpt-oss-120b";
 // 14 (r10 native): fragments and seams, no futures in a closing note
 // 15 (r11): stored rows held to the windows ("the week's biggest loser"), merged parentheticals
 // 16 (r11): live rows repaired in place, estimated watches kept, no "No confirmed date yet" placeholder
+// 21 (e2e p07/p04): KRX dollar targets dropped from stored rows; forecast lexicon (growth upside, downside risk)
 // 20 (e2e P04): a risk line that lists strengths is replaced by the kind's code risk; cut-short and padded clauses tidied
 // 19 (r13 brief): stored notes held to their own yield (MSFT "0.7% yield adds meaningful income") and to the product
 //    versions in the headlines (AAPL "iPhone 17")
 // 18 (r13 M1): period figures relabelled to their true window (SOXL "347.4% this year" is its 1-year return)
 // 17 (r12 D): house-voice verdicts/forecasts ("A clean beat rerates the whole portfolio") and low-yield income claims
 //    dropped from stored rows; scripts re-made (card decimals, "~" / "(est)" in words, "Platforms'")
-const GEN_VERSION = 20;   // 4:
+const GEN_VERSION = 21;   // 4:
 const REPAIR_ROWS_PER_RUN = 12, REPAIR_ROWS_PER_USER = 6;   // r10 load: a GEN bump no longer rewrites every stored row in one run calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
@@ -422,6 +423,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
       // r12 D: the stored close kept "A clean beat rerates the whole portfolio" (a forecast, also spoken) and MSFT's
       // "yield adds meaningful income" at 0.7%
       ...softVerdicts(x), ...(ctx ? holdingIncomeClaims(x, ctx.facts.map((f) => ({ names: f.names, yieldPct: f.yieldPct ?? null }))) : []),
+      ...(ctx ? krxDollarTargets(x, ctx.facts.filter((f) => /\.(?:KS|KQ)$/.test(f.symbol)).map((f) => f.names)) : []),
       ...(ctx?.wins?.length ? [...superlativeClaims(x, ctx.wins), ...periodReturnMismatches(x, ctx.wins)] : []),
       // r13 brief: the stored AAPL note kept "iPhone 17 launch optimism" (the headlines say iPhone 18)
       ...(groundSrc !== null ? [...ungroundedEventSentences(x, groundSrc, allNames), ...ungroundedCauses(x, groundSrc, allNames), ...productVersionClaims(x, groundSrc)] : [])]);
@@ -740,6 +742,7 @@ Deno.serve(async (req) => {
       // a 30-word note and a 14-word-sentence rule for beginners contradict each other; for those readers the
       // note is TWO short sentences, so both rules can hold at once
       const beginner = ["novice", "intermediate"].includes(topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])));
+      const novice = topLevel(toArr((invBy.get(uid) as Investor | null | undefined)?.level, ["novice"])) === "novice";   // e2e p01: "just starting"
       const noteSplit = beginner ? " Write the note as TWO sentences of at most 14 words each (about 20 to 26 words in total), never one long sentence and never a single short one." : "";
       const [HZ1, HZ2] = HZ_LABELS[longestHz(toArr((invBy.get(uid) as Investor | null | undefined)?.horizon, ["3-10y"]))] ?? HZ_LABELS["3-10y"];
       if (krEdition && !assets.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"))) continue;   // no Korean sleeve, no Korea edition
@@ -906,7 +909,7 @@ Deno.serve(async (req) => {
               admin.from("insights").select("bullets").eq("symbol", r.symbol).order("generated_at", { ascending: false }).limit(1),
             ]);
             perf.push(`${dispN} 30d ${hist[30]}, 1y ${hist[365]}`);
-            const memoPrompt = `Quality memo on ${dispN} (${r.symbol}), ${w(r).toFixed(1)}% of a private investor's assets. Performance: 30d ${hist[30]}, 1y ${hist[365]} ("not enough price history yet" means no figure exists: never estimate one).
+            const memoPrompt = `Quality memo on ${dispN} (${r.symbol}), ${w(r).toFixed(1)}% of a private investor's assets, held in ${isTaxAdvantaged(String((r as { account?: string | null }).account ?? "")) ? "a tax-advantaged retirement account (taxes do not apply here: never mention tax, tax drag or tax efficiency)" : "a taxable brokerage account"}. ${themeOf(r.symbol, r.kind) === "bonds" ? "This is a BOND FUND: describe it by duration, credit quality and rate sensitivity; never by price-versus-income, cheapness, valuation or P/E-style value. " : ""}Performance: 30d ${hist[30]}, 1y ${hist[365]} ("not enough price history yet" means no figure exists: never estimate one).${novice ? "\nTHE READER IS JUST STARTING: write every field in plain everyday English. No abbreviations (no YoY, QoQ, EPS, FCF, P/E, TAM), no 'layer 1', no ratio or margin names, no 'concentration' or 'custody': say what the thing is in ordinary words (\"profit on each sale\", \"how the coins are held\"). Sentences under 14 words." : ""}
 ${tr?.[0] ? `Latest earnings call ("${String(tr[0].title).slice(0, 100)}", ${String(tr[0].published_at).slice(0, 10)}, ${callAgeLine(tr[0].published_at, briefDate)}):\n${String(tr[0].content).slice(0, 4000)}` : "No earnings call on file."}
 ${(fils ?? []).length ? `Filings: ${(fils ?? []).map((f) => `${f.form} ${f.filed_at}`).join(", ")}` : ""}
 News (14d):\n${(news ?? []).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "- none"}
@@ -1176,7 +1179,7 @@ Return STRICT JSON:
 lede: the one thing this ${kind.toLowerCase()} changes or confirms about the book, stated as a consequence for the reader. <= 30 words.
 overnight: THE WEEK THAT WAS: the book's direction over the week and the two or three holdings that drove it, with their WEEK numbers from WEEK MOVES (never a day number). <= 55 words.
 positions: ONLY from this list, 1-4 of them: ${eligible}. Each note <= 32 words that OPENS WITH WHAT IT MEANS for this owner and then gives the NEW fact from NEWS SINCE THE LAST CLOSE (the story, the filing, the call), never a restated week move; watch <= 10 words naming the next concrete event, date or level. A holding not on the list must not appear.
-desk_view: DIRECTION into the next sessions: the one structural exposure or catalyst that decides the next five trading days for this book. No single-day numbers. <= 40 words.
+desk_view: THE SETUP for the next sessions, stated as fact: the one structural exposure (a weight from the data) or dated event in front of this book, and what it would take to matter. No prediction of direction, momentum, pressure, upside or downside. No single-day numbers. <= 40 words.
 calendar: first the next session date for each market they hold (name any market holiday ahead), then up to 2 dated events from NEXT EARNINGS ESTIMATES or dated headlines. <= 10 words each.
 FORBIDDEN WORDS: today, tonight, this morning, overnight, live, and any day move presented as current.
 ${STYLE_RULES}\n${READER}`;
@@ -1746,6 +1749,11 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           { const row = rowOf(p.name); const y = row ? Number(divRows.get(row.symbol)?.div_yield ?? 0) || 0 : null;
             const bad = new Set(lowYieldIncomeClaims(note, y)); if (bad.size) note = splitSentences(note).filter((x) => !bad.has(x)).join(" ") || note; }
           note = plainLeverage(note);
+          // e2e P04-5: no tax remark on a holding in a retirement account (BND's "state-tax drag" in an IRA); no
+          // stock-valuation wording on a bond fund ("trades at a low price compared with its income")
+          { const row = rowOf(p.name);
+            const bad = new Set([...(row && isTaxAdvantaged(String((row as { account?: string | null }).account ?? "")) ? taxRemarkClaims(note) : []), ...(row && themeOf(row.symbol, row.kind) === "bonds" ? bondValueClaims(note) : [])]);
+            if (bad.size) note = splitSentences(note).filter((x) => !bad.has(x)).join(" ") || note; }
           const watch = wordWatch(String(p.watch ?? "").replace(/\s*([<>])\s*consensus/gi, (_m, s) => s === ">" ? " above consensus" : " below consensus"));
           return { ...p, name: plainCompanyName(p.name), note, watch: watch || "" };
         });
@@ -1866,6 +1874,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           || (holdings.some((r) => /\.(?:KS|KQ)$/.test(r.symbol)) && !marketState("KR").tradingToday);
         const themesArr = [...themeShare].filter(([th]) => th !== "other").map(([name, pct]) => ({ name, pct }));
         const techGroup = [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: [...themeShare].filter(([th]) => TECH_T.has(th)).reduce((a, [, v]) => a + v, 0) }];
+        const krxNames = holdings.filter((r) => /\.(?:KS|KQ)$/.test(r.symbol)).map((r) => [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)]);
         const incomeFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], yieldPct: divRows.has(r.symbol) ? Number(divRows.get(r.symbol)?.div_yield ?? 0) || 0 : null }));
         const clean = (t: string) => {
           // round 8: a verdict TAIL leaves a one-sentence lede as a clause ("…, keeping the portfolio on track"), and a
@@ -1896,7 +1905,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             ...brokenSentences(x).filter((b) => b.split(/\s+/).length <= 2),
             // r12 D: a verdict or forecast in the house voice ("A clean beat rerates the whole portfolio"), and an income
             // claim for a holding that yields under 2% ("MSFT's yield adds meaningful income")
-            ...softVerdicts(x), ...holdingIncomeClaims(x, incomeFacts)];
+            ...softVerdicts(x), ...holdingIncomeClaims(x, incomeFacts), ...krxDollarTargets(x, krxNames)];
           if (!bad.length) return x;
           // line by line, so a multi-line field keeps its newlines (round 7: the join(" ") flattened bullets)
           const kept = perLine(x, (line) => splitSentences(line).filter((s) => !bad.some((b) => b.includes(s.trim()) || s.includes(b))).join(" "));
@@ -1982,6 +1991,19 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       if (edition === "assessment" && !backfillOnly) {
         sections.overnight = yourPortfolio(holdings.map((r) => ({ name: krName(r.symbol, r.nickname, r.name), usd: usd(Number(r.value ?? 0), r.currency) })),
           assets.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0), total, exposure, sections.overnight);
+        // e2e P04-3: an income profile leads with the book's yearly dividend income and yield, and every payer's note
+        // carries its own income line
+        const stylesI = toArr((invBy.get(uid) as Investor | null | undefined)?.styles, ["value"]);
+        if (stylesI.includes("income") && divIncome > 0 && total > 0) {
+          const lineI = `Dividend income: about $${Math.round(divIncome).toLocaleString("en-US")} a year (${(divIncome / total * 100).toFixed(1)}% of assets).`;
+          if (!/\bDividend income:/.test(sections.lede)) sections.lede = `${lineI} ${sections.lede}`.trim();
+          const rowOfI = (name: string) => holdings.find((r) => [krName(r.symbol, r.nickname, r.name), plainCompanyName(krName(r.symbol, r.nickname, r.name)), r.symbol, r.symbol.replace(/\.(?:KS|KQ)$/, ""), ...aliasesFor(r.symbol, r.name)].some((n) => n && n.toLowerCase() === String(name).toLowerCase()));
+          sections.positions = sections.positions.map((p) => {
+            const row = rowOfI(p.name); const dd = row ? divData.find((x) => x.r.symbol === row.symbol) : undefined;
+            if (!dd || !(dd.d.annual > 0) || /\$\s?[\d,]+ (?:a|per) year|\bpays about\b/i.test(p.note)) return p;
+            return { ...p, note: `${p.note.trim().replace(/[.\s]+$/, "")}. ${p.name} pays about $${Math.round(dd.d.annual).toLocaleString("en-US")} a year${dd.d.current ? " at the current rate" : ""}.` };
+          });
+        }
       }
       // round 8 newcomer: the same sanitize() as every other surface, over EVERY field (ideas and watch items included:
       // "Crypto risk: hedge with stablecoin yield platforms to smooth volatility" shipped in GAPS & IDEAS)
@@ -2025,6 +2047,16 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections.desk_view = nameFunds(fixDanglingThisMeans(sections.desk_view), heldSet);
         if (sections.horizon) sections.horizon = nameFunds(sections.horizon, heldSet);
         sections.ideas = (sections.ideas ?? []).map((i) => nameFunds(i, heldSet));
+        // e2e p01 F1: a "just starting" reader's assessment in everyday words (YoY, gross margin, layer 1, custody,
+        // concentration expanded; a sentence still carrying a jargon term dropped), and the body's total rounded the
+        // way the header rounds it ($13,807 in the body beside $13,808 in the header)
+        if (edition === "assessment") {
+          const pb = (t: string) => { const r = roundBookTotal(novice ? plainForBeginner(t) : t, total); return r.trim() ? r : t; };
+          sections.lede = pb(sections.lede); sections.overnight = pb(sections.overnight); sections.desk_view = pb(sections.desk_view);
+          if (sections.horizon) sections.horizon = pb(sections.horizon);
+          sections.positions = sections.positions.map((p) => ({ ...p, note: pb(p.note), watch: novice ? plainForBeginner(p.watch) || p.watch : p.watch }));
+          sections.ideas = (sections.ideas ?? []).map((i) => novice ? plainForBeginner(i) : i).filter(Boolean);
+        }
         if (edition === "assessment" && p8Adds) {
           const add: string[] = [];
           // r13 n1: "if top chip makers miss revenue" is not a share: skipped only when a figure sits beside tech/chip

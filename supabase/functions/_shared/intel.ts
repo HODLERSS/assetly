@@ -2232,6 +2232,7 @@ export function headlineOk(title: string): boolean {
   const t = decodeHtml(String(title ?? "")).replace(/[‘’]/g, "'").trim();
   if (!t) return false;
   if (/(?:…|\.\.\.)\s*$/.test(t)) return false;                                            // cut by the feed ("renewa...")
+  if (midWordCut(t)) return false;                                                             // e2e P04-11: "North America Pr", "Dividend Fun"
   if (/\?\s*(?:[-|–—]\s*[^?]{2,40})?$/.test(t)) return false;                        // question-form titles
   if (/(?:^|[.:]\s+)(?:could|can|will|is|are|should|would|where|what|why|how (?:much|high|low|far))\b[^?]{3,80}\?/i.test(t)) return false;   // a question heading the title
   if (/\b(?:this|these) (?:\w+ )?stocks? (?:may|could|might|is|are)\b|\b(?:may|could) be the best\b/i.test(t)) return false;
@@ -3050,7 +3051,7 @@ export function isForecastQuestion(q: string): boolean {
 /** Soft verdicts that slipped through when the judge timed out (r10 intelligence): "the setup has real weight",
  *  "structural drivers for a multi-year hold", "still far below the target", "$350 is the line to watch". */
 export function softVerdicts(text: string): string[] {
-  return sentencesOf(text).filter((s) => /\brerat(?:e|es|ed|ing)\b|\ba clean beat\b|\bretracement\b|\bnot (?:a )?reversal\b|\bride (?:it )?out\b|\bsays otherwise\b|\bshift\w* (?:\w+ ){0,4}toward\b|\blight reserve\b|\bnot the engine\b|\bconcentration is (?:your|the) edge\b|\bsmall enough to\b|\bnot a (?:reversal|buy|sell|breakdown|breakout|trend) signal\b|\b(?:bull|bear) (?:thesis|case) (?:has|shows|is showing) (?:visible |clear |some )?cracks\b|\bover-?extended\b|\bwrite-?off risk\b|\bvaluation stretch(?:es|ed)? to\b|\bstretched to \$\d|\bpriced in\b|\bargues? against\b|\b(?:has |finds? |forms? |adds? |provides? |gives? )(?:a |some )?(?:floor|cushion|support)\b|\b(?:a |the )?floor (?:under|beneath|at)\b|\bsupport (?:at|near|around) \$?\d|\brecovery phase\b|\bcompounding (?:is )?(?:intact|alive|on track)\b|\bmomentum (?:has )?(?:stalled|is alive|alive|intact|fading|broken)\b|\bthe story (?:is|remains|still|holds)\b|\bopportunity cost is real\b|\bmeaningful but not extreme\b|\bsetup (?:has|carries) (?:real )?weight\b|\bstructural drivers? for a (?:multi-year|long-term) hold\b|\bfor a (?:multi-year|long-term) hold\b|\b(?:still )?(?:far |well )?(?:below|above|short of|ahead of) (?:the |your )?(?:\d+\s?(?:-|–|to)\s?\d+\s?% )?(?:target|goal)\b|\bis the (?:line|level) to watch\b|\bkey (?:line|level) (?:is|at)\s*\$|\bsetup is (?:mixed|constructive|favorable|strong|weak)\b|\bmomentum (?:is )?strong\b/i.test(s) && !/\b(?:if|whether|unless)\b/i.test(s));
+  return sentencesOf(text).filter((s) => /\bgrowth upside\b|\b(?:short|near|medium|long)-term (?:downside|upside)(?: risk)?\b|\badd(?:s|ing)? (?:\w+ )?(?:upside|downside)(?: risk)?\b|\bsuggest(?:s|ing)? price pressure\b|\b(?:short|near)-term momentum\b|\brerat(?:e|es|ed|ing)\b|\ba clean beat\b|\bretracement\b|\bnot (?:a )?reversal\b|\bride (?:it )?out\b|\bsays otherwise\b|\bshift\w* (?:\w+ ){0,4}toward\b|\blight reserve\b|\bnot the engine\b|\bconcentration is (?:your|the) edge\b|\bsmall enough to\b|\bnot a (?:reversal|buy|sell|breakdown|breakout|trend) signal\b|\b(?:bull|bear) (?:thesis|case) (?:has|shows|is showing) (?:visible |clear |some )?cracks\b|\bover-?extended\b|\bwrite-?off risk\b|\bvaluation stretch(?:es|ed)? to\b|\bstretched to \$\d|\bpriced in\b|\bargues? against\b|\b(?:has |finds? |forms? |adds? |provides? |gives? )(?:a |some )?(?:floor|cushion|support)\b|\b(?:a |the )?floor (?:under|beneath|at)\b|\bsupport (?:at|near|around) \$?\d|\brecovery phase\b|\bcompounding (?:is )?(?:intact|alive|on track)\b|\bmomentum (?:has )?(?:stalled|is alive|alive|intact|fading|broken)\b|\bthe story (?:is|remains|still|holds)\b|\bopportunity cost is real\b|\bmeaningful but not extreme\b|\bsetup (?:has|carries) (?:real )?weight\b|\bstructural drivers? for a (?:multi-year|long-term) hold\b|\bfor a (?:multi-year|long-term) hold\b|\b(?:still )?(?:far |well )?(?:below|above|short of|ahead of) (?:the |your )?(?:\d+\s?(?:-|–|to)\s?\d+\s?% )?(?:target|goal)\b|\bis the (?:line|level) to watch\b|\bkey (?:line|level) (?:is|at)\s*\$|\bsetup is (?:mixed|constructive|favorable|strong|weak)\b|\bmomentum (?:is )?strong\b/i.test(s) && !/\b(?:if|whether|unless)\b/i.test(s));
 }
 
 /** "TSLA was the only drag" (AVGO lost more), "MSFT is #2" (AAPL is), "MSFT lagging the rest" (META and TSLA did worse):
@@ -3686,7 +3687,7 @@ export function fixGroupSharePctFirst(text: string, groups: { label: RegExp; val
 export const TECH_GROUP_LABEL = /\b(?:tech(?:nology)?(?:\s+(?:and|&)\s+(?:chips?|semiconductors?|semis))?|(?:chips?|semiconductors?)\s+(?:and|&)\s+tech(?:nology)?)(?: stocks| names| holdings| exposure| share| companies)?/i;
 
 /** final M1: the generic performance summary is for performance questions only. */
-export const isPerformanceQuestion = (q: string): boolean => /\b(?:perform\w*|returns?|gain(?:s|ed)?|los(?:s|ses|t|ing)|up|down|mov(?:e|es|ed|ing)|how (?:did|am|is|are|was|were|have) (?:i|my|we|it|they)|doing|today|this (?:week|month|year)|YTD|year to date|change[sd]?|rall\w*|drop\w*|fell|rose)\b|수익|손익|올랐|내렸|성과|어땠/i.test(String(q ?? ""));
+export const isPerformanceQuestion = (q: string): boolean => /\b(?:drove|driven|driving|drivers?|contributors?|perform\w*|returns?|gain(?:s|ed)?|los(?:s|ses|t|ing)|up|down|mov(?:e|es|ed|ing)|how (?:did|am|is|are|was|were|have) (?:i|my|we|it|they)|doing|today|this (?:week|month|year)|YTD|year to date|change[sd]?|rall\w*|drop\w*|fell|rose)\b|수익|손익|올랐|내렸|성과|어땠/i.test(String(q ?? ""));
 
 /** final M1: when no code answer fits the question, an honest short answer with the book's basic facts. */
 export function honestFallback(rows: IntentRow[], cashPct: number | null, ko = false): string {
@@ -3798,4 +3799,100 @@ export const isDividendRankQuestion = (q: string): boolean => /\b(?:pays?|paying
 export function dividendRankClaims(text: string, payerLabels: string[]): string[] {
   return sentencesOf(text).filter((s) => payerLabels.some((n) => n && nameIn(s, n))
     && (/\$\s?\d/.test(s) || /\b(?:pays? the most|second|third|next|then|trail\w*|follow\w*|behind|after|top payer|largest payer|biggest payer|smallest payer|least|the most|highest|lowest|rank\w*|ahead of)\b/i.test(s)));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// e2e p07 / p04 batch
+// ---------------------------------------------------------------------------------------------------------------
+/** e2e P07-5: "What drove my week?" (the About page's example) got the generic fallback after a judge timeout. The
+ *  drivers of a window are computed here: the top 3 contributors by position value × window return, with dollars and
+ *  percent, and the top 1-2 headlines with source for the biggest one. Day questions use the day figures. */
+export const isDriversQuestion = (q: string): boolean => /\b(?:what|which|who)\b[^?]{0,20}\b(?:drove|drives|is driving|has driven|moved|is moving|pushed|pulled|lifted|dragged|contributed)\b|\bbiggest (?:contributors?|drivers?|movers?)\b|\bdrivers? of\b|\bcontributed (?:the )?most\b|무엇이 (?:움직|이끌|올렸|내렸)|뭐가 (?:움직|올렸|내렸)|기여/i.test(String(q ?? ""));
+export function driversLead(q: string, rows: { label: string; usd: number; pct: Record<number, number | null>; dayUsd: number | null; dayPct: number | null }[],
+  heads: Map<string, { title: string; source: string }[]>, sessionLabel: string, ko = false): string | null {
+  if (!isDriversQuestion(q) || !rows.length) return null;
+  const t = String(q ?? "");
+  const w = questionWindows(t)[0] ?? (/\bweek\b|주간|이번 주/i.test(t) ? 7 : /\bmonth\b|이번 달|한 달/i.test(t) ? 30 : /\byear\b|올해/i.test(t) ? YTD : 0);
+  const each = rows.map((r) => ({ r, d: w === 0 ? r.dayUsd : windowUsd(r.usd, r.pct[w]), p: w === 0 ? r.dayPct : (r.pct[w] ?? null) }))
+    .filter((x): x is { r: typeof rows[number]; d: number; p: number | null } => typeof x.d === "number" && Number.isFinite(x.d));
+  if (!each.length) return null;
+  const tot = each.reduce((a, x) => a + x.d, 0);
+  const top = [...each].sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 3);
+  const usdS2 = (v: number) => `${v >= 0 ? "+" : "−"}$${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
+  const pctS2 = (v: number | null) => typeof v === "number" ? ` (${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}%)` : "";
+  const span = w === 0 ? sessionLabel : w === YTD ? (ko ? "올해" : "this year") : (ko ? `최근 ${wLabel(w, ko)}` : `over ${wLabel(w, ko)}`);
+  const L = [ko ? `• ${span} 보유 종목 평가액 변화 ${usdS2(tot)}. 가장 큰 기여: ${top.map((x) => `${x.r.label} ${usdS2(x.d)}${pctS2(x.p)}`).join(", ")}.`
+    : `• Your holdings moved ${usdS2(tot)} ${span}. Biggest contributors: ${top.map((x) => `${x.r.label} ${usdS2(x.d)}${pctS2(x.p)}`).join(", ")}.`];
+  const hs = (heads.get(top[0].r.label) ?? []).slice(0, 2);
+  if (hs.length) L.push(ko ? `• ${top[0].r.label} 관련 헤드라인: ${hs.map((h) => `"${h.title}" (${h.source})`).join("; ")}.` : `• On ${top[0].r.label}: ${hs.map((h) => `"${h.title}" (${h.source})`).join("; ")}.`);
+  return L.join("\n");
+}
+
+/** e2e P07-6: a price target in dollars for a KRX holding ("SK hynix $250 target") is another listing's or wrong: without
+ *  an ADR / US-listed label the sentence goes. */
+export function krxDollarTargets(text: string, krxNames: string[][]): string[] {
+  return sentencesOf(text).filter((s) => krxNames.some((ns) => ns.some((n) => n && nameIn(s, n)))
+    && /\$\s?\d[\d,.]*\s?[KkMm]?\s*(?:price )?(?:target|PT|objective)\b|\b(?:target|PT|objective)\b[^.]{0,20}\$\s?\d|\btarget(?:ed|s)? (?:at|of|to|near) \$\s?\d/i.test(s)
+    && !/\bADR\b|\bUS-listed\b|\bOTC\b|\bAmerican depositary\b/i.test(s));
+}
+
+/** e2e P04-5: a tax remark on a holding in a tax-advantaged account, and stock-valuation wording on a bond fund. */
+export const isTaxAdvantaged = (account: string | null | undefined): boolean => /\bira\b|401|403|\broth\b|retire|pension|\bisa\b|tfsa|rrsp|연금|퇴직/i.test(String(account ?? ""));
+export function taxRemarkClaims(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\btax(?:es|ed|able|-?advantaged|-?efficien\w*|-?free|-?deferred)?\b|state-tax|tax drag|after-tax|\b세금\b|세후/i.test(s));
+}
+export function bondValueClaims(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\blow price compared with its income\b|\bcheap(?:ly)?\b|\bexpensive\b|\bundervalued\b|\bovervalued\b|\bvaluation\b|\bearnings multiple\b|\bP\/E\b|\bprice-to-earnings\b|\bmargin of safety\b/i.test(s));
+}
+
+/** e2e P04-11: a title cut mid-word by its feed ("North America Pr", "Dividend Fun"): no closing punctuation and a last
+ *  word of one capital plus 1-3 lower-case letters that is not an abbreviation or a month. */
+const SHORT_WORDS = new Set(["Inc", "Co", "Ltd", "Jr", "Sr", "St", "Mr", "Ms", "Mrs", "Dr", "Fed", "Gov", "Sen", "Rep", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Ave", "Rd", "Mt", "Ft", "Vs", "No", "Yes", "Up", "Now", "New", "Big", "Low", "Fee", "Tax", "Pay", "Buy", "Hot", "Top", "Day", "Way", "Bet", "Bid", "Ask", "Win", "Cut", "Dip", "Run", "Gap", "Ago", "Off", "Out", "Its", "Two", "Six", "Ten", "One", "Car", "Cap", "Hub", "Ban", "Law", "Row", "Job", "Ad", "Ai", "Ev", "Ceo", "Eps", "Etf", "Ipo", "Q"]);
+export function midWordCut(title: string): boolean {
+  const t = String(title ?? "").trim();
+  if (!t || /[.!?)\]"'”’%]$/.test(t)) return false;
+  const last = t.split(/\s+/).pop() ?? "";
+  if (!/^[A-Z][a-z]{1,3}$/.test(last) || SHORT_WORDS.has(last)) return false;
+  return t.length >= 30;   // short titles end on short words legitimately; a feed's cut lands at a fixed width
+}
+/** A looser story key than titleKey: the first six content words (empty under five, so a short title is never merged
+ *  with another). Two feeds' spellings of one story share it. */
+export function looseTitleKey(title: string): string {
+  const ws = String(title ?? "").toLowerCase().replace(/[‘’]/g, "'").replace(/\s+[-|–—]\s+[^-|–—]{2,40}$/, "").replace(/[^a-z0-9가-힣\s]+/g, " ")
+    .split(/\s+/).filter((w) => w && !/^(?:the|a|an|of|to|in|on|for|and|as|at|by|is|are|its|with|from|that|this|s|stock|stocks|shares|inc|corp)$/.test(w));
+  return ws.length >= 5 ? ws.slice(0, 6).join(" ") : "";
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// e2e p01 F1: a "just starting" reader's assessment in plain English
+// ---------------------------------------------------------------------------------------------------------------
+const PLAIN_MAP: [RegExp, string][] = [
+  [/\bYoY\b|\byear[- ]over[- ]year\b/g, "from a year earlier"], [/\bQoQ\b|\bquarter[- ]over[- ]quarter\b/g, "from the quarter before"],
+  [/\bgross margins?\b/gi, "profit on each sale"], [/\boperating margins?\b/gi, "profit after running costs"], [/\bnet margins?\b/gi, "profit after everything"],
+  [/\bfree cash flow\b|\bFCF\b/g, "cash left after costs"], [/\bEPS\b|\bearnings per share\b/g, "profit per share"], [/\bP\/E\b|\bprice-to-earnings\b/gi, "price relative to profit"],
+  [/\bsector concentration\b|\bconcentration risk\b|\bconcentration\b/gi, "how much sits in one place"], [/\bcustody complexity\b/gi, "the difficulty of holding the coins safely"], [/\bself-custody\b|\bcustody\b/gi, "how the coins are held"],
+  [/\blayer[- ]?1 blockchain\b|\blayer[- ]?1\b|\bL1\b/g, "base blockchain network"], [/\blayer[- ]?2\b|\bL2\b/g, "add-on network that runs on top of a blockchain"],
+  [/\bregulatory uncertainty\b/gi, "unclear rules from regulators"], [/\bnet staked ETH growth\b/gi, "growth in ETH locked up to earn rewards"], [/\bstaked\b/gi, "locked up to earn rewards"], [/\bstaking\b/gi, "locking coins up to earn rewards"],
+  [/\bmarket cap(?:italization)?\b/gi, "total company value"], [/\bvaluation\b/gi, "price relative to what the business earns"], [/\bmoat\b/gi, "lasting edge over rivals"], [/\bhigh[- ]beta\b/gi, "fast-moving"], [/\bbeta\b/gi, "how much it swings with the market"],
+  [/\bcapex\b|\bcapital expenditures?\b/gi, "spending on plants and equipment"], [/\bguidance\b/gi, "the company's own forecast"], [/\bconsensus\b/gi, "what analysts expect on average"], [/\bdrawdown\b/gi, "fall from the high"], [/\bvolatility\b/gi, "size of the swings"],
+];
+const STILL_JARGON = /\b(?:EBITDA|ARPU|TAM|CAGR|DCF|WACC|RSI|MACD|basis points|bps|convexity|contango|backwardation|multiple compression|re-?rating|de-?rating|accretive|dilutive|opex|SG&A|GAAP|non-GAAP|beat-and-raise|rollups?|TVL|MEV|tokenomics|validators?|slashing|hashrate|halving|duration risk|yield curve|credit spreads?|alpha|sharpe|hedge ratio|options? overlay|covered calls?)\b/i;
+/** Common terms in everyday words, and any sentence that still carries a term from the jargon list dropped. */
+export function plainForBeginner(text: string): string {
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => {
+    let out = sen;
+    for (const [re, plain] of PLAIN_MAP) out = out.replace(re, plain);
+    out = out.replace(/^(\s*(?:•\s*)?)([a-z])/, (_m, a: string, c: string) => a + c.toUpperCase());
+    return STILL_JARGON.test(out) ? "" : out;
+  }).filter(Boolean).join(" "));
+}
+/** The header's rounded total for the body ("$13,807" in the body beside "$13,808" in the header: live versus snapshot). */
+export function aboutUsd(v: number): string {
+  const a = Math.abs(v);
+  const r = a >= 1e6 ? `$${(a / 1e6).toFixed(2)}M` : a >= 10000 ? `$${(Math.round(a / 100) * 100).toLocaleString("en-US")}` : a >= 1000 ? `$${(Math.round(a / 10) * 10).toLocaleString("en-US")}` : `$${Math.round(a).toLocaleString("en-US")}`;
+  return `about ${r}`;
+}
+export function roundBookTotal(text: string, total: number): string {
+  const exact = `$${Math.round(total).toLocaleString("en-US")}`;
+  return String(text ?? "").split(exact).join(aboutUsd(total)).replace(/\babout about\b/g, "about").replace(/\b(?:roughly|around|approximately|some)\s+about\b/gi, "about");
 }

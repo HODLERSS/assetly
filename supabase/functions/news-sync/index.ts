@@ -13,7 +13,7 @@
 //    (_shared/news_rules.ts usableNews: every function that feeds headlines to a model, and the News tab)
 //    and admit it on its lead exactly as ingest did.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { aliasesFor, centrality, cleanHeadline, decodeEntities, headlineOk, isJunkNews, newsRelevant, publisherFor, sourceName, titleKey, urlDate } from "../_shared/intel.ts";
+import { aliasesFor, centrality, cleanHeadline, decodeEntities, headlineOk, isJunkNews, looseTitleKey, newsRelevant, publisherFor, sourceName, titleKey, urlDate } from "../_shared/intel.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
@@ -113,11 +113,15 @@ function gate(items: Parsed[], aliasBy: Map<string, string[]>, knownKeys: Set<st
     if (cur.symbol !== i.symbol && centrality(i.title, aliasBy.get(i.symbol) ?? []) < centrality(cur.title, aliasBy.get(cur.symbol) ?? [])) best.set(k, i);
   }
   const seenUrl = new Set<string>();
+  const seenLoose = new Set<string>();   // e2e P04-11: one story under two spellings (a publisher suffix, a subtitle) is one row
   const rows: Item[] = [];
   for (const i of kept) {
     const k = titleKey(i.title);
     if (best.get(k) !== i || knownKeys.has(k) || seenUrl.has(`${i.symbol}\u0000${i.url}`)) { dropped.duplicate++; continue; }
     seenUrl.add(`${i.symbol}\u0000${i.url}`);
+    const lk = looseTitleKey(i.title);
+    if (lk && seenLoose.has(lk)) { dropped.duplicate++; continue; }
+    if (lk) seenLoose.add(lk);
     rows.push({ symbol: i.symbol, title: i.title, url: i.url, source: sourceName(publisherFor(i.url, i.source)) || i.source, published_at: i.published_at, summary: i.symbolFeed && i.lead ? i.lead.slice(0, 300) : null });
   }
   return { rows, dropped };
