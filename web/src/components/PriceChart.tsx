@@ -23,6 +23,24 @@ const memoFor = (api: Api) => { let m = seriesMemo.get(api); if (!m) { m = new M
 // which memoized series are a coin's hourly week (not the daily first pass or its fallback)
 const fineMemo = new WeakMap<Api, Set<string>>();
 const fineFor = (api: Api) => { let m = fineMemo.get(api); if (!m) { m = new Set(); fineMemo.set(api, m); } return m; };
+// A coin's hourly week, read once per session and shared: 1W draws it, and every longer range folds it into its
+// L/H. It is fetched as soon as any coin chart opens, in parallel with that range, so a range's H/L appear once,
+// already final. 1M read H $86,602.91 until 1W had been opened, then $87,333.28 (r9 designer m-5).
+const WEEK_TTL_MS = 10 * 60_000;   // a week read this old is read again when a chart next asks
+const weekCache = new WeakMap<Api, Map<string, { p: Promise<HistoryPoint[]>; at: number }>>();
+function hourlyWeek(api: Api, symbol: string, zone: string): Promise<HistoryPoint[]> {
+  let m = weekCache.get(api);
+  if (!m) { m = new Map(); weekCache.set(api, m); }
+  const hit = m.get(symbol);
+  if (hit && Date.now() - hit.at < WEEK_TTL_MS) return hit.p;
+  const now = new Date();
+  const p = api.getHistory(symbol, fetchHours("1W", now, zone),
+    { tz: zone, recentHours: hourlyRecentHours(now, zone), maxPages: HOURLY_PAGES, wave: HOURLY_WAVE });
+  const entry = { p, at: Date.now() };
+  m.set(symbol, entry);
+  p.catch(() => { if (m!.get(symbol) === entry) m!.delete(symbol); });   // a failed read is tried again next time
+  return p;
+}
 
 /** Intraday series for 1D: keep every print, append the live price as the newest point. */
 function withLiveTick(pts: HistoryPoint[], livePrice: number | null, liveAsOf: string | null): HistoryPoint[] {
@@ -125,14 +143,25 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
       // Both share the base close and the live price, so the figure never moves; only the line gains detail.
       let fine = false;
       const daily = api.getHistory(symbol, fetchHours(range, now, zone), { tz: zone, recentHours: DAILY }, { signal });
-      const hourly = api.getHistory(symbol, fetchHours(range, now, zone),
-        { tz: zone, recentHours: hourlyRecentHours(now, zone), maxPages: HOURLY_PAGES, wave: HOURLY_WAVE }, { signal })
-        .then((p) => { fine = true; keep(p, true); });
+      const hourly = hourlyWeek(api, symbol, zone).then((p) => { fine = true; keep(p, true); });
       daily.then((p) => { if (live && !fine && !memo) setRaw(p); }).catch(() => {});
       hourly.catch(() => daily.then((p) => { if (!fine) keep(p); }).catch(fail));
     }
     return () => { live = false; ctl?.abort(); };
   }, [api, symbol, range, zone, crypto, attempt, tick]);
+  // a coin's hourly week, in parallel with whatever range is open: longer ranges hold their L/H until it is in
+  // (or has failed), so the value never changes after it appears
+  const [week, setWeek] = useState<{ symbol: string; pts: HistoryPoint[] | null } | null>(null);
+  useEffect(() => {
+    if (!crypto) return;
+    let live = true;
+    hourlyWeek(api, symbol, zone)
+      .then((p) => { if (live) setWeek({ symbol, pts: p }); })
+      .catch(() => { if (live) setWeek({ symbol, pts: null }); });   // no hourly week: daily closes alone
+    return () => { live = false; };
+  }, [api, symbol, zone, crypto, attempt]);
+  const weekPts = week && week.symbol === symbol ? week.pts : undefined;   // undefined: still coming
+
   // a chart that failed comes back by itself when the connection or the app does
   useEffect(() => {
     if (!failed) return;
@@ -148,14 +177,11 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
     const start = rangeStartYmd(range, new Date(), zone);
     const daily = anchorRange(dailyCloses(raw, zone, livePrice, liveAsOf), start, zone);
     if (!hourlyRange(range, crypto)) {
-      // a longer range's L/H are never narrower than a shorter range's: the hourly week this session already
-      // drew (1W's H is an hourly print) is folded into every range whose window holds it. 1W H $87,164.81 sat
-      // above 1M H $86,602.91 when 1M read daily closes only (r8 designer).
-      const extra: HistoryPoint[] = [];
-      for (const [k, p] of memoFor(api)) {
-        if (!k.startsWith(`${symbol}:`) || !fineFor(api).has(k)) continue;
-        for (const pt of p) if (ymdIn(pt.ts, zone) > start) extra.push(pt);
-      }
+      if (!crypto) return { ...daily, closes: daily.pts };
+      // a coin's longer range folds in the hourly week, on the same basis 1W draws it (the last print of each
+      // hour), so its L/H are never narrower than 1W's (r8 designer). They wait for the week (r9 designer m-5).
+      if (weekPts === undefined) return { ...daily, closes: daily.pts, hlReady: false };
+      const extra = weekPts ? hourlyCloses(weekPts, livePrice, liveAsOf).filter((pt) => ymdIn(pt.ts, zone) > start) : [];
       return { ...daily, closes: extra.length ? [...daily.pts, ...extra] : daily.pts };
     }
     // A coin's week draws by the hour, and its L and H come from that same hourly line: closing ones let the
@@ -164,7 +190,7 @@ export function PriceChart({ api, symbol, currency, livePrice, liveAsOf, avgCost
     if (res !== "hourly") return { ...anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone), closes: daily.pts, hlReady: res === "daily" };
     const hourly = anchorRange(hourlyCloses(raw, livePrice, liveAsOf), start, zone);
     return { ...hourly, closes: hourly.pts };
-  }, [raw, range, zone, crypto, livePrice, liveAsOf, res, api, symbol]);
+  }, [raw, range, zone, crypto, livePrice, liveAsOf, res, weekPts]);
   const hlReady = !(series && "hlReady" in series && series.hlReady === false);
   const pts = series?.pts ?? null;
   const closes = series?.closes ?? null;

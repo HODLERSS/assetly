@@ -93,7 +93,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
           <div className="skel-line" style={{ width: "40%" }} />
           <div className="nw-rule" aria-hidden="true" />
         </section>
-        <div className="card" style={{ minHeight: 132 }}>
+        <div className="card insights brief-skeleton" data-testid="home-skeleton-brief" style={{ minHeight: 132 }}>{/* the brief card's own inset and rule (r9 designer m-5) */}
           <div className="skel-line" style={{ width: "36%" }} />
           <div className="skel-line" style={{ width: "88%" }} />
           <div className="skel-line" style={{ width: "72%" }} />

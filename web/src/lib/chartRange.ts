@@ -4,6 +4,7 @@
 // point after, so NVDA's 1W read +2.10% against Yahoo's +0.76% and Samsung's YTD +122% against +138% (r4
 // power-user M2).
 import type { HistoryPoint } from "./api";
+import { calMktOfZone, isTradingDay, prevTradingDay } from "./calendar";
 
 export type RangeKey = "1D" | "1W" | "1M" | "3M" | "6M" | "YTD" | "1Y" | "2Y" | "5Y";
 export const RANGE_KEYS: RangeKey[] = ["1D", "1W", "1M", "3M", "6M", "YTD", "1Y", "2Y", "5Y"];
@@ -23,17 +24,19 @@ const MONTHS: Partial<Record<RangeKey, number>> = { "1M": 1, "3M": 3, "6M": 6, "
 // When a market's day begins: before its open, "today" in its zone is still the previous trading day's date.
 const OPEN_MIN: Record<string, number> = { "Asia/Seoul": 9 * 60, "America/New_York": 9 * 60 + 30 };
 
-/** The market's current day: its zone's date, or the day before while its session has not opened yet. A US
- *  evening is already the next morning in Seoul; counting Samsung's 1Y from that Seoul date based it on the
- *  close a day later than Yahoo does (+242.7% instead of +231.6%, the r4 power-user's "one-year" mismatch). */
+/** The market's current day, as the server's calendar has it (_shared/calendar.ts marketState.lastSessionDate):
+ *  its zone's date once that day's session has opened, else the last trading session, skipping weekends and
+ *  exchange holidays. The old rule ("the calendar day before, until the open") ignored both: passing Seoul's
+ *  9 AM on a Saturday (00:00 UTC) moved every KRX range a day with no trade in between, Samsung 1Y +231.59% to
+ *  +242.74% (r9 power-user). Now the whole weekend and the Chuseok closure hold the Sep 23 session. */
 export function marketToday(now: Date, timeZone: string): string {
   const ymd = ymdIn(now, timeZone);
   const open = OPEN_MIN[timeZone];
-  if (open === undefined) return ymd;
+  const mkt = calMktOfZone(timeZone);
+  if (open === undefined || !mkt) return ymd;   // a coin's UTC day
   const [h, mi] = now.toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false }).split(":").map(Number);
-  if ((h % 24) * 60 + mi >= open) return ymd;
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+  const opened = isTradingDay(mkt, ymd) && (h % 24) * 60 + mi >= open;
+  return opened ? ymd : prevTradingDay(mkt, ymd);
 }
 
 /** The calendar date a range starts on, in `timeZone`, counted from the market's current day. 1W is seven days

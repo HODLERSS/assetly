@@ -35,11 +35,11 @@ export type View =
   | { kind: "position"; holdingId: string };
 
 const REFRESH_MS = 60_000;
-const STALE_ON_RETURN_MS = 30_000;
+const STALE_ON_RETURN_MS = 30_000;  // back from the background with a book older than this: refresh now
 const LOAD_TIMEOUT_MS = 8_000;      // a refresh this slow reads "Updating prices…" and keeps waiting
 const LOAD_GIVE_UP_MS = 30_000;     // one with no answer by now counts as failed
 export const PRICES_FAILED = "Couldn't refresh prices.";
-export const BOOK_FAILED = "Couldn't load your portfolio.";   // nothing has painted yet: it is the book, not prices   // back from the background with a book older than this: refresh now
+export const BOOK_FAILED = "Couldn't load your portfolio.";   // nothing has painted yet: it is the book, not prices
 
 // Last-known book per user, so a cold open paints holdings instead of a blank or an empty-state
 // flash. Only an onboarded profile is cached: a null onboarded_at would route a returning user
@@ -612,7 +612,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
           </PullToRefresh>
         )}
         {view.kind === "tab" && view.tab === "news" && (
-          <NewsScreen api={api} rows={rows} dispKr={profile?.display_kr ?? "KRW"} uid={session.user.id} pricesDown={!!error}
+          <NewsScreen api={api} rows={rows} bookUnknown={!hasBook} dispKr={profile?.display_kr ?? "KRW"} uid={session.user.id} pricesDown={!!error}
             intelPending={assess.state.phase === "pending" || assess.state.phase === "slow"}
             onRefreshInsights={refreshInsights} insightsRefreshing={pinsRefreshing} freshInsights={pinsFresh}
             onInsightsSeen={(g) => { seenInsightRef.current = g; setNewsAlert(false); }}
@@ -626,7 +626,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
           }} />
         </div>
         {view.kind === "tab" && view.tab === "settings" && (
-          <SettingsScreen api={api} profile={profile} rows={rows} email={session.user.email ?? null} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
+          <SettingsScreen api={api} profile={profile} rows={rows} bookUnknown={!hasBook} email={session.user.email ?? null} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
         )}
       </main>
 

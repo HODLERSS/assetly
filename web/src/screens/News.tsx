@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
-import { labelParts, timeAgo } from "../lib/format";
+import { labelParts, marketClock, timeAgo } from "../lib/format";
 import { decodeEntities, dedupeNews } from "../lib/news";
 import { InsightsCard } from "../components/InsightsCard";
 import { heldOnly, readRemovals } from "../lib/heldIntel";
@@ -13,7 +13,7 @@ const NEWS_TIMEOUT_MS = 12_000;
 // The feed was one ungrouped wall about 5,600pt tall (r1-r3 design audits): a page at a time, by day.
 export const NEWS_PAGE = 40;
 const offline = () => typeof navigator !== "undefined" && navigator.onLine === false;
-const clock = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+const clock = (ms: number) => marketClock(ms, "US");   // ET with its label, like every app time (r9 designer m-3)
 
 // The last list each scope loaded, kept past the screen: News offline used to show only "You're offline." once
 // the reader had been to Home and back, because the list lived in the screen's own state (r5 designer m-h).
@@ -66,8 +66,10 @@ export function groupByDay(items: NewsItem[], now: Date = new Date()): { day: st
 }
 
 // Canvas 5a/5b: newest first, one-tap per-holding filter.
-export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown = false, intelPending = false, onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen, onRefreshSymbol, symbolRefreshing = {}, symbolFresh = {} }: {
+export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown = false, intelPending = false, onRefreshInsights, insightsRefreshing = false, freshInsights = null, onInsightsSeen, onRefreshSymbol, symbolRefreshing = {}, symbolFresh = {}, bookUnknown = false }: {
   api: Api; rows: PortfolioRow[]; dispKr?: "USD" | "KRW";
+  /** no book has loaded yet (the first load failed or is still out): an empty `rows` is unknown, not "no positions" */
+  bookUnknown?: boolean;
   /** whose removals to screen the portfolio card against (see lib/heldIntel) */
   uid?: string | null;
   /** the app's own "Couldn't refresh prices." banner is up: News says its part quietly, not in a second red box */
@@ -195,7 +197,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
             <>
               {intel.bullets.length > 0 && <p className="sub" style={{ margin: "10px 2px 4px", borderTop: "1px solid var(--as-rule)", paddingTop: 8 }}>This week across your holdings</p>}
               <ul className="insights-list" data-testid="news-top5-list">
-                {intel.news5.map((b, i) => <li key={i}>{decodeEntities(b)}</li>)}
+                {intel.news5.map((b, i) => <li key={i}>{decodeEntities(b.text)}{b.source && <span className="sub" data-testid="news-line-source"> · {b.source}</span>}</li>)}
               </ul>
             </>
           )}
@@ -218,7 +220,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
         <p className="empty" aria-busy="true">Pulling the latest stories{filter ? ` for ${filter}` : ""}…</p>
       )}
       {state === "ok" && items.length === 0 && (
-        <p className="empty">{rows.length === 0 ? "Add a position and its news follows." : `Nothing fresh${filter ? ` for ${filter}` : ""} right now. We'll keep watching.`}</p>
+        <p className="empty" data-testid="news-empty">{rows.length === 0 && bookUnknown ? "Your news shows here once your portfolio loads." : rows.length === 0 ? "Add a position and its news follows." : `Nothing fresh${filter ? ` for ${filter}` : ""} right now. We'll keep watching.`}</p>
       )}
       {(state === "ok" || state === "loading" || keptAt !== null) && groupByDay(items.slice(0, limit)).map((g) => (
         <section key={g.day} aria-label={g.day} data-testid="news-day">

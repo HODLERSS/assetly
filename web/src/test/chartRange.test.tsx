@@ -38,13 +38,13 @@ describe("range start dates", () => {
     expect(rangeStartYmd("1M", new Date("2026-03-31T15:00:00Z"), ny)).toBe("2026-02-28");
   });
   it("dates follow the market's zone, and its day starts at its open", () => {
-    const friEveningNy = new Date("2026-09-26T00:30:00Z");   // Sat 09:30 in Seoul: KRX's Saturday has begun
+    // the market's day is its last session (the server's calendar): the zone's date once that day's session has
+    // opened, else the last trading date, skipping weekends and exchange holidays (r9 power-user)
+    const friEveningNy = new Date("2026-09-26T00:30:00Z");   // Sat 09:30 in Seoul
     expect(rangeStartYmd("1W", friEveningNy, "America/New_York")).toBe("2026-09-18");
-    expect(rangeStartYmd("1W", friEveningNy, "Asia/Seoul")).toBe("2026-09-19");
-    // Fri 3:16 PM in New York is Sat 4:16 AM in Seoul, before its open: Seoul's day is still Friday
-    const friAfternoonNy = new Date("2026-09-25T19:16:00Z");
-    expect(rangeStartYmd("1Y", friAfternoonNy, "Asia/Seoul")).toBe("2025-09-25");
-    // New York before its open: yesterday's date; a coin's day is the UTC day
+    // KRX: Thu Sep 24 and Fri Sep 25 are Chuseok, so the last session is Wed Sep 23
+    expect(rangeStartYmd("1W", friEveningNy, "Asia/Seoul")).toBe("2026-09-16");
+    // New York before its open: the previous session; a coin's day is the UTC day
     expect(rangeStartYmd("1W", new Date("2026-09-25T12:00:00Z"), "America/New_York")).toBe("2026-09-17");
     expect(rangeStartYmd("1W", new Date("2026-09-25T00:05:00Z"), "UTC")).toBe("2026-09-18");
     expect(seriesZone("005930.KS", false)).toBe("Asia/Seoul");
@@ -74,13 +74,36 @@ describe("anchored returns match Yahoo", () => {
     expect(pts[0].price).toBe(119900);
     expect(pct(pts.at(-1)!.price, pts[0].price)).toBeCloseTo(138.12, 1);
   });
-  it("Samsung 1Y from a US afternoon: base is the Sep 25 2025 close (₩86,100), +231.6% (Yahoo +231.6%, not +242.7%)", () => {
+  it("Samsung 1Y holds +237.07% through Chuseok and the weekend: base the Sep 23 2025 close (₩84,700), the last session's date a year back", () => {
     const tz = "Asia/Seoul";
-    const closes = [kr("2025-09-24", 85400), kr("2025-09-25", 86100), kr("2025-09-26", 83300), kr("2025-09-29", 84200), ...SAMSUNG.slice(-4)];
-    const { pts, partial } = anchorRange(dailyCloses(closes, tz, 285500, "2026-09-23T06:30:00Z"), rangeStartYmd("1Y", new Date("2026-09-25T19:16:00Z"), tz), tz);
-    expect(partial).toBe(false);
-    expect(pts[0].price).toBe(86100);
-    expect(pct(pts.at(-1)!.price, pts[0].price)).toBeCloseTo(231.59, 1);
+    const closes = [kr("2025-09-22", 84000), kr("2025-09-23", 84700), kr("2025-09-24", 85400), kr("2025-09-25", 86100), kr("2025-09-26", 83300), kr("2025-09-29", 84200), ...SAMSUNG.slice(-4)];
+    const series = dailyCloses(closes, tz, 285500, "2026-09-23T06:30:00Z");
+    // Wed Sep 23 after the close, Chuseok Thu/Fri, Friday afternoon in New York, Saturday 00:00 UTC (the old jump),
+    // all of Sunday, Monday 08:59 in Seoul: one base the whole time
+    for (const t of ["2026-09-23T10:00:00Z", "2026-09-24T03:00:00Z", "2026-09-25T19:16:00Z", "2026-09-25T23:59:00Z",
+      "2026-09-26T00:01:00Z", "2026-09-26T15:30:00Z", "2026-09-27T23:59:00Z"]) {
+      const start = rangeStartYmd("1Y", new Date(t), tz);
+      expect(start, t).toBe("2025-09-23");
+      const { pts, partial } = anchorRange(series, start, tz);
+      expect(partial).toBe(false);
+      expect(pts[0].price).toBe(84700);
+      expect(pct(pts.at(-1)!.price, pts[0].price)).toBeCloseTo(237.07, 2);
+    }
+    // Monday after the open: Monday's session is the day
+    expect(rangeStartYmd("1Y", new Date("2026-09-28T00:30:00Z"), tz)).toBe("2025-09-28");
+  });
+  it("US Labor Day (Mon Sep 7 2026) is no session: the weekend and the holiday all hold Friday Sep 4", () => {
+    const ny = "America/New_York";
+    for (const t of ["2026-09-04T21:00:00Z", "2026-09-05T16:00:00Z", "2026-09-06T16:00:00Z", "2026-09-07T16:00:00Z", "2026-09-08T13:00:00Z"]) {
+      expect(rangeStartYmd("1W", new Date(t), ny), t).toBe("2026-08-28");
+    }
+    // Tuesday after the open
+    expect(rangeStartYmd("1W", new Date("2026-09-08T14:00:00Z"), ny)).toBe("2026-09-01");
+  });
+  it("an ordinary weekend holds Friday for the US too", () => {
+    const ny = "America/New_York";
+    expect(rangeStartYmd("1M", new Date("2026-09-19T15:00:00Z"), ny)).toBe(rangeStartYmd("1M", new Date("2026-09-18T21:00:00Z"), ny));
+    expect(rangeStartYmd("1M", new Date("2026-09-20T15:00:00Z"), ny)).toBe("2026-08-18");
   });
   it("history that starts after the range's start is partial, and draws what it has", () => {
     const tz = "America/New_York";
