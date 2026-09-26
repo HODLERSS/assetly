@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, isDividendRankQuestion, dividendRankClaims, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, driversLead, krxDollarTargets, isDividendRankQuestion, dividendRankClaims, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -451,6 +451,7 @@ async function handle(req: Request): Promise<Response> {
   const askEsts: { names: string[]; est: string | null; range?: [string, string] }[] = [];
   let earnReadOk = true, newsReadOk = true;
   const headlinesBy = new Map<string, string>();
+  const headTop = new Map<string, { title: string; source: string }[]>();   // e2e P07-5: the drivers lead's headlines
   const digSyms = held.slice(0, 12).map((r) => r.symbol);
   const digRes = await pDig;
   if (digSyms.length && digRes) {
@@ -461,6 +462,7 @@ async function handle(req: Request): Promise<Response> {
     for (const s of digSyms) {
       const r = held.find((h) => h.symbol === s)!;
       headlinesBy.set(s, (dn ?? []).filter((x) => x.symbol === s && usableNews(x, aliasesFor(r.symbol, r.name))).slice(0, 12).map((x) => `${x.title} ${x.summary ?? ""}`).join(" \n "));
+      headTop.set(nameOf(r), (dn ?? []).filter((x) => x.symbol === s && usableNews(x, aliasesFor(r.symbol, r.name)) && !staleNewsTitle(String(x.title), x.published_at, today) && headlineOk(String(x.title))).slice(0, 2).map((x) => ({ title: String(x.title).slice(0, 110), source: String(x.source ?? "") })));
     }
     for (const s of digSyms) {
       const r = held.find((h) => h.symbol === s)!;
@@ -720,7 +722,10 @@ async function handle(req: Request): Promise<Response> {
     const tail = undated.length ? (ko ? ` ${undated.join(", ")}: 아직 예상일이 없습니다.` : ` No date on file yet for ${undated.join(", ")}.`) : "";
     return (ko ? `• 실적 발표 예상 (추정, 날짜순): ${dated.map((d) => `${d.n} ${d.txt}`).join(", ")}.` : `• Expected earnings reports (estimates, soonest first): ${dated.map((d) => `${d.n} ${d.txt}`).join(", ")}.`) + tail;
   })();
-  const dataLead = tradeQ ? null : (computedDataLead(question, perfRows, mentionedNow, ko) ?? earnLead ?? dayLead ?? marketLead(question, idx, ko) ?? (/\b(?:which|what|how much|per holding|each|from which|largest|biggest)\b|얼마|어느|어떤|종목별|제일|가장/i.test(question) && !divUnknown ? dividendLead(question, payersL, ko) : null));
+  // e2e P07-5: "What drove my week?" is answered in code (top contributors by value × window return, with headlines),
+  // so a judge timeout still answers it
+  const drvLead = driversLead(question, perfRows.map((r) => { const h = held.find((x) => x.symbol === r.symbol)!; return { label: r.label, usd: r.usd, pct: r.pct, dayUsd: h ? dayOf(h) : null, dayPct: h && h.change_pct !== null ? Number(h.change_pct) : null }; }), headTop, sessLabel, ko);
+  const dataLead = tradeQ ? null : (computedDataLead(question, perfRows, mentionedNow, ko) ?? drvLead ?? earnLead ?? dayLead ?? marketLead(question, idx, ko) ?? (/\b(?:which|what|how much|per holding|each|from which|largest|biggest)\b|얼마|어느|어떤|종목별|제일|가장/i.test(question) && !divUnknown ? dividendLead(question, payersL, ko) : null));
   const prompt = `TODAY is ${today} (US Eastern date).
 ${ccyLine}
 User's portfolio (deterministic; the ONLY source of numbers). For each holding: "share price" is the price of ONE share; "position value" is what the user's whole holding is worth. They are different numbers: a question about the stock's price or close gets the SHARE PRICE, never the position value. Each "day" figure is tagged with the session it belongs to: a LIVE session is today's move so far, a "past (not today)" session is named by its day, and a live move is never "yesterday".
@@ -1088,6 +1093,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     guarded = fixEquityBaseClaims(guarded, held.filter((r) => r.kind !== "crypto" && !/-USD$/.test(r.symbol)).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0),
       held.filter((r) => r.kind === "crypto" || /-USD$/.test(r.symbol)).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0));
     guarded = fixCurrentPriceClaims(guarded, held.map((r) => ({ names: namesOfR(r), price: r.price === null || r.price === undefined ? null : Number(r.price), prevClose: prevClose.get(r.symbol) ?? null })));
+    // e2e P07-6: "SK hynix $250 target" (a US listing's figure, or wrong) goes unless it is labelled as the ADR's
+    { const kt = new Set(krxDollarTargets(guarded, held.filter((r) => /\.(?:KS|KQ)$/.test(r.symbol)).map((r) => namesOfR(r))));
+      if (kt.size) guarded = perLine(guarded, (line) => splitSentences(line).filter((sen) => !kt.has(sen)).join(" ")).replace(/\n{2,}/g, "\n").trim() || guarded; }
     guarded = stripUngroundedMoodCauses(guarded, causeSource, held.map((r) => nameOf(r))).replace(/\s+([.,;])/g, "$1");
     const flat = new Set(flatClaims(guarded, held.map((r) => ({ names: namesOfR(r), day: r.change_pct === null ? null : Number(r.change_pct), week: perf.get(r.symbol)?.pct[7] ?? null })), weekQ));
     if (flat.size) guarded = perLine(guarded, (line) => splitSentences(line).filter((sen) => !flat.has(sen)).join(" ")).replace(/\n{2,}/g, "\n").trim() || guarded;
