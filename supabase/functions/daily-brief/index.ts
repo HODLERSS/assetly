@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -82,9 +82,10 @@ const FAST_MODEL = "gpt-oss-120b";
 // 14 (r10 native): fragments and seams, no futures in a closing note
 // 15 (r11): stored rows held to the windows ("the week's biggest loser"), merged parentheticals
 // 16 (r11): live rows repaired in place, estimated watches kept, no "No confirmed date yet" placeholder
+// 18 (r13 M1): period figures relabelled to their true window (SOXL "347.4% this year" is its 1-year return)
 // 17 (r12 D): house-voice verdicts/forecasts ("A clean beat rerates the whole portfolio") and low-yield income claims
 //    dropped from stored rows; scripts re-made (card decimals, "~" / "(est)" in words, "Platforms'")
-const GEN_VERSION = 17;   // 4:
+const GEN_VERSION = 18;   // 4:
 const REPAIR_ROWS_PER_RUN = 12, REPAIR_ROWS_PER_USER = 6;   // r10 load: a GEN bump no longer rewrites every stored row in one run calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
@@ -405,7 +406,9 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   const text = (t: string) => ((u: string) => edition === "close" || edition === "kr_close" ? dropFuturesAfterClose(u) : u)(mergeParens(fixFragments(fixScopeLabels(fixBookMove(fixWhatItMeans(closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))))), bookPct), repairMixed))));
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
-    const x = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
+    const x0 = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
+    // r13 M1: a period figure under the wrong window is relabelled (stored assessment: SOXL "347.4% this year")
+    const x = ctx?.wins?.length ? relabelPeriodClaims(x0, ctx.wins) || x0 : x0;
     const parts = splitSentences(x);
     // round 5: the full sentence chain too (broken and verbless fragments, advice, valuation, promo, forecasts):
     // "...Nasdaq futures (+0.7%), and one smaller position." survived a repair that ran only the calendar checks
@@ -812,6 +815,7 @@ Deno.serve(async (req) => {
 
       let sections: Sections | null = null;
       let p8Adds: { tech: number; lev: string } | null = null;   // r12 F: appended after the last sanitizer
+      let finalWins: { names: string[]; windows: Record<number, number | null> }[] = [];   // r13 M1: the final pass's period facts
       let usedCompact = false;
       let memosOut: Record<string, unknown>[] = [];
       // a watch with no usable date falls back to that holding's own tripwire, never a placeholder (round 6: "What
@@ -1807,6 +1811,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         // to each holding's own windows, as in Ask
         const winFacts = fixture ? [] : await Promise.all(holdings.slice(0, 12).map(async (r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)],
           windows: ((await Promise.race([windowReturns(admin, r.symbol, [7, 30, 90, 365, YTD], Date.now(), r.kind === "crypto" ? null : /\.(?:KS|KQ)$/.test(r.symbol) ? "KR" : "US").catch(() => null), new Promise<null>((res) => setTimeout(() => res(null), 4000))]))?.pct ?? {}) as Record<number, number | null> })));
+        finalWins = winFacts;
         // round 9 intelligence: events and causes are grounded in DATA only (headlines, earnings estimates, dividend and
         // deliveries dates), never in model text: the memos are model output and would ground their own inventions
         const { data: gNews } = fixture ? { data: [] } : await admin.from("news").select("title, summary").in("symbol", holdings.map((r) => r.symbol).slice(0, 25))
@@ -1992,14 +1997,26 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             lastDiv: divRows.has(r.symbol) ? (Number(divRows.get(r.symbol)?.div_last ?? 0) || null) : null } : null;
           let note = fixDropIncome(p.note), watch = String(p.watch ?? "");
           if (f) { note = fixLevelClaims(note, f, "risk") || note; watch = fixLevelClaims(watch, f, "watch"); }
+          // r13 n2: AAPL (the #3 holding) shipped with no risk clause; after every pass, an assessment note still
+          // without one gets the kind's code risk
+          if (edition === "assessment" && r && !/\bthe risk:|\brisks?\b|\bbut\b|\bhowever\b|\bdownside\b|\bcould\b/i.test(note)) note = `${note.trim().replace(/[.\s]+$/, "")}. ${codeRisk(r.kind, themeOf(r.symbol, r.kind))}`;
           return { ...p, note: nameFunds(note, heldSet), watch: nameFunds(watch, heldSet) };
         });
+        // r13 M1: "It gained … 347.4% this year" (SOXL's 1-year return; YTD +260.3%) survived because the sentence names
+        // no holding and the clean pass keeps a field it would empty: every period figure is relabelled to its window here
+        if (finalWins.length) {
+          const rl = (t: string) => relabelPeriodClaims(t, finalWins) || t;
+          sections.lede = rl(sections.lede); sections.overnight = rl(sections.overnight); sections.desk_view = rl(sections.desk_view);
+          if (sections.horizon) sections.horizon = rl(sections.horizon);
+          sections.positions = sections.positions.map((p) => ({ ...p, note: rl(p.note) }));
+        }
         sections.desk_view = nameFunds(fixDanglingThisMeans(sections.desk_view), heldSet);
         if (sections.horizon) sections.horizon = nameFunds(sections.horizon, heldSet);
         sections.ideas = (sections.ideas ?? []).map((i) => nameFunds(i, heldSet));
         if (edition === "assessment" && p8Adds) {
           const add: string[] = [];
-          if (p8Adds.tech >= 20 && !/\btech|\bchip/i.test(sections.desk_view)) add.push(`Tech and chip holdings are ${p8Adds.tech.toFixed(1)}% of assets.`);
+          // r13 n1: "if top chip makers miss revenue" is not a share: skipped only when a figure sits beside tech/chip
+          if (p8Adds.tech >= 20 && !/\b(?:tech|chip)\w*[^.%]{0,40}?\d+(?:\.\d+)?\s?%|\d+(?:\.\d+)?\s?%[^.%]{0,40}?\b(?:tech|chip)/i.test(sections.desk_view)) add.push(`Tech and chip holdings are ${p8Adds.tech.toFixed(1)}% of assets.`);
           if (p8Adds.lev && !/\bleveraged fund|\bresets? (?:its leverage )?every day/i.test(sections.desk_view)) add.push(p8Adds.lev);
           if (add.length) sections.desk_view = `${String(sections.desk_view ?? "").trim().replace(/[.\s]+$/, "")}. ${add.join(" ")}`.replace(/^\.\s*/, "");
         }
