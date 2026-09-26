@@ -1508,6 +1508,9 @@ export const THEMES: Record<string, string> = {
   RDDT: "consumer internet", SNAP: "consumer internet", PINS: "consumer internet", UBER: "consumer internet", SPOT: "consumer internet", DUOL: "consumer internet", "035420.KS": "consumer internet", "035720.KS": "consumer internet",
   PLTR: "software", CRM: "software", NOW: "software", ORCL: "software", SNOW: "software", FIG: "software", CRWD: "software", ADBE: "software",
   JPM: "financials", BAC: "financials", GS: "financials", COF: "financials", V: "financials", MA: "financials", "024110.KS": "financials", "105560.KS": "financials",
+  // r12: leveraged funds are themed (SOXL was "other", so a chip-heavy book read as tech-light)
+  SOXL: "leveraged semiconductors", NVDL: "leveraged semiconductors", NVDU: "leveraged semiconductors", SMHX: "leveraged semiconductors",
+  TQQQ: "leveraged tech", TECL: "leveraged tech", QLD: "leveraged tech", ROM: "leveraged tech",
   // round 9: Berkshire counts as Financials (GICS), under every spelling of the ticker
   "BRK.B": "financials", "BRK-B": "financials", BRKB: "financials", "BRK.A": "financials", "BRK-A": "financials", BRKA: "financials",
   JNJ: "healthcare", UNH: "healthcare", LLY: "healthcare", PFE: "healthcare", "068270.KS": "healthcare", "207940.KS": "healthcare",
@@ -2075,8 +2078,10 @@ export function targetBandClaims(text: string): string[] {
 
 /** A group share stated as a figure ("Tech makes up about 57% of assets" when it is ~97%) corrected to the computed
  *  share. `groups` label a group and its share of assets. */
-export function fixGroupShares(text: string, groups: { label: RegExp; value: number }[], tolPp = 5): string {
+export function fixGroupShares(text: string, groups: { label: RegExp; value: number }[], tolPp = 5, members: { names: string[] }[] = []): string {
   return perLine(text, (line) => splitSentences(line).map((sent) => {
+    // r12 C: a sentence that lists its own members ("NVDA, AMD and SOXL: 48%") states THEIR share, not the group's
+    if (members.filter((m) => m.names.some((n) => n && nameIn(sent, n))).length >= 2) return sent;
     for (const g of groups) {
       const re = new RegExp(`(${g.label.source}[^.%]{0,40}?\\b(?:makes? up|is|are|at|about|around|roughly|nearly|near|accounts? for|totals?)\\s+(?:about |around |roughly |nearly |near |~)?)(\\d+(?:\\.\\d+)?)(\\s?%)`, g.label.flags.replace("g", "") + "g");
       sent = sent.replace(re, (m: string, pre: string, n: string, pct: string) => Math.abs(Number(n) - g.value) > tolPp ? `${pre}${g.value.toFixed(1)}${pct}` : m);
@@ -2333,10 +2338,13 @@ export function canonicalSymbol(symbol: string, yahoo?: string | null): string {
   return s;
 }
 
+/** r12 C: ONE definition of "tech and chips" for every surface (ask had two copies without leveraged semiconductors). An
+ *  index fund (QQQM) is not counted: counting the whole fund as tech double-counted it ("96.5% tech"). */
+export const TECH_THEMES = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "leveraged semiconductors", "leveraged tech"]);
 const THEME_WORDS: [RegExp, string[]][] = [
   [/\bhealth ?care|health-care|pharma|medical\b/i, ["healthcare"]], [/\bfinancials?|banks?|banking|insurers?\b/i, ["financials"]],
-  [/\btech(?:nology)?\b/i, ["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]],
-  [/\bsemiconductors?|chips?\b/i, ["AI semiconductors"]], [/\benergy|oil\b/i, ["energy"]], [/\bconsumer staples|staples\b/i, ["consumer staples"]],
+  [/\btech(?:nology)?\b/i, [...TECH_THEMES]],
+  [/\bsemiconductors?|chips?\b/i, ["AI semiconductors", "leveraged semiconductors"]], [/\benergy|oil\b/i, ["energy"]], [/\bconsumer staples|staples\b/i, ["consumer staples"]],
   [/\bcrypto\b/i, ["crypto", "crypto beta"]], [/\bdividend\b/i, ["dividend equity", "income equity"]], [/\bbonds?\b/i, ["bonds"]], [/\bsoftware\b/i, ["software"]],
 ];
 /** "healthcare-heavy", "the single biggest thematic weight" for a theme that is not the biggest (round 9: healthcare 19.4%
@@ -2346,7 +2354,7 @@ export function themeClaims(text: string, themes: { name: string; pct: number }[
   const top = [...themes].sort((a, b) => b.pct - a.pct)[0];
   const share = (names: string[]) => themes.filter((t) => names.includes(t.name)).reduce((a, t) => a + t.pct, 0);
   return sentencesOf(text).filter((s) => {
-    const heavy = /\b([a-z][a-z -]{2,20})-heavy\b|\bheavy (?:in|on) ([a-z][a-z ]{2,20})\b|\bdominated by ([a-z][a-z ]{2,20})\b/i.exec(s);
+    const heavy = /\b([A-Za-z]{2,20})-heavy\b|\bheavy (?:in|on) ([a-z][a-z ]{2,20})\b|\bdominated by ([a-z][a-z ]{2,20})\b/i.exec(s);
     const biggest = /\b(?:single )?(?:biggest|largest|top|dominant|main|heaviest)\s+(?:thematic weight|theme|sector|exposure|bet|tilt)\b/i.test(s);
     if (!heavy && !biggest) return false;
     const scope = heavy ? (heavy[1] ?? heavy[2] ?? heavy[3] ?? "") : s;
@@ -2729,9 +2737,13 @@ export function fixThemeHeavy(text: string, themes: { name: string; pct: number 
   const bad = themeClaims(text, themes);
   if (!bad.length || themes.length < 2) return String(text ?? "");
   const top = [...themes].sort((a, b) => b.pct - a.pct)[0];
-  const label = top.name.replace(/^AI /, "AI-").replace(/\s+/g, " ");
+  // r12 E: "A tech-heavy" became "funds-heavy" (the old pattern took spaces and ate the article): only the one word
+  // before "-heavy" is replaced, with an adjective for the top theme, and the sentence keeps its capital
+  const ADJ: Record<string, string> = { "AI semiconductors": "chip", "leveraged semiconductors": "chip", "AI infrastructure": "AI-infrastructure", "mega-cap platforms": "mega-cap",
+    "broad US index": "index-fund", "international index": "international", "Nasdaq 100 index": "Nasdaq-fund", "dividend equity": "dividend", "income equity": "income", "crypto beta": "crypto", "EV and autos": "EV" };
+  const label = TECH_THEMES.has(top.name) && themes.filter((t) => TECH_THEMES.has(t.name)).reduce((a, t) => a + t.pct, 0) >= top.pct ? "tech" : (ADJ[top.name] ?? top.name.split(/\s+/)[0]);
   return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => bad.includes(sen) && /-heavy\b/i.test(sen)
-    ? sen.replace(/\b([a-z][a-z ]{2,20}?)-heavy\b/i, `${label}-heavy`) : sen).join(" "));
+    ? sen.replace(/\b([A-Za-z]+)-heavy\b/, `${label}-heavy`).replace(/^(\s*)([a-z])/, (_m, a, c) => a + c.toUpperCase()) : sen).join(" "));
 }
 
 /** The abstract idea examples the assessment prompt shows (round 9: the model copied the literal examples). */
@@ -2799,10 +2811,10 @@ export function orderingClaims(text: string, facts: { names: string[] }[]): stri
 /** "MSFT has the highest yield at 0.7%" when AVGO yields 0.74%: a highest/lowest claim on a metric we compute. */
 export function metricSuperlativeClaims(text: string, facts: { names: string[]; yieldPct?: number | null; weight?: number | null; annualDiv?: number | null }[]): string[] {
   return sentencesOf(text).filter((s) => {
-    const m = /\b(highest|lowest|biggest|largest|smallest|top|most)\b[^.]{0,20}?\b(yield|dividend yield|weight|position|holding|dividend payer|payer|dividend)\b|(?:배당(?:수익)?률|비중|배당금?)(?:이|은|가)? 가장 (높|낮|큰|많|적)/i.exec(s);
+    const m = /\b(highest|lowest|biggest|largest|smallest|top|most)\b[^.]{0,20}?\b(yield|dividend yield|weight|position|holding|sleeve|slice|dividend payer|payer|dividend)\b|(?:배당(?:수익)?률|비중|배당금?)(?:이|은|가)? 가장 (높|낮|큰|많|적)/i.exec(s);
     if (!m) return false;
     const low = /lowest|smallest|낮|적/i.test(m[0]);
-    const metric = /yield|수익률|률/i.test(m[0]) ? "yieldPct" : /weight|position|holding|비중/i.test(m[0]) ? "weight" : "annualDiv";
+    const metric = /yield|수익률|률/i.test(m[0]) ? "yieldPct" : /weight|position|holding|sleeve|slice|비중/i.test(m[0]) ? "weight" : "annualDiv";
     const vals = facts.filter((f) => typeof f[metric] === "number" && (f[metric] as number) > 0);
     if (vals.length < 2) return false;
     const named = vals.filter((f) => f.names.some((n) => n && nameIn(s, n)));
@@ -3076,6 +3088,7 @@ export function fixFragments(text: string): string {
     .replace(/([a-z0-9%)])\s+(The risk:|What would change it:)/g, "$1. $2")
     .replace(/\bcosts ((?:about |roughly |under )?\d+(?:\.\d+)?%) of (?:assets|the portfolio|your portfolio)\b/g, "is $1 of assets")
     .replace(/\bS&P500\b/g, "S&P 500");
+  t = t.replace(/^(\s*(?:•\s*)?)([a-z])/, (_m, a, c) => a + c.toUpperCase());
   // r11: "…must persist across market cycles for the portfolio." (a clause cut away before it)
   t = t.replace(/\s+for the portfolio\.(?=\s|$)/g, ".");
   t = perLine(t, (line) => splitSentences(line).filter((s) => !/^\s*(?:•\s*)?[A-Z][\w'.-]*(?:\s+[\w'.-]+){0,3}\s+(?:adds|provides|offers|gives|brings|delivers|includes|holds|supports|creates)\s*[.!]$/.test(s)).join(" "));
@@ -3243,4 +3256,21 @@ export function askedCount(q: string): number | null {
   if (!m) return null;
   const W: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
   return W[(m[1] ?? "").toLowerCase()] ?? Number(m[1] ?? m[2]);
+}
+
+/** A window other than a year set against a yearly return target ("up 9% over 3 months, inside your 12-20% target"), or a
+ *  cash weight set against it: not comparable. */
+export function targetMismatchClaims(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\d+\s?(?:-|–|to)\s?\d+\s?%\s*(?:yearly |annual |a year |per year )?(?:return )?(?:target|goal)|(?:return )?(?:target|goal) of \d+/i.test(s)
+    && (/\b(?:3|three|1|one|6|six)[- ]month|\b(?:3M|1M|6M|1W)\b|\bthis (?:month|week|quarter)\b|\bquarter\b|\bweek\b|\bcash\b/i.test(s)));
+}
+
+/** A move dated to a day the market did not trade ("9/26 +4%" on a Saturday; the move was Friday 9/25's). */
+export function nonSessionDatedMoves(text: string, isSession: (ymd: string) => boolean, year: number): string[] {
+  return sentencesOf(text).filter((s) => [...s.matchAll(/\b(\d{1,2})\/(\d{1,2})\b(?=[^.%]{0,20}[+−-]?\d+(?:\.\d+)?\s?%)/g)].some((m) => {
+    const mo = Number(m[1]), d = Number(m[2]);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+    const ymd = `${year}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    return !isSession(ymd);
+  }));
 }
