@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -374,6 +374,7 @@ async function handle(req: Request): Promise<Response> {
   // ---- signal digest for EVERY holding (news, filings, earnings) ----
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
   let digest = "";
+  const peBy = new Map<string, number[]>();
   const askEsts: { names: string[]; est: string | null; range?: [string, string] }[] = [];
   let earnReadOk = true;
   const headlinesBy = new Map<string, string>();
@@ -447,6 +448,7 @@ async function handle(req: Request): Promise<Response> {
     const heads = (news ?? []).filter((n) => usableNews(n, aliasesFor(hr.symbol, hr.name)) && !staleNewsTitle(String(n.title), n.published_at, today) && headlineOk(String(n.title))
       && centrality(String(n.title), [hr.symbol, nameOf(hr), ...aliasesFor(hr.symbol, hr.name)]) <= 40).slice(0, 12);
     context += `\n[${nm}] 7d headlines:\n${heads.map((n) => `- [${n.source}, ${String(n.published_at).slice(5, 10)}] ${n.title}`).join("\n") || "- none"}`;
+    if (ins?.[0]) peBy.set(sym, [...(peBy.get(sym) ?? []), ...peFigures((ins[0].bullets as string[]).join(" "))]);
     if (ins?.[0]) context += `\n[${nm}] current desk take (written ${String(ins[0].generated_at).slice(0, 16).replace("T", " ")} UTC; its prices may be older than the stats above, which win): ${(ins[0].bullets as string[]).join(" | ")}`;
     if (fils?.length) context += `\n[${nm}] SEC filings: ${fils.map((f) => `${f.form} ${f.filed_at}`).join(", ")}`;
     const calls = (trAll ?? []).filter((t) => isEarningsCallTitle(t.title));
@@ -603,7 +605,11 @@ async function handle(req: Request): Promise<Response> {
     : `Money: every amount is in US dollars ($). This account holds nothing in Korean won: write ₩ only when the user asks for won, converting at the rate on file: USD/KRW ${Math.round(fxMap.get("KRW") ?? 1380).toLocaleString("en-US")} (₩ per $1); say it is a conversion at that rate.`;
   // round 9 C (and newcomer 6): a data question's figures are computed here and lead the answer
   const perfRows: PerfRow[] = held.map((r) => ({ symbol: r.symbol, label: nameOf(r), names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], usd: usd(Number(r.value ?? 0), r.currency), pct: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> }));
-  const dataLead = tradeQ ? null : computedDataLead(question, perfRows, mentionedNow, ko);
+  // round 9 v44: "How did the market do today?" leads with the indexes; a dividend question with the payers ranked
+  const { data: idxRows } = await capped(admin.from("prices").select("symbol,price,change_pct").in("symbol", ["^GSPC", "NQ=F", "^KS11"]).then((r) => r) as unknown as Promise<{ data: { symbol: string; price: number; change_pct: number | null }[] | null }>, 2000, { data: [] });
+  const idx = (idxRows ?? []).filter((r) => r.symbol !== "^KS11" || korean || ko).map((r) => ({ label: r.symbol === "^GSPC" ? "S&P 500" : r.symbol === "NQ=F" ? (ko ? "나스닥100 선물" : "Nasdaq 100 futures") : "KOSPI", pct: r.change_pct === null ? null : Number(r.change_pct), price: Number(r.price) }));
+  const payersL = divLines.map((x) => ({ label: nameOf(x.r), annual: x.d.annual, yieldPct: divRows.get(x.r.symbol)?.div_yield ?? null }));
+  const dataLead = tradeQ ? null : (computedDataLead(question, perfRows, mentionedNow, ko) ?? marketLead(question, idx, ko) ?? (/\b(?:which|what|how much|per holding|each|from which|largest|biggest)\b|얼마|어느|어떤|종목별|제일|가장/i.test(question) ? dividendLead(question, payersL, ko) : null));
   const prompt = `TODAY is ${today} (US Eastern date).
 ${ccyLine}
 User's portfolio (deterministic; the ONLY source of numbers). For each holding: "share price" is the price of ONE share; "position value" is what the user's whole holding is worth. They are different numbers: a question about the stock's price or close gets the SHARE PRICE, never the position value. Each "day" figure is tagged with the session it belongs to: a LIVE session is today's move so far, a "past (not today)" session is named by its day, and a live move is never "yesterday".
@@ -616,7 +622,7 @@ ${divPending ? `Portfolio dividend income: still loading for ${divPending} holdi
 Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
 ${context}
 ${dataLead ? `\nCOMPUTED ANSWER (from the stats; open the answer with exactly these figures, then add context):\n${dataLead}\n` : ""}USER STATEMENTS: what the user says about their own money, plans or life ("I have ₩100M in cash", "we're buying a house in 2 years") is context to use, never a claim about the portfolio to correct.
-CAUSES: when a holding's 7d headlines give a reason for its move, name it and its source; never say no headline explains a move when its headlines are listed above.
+CAUSES: when a holding's 7d headlines give a reason for its move, name it and its source; the cause of TODAY's move is a headline dated today that explains it, not an older story about something else; never say no headline explains a move when its headlines are listed above.
 
 ${convoBlock}Question: "${question}"
 
@@ -787,6 +793,12 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     // round 7 newcomer: "339% this year" for Samsung (YTD +138%): a period claim is held to the holding's own window
     // round 9 C: a window's dollar move held to the holding's own ("TSLA −$35,896" over 1M was its 1Y figure)
     ...windowDollarMismatches(answer, perfRows, questionWindows(question)[0] ?? null),
+    // round 9 v44: an order the figures contradict ("NVDA +20.7%, followed by AAPL +25.5%"), a highest/lowest yield or weight
+    // that is another holding's, a P/E from another holding, "$10 billion" written as 10조, a count its names do not match
+    ...orderingClaims(answer, perfRows), ...countClaims(answer, perfRows),
+    ...metricSuperlativeClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], yieldPct: divRows.get(r.symbol)?.div_yield ?? null, weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100, annualDiv: divLines.find((x) => x.r.symbol === r.symbol)?.d.annual ?? 0 }))),
+    ...crossMetricClaims(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], pes: [...(peBy.get(r.symbol) ?? []), ...peFigures(headlinesBy.get(r.symbol) ?? "")] }))),
+    ...(ko ? wonConversionClaims(answer, causeSource, fxMap.get("KRW") ?? 1380) : []),
     ...periodReturnMismatches(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], windows: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> })))]);
   const pruned0 = answer;
   // Round 8: "What share of my portfolio is NVDA?" shipped "That is $675,210 out of…" with the 19.2% gone, and a premise
@@ -829,6 +841,13 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       const asked = mentionedNow.map((sy) => held.find((h) => h.symbol === sy)!).map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)] }));
       const d = danglingAfterDrop(guarded, asked);
       if (decisionQ && (d.dangling.length || d.missing)) guarded = "";
+      else if (d.missing) {
+        const back = mentionedNow.map((sy) => held.find((h) => h.symbol === sy)!).filter((r) => ![nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)].some((n) => n && guarded.includes(n)))
+          .map((r) => { const p = perf.get(r.symbol)?.pct ?? {}; const v = usd(Number(r.value ?? 0), r.currency); const c = r.change_pct === null ? null : Number(r.change_pct);
+            const pc = (x: number | null | undefined) => typeof x === "number" ? `${x >= 0 ? "+" : "\u2212"}${Math.abs(x).toFixed(1)}%` : (ko ? "데이터 부족" : "n/a");
+            return ko ? `• ${nameOf(r)}: 자산의 ${weight(v)}, 오늘 ${pc(c)}, 1개월 ${pc(p[30])}.` : `• ${nameOf(r)}: ${weight(v)} of your portfolio, today ${pc(c)}, 1 month ${pc(p[30])}.`; });
+        if (back.length) guarded = `${guarded}\n${back.join("\n")}`;
+      }
       else if (d.dangling.length) {
         guarded = perLine(guarded, (line) => splitSentences(line).filter((sen) => !d.dangling.includes(sen)).join(" "));
         if (dataLead && !statesLead(guarded, dataLead)) guarded = `${dataLead}\n${guarded}`;
@@ -887,7 +906,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     "How concentrated is my portfolio?", "What are the biggest risks in my portfolio?",
   ];
   // chips follow the question's language too
-  const modelChips = builtInCode || !parsedA ? [] : (judgedChips ?? (parsedA?.followups ?? []).map(deDash));
+  const PRODUCT_CHIP = /\b(?:which|what)\b[^?]{0,20}\b(?:etfs?|funds?|bonds?|treasur(?:y|ies)|money[- ]market|index funds?)\b|\blowest fees\b|\b(?:candidates?|alternatives?) (?:worth|to)\b|채권 ?ETF|어떤 ETF|어떤 채권|어떤 펀드|후보/i;
+  const modelChips = (builtInCode || !parsedA ? [] : (judgedChips ?? (parsedA?.followups ?? []).map(deDash))).filter((c) => !PRODUCT_CHIP.test(c));
   const followups = cleanFollowups(modelChips.filter((f) => chipInLanguage(question, f)), fallbacks);
   return json({ ok: true, answer, followups, mentioned, meta: { judge: judgeStatus } });
 }
