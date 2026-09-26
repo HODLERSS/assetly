@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -628,6 +628,9 @@ async function handle(req: Request): Promise<Response> {
       const top3 = [...held].sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency)).slice(0, 3).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
       return ko ? `• 상위 3개 종목이 자산의 ${top3.toFixed(0)}%입니다.\n• 비중: ${ws.join(", ")}.` : `• Your three largest holdings are ${top3.toFixed(0)}% of the portfolio.\n• Weights: ${ws.join(", ")}.`;
     }
+    // final M1: the generic performance summary is for performance questions only; anything else gets an honest short
+    // answer with the book's basic facts ("What is an ETF, and which of mine are ETFs?" got the performance summary)
+    if (!isPerformanceQuestion(question)) return honestFallback(intentRows(), cashPctA, ko);
     const reps = [...askEsts].filter((e) => e.est && e.est > today).sort((a, b) => String(a.est).localeCompare(String(b.est))).slice(0, 8)
       .map((e) => `${e.names[0]} ${e.range ? (ko ? spanOfMonthKo(e.range) : spanOfMonth(e.range)) : (ko ? "" : "~") + new Date(e.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }) + (ko ? "경" : "")}`);
     const tops = [...held].sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency)).slice(0, 3).map((r) => `${nameOf(r)} ${weight(usd(Number(r.value ?? 0), r.currency))}`);
@@ -1076,6 +1079,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     guarded = fixDayTags(guarded, held.map((r) => ({ names: namesOfR(r), dayPct: r.change_pct === null ? null : Number(r.change_pct) })));
     // r13 intelligence M2: the whole-book day figure is Home's; a "current price" is the latest price, not the prior close
     guarded = fixBookDayClaims(guarded, { usd: sessDay, pct: sessPct }, held.map((r) => ({ names: namesOfR(r) })));
+    // final M2: a stocks-and-funds base that counted crypto
+    guarded = fixEquityBaseClaims(guarded, held.filter((r) => r.kind !== "crypto" && !/-USD$/.test(r.symbol)).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0),
+      held.filter((r) => r.kind === "crypto" || /-USD$/.test(r.symbol)).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0));
     guarded = fixCurrentPriceClaims(guarded, held.map((r) => ({ names: namesOfR(r), price: r.price === null || r.price === undefined ? null : Number(r.price), prevClose: prevClose.get(r.symbol) ?? null })));
     guarded = stripUngroundedMoodCauses(guarded, causeSource, held.map((r) => nameOf(r))).replace(/\s+([.,;])/g, "$1");
     const flat = new Set(flatClaims(guarded, held.map((r) => ({ names: namesOfR(r), day: r.change_pct === null ? null : Number(r.change_pct), week: perf.get(r.symbol)?.pct[7] ?? null })), weekQ));
