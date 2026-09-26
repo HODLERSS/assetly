@@ -2523,6 +2523,8 @@ export function isDecisionFrame(q: string): boolean {
   const t = String(q ?? "");
   // Korean trade and allocation intents
   if (/(살까|팔까|살래|팔래|사야\s?(?:할까|하나|돼|되나|겠)|팔아야|살 만한|팔 만한|사도 될까|팔아도 될까|더 살|더 사|물타기|추매|정리할까|손절|익절|넣을까|넣어야|어디(?:에)? 넣|어디에 투자|뭘 사|뭐 사|무엇을 사|뭐 살|뭘 팔|너라면|네가 나라면|당신이라면|추천해|추천 좀|추천할|비중(?:을)? (?:늘|줄|조절)|갈아타|교체할|리밸런싱 해|배분해|배분할|하나만 남기|하나만 고르|더 안전|안전한 (?:쪽|종목|거)|뭐가 좋아|어떤 게 좋아|뭐가 나아|어느 게 나아|좋을까요\?)/.test(t)) return true;
+  // r10: "just your opinion, AAPL 사 말아?" got "Setup is mixed: momentum strong"
+  if (/\b(?:just |your )?(?:honest )?opinion\b[^?]{0,40}\b(?:buy|sell|hold|keep|add|trim|사|팔)|\bin your opinion\b|사 말아|살 말아|팔 말아|살까 말까|사야 돼 말아|네 생각은/i.test(t)) return true;
   // a product or holding weighed as a purchase in Korean ("SCHD 사는 거 어떻게 생각해?", "커버드콜 전략 써볼까?", "그럼 채권은?")
   if (/(?:사는|파는|사두는|넣는) (?:거|게|건)|(?:써|해|사|넣어)볼까|어떻게 가져가|가져가야|유지해야|늘려야|줄여야/.test(t)) return true;
   if ((KO_PRODUCTS.test(t) || /채권|국채|예금|펀드|ETF|코인/.test(t)) && /어때|할까|나을까|좋아\?|괜찮|(?:은|는)\?\s*$/.test(t)) return true;
@@ -2639,6 +2641,15 @@ export function computedDataLead(q: string, rows: PerfRow[], mentionedNow: strin
     return ko
       ? `• ${wLabel(w, ko)} 동안 보유 종목의 평가액 변화는 ${usdS(tot)}입니다(현재 보유 수량 기준).${second}`
       : `• Over ${wLabel(w, ko)} your holdings moved ${usdS(tot)} at today's position sizes.${second}`;
+  }
+  // r10: "Which holdings have a negative 3-month return?" named TSLA and missed AVGO: a sign filter is built in code
+  const neg = /\bnegative\b|\bin the red\b|\blosing\b|\bdown\b|마이너스|손실|하락한/i.test(t), pos = /\bpositive\b|\bin the green\b|\bup\b|플러스|상승한/i.test(t);
+  if ((neg !== pos) && /\bwhich\b|\bhow many\b|\bany of\b|어느|몇|어떤/i.test(t)) {
+    return ws.map((w) => {
+      const hit = rows.filter((r) => typeof r.pct[w] === "number" && (neg ? (r.pct[w] as number) < 0 : (r.pct[w] as number) > 0)).sort((a, b) => (a.pct[w] as number) - (b.pct[w] as number) * 1);
+      const list = hit.map((r) => `${r.label} ${pctS(r.pct[w], ko)}`).join(", ");
+      return ko ? `• ${wLabel(w, ko)} ${neg ? "마이너스" : "플러스"} 종목 ${hit.length}개${hit.length ? `: ${list}` : ""}.` : `• ${hit.length} of your holdings ${hit.length === 1 ? "is" : "are"} ${neg ? "negative" : "positive"} over ${wLabel(w, ko)}${hit.length ? `: ${list}` : ""}.`;
+    }).join("\n");
   }
   const perfWords = /\b(?:return|returns|perform|performance|performer|performing|did|do|does|doing|up|down|gain|gained|lose|lost|compare|vs\.?|versus|move|moved)\b|수익률|올랐|내렸|어땠|비교/i;
   if (!perfWords.test(t)) return null;
@@ -2971,4 +2982,76 @@ export function smallMoveCauses(text: string, facts: { names: string[]; pct: num
     const m = /(\d+(?:\.\d+)?)\s?%/.exec(s);
     return !!m && typeof f.pct === "number" && Math.abs(f.pct) < 0.5 && Number(m[1]) < 0.5;
   });
+}
+
+/** A question asking for a projection ("How much will my portfolio be worth in 5 years?", "Where will NVDA be next year?",
+ *  "Will AAPL hit $400?", "TSLA 목표주가"): answered with history, never a projection (r10: "$6.2M-$8.8M… plausible"). */
+export function isForecastQuestion(q: string): boolean {
+  const t = String(q ?? "");
+  return /\b(?:worth|be worth|be)\b[^?]{0,20}\bin (?:\d+|one|two|three|five|ten|twenty) (?:years?|months?|decades?)\b|\bwhere will\b|\bhow much will\b|\bwill (?:\S+ ){0,3}(?:hit|reach|go to|get to|be worth|recover|double|triple|crash|rise to|fall to)\b|\bprice target\b|\bprice prediction\b|\bpredict\b|\bforecast\b|\bproject(?:ion|ed)?\b[^?]{0,20}\b(?:value|worth|return|price)\b|\bby (?:20[3-9]\d|the end of (?:the )?(?:year|decade))\b|몇 년 (?:후|뒤)|\d+년 (?:후|뒤)(?:에)?[^?]{0,15}(?:얼마|될|가치)|얼마가 될|목표 ?주가|전망 ?가격|(?:오를까|떨어질까|갈까)\??\s*$/i.test(t);
+}
+
+/** Soft verdicts that slipped through when the judge timed out (r10 intelligence): "the setup has real weight",
+ *  "structural drivers for a multi-year hold", "still far below the target", "$350 is the line to watch". */
+export function softVerdicts(text: string): string[] {
+  return sentencesOf(text).filter((s) => /\bsetup (?:has|carries) (?:real )?weight\b|\bstructural drivers? for a (?:multi-year|long-term) hold\b|\bfor a (?:multi-year|long-term) hold\b|\b(?:still )?(?:far |well )?(?:below|above|short of|ahead of) (?:the |your )?(?:\d+\s?(?:-|–|to)\s?\d+\s?% )?(?:target|goal)\b|\bis the (?:line|level) to watch\b|\bkey (?:line|level) (?:is|at)\s*\$|\bsetup is (?:mixed|constructive|favorable|strong|weak)\b|\bmomentum (?:is )?strong\b/i.test(s) && !/\b(?:if|whether|unless)\b/i.test(s));
+}
+
+/** "TSLA was the only drag" (AVGO lost more), "MSFT is #2" (AAPL is), "MSFT lagging the rest" (META and TSLA did worse):
+ *  an only / #N / lagging / leading claim is held to the window's returns (or, with no window, to the weights). */
+export function rankPositionClaims(text: string, facts: { names: string[]; pct: Record<number, number | null>; weight?: number | null }[], defaultWindow: number | null = null): string[] {
+  const ORD: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, "#1": 1, "#2": 2, "#3": 3, "#4": 4, "#5": 5, "no. 1": 1, "no. 2": 2, "no. 3": 3 };
+  return sentencesOf(text).filter((s) => {
+    const named = facts.filter((f) => f.names.some((n) => n && nameIn(s, n)));
+    if (named.length !== 1) return false;
+    const me = named[0];
+    const ws = questionWindows(s);
+    const w = ws.length === 1 ? ws[0] : ws.length ? null : defaultWindow;
+    const vals = (w === null ? [] : facts.map((f) => f.pct[w]).filter((v): v is number => typeof v === "number"));
+    const mine = w === null ? null : me.pct[w];
+    if (/\bthe only (?:drag|loser|decliner|laggard|holding (?:down|in the red|negative)|one (?:down|in the red|negative))\b/i.test(s)) {
+      if (typeof mine !== "number" || vals.length < 2) return false;
+      return vals.filter((v) => v < 0).length !== 1 || mine >= 0;
+    }
+    if (/\bthe only (?:gainer|winner|holding up|one up)\b/i.test(s)) {
+      if (typeof mine !== "number" || vals.length < 2) return false;
+      return vals.filter((v) => v > 0).length !== 1 || mine <= 0;
+    }
+    if (/\b(?:lag(?:s|ging)?|trail(?:s|ing)?|behind) (?:the rest|everything|all (?:the )?others|every other)\b/i.test(s)) {
+      if (typeof mine !== "number" || vals.length < 2) return false;
+      return mine > Math.min(...vals) + 0.05;
+    }
+    const o = /(#\s?[1-5]|no\. [1-3]|\b(?:first|second|third|fourth|fifth)\b)(?:[- ](?:largest|biggest|best|place))?/i.exec(s);
+    if (o && /\b(?:is|ranks?|comes?|sits?)\b/i.test(s)) {
+      const n = ORD[o[1].toLowerCase().replace(/\s/g, "")] ?? ORD[o[1].toLowerCase()];
+      if (!n) return false;
+      if (w !== null && typeof mine === "number" && vals.length >= n) return [...vals].sort((a, b) => b - a).indexOf(mine) + 1 !== n;
+      if (w === null && typeof me.weight === "number") {
+        const ws2 = facts.map((f) => f.weight).filter((v): v is number => typeof v === "number").sort((a, b) => b - a);
+        return ws2.length >= n && ws2.indexOf(me.weight) + 1 !== n;
+      }
+    }
+    return false;
+  });
+}
+
+/** Sentence fragments and seams (r10 native): "Your crypto holding adds." (a verb left without its object), "exposure is
+ *  minimal The risk: …" (a missing period), "TSLA … costs 0.2% of assets" (a weight written as a cost), "S&P500". */
+export function fixFragments(text: string): string {
+  let t = String(text ?? "")
+    .replace(/([a-z0-9%)])\s+(The risk:|What would change it:)/g, "$1. $2")
+    .replace(/\bcosts ((?:about |roughly |under )?\d+(?:\.\d+)?%) of (?:assets|the portfolio|your portfolio)\b/g, "is $1 of assets")
+    .replace(/\bS&P500\b/g, "S&P 500");
+  t = perLine(t, (line) => splitSentences(line).filter((s) => !/^\s*(?:•\s*)?[A-Z][\w'.-]*(?:\s+[\w'.-]+){0,3}\s+(?:adds|provides|offers|gives|brings|delivers|includes|holds|supports|creates)\s*[.!]$/.test(s)).join(" "));
+  return t;
+}
+
+/** A closing note cites the index closes, never futures as the day's result (r10: "Nasdaq futures at 30,921.75" in a
+ *  closing note): a clause naming futures is removed; a sentence that is only about futures goes. */
+export function dropFuturesAfterClose(text: string): string {
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((s) => {
+    if (!/\b(?:S&P ?500|Nasdaq|Dow)(?: 100)? futures\b/i.test(s)) return s;
+    const cut = s.replace(/,?\s*(?:and\s+)?(?:the\s+)?(?:S&P ?500|Nasdaq|Dow)(?: 100)? futures.*?(?=,\s+[A-Za-z]|[.;](?:\s|$)|$)/gi, "").replace(/\s+([,.;])/g, "$1").replace(/,\s*\./g, ".");
+    return /\b\d/.test(cut) || cut.split(/\s+/).length >= 6 ? cut : "";
+  }).filter(Boolean).join(" "));
 }
