@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -811,6 +811,7 @@ Deno.serve(async (req) => {
       }
 
       let sections: Sections | null = null;
+      let p8Adds: { tech: number; lev: string } | null = null;   // r12 F: appended after the last sanitizer
       let usedCompact = false;
       let memosOut: Record<string, unknown>[] = [];
       // a watch with no usable date falls back to that holding's own tripwire, never a placeholder (round 6: "What
@@ -1745,10 +1746,8 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           const TECH_S = TECH_THEMES;
           const techS = holdings.filter((r) => TECH_S.has(themeOf(r.symbol, r.kind))).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / total * 100;
           const lev = holdings.filter((r) => /leveraged/.test(themeOf(r.symbol, r.kind)) || /\b(?:2x|3x|ultra|bull 3x|leveraged)\b/i.test(String(r.name ?? "")));
-          const add: string[] = [];
-          if (techS >= 20 && !/\btech|\bchip/i.test(sections.desk_view)) add.push(`Tech and chip holdings are ${techS.toFixed(1)}% of assets.`);
-          if (lev.length) add.push(`${lev.map((r) => plainCompanyName(krName(r.symbol, r.nickname, r.name))).join(" and ")} ${lev.length > 1 ? "are" : "is a"} leveraged fund${lev.length > 1 ? "s" : ""}: ${lev.length > 1 ? "they reset" : "it resets"} every day, so a sharp drop in the index can wipe out most of ${lev.length > 1 ? "their" : "its"} value.`);
-          if (add.length) sections.desk_view = `${String(sections.desk_view ?? "").replace(/[.\s]+$/, "")}. ${add.join(" ")}`.replace(/^\.\s*/, "");
+          // r12 F: the later passes (clean, grammar, sanitize) stripped these; they are appended after the last of them
+          p8Adds = { tech: techS, lev: lev.length ? `${lev.map((r) => plainCompanyName(krName(r.symbol, r.nickname, r.name))).join(" and ")} ${lev.length > 1 ? "are" : "is a"} leveraged fund${lev.length > 1 ? "s" : ""}: ${lev.length > 1 ? "they reset" : "it resets"} every day, so a sharp drop in the index can wipe out most of ${lev.length > 1 ? "their" : "its"} value.` : "" };
         }
         if (edition === "assessment") {
           const styles = toArr((invBy.get(uid) as Investor | null | undefined)?.styles, ["value"]);
@@ -1978,6 +1977,32 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections.ideas = (sections.ideas ?? []).map((i) => sanitize(i, { ideaSurface: true })).filter(Boolean);
         sections.positions = sections.positions.map((p) => ({ ...p, note: keepOr(p.note, p.note), watch: sanitize(p.watch) || "" }));
         sections.calendar = (sections.calendar ?? []).map((c) => sanitize(c)).filter(Boolean);
+      }
+      // r12 F (newcomer M2): the LAST facts pass, after every sanitizer. Watches and risks are held to the holding's live
+      // price and last payment (VOO "dividend under $9" at $1.82 a payment, ETH "stays under $2,800" at $2,687), a price
+      // drop cuts value not income, fund tickers the reader does not hold are named (SMH), a desk view left opening on
+      // "This means…" loses the pointer, and the P8 structure lines go on last so nothing after can strip them.
+      if (!backfillOnly && !fixture) {
+        const heldSet = new Set(holdings.map((r) => r.symbol.replace(/\.(?:KS|KQ)$/, "")));
+        const rowFor = (name: string) => holdings.find((r) => [krName(r.symbol, r.nickname, r.name), plainCompanyName(krName(r.symbol, r.nickname, r.name)), r.symbol, r.symbol.replace(/\.(?:KS|KQ)$/, ""), ...aliasesFor(r.symbol, r.name)]
+          .some((n) => n && n.toLowerCase() === String(name).toLowerCase()));
+        sections.positions = sections.positions.map((p) => {
+          const r = rowFor(p.name);
+          const f = r ? { price: r.price === null || r.price === undefined ? null : Number(r.price), currency: r.currency,
+            lastDiv: divRows.has(r.symbol) ? (Number(divRows.get(r.symbol)?.div_last ?? 0) || null) : null } : null;
+          let note = fixDropIncome(p.note), watch = String(p.watch ?? "");
+          if (f) { note = fixLevelClaims(note, f, "risk") || note; watch = fixLevelClaims(watch, f, "watch"); }
+          return { ...p, note: nameFunds(note, heldSet), watch: nameFunds(watch, heldSet) };
+        });
+        sections.desk_view = nameFunds(fixDanglingThisMeans(sections.desk_view), heldSet);
+        if (sections.horizon) sections.horizon = nameFunds(sections.horizon, heldSet);
+        sections.ideas = (sections.ideas ?? []).map((i) => nameFunds(i, heldSet));
+        if (edition === "assessment" && p8Adds) {
+          const add: string[] = [];
+          if (p8Adds.tech >= 20 && !/\btech|\bchip/i.test(sections.desk_view)) add.push(`Tech and chip holdings are ${p8Adds.tech.toFixed(1)}% of assets.`);
+          if (p8Adds.lev && !/\bleveraged fund|\bresets? (?:its leverage )?every day/i.test(sections.desk_view)) add.push(p8Adds.lev);
+          if (add.length) sections.desk_view = `${String(sections.desk_view ?? "").trim().replace(/[.\s]+$/, "")}. ${add.join(" ")}`.replace(/^\.\s*/, "");
+        }
       }
       // round 8: signed figures use the true minus sign, as the client renders them
       { const um = (v: unknown): unknown => typeof v === "string" ? unicodeMinus(v) : Array.isArray(v) ? v.map(um) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, k === "day_by_symbol" || k === "held" || k === "as_of" ? x : um(x)])) : v;

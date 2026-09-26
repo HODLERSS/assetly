@@ -3285,3 +3285,77 @@ export function nonSessionDatedMoves(text: string, isSession: (ymd: string) => b
     return !isSession(ymd);
   }));
 }
+
+/** r12 F: a watch or risk sentence held to the holding's own live price and last dividend payment. Returns the sentence
+ *  (possibly reworded), or null when it cannot stand:
+ *   - "dividend under $9" for VOO paying $1.82 (a threshold the payment is already under);
+ *   - "ETH stays under $2,800" at $2,687 (already true: the event to watch is the reclaim) -> "ETH reclaims $2,800";
+ *   - "falls below $X" with the price already below X, "rises above $X" with it already above.
+ *  A level far from the price (under a fifth or over five times it) is some other figure (revenue, a target) and is left
+ *  alone, and so is everything when the price or payment is unknown. */
+export function levelClaim(sent: string, f: { price: number | null; lastDiv: number | null; currency?: string | null }, mode: "watch" | "risk" = "watch"): string | null {
+  const cur = String(f.currency ?? "USD").toUpperCase();
+  // a figure with a magnitude word ("$50 billion" of revenue) is never a share price
+  const MONEY = (cur === "KRW" ? String.raw`₩\s?([\d,]+(?:\.\d+)?)\s?([kKmM])?` : String.raw`\$\s?([\d,]+(?:\.\d+)?)\s?([kK])?`) + String.raw`(?![\d,]|\s?(?:billion|million|trillion|bn|mn|tn)\b|[BMT]\b)`;
+  const val = (d: string, m?: string) => Number(String(d).replace(/,/g, "")) * (m ? (/[kK]/.test(m) ? 1e3 : 1e6) : 1);
+  let t = String(sent ?? "");
+  // dividend thresholds against the last payment
+  const dv = new RegExp(String.raw`\b(?:dividend|payout|distribution)s?\b[^.]{0,30}?\b(?:under|below|less than|<)\s*` + MONEY, "i").exec(t);
+  if (dv && typeof f.lastDiv === "number" && f.lastDiv > 0) {
+    const x = val(dv[1], dv[2]);
+    if (f.lastDiv < x) return null;
+    return t;
+  }
+  if (dv) return t;
+  const px = f.price;
+  if (typeof px !== "number" || !(px > 0)) return t;
+  const near = (x: number) => x >= px / 5 && x <= px * 5;
+  const STAY = String.raw`(stays?|holds?|remains?|trades?|sits?|staying|holding|remaining|trading)\s+(under|below|above|over)\s+`;
+  const stay = new RegExp(STAY + MONEY, "i").exec(t);
+  if (stay) {
+    const x = val(stay[3], stay[4]);
+    if (!near(x)) return t;
+    const below = /under|below/i.test(stay[2]);
+    const money = stay[0].slice(stay[0].search(/[$₩]/));
+    // a watch is an event still to come: "stays under" a level it is under is the status quo, the reclaim is the event.
+    // A risk may name the status quo continuing ("the risk: it stays under $2,800"), so it only has to be true.
+    if (below) return px < x ? (mode === "risk" ? t : t.replace(stay[0], `reclaims ${money}`)) : null;
+    return px > x ? (mode === "risk" ? t : t.replace(stay[0], `falls below ${money}`)) : null;
+  }
+  const down = new RegExp(String.raw`\b(?:falls?|drops?|slips?|breaks?|closes?|sinks?|dips?|goes|moves?|trades?|is)\s+(?:back\s+)?(?:below|under)\s+` + MONEY, "i").exec(t);
+  if (down) { const x = val(down[1], down[2]); return near(x) && px <= x ? null : t; }
+  const up = new RegExp(String.raw`\b(?:(?:rises?|climbs?|breaks?|closes?|moves?|goes|trades?|gets?)\s+(?:back\s+)?(?:above|over|past)|reclaims?|tops?|clears?)\s+` + MONEY, "i").exec(t);
+  if (up) { const x = val(up[1], up[2]); return near(x) && px >= x ? null : t; }
+  return t;
+}
+/** levelClaim over every sentence of a field (a watch is one phrase; a note is several). */
+export function fixLevelClaims(text: string, f: { price: number | null; lastDiv: number | null; currency?: string | null }, mode: "watch" | "risk" = "watch"): string {
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((x) => levelClaim(x, f, mode)).filter((x): x is string => x !== null).join(" "));
+}
+
+/** r12 F: a price drop cuts what a fund is WORTH, not its income ("a 20% drop would cut income" for VOO). */
+export const fixDropIncome = (t: string) => String(t ?? "").replace(/(\b(?:drop|fall|decline|drawdown|sell-?off|crash)\b[^.]{0,40}?\b(?:cut|cuts|reduce|reduces|lower|lowers|hurt|hurts|shrink|shrinks)\s+(?:your |its |the |portfolio |the portfolio's )?)income\b/gi, "$1value");
+
+/** r12 F: fund tickers a newcomer will not know, named. A ticker the reader holds is theirs and is left alone. */
+export const FUND_NAMES: Record<string, string> = {
+  SMH: "VanEck Semiconductor ETF", SOXX: "iShares Semiconductor ETF", QQQ: "Invesco QQQ Trust", QQQM: "Invesco Nasdaq 100 ETF", SPY: "SPDR S&P 500 ETF",
+  VOO: "Vanguard S&P 500 ETF", IVV: "iShares Core S&P 500 ETF", VTI: "Vanguard Total Stock Market ETF", VXUS: "Vanguard Total International Stock ETF",
+  SCHD: "Schwab U.S. Dividend Equity ETF", VYM: "Vanguard High Dividend Yield ETF", JEPI: "JPMorgan Equity Premium Income ETF", XLK: "Technology Select Sector SPDR Fund",
+  VGT: "Vanguard Information Technology ETF", XLF: "Financial Select Sector SPDR Fund", XLE: "Energy Select Sector SPDR Fund", XLV: "Health Care Select Sector SPDR Fund",
+  IWM: "iShares Russell 2000 ETF", DIA: "SPDR Dow Jones Industrial Average ETF", BND: "Vanguard Total Bond Market ETF", AGG: "iShares Core U.S. Aggregate Bond ETF",
+  TLT: "iShares 20+ Year Treasury Bond ETF", ARKK: "ARK Innovation ETF", SOXL: "Direxion Daily Semiconductor Bull 3X Shares", TQQQ: "ProShares UltraPro QQQ",
+  IBIT: "iShares Bitcoin Trust", GLD: "SPDR Gold Shares",
+};
+export function nameFunds(text: string, held: Set<string>): string {
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => sen.replace(/(^|[^A-Za-z0-9$&.-])(the\s+|The\s+)?([A-Z]{2,5})(?![A-Za-z0-9&-])/g, (m, pre: string, the: string | undefined, tk: string, off: number) => {
+    const nm = FUND_NAMES[tk];
+    if (!nm || held.has(tk) || pre === "(") return m;   // "(SMH)" beside its own name is a label
+    if (new RegExp(nm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(sen)) return m;   // already named in the sentence
+    const atStart = !sen.slice(0, off + pre.length).trim() || /[:•]\s*$/.test(sen.slice(0, off + pre.length));
+    const art = the ? the : atStart ? "The " : "the ";
+    return `${pre}${art}${nm}`;
+  })).join(" "));
+}
+
+/** r12 F: a desk view whose sentence 1 was dropped opens on "This means…", pointing at nothing: the pointer goes. */
+export const fixDanglingThisMeans = (t: string) => String(t ?? "").replace(/^(\s*)This means(?: that)?\s+([a-zA-Z])/, (_m, a: string, c: string) => a + c.toUpperCase());

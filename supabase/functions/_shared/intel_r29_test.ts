@@ -39,6 +39,31 @@ Deno.test("r29 D: house-voice forecast and low-yield income claims in a brief", 
   assertEquals(lowYieldIncomeClaims("Its yield adds meaningful income.", 0.7).length, 1);
 });
 
+Deno.test("r29 F: watches and risks held to the live price and last payment; funds named; dangling opener", async () => {
+  const { fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, repairDrops, returnForecasts, promoClaims } = await import("./intel.ts");
+  // dividend thresholds against the last payment
+  assertEquals(fixLevelClaims("Dividend falls under $9 a share", { price: 610, lastDiv: 1.82 }), "");
+  assertEquals(fixLevelClaims("Dividend under $2", { price: 68, lastDiv: 0.51 }), "");
+  assertEquals(fixLevelClaims("Dividend cut below $0.45", { price: 68, lastDiv: 0.51 }), "Dividend cut below $0.45");
+  assertEquals(fixLevelClaims("Dividend under $2", { price: 68, lastDiv: null }), "Dividend under $2");   // unknown payment: left alone
+  // price levels against the live price
+  assertEquals(fixLevelClaims("ETH stays under $2,800", { price: 2687, lastDiv: null }), "ETH reclaims $2,800");
+  assertEquals(fixLevelClaims("ETH stays under $2,800", { price: 2950, lastDiv: null }), "");
+  assertEquals(fixLevelClaims("The risk: ETH stays under $2,800.", { price: 2687, lastDiv: null }, "risk"), "The risk: ETH stays under $2,800.");
+  assertEquals(fixLevelClaims("Bitcoin falls below $100,000", { price: 97000, lastDiv: null }), "");
+  assertEquals(fixLevelClaims("Bitcoin falls below $90,000", { price: 97000, lastDiv: null }), "Bitcoin falls below $90,000");
+  assertEquals(fixLevelClaims("NVDA breaks above $150", { price: 181, lastDiv: 0.01 }), "");
+  assertEquals(fixLevelClaims("Revenue falls below $50 billion", { price: 45, lastDiv: 0.01 }), "Revenue falls below $50 billion");   // not a price
+  // a drop cuts value; tickers named; the dangling pointer
+  assertEquals(fixDropIncome("The risk: a 20% drop would cut income."), "The risk: a 20% drop would cut value.");
+  assertEquals(nameFunds("NVDA has lagged SMH this year.", new Set(["NVDA"])), "NVDA has lagged the VanEck Semiconductor ETF this year.");
+  assertEquals(nameFunds("SMH is your chip core.", new Set(["SMH"])), "SMH is your chip core.");
+  assertEquals(fixDanglingThisMeans("This means one driver moves most of the book."), "One driver moves most of the book.");
+  // the P8 lines survive the drop lists they now run after anyway
+  const p8 = "Tech and chip holdings are 48.2% of assets. SOXL is a leveraged fund: it resets every day, so a sharp drop in the index can wipe out most of its value.";
+  assertEquals([...repairDrops(p8), ...returnForecasts(p8), ...promoClaims(p8), ...softVerdicts(p8)], []);
+});
+
 Deno.test("r29 B: asked counts and the code summary", () => {
   assertEquals(askedCount("Summarize my portfolio in 3 bullet points"), 3);
   assertEquals(askedCount("How is NVDA doing?"), null);
