@@ -10,6 +10,8 @@
 // ?symbols=A,B limits it; force=1 (internal token only) refetches even when history looks long enough.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { backfillShort } from "../_shared/history.ts";
+import { marketOf } from "../_shared/calendar.ts";
+import { prevSessionWindow, resolvePrevClose, sessionsOf } from "../_shared/prevclose.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
@@ -125,7 +127,7 @@ Deno.serve(async (req) => {
     "^VIX", "^KS11", "^GSPC",                       // market context for the Daily Brief
   ]);
   const { data: symbols, error } = await admin
-    .from("symbols").select("symbol, yahoo, kind").eq("active", true)
+    .from("symbols").select("symbol, yahoo, kind, currency").eq("active", true)
     .not("kind", "in", "(cash,debt)").in("symbol", [...wanted]);
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
@@ -162,7 +164,52 @@ Deno.serve(async (req) => {
   const { data: stored } = await admin.from("prices")
     .select("symbol, price, prev_close, as_of").in("symbol", [...quotes.keys()]);
   const byStored = new Map((stored ?? []).map((s) => [s.symbol, s]));
+  const kindOf = new Map((symbols ?? []).map((s) => [s.symbol, { kind: s.kind as string | null, currency: (s as { currency?: string | null }).currency ?? null }]));
+  // Round 9: the previous close is the LAST COMPLETED SESSION's close (_shared/prevclose.ts), never a stale stored row.
+  // Our own close for that session is looked up when the base can change: a new symbol, a new session, a missing base,
+  // or the one-off correction (?fixprev=1 / body.fixprev with the internal token) for rows written by the old rule.
+  let fixAll = false;
+  {
+    const b = req.method === "POST" ? await req.clone().json().catch(() => ({})) : {};
+    if (url.searchParams.get("fixprev") === "1" || b?.fixprev === true) {
+      let itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
+      if (!itok) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); itok = data ?? ""; }
+      fixAll = !!itok && req.headers.get("x-internal-token") === itok;
+    }
+  }
+  const histClose = async (sym: string, asOf: string, mkt: "US" | "KR" | null): Promise<number | null> => {
+    const w = prevSessionWindow(asOf, mkt);
+    const { data } = await admin.from("price_history").select("price, ts").eq("symbol", sym)
+      .gte("ts", new Date(w.from).toISOString()).lte("ts", new Date(w.to).toISOString()).order("ts", { ascending: true }).limit(400);
+    const rows = (data ?? []) as { price: number; ts: string }[];
+    if (!rows.length) return null;
+    // the bar stamped at (or the last tick before) the close
+    const closeT = w.from + 30 * 60000;
+    const atOrBefore = rows.filter((r) => Date.parse(r.ts) <= (mkt === null ? w.to : closeT + 60000));
+    const pick = atOrBefore.length ? atOrBefore[atOrBefore.length - 1] : rows[0];
+    return Number(pick.price) > 0 ? Number(pick.price) : null;
+  };
+  let fixed = 0;
+  const needs: Promise<void>[] = [];
   for (const q of quotes.values()) {
+    if (q.symbol.endsWith("=F") || q.symbol.startsWith("^") || /^USD[A-Z]{3}$/.test(q.symbol)) continue;   // futures / indices / FX keep their own rules below
+    const k = kindOf.get(q.symbol);
+    const mkt = marketOf(q.symbol, k?.kind ?? null, k?.currency ?? q.currency);
+    const st = byStored.get(q.symbol) ?? null;
+    const sameSession = !!st?.as_of && sessionsOf(String(st.as_of), mkt).session === sessionsOf(q.as_of, mkt).session;
+    const lookup = fixAll || !st || !sameSession || st.prev_close === null;
+    needs.push((async () => {
+      const hc = lookup ? await histClose(q.symbol, q.as_of, mkt).catch(() => null) : null;
+      const prev = resolvePrevClose({ price: q.price, asOf: q.as_of, providerPrev: q.prev_close, stored: st ? { price: Number(st.price), prev_close: st.prev_close === null ? null : Number(st.prev_close), as_of: st.as_of } : null, historyClose: hc, mkt });
+      if (fixAll && st && prev !== null && st.prev_close !== null && Math.abs(prev - Number(st.prev_close)) > 1e-9) fixed++;
+      q.prev_close = prev;
+      q.change_pct = prev !== null ? ((q.price / prev) - 1) * 100 : null;
+      (q as Quote & { _done?: boolean })._done = true;
+    })());
+  }
+  await Promise.all(needs);
+  for (const q of quotes.values()) {
+    if ((q as Quote & { _done?: boolean })._done) { delete (q as Quote & { _done?: boolean })._done; continue; }
     const st = byStored.get(q.symbol);
     // Futures trade almost around the clock and settle at 5 PM ET: the last price before a UTC midnight is not
     // their previous close, the exchange SETTLE is (round 4: Nasdaq futures showed +0.7% against a 7:59 PM ET
@@ -196,5 +243,5 @@ Deno.serve(async (req) => {
     const hist = rows.map((q) => ({ symbol: q.symbol, ts: q.as_of, price: q.price }));
     await admin.from("price_history").upsert(hist, { onConflict: "symbol,ts" });
   }
-  return Response.json({ ok: true, requested: targets.length, wrote, missed: targets.length - wrote });
+  return Response.json({ ok: true, requested: targets.length, wrote, missed: targets.length - wrote, ...(fixAll ? { corrected: fixed } : {}) });
 });
