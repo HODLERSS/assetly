@@ -162,7 +162,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
               {wait > 0 && <p className="sub ask-wait" data-testid="ask-wait" aria-live="polite">{WAIT_COPY[wait]}</p>}
             </>)}
             {t.a !== null && !t.error && (
-              <div className="bubble ai" data-testid="ask-answer">
+              <div className="bubble ai" data-testid="ask-answer" role="status" aria-live="polite" aria-atomic="true">
                 <Md text={t.a} />
                 <p className="bubble-foot">Not financial advice</p>
               </div>
