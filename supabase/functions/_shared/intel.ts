@@ -2682,3 +2682,13 @@ export function fixThemeHeavy(text: string, themes: { name: string; pct: number 
 
 /** The abstract idea examples the assessment prompt shows (round 9: the model copied the literal examples). */
 export const IDEA_EXAMPLES = ["<the gap in this book>: <an instrument type worth researching>"];
+
+/** A stored card written through the beginner gloss before cards stopped being glossed (round 8/9: the add strip
+ *  showed "deepens JNJ's immunology lasting edge over competitors"): the gloss's plain phrase run into the text
+ *  without its parentheses. Such a card is regenerated or no longer served. */
+export function glossedCardHits(lines: string[]): string[] {
+  const plains = NOVICE_PLAIN.map((g) => g.plain).filter((p) => p.split(/\s+/).length >= 3);
+  return lines.filter((l) => plains.some((p) => { const i = l.indexOf(p); return i >= 0 && l[i - 1] !== "(" && l[i - 2] !== "("; }));
+}
+/** Cards older than this are not served (the add strip showed a 26-day-old BRKB card with a valuation verdict). */
+export const CARD_MAX_AGE_DAYS = 14;

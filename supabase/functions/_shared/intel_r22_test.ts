@@ -1,6 +1,6 @@
 // Round 9 newcomer 2-5: theme claims, ideas that contradict the book, the quality note, one symbol per listing.
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1";
-import { canonicalSymbol, cleanNote, fixThemeHeavy, ideaContradictions, themeClaims, themeOf } from "./intel.ts";
+import { canonicalSymbol, glossedCardHits, cleanNote, fixThemeHeavy, ideaContradictions, themeClaims, themeOf } from "./intel.ts";
 
 const themes = [{ name: "financials", pct: 28.5 }, { name: "healthcare", pct: 19.4 }, { name: "dividend equity", pct: 11.9 }, { name: "AI semiconductors", pct: 12.6 }];
 
@@ -45,4 +45,10 @@ Deno.test("r22 newcomer 5: one symbol per listing", () => {
   assertEquals(canonicalSymbol("AAPL", "AAPL"), "AAPL");
   assertEquals(canonicalSymbol("005930.KS", "005930.KS"), "005930.KS");
   assertEquals(canonicalSymbol("BTC-USD"), "BTC-USD");
+});
+
+Deno.test("r22 minor: a stored card carrying the old gloss is detected", () => {
+  assertEquals(glossedCardHits(["It deepens JNJ's immunology lasting edge over competitors against AbbVie."]).length, 1);
+  assertEquals(glossedCardHits(["Its moat (lasting edge over competitors) is wide."]), []);
+  assertEquals(glossedCardHits(["JNJ's immunology lead held."]), []);
 });

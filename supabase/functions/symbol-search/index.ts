@@ -6,6 +6,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { parseYahooDaily, parseYahooWeekly } from "../_shared/history.ts";
 import { prevCloseFromBars, resolvePrevClose } from "../_shared/prevclose.ts";
+import { canonicalSymbol } from "../_shared/intel.ts";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
@@ -113,7 +114,8 @@ async function yahooSearch(qRaw: string): Promise<CatalogRow[]> {
   const out: CatalogRow[] = [];
   for (const raw of body?.quotes ?? []) {
     const row = mapQuote(raw);
-    if (row && !out.some((x) => x.symbol === row.symbol)) out.push(row);
+    // one listing, one row: dedupe on the Yahoo symbol too (BRK-B came back as BRK.B and, from the catalog, BRKB)
+    if (row && !out.some((x) => x.symbol === row.symbol || x.yahoo === row.yahoo)) out.push(row);
   }
   return out.slice(0, 12);
 }
@@ -204,7 +206,10 @@ Deno.serve(async (req) => {
 
   // ---- ensure: verify + register + price + history ----
   if (body.ensure) {
-    const e = body.ensure as CatalogRow;
+    const e = { ...(body.ensure as CatalogRow) };
+    // round 9 newcomer: "BRKB" registered as its own symbol beside BRK.B (both Yahoo BRK-B), with its own price row and
+    // stale cards. Every spelling of a class share registers as the canonical dotted symbol.
+    if (e.symbol) e.symbol = canonicalSymbol(e.symbol, e.yahoo);
     if (!e.symbol || !e.yahoo || !e.name) {
       return json({ ok: false, error: "ensure needs symbol, yahoo, name" }, 400);
     }

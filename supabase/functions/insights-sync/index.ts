@@ -8,7 +8,7 @@ import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
   YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
   digitsForWritten, dropInstructionEcho, fixFractions, promoCharacterisations, crossedLevelClaims, unicodeMinus, sanitize, glossParenthetical, anchorNewsItem, staleNewsTitle,
-  readerLevel,
+  readerLevel, glossedCardHits, CARD_MAX_AGE_DAYS, canonicalSymbol,
 } from "../_shared/intel.ts";
 import { dividendRows, ensureHistory, hiLo, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
@@ -290,7 +290,7 @@ Deno.serve(async (req) => {
     if (age.has(e.symbol)) continue;
     age.set(e.symbol, +new Date(e.generated_at));
     const lines = [...((e.bullets as string[] | null) ?? []), String((e.windows as { trend?: string } | null)?.trend ?? "")];
-    if (lines.some((l) => adviceHits(l).length || cardCopyHits(l).length)) failing.add(e.symbol);
+    if (lines.some((l) => adviceHits(l).length || cardCopyHits(l).length) || glossedCardHits(lines).length) failing.add(e.symbol);
     else if (lines.some((l) => /\d\s?%/.test(l) && /\b(?:year|YTD|month|week|1Y|2Y)\b/i.test(l))) periodCards.set(e.symbol, lines);
   }
   // served cards stating a period return are checked against the windows, a few per lap (round 5 poweruser:
@@ -311,6 +311,28 @@ Deno.serve(async (req) => {
       const hl = await hiLo(admin, sy, 30, px === null || px === undefined ? null : Number(px)).catch(() => ({ high: null, low: null }));
       if (ls.some((l) => crossedLevelClaims(l, [{ names: [sy, ...aliasesFor(sy)], pct: null, ...hl }]).length)) failing.add(sy);
     }
+  }
+  // Round 9 newcomer: cards nobody's lap refreshes (symbols no one holds, seen on the add strip) are not served once
+  // they are old, carry a verdict, or carry the old gloss; nor are the cards of a duplicate listing (BRKB for BRK.B).
+  // Deleted a few hundred per lap; a held symbol's failing card is regenerated instead (above).
+  if (!fixture && !only && !onlyUser) {
+    const cutoff = new Date(Date.now() - CARD_MAX_AGE_DAYS * 86400000).toISOString();
+    const heldSet = new Set(held);
+    const heldList = `(${held.map((h) => `"${h.replace(/"/g, "")}"`).join(",")})`;
+    const { data: strayOld } = await (held.length ? admin.from("insights").select("id, symbol").lt("generated_at", cutoff).not("symbol", "in", heldList) : admin.from("insights").select("id, symbol").lt("generated_at", cutoff)).limit(400);
+    const { data: strayNew } = await admin.from("insights").select("id, symbol, bullets, windows").gte("generated_at", cutoff).order("generated_at", { ascending: false }).limit(600);
+    const { data: symRows } = await admin.from("symbols").select("symbol, yahoo");
+    const dup = new Set(((symRows ?? []) as { symbol: string; yahoo: string | null }[]).filter((r) => canonicalSymbol(r.symbol, r.yahoo) !== r.symbol).map((r) => r.symbol));
+    const drop = [
+      ...((strayOld ?? []) as { id: number; symbol: string }[]).filter((r) => !heldSet.has(r.symbol)).map((r) => r.id),
+      ...((strayNew ?? []) as { id: number; symbol: string; bullets: string[] | null; windows: { trend?: string } | null }[]).filter((r) => {
+        if (heldSet.has(r.symbol)) return false;   // a held symbol's card is regenerated, never left missing
+        if (dup.has(r.symbol)) return true;
+        const ls = [...(r.bullets ?? []), String(r.windows?.trend ?? "")];
+        return ls.some((l) => adviceHits(l).length || cardCopyHits(l).length) || glossedCardHits(ls).length > 0;
+      }).map((r) => r.id),
+    ].slice(0, 300);
+    if (drop.length) await admin.from("insights").delete().in("id", drop).then(() => {}, () => {});
   }
   const { data: pv } = await admin.from("portfolio").select("symbol, value").in("symbol", targets);
   const invested = new Map<string, number>();
