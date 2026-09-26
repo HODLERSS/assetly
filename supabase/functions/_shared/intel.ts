@@ -3521,7 +3521,9 @@ const INTENT = {
   // final M1: "What is an ETF, and which of mine are ETFs?" got the generic performance summary
   etf: /\bwhat(?:'s| is| are)\s+(?:an?\s+)?(?:ETFs?|index funds?|funds?)\b|\bwhich\b[^?]{0,30}\b(?:ETFs?|funds?)\b|\b(?:do i|i)\s+(?:own|have|hold)\s+(?:any\s+)?(?:ETFs?|funds?)\b|\bmy (?:ETFs|funds)\b|ETF(?:가|는|이)?\s*(?:뭐|무엇)|어떤 ETF/i,
   // r14 A: "What's my biggest risk right now?" (a starter chip) got the generic performance summary
-  risk: /\b(?:biggest|main|largest|top|key|greatest|major)\s+risks?\b|\bhow risky\b|\btoo risky\b|\brisk(?:s|iest)? (?:in|to|of) my\b|가장 큰 (?:위험|리스크)|위험한가|리스크가/i,
+  // e2e p10 F2: "is my portfolio risky", "too risky", "how risky", "is it safe", "am I safe" (a required beginner
+  // question) hit the honest fallback after a judge timeout: every risk / safety wording gets the code risk lead
+  risk: /\b(?:biggest|main|largest|top|key|greatest|major)\s+risks?\b|\bhow (?:risky|safe|exposed|concentrated)\b|\btoo (?:risky|concentrated|exposed)\b|\brisk(?:s|iest)? (?:in|to|of) my\b|\b(?:is|are|am)\b[^?]{0,30}\b(?:risky|safe|exposed|overexposed|over-exposed|diversified|too concentrated)\b|\brisk(?:y)?\b[^?]{0,10}\bportfolio\b|\bportfolio\b[^?]{0,20}\brisk(?:y|s)?\b|위험(?:한가|해|합니까|할까|하지|한지|도)|리스크(?:가|는|이)?|안전(?:한가|해|합니까|할까|한지)|너무 (?:위험|집중)/i,
 };
 /** The intent of a data question the code can answer on its own, or null. */
 export function questionIntent(q: string): keyof typeof INTENT | null {
@@ -3639,6 +3641,8 @@ export function intentAnswer(q: string, rows: IntentRow[], focus: IntentRow[], c
     if (top) L.push(ko ? `• 가장 큰 종목: ${top.name}, 자산의 ${w(top)} (${usd0(top.usd)}).` : `• Largest holding: ${top.name}, ${w(top)} of assets (${usd0(top.usd)}).`);
     const tech = rows.filter((r) => r.tech).reduce((a, r) => a + r.weight, 0);
     if (tech > 0) L.push(ko ? `• 기술주와 반도체: 자산의 ${tech.toFixed(1)}%. 한 가지 흐름에 함께 움직입니다.` : `• Tech and chip holdings: ${tech.toFixed(1)}% of assets, which tend to move together.`);
+    const coins = rows.filter((r) => r.kind === "crypto");
+    if (coins.length) { const cs = coins.reduce((a, r) => a + r.weight, 0); L.push(ko ? `• 코인: 자산의 ${cs.toFixed(1)}% (${coins.map((r) => r.name).join(", ")}). 1년에 절반 넘게 떨어질 수 있습니다.` : `• Crypto: ${cs.toFixed(1)}% of assets (${coins.map((r) => r.name).join(", ")}); a coin can fall by half or more in a year.`); }
     const lev = rows.filter((r) => r.leveraged).map((r) => r.name);
     if (lev.length) L.push(ko ? `• ${lev.join(", ")}은(는) 레버리지 펀드입니다. 매일 배율을 다시 맞춰 급락장에서 가치 대부분을 잃을 수 있습니다.` : `• ${lev.join(" and ")} ${lev.length > 1 ? "are leveraged funds: they reset" : "is a leveraged fund: it resets"} every day, so a sharp drop in the index can wipe out most of ${lev.length > 1 ? "their" : "its"} value.`);
     if (typeof ctx.cashPct === "number") L.push(ko ? `• 현금: 자산의 ${ctx.cashPct.toFixed(1)}%.` : `• Cash: ${ctx.cashPct.toFixed(1)}% of assets.`);
