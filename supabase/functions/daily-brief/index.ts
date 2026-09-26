@@ -79,7 +79,8 @@ const FAST_MODEL = "gpt-oss-120b";
 // 13 (r10 newcomer / intelligence): theme shares, notes with a real risk each, watches in words, ideas' wording, week
 //    superlatives, grounded earnings watches; every stored script is re-made through narrate's card gates
 // 14 (r10 native): fragments and seams, no futures in a closing note
-const GEN_VERSION = 14;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+const GEN_VERSION = 14;   // 4:
+const REPAIR_ROWS_PER_RUN = 12, REPAIR_ROWS_PER_USER = 6;   // r10 load: a GEN bump no longer rewrites every stored row in one run calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -311,7 +312,7 @@ function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: numbe
  *  script and audio were cleared, so the caller can have them re-narrated. */
 // deno-lint-ignore no-explicit-any
 type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null }[]; yields: number[]; ground?: string };
-async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctx?: RepairCtx): Promise<{ edition: string; date: string }[]> {
+async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctxIn?: RepairCtx | (() => Promise<RepairCtx | undefined>)): Promise<{ edition: string; date: string }[]> {
   // Round 9 designer: the rows a reader SEES are the latest ones, not only today's. Over a weekend (or before the first
   // edition of a day) Home shows the last trading day's rows, and a repair keyed to today's date never reached them: the
   // App Review showcase still read "(as of 7:31 PM ET)" and "META -3.3%" after GEN 10 shipped. Each user's latest brief
@@ -332,6 +333,9 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
     // a live edition of TODAY is regenerated, never patched; the latest past day's rows are all past-window
     && !(o.brief_date === briefDate && live.includes(o.edition)) && Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
   if (!stale.length) return [];
+  // r10 load: the repair context (dividends, weights) is read only for a user with rows to repair
+  const ctx: RepairCtx | undefined = typeof ctxIn === "function" ? await ctxIn().catch(() => undefined) : ctxIn;
+  if (stale.length > REPAIR_ROWS_PER_USER) stale.length = REPAIR_ROWS_PER_USER;
   const patched: { edition: string; date: string }[] = [];
   const syms = rows.filter((x) => !x.symbol.startsWith("$") && x.kind !== "cash" && x.kind !== "debt").map((x) => x.symbol).slice(0, 12);
   const [fl, { data: tr }] = await Promise.all([
@@ -591,20 +595,24 @@ Deno.serve(async (req) => {
     };
   };
   const loopIds = new Set(userIds.slice(0, 10));
-  let dispatched = 0, renarrated = 0;
+  let dispatched = 0, renarrated = 0, repairedRows = 0;
+  const repairedUsers = new Set<string>();
   if (!isRegen) {
     const repairStart = Date.now();
     for (const uid of userIds) {
-      if (Date.now() - repairStart > 30000) break;
-      const patched = await repairToday(admin, uid, byUser.get(uid) ?? [], briefDate, live, await repairCtxOf(uid).catch(() => undefined)).catch(() => [] as { edition: string; date: string }[]);
+      // r10 load: the pass is bounded per run (time and rows); the rest is repaired by the next */30 run
+      if (Date.now() - repairStart > 15000 || repairedRows >= REPAIR_ROWS_PER_RUN) break;
+      repairedUsers.add(uid);
+      const patched = await repairToday(admin, uid, byUser.get(uid) ?? [], briefDate, live, () => repairCtxOf(uid)).catch(() => [] as { edition: string; date: string }[]);
+      repairedRows += patched.length;
       // the patch cleared the script: re-script and re-voice it now (narrate's sweep catches any beyond 8)
       // every row whose text changed is re-narrated (round 8: 8 hand-offs per run left most rows silent)
-      for (const pt of patched) if (!fixture && !noAudio && renarrated < 40) { renarrated++; await handOff("narrate", { user_id: uid, brief_date: pt.date, edition: pt.edition }); }
+      for (const pt of patched) if (!fixture && !noAudio && renarrated < 8) { renarrated++; await handOff("narrate", { user_id: uid, brief_date: pt.date, edition: pt.edition }); }
     }
     if (!fixture) {
       const staleLive = await admin.from("daily_briefs").select("user_id, edition, gen_version, generated_at").eq("brief_date", briefDate).in("edition", live).in("user_id", userIds);
       for (const o of (staleLive.error ? [] : staleLive.data ?? []) as { user_id: string; edition: string; gen_version: number | null; generated_at: string | null }[]) {
-        if (dispatched >= 8) break;
+        if (dispatched >= 4) break;
         if (Number(o.gen_version ?? 0) >= GEN_VERSION || !validEd(o.edition) || o.edition === "assessment" || !editionWindow(o.edition).ok) continue;
         if (Date.now() - +new Date(String(o.generated_at ?? 0)) < 15 * 60000) continue;   // its narration may still be running
         // the edition this run writes is regenerated inline for the users the loop reaches
@@ -626,7 +634,7 @@ Deno.serve(async (req) => {
       const h = byU.get(uid);
       const fresh = !!h && Number(h.gen_version ?? 0) >= GEN_VERSION && !String(h.model ?? "").includes("compact");
       const young = !!h && Date.now() - +new Date(String(h.generated_at ?? 0)) < 15 * 60000;
-      if (fresh || young || fanned >= 12) continue;
+      if (fresh || young || fanned >= 6) continue;   // r10 load: at most 6 hand-offs per run
       fanned++;
       await handOff("daily-brief", { user_id: uid, edition, ...(noAudio ? { noAudio: true } : {}), ...(force ? { force: true } : {}) });
     }
@@ -649,7 +657,7 @@ Deno.serve(async (req) => {
       const total = assets.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
       if (total < 100) continue;
       // Today's OTHER editions written by an older version are repaired in code (the pass above normally got them)
-      if (!isRegen) await repairToday(admin, uid, rows, briefDate, live, await repairCtxOf(uid).catch(() => undefined)).catch(() => null);
+      if (!isRegen && !repairedUsers.has(uid)) await repairToday(admin, uid, rows, briefDate, live, () => repairCtxOf(uid)).catch(() => null);
       let backfillOnly: Sections | null = null;
       if (!force) {
         const haveQ = (cols: string) => admin.from("daily_briefs").select(cols).eq("user_id", uid).eq("brief_date", briefDate).eq("edition", edition).maybeSingle();

@@ -463,7 +463,10 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       if (!fixture) { const bad = await incoherent(key, bullets, sourceText); bullets = bullets.filter((_, i) => !bad.has(i)); }
       // r10: card bullets in the app's own voice ("UPI dominance caps near-term growth", "a structural risk to AMZN") go
       // through the same compliance judge as Ask; a card the judge cannot read keeps the regex result
-      if (!fixture && bullets.length) { const j = await callJudge(key, bullets, 6000); if (j.flags?.size) bullets = bullets.filter((_, i) => !j.flags!.has(i)); }
+      // r10 load: bullets the served card already carries were judged when it was written; only new text is judged
+      const prevLines = new Set((((existing ?? []).find((e) => e.symbol === symbol)?.bullets as string[] | null) ?? []).map((x) => x.trim()));
+      const fresh = bullets.map((b, i) => ({ b, i })).filter((x) => !prevLines.has(x.b.trim()));
+      if (!fixture && fresh.length) { const j = await callJudge(key, fresh.map((x) => x.b), 6000); if (j.flags?.size) { const drop = new Set([...j.flags].map((k) => fresh[k].i)); bullets = bullets.filter((_, i) => !drop.has(i)); } }
       if (bullets.length < 2) { errors.push(symbol + ": take contradicted the live numbers; kept the previous one"); continue; }
       const trend = parsed.windows?.trend ? (fixArticles(cardScrub(String(parsed.windows.trend))) || null) : null;
       // the summary line may not restate a bullet (round 4: "Off 7.6% over two months despite 5% one-year gain"
