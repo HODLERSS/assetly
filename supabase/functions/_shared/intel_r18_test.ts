@@ -1,6 +1,6 @@
 // Round 9 designer: News lines anchored to headlines must not carry buy framing, wrong stories or the app's voice.
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1";
-import { anchorNewsLine, cleanHeadline, headlineOk } from "./intel.ts";
+import { anchorNewsItem, anchorNewsLine, cleanHeadline, headlineOk } from "./intel.ts";
 
 Deno.test("r18: headlines that are not news lines", () => {
   for (const t of [
@@ -46,4 +46,10 @@ Deno.test("r18: lines are replaced only by the headline they paraphrase, attribu
   assertEquals(anchorNewsLine("Meta Friday drop cools off after a 31.9% monthly surge.", heads, 96, moves), null);
   assertEquals(anchorNewsLine("Amazon slips as Anthropic commits $11.6 billion to other providers.", heads, 96, moves),
     "Yahoo Finance: Amazon Stocks Move Lower as Anthropic Commits $11.6 Billion Elsewhere");
+});
+
+Deno.test("r18: the item shape the client renders ({text, source})", () => {
+  const heads = [{ symbol: "AMZN", names: ["AMZN", "Amazon"], title: "Anthropic Commits $11.6 Billion Elsewhere as AWS Customer Mix Shifts", source: "Yahoo Finance" }];
+  assertEquals(anchorNewsItem("Anthropic commits $11.6 billion elsewhere, AWS customer risk for Amazon.", heads),
+    { text: "Amazon: Anthropic Commits $11.6 Billion Elsewhere as AWS Customer Mix Shifts", source: "Yahoo Finance" });
 });

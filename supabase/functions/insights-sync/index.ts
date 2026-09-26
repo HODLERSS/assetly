@@ -7,7 +7,7 @@ import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } 
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
   YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
-  digitsForWritten, dropInstructionEcho, fixFractions, promoCharacterisations, crossedLevelClaims, unicodeMinus, sanitize, glossParenthetical, anchorNewsLine, staleNewsTitle,
+  digitsForWritten, dropInstructionEcho, fixFractions, promoCharacterisations, crossedLevelClaims, unicodeMinus, sanitize, glossParenthetical, anchorNewsItem, staleNewsTitle,
   readerLevel,
 } from "../_shared/intel.ts";
 import { dividendRows, ensureHistory, hiLo, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
@@ -619,6 +619,7 @@ ${VALUE_LAW}`;
       bullets = bullets.map((b) => sanitize(b)).filter(Boolean);
       // round 8 newcomer: a News line reversed its source ("NVDA CEO warns AI slowdown risk despite hype" for "Nvidia CEO
       // Pushes Back On The 'AI Apocalypse'"): each line is replaced by the matching source headline, verbatim and cleaned
+      let news5Items: { text: string; source: string | null }[] | null = null;
       if (news5) {
         const heads = (nws ?? []).filter((x) => !staleNewsTitle(String(x.title), x.published_at, todayEt) && usableNews(x, akaOf.get(x.symbol) ?? aliasesFor(x.symbol)))
           .map((x) => ({ symbol: String(x.symbol), names: akaOf.get(x.symbol) ?? aliasesFor(x.symbol), title: String(x.title), source: x.source ? String(x.source) : null }));
@@ -626,11 +627,14 @@ ${VALUE_LAW}`;
         // forecasts and filings, matched on most of the line's words, and held to the live day move
         const dayMoves = Object.fromEntries(assets.filter((r) => r.change_pct !== null).map((r) => [r.symbol, Number(r.change_pct)]));
         const seen = new Set<string>();
-        news5 = news5.map((l) => anchorNewsLine(l, heads, 96, dayMoves)).filter((l): l is string => !!l && !seen.has(l) && (seen.add(l), true)).map((l) => sanitize(l)).filter(Boolean);
+        // round 9 (client 562eecd): each line is {text, source}; the client shows the source as the attribution
+        news5Items = news5.map((l) => anchorNewsItem(l, heads, 96, dayMoves)).filter((l): l is { text: string; source: string | null } => !!l && !seen.has(l.text) && (seen.add(l.text), true))
+          .map((l) => ({ ...l, text: sanitize(l.text) })).filter((l) => !!l.text);
+        news5 = news5Items.map((l) => l.text);
       }
       // the symbol tags follow the FINAL lines (anchoring drops and replaces lines; tags taken before it went out of step)
       const tagged = { bullet_symbols: bullets.map((b) => mentionedSymbols(b, bookNames)), news5_symbols: news5 ? news5.map((b) => mentionedSymbols(b, bookNames)) : null, held_symbols: heldBook };
-      const row = { user_id: uid, bullets, news5, model };
+      const row = { user_id: uid, bullets, news5: news5Items ?? news5, model };
       // the symbol tags arrive with migration 38; before it the row is written without them
       let { error: piErr } = await admin.from("portfolio_insights").insert({ ...row, ...tagged });
       if (piErr && /bullet_symbols|news5_symbols|held_symbols|column/i.test(piErr.message)) ({ error: piErr } = await admin.from("portfolio_insights").insert(row));

@@ -2254,6 +2254,12 @@ function headlineDayMove(t: string): number | null {
  *  more than half a point goes ("Meta Slides 4%" at -3.3%); a title too long for the line is cut at a clause or not used,
  *  never cut mid-phrase with "…". `dayMoves`: live day % by symbol. */
 export function anchorNewsLine(line: string, heads: { symbol: string; names: string[]; title: string; source?: string | null }[], maxLen = 96, dayMoves: Record<string, number | null | undefined> = {}): string | null {
+  const it = anchorNewsItem(line, heads, maxLen, dayMoves);
+  return it ? (it.source ? `${it.source}: ${it.text}` : it.text) : null;
+}
+/** The anchored headline as the client renders it: {text, source} (the source shown as the attribution, round 9). A
+ *  title that does not name the holding is prefixed with it ("Meta: ..."). */
+export function anchorNewsItem(line: string, heads: { symbol: string; names: string[]; title: string; source?: string | null }[], maxLen = 96, dayMoves: Record<string, number | null | undefined> = {}): { text: string; source: string | null } | null {
   const named = heads.filter((h) => h.names.some((n) => n && nameIn(line, n)) && headlineOk(h.title));
   if (!named.length) return null;
   const STOP = /^(?:the|and|for|with|its|after|from|this|that|stock|stocks|shares|share|inc|corp|company|today|says|said|amid|over|into|than|more|on|as|at|by|of|to|in|an|a)$/;
@@ -2284,8 +2290,8 @@ export function anchorNewsLine(line: string, heads: { symbol: string; names: str
     const sym = c.h.symbol.replace(/\.(?:KS|KQ)$/, "");
     const src = String(c.h.source ?? "").replace(/\.(?:com|io|net|org)$/i, "").trim();
     const mentions = [sym, ...c.h.names].some((n) => n && nameIn(t, n));
-    if (src) return mentions ? `${src}: ${t}` : `${src} on ${c.h.names[0]}: ${t}`;
-    return mentions ? t : `${c.h.names[0]}: ${t}`;
+    const pretty = c.h.names.find((n) => n && !/^[A-Z0-9.]{1,6}$/.test(n)) ?? c.h.names[0];
+    return { text: mentions ? t : `${pretty}: ${t}`, source: src || null };
   }
   return null;
 }
