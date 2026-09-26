@@ -101,7 +101,16 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
   useEffect(() => {
     try { sessionStorage.setItem(ASK_STORE, JSON.stringify({ date: todayKey(), turns: turns.slice(-30) })); } catch { /* storage unavailable */ }
   }, [turns]);
-  useEffect(() => { endRef.current?.scrollIntoView?.({ block: "end", behavior: "smooth" }); }, [turns, busy]);
+  // A new question scrolls itself to the TOP of the view, so the answer lands below it (a follow-up chip
+  // used to scroll to the end, which showed the tail of the previous answer instead of the tapped question).
+  // The arrival of the answer does not scroll: the reader is already at the question.
+  const lastQRef = useRef<HTMLDivElement | null>(null);
+  const seenTurns = useRef(0);
+  useEffect(() => {
+    if (turns.length > seenTurns.current) lastQRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    else if (turns.length === 0) endRef.current?.scrollIntoView?.({ block: "end" });
+    seenTurns.current = turns.length;
+  }, [turns.length]);
 
   const submit = async (question: string) => {
     const text = question.trim();
@@ -161,7 +170,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
       <div className="chat">
         {turns.map((t, i) => (
           <div key={i} style={{ display: "grid", gap: 10 }}>
-            <div className="bubble user">{t.q}</div>
+            <div className="bubble user" ref={i === turns.length - 1 ? lastQRef : undefined}>{t.q}</div>
             {t.a === null && (<>
               <div className="bubble ai typing" aria-busy="true" aria-label="Thinking"><i /><i /><i /></div>
               {wait > 0 && <p className="sub ask-wait" data-testid="ask-wait" aria-live="polite">{WAIT_COPY[wait]}</p>}
