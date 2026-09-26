@@ -28,7 +28,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
-const within = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> => Promise.race([p, new Promise<T>((res) => setTimeout(() => res(fallback), ms))]);
+const within = <T>(p: PromiseLike<T>, ms: number, fallback: T): Promise<T> => Promise.race([Promise.resolve(p), new Promise<T>((res) => setTimeout(() => res(fallback), ms))]);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -73,15 +73,17 @@ Deno.serve(async (req) => {
   // A new run upserts the whole row; later steps PATCH it (a partial upsert would trip the NOT NULL state).
   await admin.from("assessment_status").upsert({ user_id: uid, state: "queued", step: "sync", attempt: 0, started_at: startedAt,
     updated_at: startedAt, finished_at: null, error: null }, { onConflict: "user_id" }).then(() => {}, () => {});
-  const setStatus = (patch: Record<string, unknown>) => admin.from("assessment_status")
-    .update({ updated_at: new Date().toISOString(), ...patch }).eq("user_id", uid).eq("started_at", startedAt).then(() => {}, () => {});
+  // r11: under a saturated database a status write took two minutes and the chain was reaped before the assessment was
+  // handed off (demo-b stuck at step=news). Status and trace writes are capped at 3s: bookkeeping never holds the chain.
+  const setStatus = (patch: Record<string, unknown>) => within(admin.from("assessment_status")
+    .update({ updated_at: new Date().toISOString(), ...patch }).eq("user_id", uid).eq("started_at", startedAt).then(() => "ok", () => "err"), 3000, "timeout");
 
   const trace: Record<string, unknown> = { started: startedAt, edition };
   // written first and updated per step, so a chain the runtime reaps still leaves evidence
   const traceId = await admin.from("snaptrade_events").insert({ user_id: uid, kind: "chain_trace", seen: true, detail: trace }).select("id").single()
     .then((r) => (r.data as { id?: number } | null)?.id ?? null, () => null);
-  const saveTrace = () => traceId === null ? Promise.resolve()
-    : admin.from("snaptrade_events").update({ detail: { ...trace, at: new Date().toISOString() } }).eq("id", traceId).then(() => {}, () => {});
+  const saveTrace = () => traceId === null ? Promise.resolve("none")
+    : within(admin.from("snaptrade_events").update({ detail: { ...trace, at: new Date().toISOString() } }).eq("id", traceId).then(() => "ok", () => "err"), 3000, "timeout");
   const work = (async () => {
     // 1. positions in (serialized by the per-user lock; a concurrent webhook sync just yields)
     trace.sync = await call("snaptrade-sync", { user_id: uid, no_kick: true }) ?? "null";   // this chain IS the kick
@@ -92,9 +94,10 @@ Deno.serve(async (req) => {
     // 2. fresh headlines and a year of daily prices for everything now held (both bounded: the assessment
     //    reads 14 days of headlines and 30d/1y windows, and must not wait on a slow feed)
     const [news, hist] = await Promise.all([
-      syms.length ? within(call("news-sync", { symbols: syms }), 25000, "timeout") : Promise.resolve("no symbols"),
+      // non-fatal and short (r11): the assessment proceeds without fresh news or history if either is slow
+      syms.length ? within(call("news-sync", { symbols: syms }), 12000, "timeout") : Promise.resolve("no symbols"),
       // in-process, not a hop: price-sync sits behind the platform JWT gate, which refuses the service token
-      syms.length ? within(backfillShort(admin, syms, { cap: 25 }).catch((e) => String(e).slice(0, 80)), 25000, "timeout") : Promise.resolve("no symbols"),
+      syms.length ? within(backfillShort(admin, syms, { cap: 25 }).catch((e) => String(e).slice(0, 80)), 12000, "timeout") : Promise.resolve("no symbols"),
     ]);
     trace.news = news === "timeout" || news === "no symbols" ? news : news ? "ok" : "null";
     trace.history = hist ?? "null";

@@ -632,6 +632,22 @@ Deno.serve(async (req) => {
       }
     }
   }
+  // r11: an assessment whose chain died (queued or running, untouched for 10 minutes: demo-b sat at step=news from 02:03)
+  // is handed to brief-retry again, once per stall, up to 3 attempts; after that it is marked failed so the client stops waiting
+  if (!fixture && !isRegen) {
+    const cutoff = new Date(Date.now() - 10 * 60000).toISOString();
+    const { data: stuck } = await admin.from("assessment_status").select("user_id, state, attempt, started_at, updated_at").in("state", ["queued", "running"]).lt("updated_at", cutoff).limit(5)
+      .then((x: unknown) => x, () => ({ data: [] })) as { data: { user_id: string; state: string; attempt: number | null; started_at: string; updated_at: string }[] | null };
+    for (const a of stuck ?? []) {
+      const next = Number(a.attempt ?? 0) + 1;
+      if (next > 3) {
+        await admin.from("assessment_status").update({ state: "failed", step: "gave up", error: "the assessment stalled", finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("user_id", a.user_id).eq("started_at", a.started_at).then(() => {}, () => {});
+        continue;
+      }
+      await admin.from("assessment_status").update({ state: "queued", step: "retrying", attempt: next, updated_at: new Date().toISOString() }).eq("user_id", a.user_id).eq("started_at", a.started_at).then(() => {}, () => {});
+      await handOff("brief-retry", { user_id: a.user_id, edition: "assessment", attempt: next, run: a.started_at });
+    }
+  }
   if (repairOnlyReason) return json({ ok: true, users: 0, wrote: 0, reason: repairOnlyReason, repairPass: true, ...(dispatched ? { regenerating: dispatched } : {}), ...(renarrated ? { renarrated } : {}) });
   // Round 7: one run wrote about ONE user's brief before its wall clock ran out, so the close edition reached 6 of 10
   // users by 23:00 UTC (the showcase not at all). A clock run (no user target) now fans out: every user who still
