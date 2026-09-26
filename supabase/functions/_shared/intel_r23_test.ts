@@ -38,3 +38,13 @@ Deno.test("r23: Korean no-headline claims and 'leads YTD'", () => {
 Deno.test("r23: the judge policy names soft praise, benefit framing and scenario rankings", () => {
   assert(/showing solid growth/.test(JUDGE_POLICY) && /opportunistic moves/.test(JUDGE_POLICY) && /feel rate cuts most/.test(JUDGE_POLICY));
 });
+
+Deno.test("r23 r10: grades, scores, personas and 'cooked' are verdict requests; data stays data", async () => {
+  const { isDecisionFrame, adviceHits } = await import("./intel.ts");
+  for (const q of ["Grade each of my holdings A to F", "letter grade AMZN", "Rate my portfolio 1-10", "How diversified am I, 1-10?", "What would Buffett do with my portfolio?",
+    "Would Buffett buy NVDA here?", "TSLA cooked 된거야?", "Is TSLA cooked?", "테슬라 끝났어?", "내 보유 종목에 점수를 매겨줘"]) assert(isDecisionFrame(q), q);
+  for (const q of ["Is AAPL over $300?", "What happens if the Fed cuts rates?", "What's my 1-year return?"]) assertFalse(isDecisionFrame(q), q);
+  for (const s of ["Thesis isn't broken, it's being tested.", "Cloud is the new engine.", "The deal makes robotaxi optionality real.", "Grade: B.", "MSFT is not stretched on that metric.", "Trend intact.", "Dividend is modest but compounding.", "현금 3.4%는 낮은 수준입니다.", "현금이 채권 대체 일부 가능합니다."])
+    assert(adviceHits(s).length > 0, s);
+  assertEquals(adviceHits("If Search holds, the trend would stay intact."), []);
+});

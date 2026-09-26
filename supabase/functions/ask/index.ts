@@ -197,6 +197,8 @@ globalThis.addEventListener("unhandledrejection", (e) => {
   e.preventDefault();
   console.error("ask: unhandled rejection", String((e as PromiseRejectionEvent).reason).slice(0, 300));
 });
+const makeAdmin = () => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+let adminClient: ReturnType<typeof makeAdmin> | null = null;
 const HARD_DEADLINE_MS = Number(Deno.env.get("ASK_HARD_DEADLINE_MS") ?? 28500);   // env override for local tests only
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -222,7 +224,8 @@ Deno.serve(async (req) => {
 
 async function handle(req: Request): Promise<Response> {
   const tReq = Date.now();
-  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  // one client per isolate: its JWKS cache then survives across requests (a fetch per request was a failure point)
+  const admin = adminClient ??= makeAdmin();
   const uid = await userIdFrom(admin, bearerOf(req));
   if (!uid) return json({ ok: false, error: "sign in required" }, 401);
 
@@ -645,7 +648,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const decisionQ = tradeQ || pickQ;
   if (decisionQ && prevWasHusk && !fixture) {
     const again = withNoCallLine(defaultInfo(), question, "", "", true);
-    return json({ ok: true, answer: plainDataWords(tidyNumbers(again)), followups: cleanFollowups([], ko ? ["내 포트폴리오는 얼마나 집중돼 있나요?", "내 포트폴리오의 가장 큰 위험은 뭔가요?"] : ["How concentrated is my portfolio?", "What are the biggest risks in my portfolio?"]), mentioned });
+    return json({ ok: true, answer: plainDataWords(tidyNumbers(again)), followups: cleanFollowups([], ko ? ["내 포트폴리오는 얼마나 집중돼 있나요?", "내 포트폴리오의 가장 큰 위험은 뭔가요?"] : ["How concentrated is my portfolio?", "What are the biggest risks in my portfolio?"]), mentioned, meta: { judge: "skipped" } });
   }
   // round 7 newcomer: a 502 at 27.9s (Korean 1-year question). The whole non-decision answer now ships inside 26s, well
   // under the gateway, with the code-built figures as the fallback
@@ -655,7 +658,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const FAST = "gpt-oss-120b", BUDGET = decisionQ && !(frameOnly && complex) ? 15000 : 26000;
   const left = () => BUDGET - (Date.now() - t0);
   // round 9: the compliance judge runs after the answer, inside the same budget; the answer stage leaves it room
-  const JUDGE_MS = 3500;
+  const JUDGE_MS = 2500;   // round 9 v44: a hard 2.5s cap (the output is only item numbers)
   const room = () => left() - JUDGE_MS;
   const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3") => {
     if (timeoutMs < 1500) return null;
@@ -673,28 +676,41 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   };
   const base = [{ role: "system", content: system }, { role: "user", content: prompt }];
   /** The compliance judge (round 9 A): the flagged item numbers, or null when it did not answer in time. */
+  // round 9 / r10: the judge reports what happened (meta.judge in the response), and anything but a parsed verdict is
+  // treated as "no judgement" (fail closed: a decision or verdict question then gets the code-built answer)
+  let judgeStatus: "ok" | "timeout" | "error" | "unparseable" | "skipped" = "skipped";
   const judge = async (list: string[]): Promise<Set<number> | null> => {
-    if (!list.length) return new Set();
+    if (!list.length) { judgeStatus = "ok"; return new Set(); }
     const ms = Math.min(JUDGE_MS, left() - 300);
-    if (ms < 1200) return null;
+    if (ms < 1200) { judgeStatus = "timeout"; return null; }
     const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
+    let aborted = false;
     const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {
       signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model: FAST, temperature: 0, max_tokens: 600, response_format: { type: "json_object" },
         // gpt-oss reads its reasoning level from the system prompt ("Reasoning: low"); an unknown request field could
         // be refused by the gateway, which would turn every judgement into a timeout
         messages: [{ role: "system", content: `Reasoning: low\n\n${JUDGE_POLICY}` }, { role: "user", content: `Items:\n${list.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] }),
-    }).catch(() => null);
-    if (!r || !r.ok) { clearTimeout(timer); return null; }
+    }).catch((e) => { aborted = e instanceof DOMException && e.name === "AbortError"; return null; });
+    if (!r || !r.ok) {
+      clearTimeout(timer);
+      judgeStatus = aborted ? "timeout" : "error";
+      if (r) console.error("ask: judge HTTP", r.status, (await r.text().catch(() => "")).slice(0, 200));
+      return null;
+    }
     const out = await r.json().catch(() => null);
     clearTimeout(timer);
-    const txt = String(out?.choices?.[0]?.message?.content ?? "");
+    if (!out) { judgeStatus = "timeout"; return null; }
+    // gpt-oss may put its JSON in the content or (on some gateways) leave content empty with the text in reasoning
+    const msg = out?.choices?.[0]?.message ?? {};
+    const txt = String(msg.content || msg.reasoning_content || msg.reasoning || "");
     try {
-      const m = /\{[\s\S]*\}/.exec(txt);
-      const o = m ? JSON.parse(m[0]) : null;
-      if (!o || !Array.isArray(o.flag)) return null;
+      const all = [...txt.matchAll(/\{[^{}]*"flag"\s*:\s*\[[^\]]*\][^{}]*\}/g)];
+      const o = all.length ? JSON.parse(all[all.length - 1][0]) : null;
+      if (!o || !Array.isArray(o.flag)) { judgeStatus = "unparseable"; console.error("ask: judge unparseable", out?.choices?.[0]?.finish_reason, txt.slice(0, 200)); return null; }
+      judgeStatus = "ok";
       return new Set((o.flag as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= list.length).map((n) => n - 1));
-    } catch { return null; }
+    } catch { judgeStatus = "unparseable"; console.error("ask: judge unparseable", txt.slice(0, 200)); return null; }
   };
   let parsedA: { answer: string; followups: string[] } | null = null;
   type Ans = { answer: string; followups: string[] } | null;
@@ -790,7 +806,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   let guarded = fixPriceConfusions(stripAdvice(normalizeBullets(pruned), { verdictQuestion: tradeQ || pickQ }), posFacts).trim();
   // round 8 newcomer: every surface runs the same sanitize(); "Long-term AI and robotics thesis … is intact" (TSLA −17.3%
   // YTD) was reassurance in the app's voice
-  guarded = sanitize(guarded, { verdictQuestion: tradeQ || pickQ || isVerdictQuestion(question) });
+  const verdictQ = isVerdictQuestion(question);
+  guarded = sanitize(guarded, { verdictQuestion: tradeQ || pickQ || verdictQ });
   // ---- round 9 A: the COMPLIANCE JUDGE. Regex guards cannot keep up with paraphrase, Korean and role-play, so a fast
   // second model reads the answer (and the model's chips) against a short policy and names the sentences that give
   // advice, name a product to buy, pass a verdict in the app's voice or forecast. Those sentences go. If the judge
@@ -802,7 +819,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     const items = judgeItems(guarded, chips0);
     const flags = await judge(items.list);
     // no verdict from the judge: the model's chips are not shown either (they asked for products in round 9)
-    if (flags === null) { judgedChips = []; if (decisionQ) guarded = ""; }
+    // round 9 v44: a verdict question whose judge did not answer leaked on the non-decision path; it goes to the husk too
+    if (flags === null) { judgedChips = []; if (decisionQ || verdictQ) guarded = ""; }
     else { const r = applyJudge(guarded, chips0, items, flags); guarded = r.text; judgedChips = r.chips; }
     // round 9: what the drops left may point at what is gone ("Both report late October", "AAPL is third"), or a
     // compared holding may have vanished: a decision falls to the husk; a data answer loses the dangling sentences and
@@ -832,7 +850,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     // a data question whose every sentence failed the number checks gets the verified figures instead
     const day = ko ? `• 오늘 포트폴리오는 ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}%(${signedUsd(bookDayUsd)})입니다.`
       : `• Today your portfolio is ${bookDayPct >= 0 ? "+" : ""}${bookDayPct.toFixed(2)}% (${signedUsd(bookDayUsd)}).`;
-    guarded = tradeQ || pickQ ? defaultInfo() : [day, defaultInfo().split("\n")[0]].join("\n");
+    guarded = tradeQ || pickQ || verdictQ ? defaultInfo() : [day, defaultInfo().split("\n")[0]].join("\n");
   }
   // a closed market's day move is labelled with its session, or dropped when it is called today's (round 6)
   guarded = labelClosedMoves(guarded, closedFacts) || guarded;
@@ -871,5 +889,5 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // chips follow the question's language too
   const modelChips = builtInCode || !parsedA ? [] : (judgedChips ?? (parsedA?.followups ?? []).map(deDash));
   const followups = cleanFollowups(modelChips.filter((f) => chipInLanguage(question, f)), fallbacks);
-  return json({ ok: true, answer, followups, mentioned });
+  return json({ ok: true, answer, followups, mentioned, meta: { judge: judgeStatus } });
 }

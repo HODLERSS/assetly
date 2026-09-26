@@ -17,12 +17,18 @@ export const bearerOf = (req: Request): string => (req.headers.get("Authorizatio
 /** The user id behind a user access token, or null (no token, a key instead of a token, bad signature, expired). */
 export async function userIdFrom(admin: Db, jwt: string): Promise<string | null> {
   if (!jwt || jwt.split(".").length !== 3) return null;   // the publishable key is not a JWT: nobody is signed in
-  try {
-    const { data } = await admin.auth.getClaims(jwt);
-    const c = data?.claims as { sub?: unknown; role?: unknown } | undefined;
-    if (c && typeof c.sub === "string" && c.role === "authenticated") return c.sub;
-    if (c) return null;   // verified, but not a user token (anon / service role)
-  } catch { /* fall through to the server check */ }
+  // round 9 v44: a transient JWKS fetch failure fell through to getUser, which refuses a token whose session was signed
+  // out elsewhere (two audit sessions on one account): a valid token got a 401 and the app said "That didn't go
+  // through". The local check is tried twice before the server check.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { data } = await admin.auth.getClaims(jwt);
+      const c = data?.claims as { sub?: unknown; role?: unknown } | undefined;
+      if (c && typeof c.sub === "string" && c.role === "authenticated") return c.sub;
+      if (c) return null;   // verified, but not a user token (anon / service role)
+    } catch { /* retry, then fall through to the server check */ }
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 150));
+  }
   try {
     const { data } = await admin.auth.getUser(jwt);
     return data?.user?.id ?? null;
