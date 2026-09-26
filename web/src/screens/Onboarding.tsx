@@ -7,12 +7,13 @@ import { marketOf } from "../lib/markets";
 import { openConnectPortal, platformTag } from "../lib/native";
 import { Icon } from "../components/Icon";
 import { AmountField, EntryPreview } from "../components/AmountField";
-import { entryPreview, quoteChoice, quoteInput, readAmount } from "../lib/numbers";
-import { ccySymbol, companyName } from "../lib/format";
+import { entryPreview, farFromQuote, quoteChoice, quoteInput, readAmount } from "../lib/numbers";
+import { ccySymbol, companyName, moneyExact } from "../lib/format";
 
 /** The company as people say it, unless that only repeats the ticker. */
 const shortName = (r: SymbolRow) => { const n = companyName(r.name); return n && n.toUpperCase() !== r.symbol.toUpperCase() ? n : r.name; };
 import { useSymbolSearch } from "../lib/search";
+import { seedLots } from "../lib/lotsCache";
 
 // Long enough for a slow phone network, short enough that nobody thinks the app has died.
 const SETUP_TIMEOUT_MS = 12000;
@@ -57,12 +58,15 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
   // is dated on that session (today, or a closed market's last close day).
   const [quote, setQuote] = useState<{ symbol: string; price: number; asOf: string | null } | null>(null);
   const [quoted, setQuoted] = useState<{ cost: string; ymd: string } | null>(null);
+  const [quoteWait, setQuoteWait] = useState<string | null>(null);   // the symbol whose quote is still on its way
   useEffect(() => {
     let live = true;
     if (step !== 2 || !picked || picked.kind === "cash" || picked.kind === "debt") return;
     if (quote?.symbol === picked.symbol) return;
+    setQuoteWait(picked.symbol);   // "Fetching price…" until it answers (e2e p03 F2)
     void Promise.resolve().then(() => api.getQuote(picked.symbol))
-      .then((p) => { if (live && p) setQuote({ symbol: picked.symbol, ...p }); }).catch(() => {});
+      .then((p) => { if (live && p) setQuote({ symbol: picked.symbol, ...p }); }).catch(() => {})
+      .finally(() => { if (live) setQuoteWait(null); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, step, picked?.symbol]);
@@ -144,7 +148,7 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
     setBusy(true); setErr(null);
     try {
       const dated = quoted !== null && cost === quoted.cost ? quoted.ymd : null;
-      await (dated ? api.addPosition(picked.symbol, q.value, c.value, dated) : api.addPosition(picked.symbol, q.value, c.value));
+      seedLots(api, await (dated ? api.addPosition(picked.symbol, q.value, c.value, dated) : api.addPosition(picked.symbol, q.value, c.value)));
       void api.refreshNews([picked.symbol]);                // stories land while the user looks around
       const m = marketOf({ symbol: picked.symbol, kind: picked.kind });   // inferred, never asked
       await api.completeOnboarding([m === "KR" ? "KR" : m === "CRYPTO" ? "Crypto" : "US"], "USD", inv ?? INVESTOR_DEFAULT);
@@ -284,14 +288,23 @@ export function Onboarding({ api, onDone, snaptrade = null, onBookChanged }: {
             onChange={(v) => { setQty(v); setFieldErr((f) => ({ ...f, qty: undefined })); }} error={fieldErr.qty} />
           <AmountField id="ob-cost" label={`Cost per ${picked.kind === "crypto" ? "coin" : "share"} (${ccySymbol(picked.currency).trim()})`} value={cost}
             placeholder="What you paid" onChange={(v) => { setCost(v); setFieldErr((f) => ({ ...f, cost: undefined })); }} error={fieldErr.cost} />
+          {quoteWait === picked.symbol && !quote && (
+            <p className="sub" data-testid="quote-wait" aria-live="polite" style={{ margin: "0 2px 8px" }}>Fetching price…</p>
+          )}
           {quote && quote.symbol === picked.symbol && (() => {
             const use = quoteChoice(quote, picked);
-            return (
-              <button type="button" className="chip use-quote" data-testid="use-quote" disabled={busy}
-                onClick={() => { const v = quoteInput(quote.price, picked.currency); setCost(v); setQuoted({ cost: v, ymd: use.ymd }); setFieldErr((f) => ({ ...f, cost: undefined })); }}>
+            const takeQuote = () => { const v = quoteInput(quote.price, picked.currency); setCost(v); setQuoted({ cost: v, ymd: use.ymd }); setFieldErr((f) => ({ ...f, cost: undefined })); };
+            return (<>
+              {!fieldErr.cost && farFromQuote(cost, quote.price, picked.currency) && (
+                <p className="info-note inline-note" data-testid="cost-far" role="status" style={{ margin: "0 0 8px" }}>
+                  <span>That's far from today's price of {moneyExact(quote.price, picked.currency)}. Double-check it, or use today's price.</span>
+                  <button type="button" className="chip" disabled={busy} onClick={takeQuote}>Use today's price</button>
+                </p>
+              )}
+              <button type="button" className="chip use-quote" data-testid="use-quote" disabled={busy} onClick={takeQuote}>
                 {use.label}
               </button>
-            );
+            </>);
           })()}
           <EntryPreview text={entryPreview({ kind: picked.kind, qty, cost, currency: picked.currency, unit: picked.kind === "crypto" ? picked.symbol : undefined })} />
           <p className="mutedc" style={{ fontSize: 12.5, marginBottom: 12 }}>Don't know your cost? Use today's price and fix it later from the position.</p>

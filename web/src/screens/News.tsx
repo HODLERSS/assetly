@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Api, Insight, NewsItem, PortfolioRow } from "../lib/api";
+import { notAdvice } from "../lib/i18n";
 import { labelParts, marketClock, timeAgo } from "../lib/format";
 import { cleanFeedTitle, decodeEntities, dedupeNews } from "../lib/news";
 import { InsightsCard } from "../components/InsightsCard";
@@ -222,7 +223,7 @@ export function NewsScreen({ api, rows, dispKr = "KRW", uid = null, pricesDown =
               </ul>
             </>
           )}
-          <p className="insights-foot">Not financial advice</p>
+          <p className="insights-foot">{notAdvice()}</p>
         </section>
       )}
       {state === "error" && (pricesDown ? (

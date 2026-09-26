@@ -38,12 +38,16 @@ describe("dayGroups", () => {
     r({ symbol: "005930.KS", currency: "KRW", value: 13_800_000, change_pct: 3.0, as_of: KR_WED_CLOSE }),           // ≈ +₩401,942 ≈ +$291
     r({ symbol: "$CASH", kind: "cash", value: 5000 }),
   ];
-  it("never sums sessions: US today and Korea's Wednesday close are separate groups, today first", () => {
+  it("never sums sessions: US today and Korea's Wednesday close are separate groups, the bigger move first (e2e p02 F7)", () => {
     const g = dayGroups(book, "USD", { USD: 1, KRW: 1380 }, FRI_US_OPEN);
-    expect(g.map((x) => [x.markets.join("+"), x.label])).toEqual([["US", "today"], ["Korea", "Wed close"]]);
-    expect(g[0].day).toBeCloseTo(10.89, 1);
-    expect(g[1].day).toBeCloseTo(291.26, 1);
-    expect((g[1].day / g[1].basis) * 100).toBeCloseTo(3.0, 5);
+    expect(g.map((x) => [x.markets.join("+"), x.label])).toEqual([["Korea", "Wed close"], ["US", "today"]]);
+    expect(g[1].day).toBeCloseTo(10.89, 1);
+    expect(g[0].day).toBeCloseTo(291.26, 1);
+    expect((g[0].day / g[0].basis) * 100).toBeCloseTo(3.0, 5);
+  });
+  it("a group that combines markets (today's aggregate) leads whatever its size", () => {
+    const g = dayGroups([...book, r({ symbol: "BTC", kind: "crypto", value: 100, change_pct: 0.5 })], "USD", { USD: 1, KRW: 1380 }, FRI_US_OPEN);
+    expect(g.map((x) => x.markets.join("+"))).toEqual(["US+Crypto", "Korea"]);
   });
   it("one session, one group (cash adds nothing)", () => {
     const g = dayGroups([book[0], book[2]], "USD", { USD: 1, KRW: 1380 }, FRI_US_OPEN);

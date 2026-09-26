@@ -1,7 +1,7 @@
 // Book-level shaping shared by every screen: which rows count as held, and the order they list in.
 import type { Lot, PortfolioRow } from "./api";
 import { convertCcy, dayChangeAmount, type FxRates } from "./format";
-import { marketOf, moveSession, priceSession } from "./markets";
+import { type Market, marketOf, moveSession, priceSession } from "./markets";
 
 /** A row's day move in its own currency: what withSameDayLots worked out, else the price move on the whole row. */
 export const rowDayChange = (r: Pick<PortfolioRow, "value" | "change_pct" | "day_change">): number | null =>
@@ -68,9 +68,37 @@ export function dayGroups(rows: PortfolioRow[], base: string, fx: FxRates | null
   // markets in one fixed order: listed by which row was biggest, "Crypto + US" became "US + Crypto" the day a
   // stock outgrew BTC (r5 power-user)
   const order = Object.values(MKT_NAME) as string[];
+  // a group that combines markets (today's aggregate) leads; the rest by the size of the move. "Today first" put
+  // a red "Crypto −$1 (0.00%) today" above a +$415 US session on a weekend (e2e p02 F7).
   return [...by.values()]
-    .sort((a, b) => Number(b.today) - Number(a.today) || b.latest - a.latest)
+    .sort((a, b) => Number(b.markets.length > 1) - Number(a.markets.length > 1) || Math.abs(b.day) - Math.abs(a.day) || b.latest - a.latest)
     .map(({ latest: _l, ...g }) => ({ ...g, markets: [...g.markets].sort((x, y) => order.indexOf(x) - order.indexOf(y)) }));
+}
+
+export type MarketLine = { market: Market; label: string; day: number; basis: number; gl: number; cost: number };
+/** The Breakdown's per-market lines, on exactly the rows and math the headline uses (dayGroups): the same day $ and
+ *  basis, summed by market instead of by session, under the same names (US / Korea / Crypto). Cash and debt sit in
+ *  no market and are in no base. The Breakdown used to fold a dollar coin and cash into "US" and call Korea "KRX",
+ *  so its "US −$116 (−0.53%)" sat under a header "US −$114 (−0.65%)" (e2e p07). The all-time pair is each market's
+ *  positions' gain over their invested cost. */
+export function marketBreakdown(rows: PortfolioRow[], base: string, fx: FxRates | null): MarketLine[] {
+  const by = new Map<Market, MarketLine>();
+  for (const r of rows) {
+    const m = marketOf(r);
+    if (m === null || r.value === null) continue;
+    const g = by.get(m) ?? { market: m, label: MKT_NAME[m], day: 0, basis: 0, gl: 0, cost: 0 };
+    if (r.change_pct !== null) {
+      const d = rowDayChange(r);
+      const day = d === null ? null : convertCcy(d, r.currency, base, fx);
+      const val = convertCcy(r.value, r.currency, base, fx);
+      if (day !== null && val !== null) { g.day += day; g.basis += val - day; }
+    }
+    g.gl += convertCcy(r.total_gl ?? 0, r.currency, base, fx) ?? 0;
+    g.cost += convertCcy(r.cost_basis ?? 0, r.currency, base, fx) ?? 0;
+    by.set(m, g);
+  }
+  const order = Object.keys(MKT_NAME);
+  return [...by.values()].sort((a, b) => order.indexOf(a.market) - order.indexOf(b.market));
 }
 
 /** A row is a position only while it has something in it. A holding whose lots are all gone (or not

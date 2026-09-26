@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { getTextScale, LARGE_TEXT, subscribeTextScale } from "../lib/shell";
 import type { Api } from "../lib/api";
+import { askPlaceholder, notAdvice } from "../lib/i18n";
 
 // ASK: grounded Q&A about the user's own portfolio, presented as a chat.
 // Suggestions read the way a person asks ("provide insights", "1W and 1M movement in $ and %" read as a
@@ -164,7 +165,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
             {t.a !== null && !t.error && (
               <div className="bubble ai" data-testid="ask-answer" role="status" aria-live="polite" aria-atomic="true">
                 <Md text={t.a} />
-                <p className="bubble-foot">Not financial advice</p>
+                <p className="bubble-foot">{notAdvice()}</p>
               </div>
             )}
             {t.error && (
@@ -186,7 +187,7 @@ export function AskScreen({ api, onAnswered, autoAsk = null }: { api: Api; onAns
       </div>
       <form className="ask-composer" onSubmit={(e) => { e.preventDefault(); void submit(q); }}>
         <input ref={inputRef} aria-label="Ask about your portfolio" value={q} onChange={(e) => setQ(e.target.value)}
-               placeholder={largeText && narrow ? "Ask…" : largeText || narrow ? "Ask a question…" : "Ask about your portfolio…"} enterKeyHint="send" autoComplete="off" />
+               placeholder={askPlaceholder(largeText && narrow ? "shortest" : largeText || narrow ? "short" : "long")} enterKeyHint="send" autoComplete="off" />
         {/* the button keeps its width while an answer is on the way: "…" shrank it to 49px and the field jumped
             27px wider and back on every question (r5 designer m-g). The label stays for the width, hidden. */}
         <button className="btn ask-send" disabled={busy || !q.trim()} aria-busy={busy || undefined} aria-label={busy ? "Waiting for the answer" : undefined}>
