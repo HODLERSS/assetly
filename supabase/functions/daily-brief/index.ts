@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  superlativeClaims, periodReturnMismatches, YTD, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  superlativeClaims, periodReturnMismatches, YTD, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -79,7 +79,8 @@ const FAST_MODEL = "gpt-oss-120b";
 // 13 (r10 newcomer / intelligence): theme shares, notes with a real risk each, watches in words, ideas' wording, week
 //    superlatives, grounded earnings watches; every stored script is re-made through narrate's card gates
 // 14 (r10 native): fragments and seams, no futures in a closing note
-const GEN_VERSION = 14;   // 4:
+// 15 (r11): stored rows held to the windows ("the week's biggest loser"), merged parentheticals
+const GEN_VERSION = 15;   // 4:
 const REPAIR_ROWS_PER_RUN = 12, REPAIR_ROWS_PER_USER = 6;   // r10 load: a GEN bump no longer rewrites every stored row in one run calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
@@ -311,7 +312,7 @@ function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: numbe
  *  (`live`: those are regenerated from current data, never patched). Returns the editions it patched, whose
  *  script and audio were cleared, so the caller can have them re-narrated. */
 // deno-lint-ignore no-explicit-any
-type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null }[]; yields: number[]; ground?: string };
+type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null }[]; yields: number[]; ground?: string; wins?: { names: string[]; windows: Record<number, number | null> }[] };
 async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctxIn?: RepairCtx | (() => Promise<RepairCtx | undefined>)): Promise<{ edition: string; date: string }[]> {
   // Round 9 designer: the rows a reader SEES are the latest ones, not only today's. Over a weekend (or before the first
   // edition of a day) Home shows the last trading day's rows, and a repair keyed to today's date never reached them: the
@@ -396,7 +397,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   });
   const bookPct = typeof (src as unknown as { day_pct?: number }).day_pct === "number" && edition !== "assessment" && edition !== "weekend" ? (src as unknown as { day_pct: number }).day_pct : null;
   const repairMixed = (ctx?.facts ?? []).some((f) => /\.(?:KS|KQ)$|-USD$|^(?:BTC|ETH|SOL|XRP|DOGE)$/.test(f.symbol));
-  const text = (t: string) => ((u: string) => edition === "close" || edition === "kr_close" ? dropFuturesAfterClose(u) : u)(fixFragments(fixScopeLabels(fixBookMove(fixWhatItMeans(closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))))), bookPct), repairMixed)));
+  const text = (t: string) => ((u: string) => edition === "close" || edition === "kr_close" ? dropFuturesAfterClose(u) : u)(mergeParens(fixFragments(fixScopeLabels(fixBookMove(fixWhatItMeans(closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))))), bookPct), repairMixed))));
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
@@ -407,6 +408,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
       // round 7: a weight printed as a move ("META dropped 12.8%"), a yield we never computed ("near 0.5%")
       ...(ctx ? [...weightAsMoveHits(x, ctx.facts), ...(ctx.yields.length ? wrongYieldClaims(x, ctx.yields) : [])] : []),
       ...promoCharacterisations(x), ...targetPaceClaims(x), ...(edition === "assessment" ? [] : dayTargetClaims(x)),
+      ...(ctx?.wins?.length ? [...superlativeClaims(x, ctx.wins), ...periodReturnMismatches(x, ctx.wins)] : []),
       ...(groundSrc !== null ? [...ungroundedEventSentences(x, groundSrc, allNames), ...ungroundedCauses(x, groundSrc, allNames)] : [])]);
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
     return kept.length ? kept.join(" ") : x;
@@ -589,7 +591,11 @@ Deno.serve(async (req) => {
       cur += line.annual; ttm += Number(r.qty ?? 0) * Number(d.div_ttm ?? 0) / (fxMap.get(r.currency ?? "USD") ?? 1);
       if (d.div_yield) each.push(Number(d.div_yield));
     }
+    // r11: the stored close kept "META, the week's biggest loser" (META +12.9%): stored rows are held to the windows too
+    const wins = await Promise.all(hs.slice(0, 12).map(async (r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)],
+      windows: ((await Promise.race([windowReturns(admin, r.symbol, [7, 30, 90, 365, YTD], Date.now(), r.kind === "crypto" ? null : /\.(?:KS|KQ)$/.test(r.symbol) ? "KR" : "US").catch(() => null), new Promise<null>((res) => setTimeout(() => res(null), 4000))]))?.pct ?? {}) as Record<number, number | null> })));
     return {
+      wins,
       facts: hs.map((r) => ({ symbol: r.symbol, names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: toUsd(Number(r.value ?? 0), r.currency) / tot * 100, pct: r.change_pct === null ? null : Number(r.change_pct) })),
       yields: cur > 0 ? [cur / tot * 100, ttm / tot * 100, ...each].map((v) => Number(v.toFixed(2))) : [],
     };
@@ -599,7 +605,11 @@ Deno.serve(async (req) => {
   const repairedUsers = new Set<string>();
   if (!isRegen) {
     const repairStart = Date.now();
-    for (const uid of userIds) {
+    const { data: staleU } = await admin.from("daily_briefs").select("user_id, generated_at").lt("gen_version", GEN_VERSION).gte("brief_date", ymdShift(briefDate, -7))
+      .order("generated_at", { ascending: false }).limit(200).then((x: unknown) => x, () => ({ data: [] })) as { data: { user_id: string }[] | null };
+    const staleFirst = [...new Set((staleU ?? []).map((x) => String(x.user_id)))].filter((u) => userIds.includes(u));
+    const repairOrder = [...staleFirst, ...userIds.filter((u) => !staleFirst.includes(u))];
+    for (const uid of repairOrder) {
       // r10 load: the pass is bounded per run (time and rows); the rest is repaired by the next */30 run
       if (Date.now() - repairStart > 15000 || repairedRows >= REPAIR_ROWS_PER_RUN) break;
       repairedUsers.add(uid);
@@ -1842,7 +1852,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           const lbl = closed ? "as of the 4:00 PM ET close" : `as of ${at} ET`;
           const stated = [...String(sections.lede ?? "").matchAll(/\b(?:gain(?:ed|s)?|los(?:s|t|es)|lifts?|lifted|up|down|adds?|added|to)\s+(?:about\s+|roughly\s+)?[+\-−]?\$(\d{1,3}(?:,\d{3})+|\d+)/gi)].map((m) => Number(m[1].replace(/,/g, "")));
           const figsLive = [Math.round(dayUsd), Math.round(total), ...stated];
-          sections.lede = labelLiveFigures(sections.lede, figsLive, lbl); sections.overnight = labelLiveFigures(sections.overnight, figsLive, lbl); sections.desk_view = labelLiveFigures(sections.desk_view, figsLive, lbl);
+          sections.lede = mergeParens(labelLiveFigures(sections.lede, figsLive, lbl)); sections.overnight = mergeParens(labelLiveFigures(sections.overnight, figsLive, lbl)); sections.desk_view = mergeParens(labelLiveFigures(sections.desk_view, figsLive, lbl));
         }
         // "The risk: net cash balance sheet." labels a strength as the risk (round 4): that clause goes, and the
         // memo's tripwire (or nothing) stands in
