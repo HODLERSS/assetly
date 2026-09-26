@@ -14,8 +14,9 @@ import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, dayName, weekday
 import {
   aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
-  perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
+  sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
+  readerLevel,
 } from "../_shared/intel.ts";
 import { dividendLine, dividendRows, windowReturns } from "../_shared/history.ts";
 import { userIdFrom } from "../_shared/auth.ts";
@@ -71,7 +72,8 @@ const FAST_MODEL = "gpt-oss-120b";
 // 8 (round 7): today's rows carried a weight read as a move ("META dropped 12.8%"), a live move called "yesterday"
 // and a 0.5% yield; they are patched (past-window) or regenerated (the current edition).
 // 9 (round 7 newcomer): theme weights, gloss grammar, "(est)" on non-dates, promo characterisations, 6-holding reads
-const GEN_VERSION = 9;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+// 10 (round 8): verdict tails, close-time labels, true minus signs, tech share and target-band checks
+const GEN_VERSION = 10;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -127,7 +129,8 @@ type Investor = { styles?: string[] | string; purpose?: string[] | string; horiz
 // answers may be single strings (old profiles) or arrays (multi-select quiz): normalize, and reduce where one value must win
 const toArr = (x: unknown, d: string[]): string[] => Array.isArray(x) ? (x.length ? x.map(String) : d) : (typeof x === "string" && x ? [x] : d);
 const LVL_ORDER = ["novice", "intermediate", "advanced", "pro"];
-const topLevel = (xs: string[]): string => xs.reduce((a, b) => (LVL_ORDER.indexOf(b) > LVL_ORDER.indexOf(a) ? b : a), "novice");
+// round 8: an unknown level ("confident" on the showcase profile) reads as intermediate, never as beginner
+const topLevel = (xs: string[]): string => readerLevel(xs);
 const HZ_ORDER = ["<1y", "1-3y", "3-10y", "10y+"];
 const longestHz = (xs: string[]): string => xs.reduce((a, b) => (HZ_ORDER.indexOf(b) > HZ_ORDER.indexOf(a) ? b : a), xs[0] ?? "3-10y");
 
@@ -226,7 +229,9 @@ const noviceScrub = (t: string, keep: string[] = []): string => {
   // a gloss dropped after a modifier keeps no stray article ("on sustained a shrinking price tag", round 3)
   // one shared map, glossed in context: "AI capex scrutiny" became "AI spending on equipment and buildout scrutiny"
   // (round 4); a term used as a modifier now reads "scrutiny of the spending on equipment and buildout"
-  let x = noviceGloss(t, keep);
+  // round 8 newcomer: substituted glosses broke grammar ("Amazon's retail lasting edge over competitors"); the term now
+  // stays and its plain meaning follows once in parentheses, which cannot break a sentence
+  let x = glossParenthetical(t, keep);
   // A replacement that begins with a possessive collides with any article in front of the term it
   // replaced: "a CET1 ratio below 12%" became "A its safety cushion of capital below twelve percent".
   // Drop the stranded article - deletion only, and it cannot touch text the map did not rewrite.
@@ -306,6 +311,7 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
   const stale = ((r.data ?? []) as { id: number; edition: string; sections: unknown; gen_version: number | null }[])
     .filter((o) => !live.includes(o.edition) && Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
   if (!stale.length) return [];
+  const patched: string[] = [];
   const syms = rows.filter((x) => !x.symbol.startsWith("$") && x.kind !== "cash" && x.kind !== "debt").map((x) => x.symbol).slice(0, 12);
   const [fl, { data: tr }] = await Promise.all([
     earningsFilings(admin, syms),
@@ -319,14 +325,24 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
   });
   for (const o of stale) {
     const fixed = repairSections(o.sections as Sections, ests, briefDate, ctx, o.edition);
-    await admin.from("daily_briefs").update({ sections: fixed, gen_version: GEN_VERSION, audio_path: null, script: null }).eq("id", o.id).then(() => {}, () => {});
+    // Round 8 native: every GEN bump nulled the audio and script of every repaired row, and re-narration is throttled,
+    // so no brief had narration. The spoken text is cleared ONLY when the repair actually changed the text.
+    const changed = spokenText(fixed) !== spokenText(o.sections as Sections);
+    await admin.from("daily_briefs").update(changed ? { sections: fixed, gen_version: GEN_VERSION, audio_path: null, script: null } : { gen_version: GEN_VERSION }).eq("id", o.id).then(() => {}, () => {});
+    if (changed) patched.push(o.edition);
   }
-  return stale.map((o) => o.edition);
+  // the latest edition of the day first: that is the one the reader opens
+  const ORDER = ["close", "kr_close", "midday", "kr_open", "morning", "weekend", "assessment"];
+  return patched.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
 }
 
 /** Code-only repair of a stored brief (no model, no new facts): doubled phrases and glosses collapse, "directly"
  *  loses its unsupported intensity, articles and plain words are fixed, a sentence dating a holding's report
  *  away from its estimate is deleted, and calendar / watch lines are rebuilt from the estimates. */
+/** The text a script is built from: when this is unchanged, the stored narration still matches it. */
+function spokenText(o: Sections): string {
+  return JSON.stringify([o.lede, o.overnight, o.desk_view, o.horizon ?? "", o.ideas ?? [], (o.positions ?? []).map((p) => [p.name, p.note, p.watch]), o.calendar ?? []]);
+}
 function repairSections(src: Sections, ests: { names: string[]; label: string; est: string | null; range?: [string, string]; dlv?: string | null }[], today: string, ctx?: RepairCtx, edition = ""): Sections {
   // round 7: a morning written after the open called live moves "yesterday": with the row's own basis (its as_of and
   // the day moves it was written against), a figure that IS that day's move is relabelled "so far today"
@@ -336,7 +352,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   const liveFacts = wasLive && ctx ? ctx.facts.filter((f) => typeof basis.day_by_symbol?.[f.symbol] === "number").map((f) => ({ names: f.names, pct: basis.day_by_symbol![f.symbol] })) : [];
   // a collapsed appositive can leave a comma between a subject and its verb ("The market's fear gauge, fell 3.3%")
   const unComma = (t: string) => t.replace(/(^|[.!?]\s+)([A-Z][^,.!?]{2,50}),\s+(fell|rose|jumped|slipped|climbed|dropped|gained|lost|added|edged|dipped|sank|rallied)\b/g, "$1$2 $3");
-  const text = (t: string) => fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(String(t ?? ""))))), PORTFOLIO_PLAIN))));
+  const text = (t: string) => unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN)))));
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
@@ -536,7 +552,8 @@ Deno.serve(async (req) => {
       if (Date.now() - repairStart > 30000) break;
       const patched = await repairToday(admin, uid, byUser.get(uid) ?? [], briefDate, live, await repairCtxOf(uid).catch(() => undefined)).catch(() => [] as string[]);
       // the patch cleared the script: re-script and re-voice it now (narrate's sweep catches any beyond 8)
-      for (const ed of patched) if (!fixture && !noAudio && renarrated < 8) { renarrated++; await handOff("narrate", { user_id: uid, brief_date: briefDate, edition: ed }); }
+      // every row whose text changed is re-narrated (round 8: 8 hand-offs per run left most rows silent)
+      for (const ed of patched) if (!fixture && !noAudio && renarrated < 40) { renarrated++; await handOff("narrate", { user_id: uid, brief_date: briefDate, edition: ed }); }
     }
     if (!fixture) {
       const staleLive = await admin.from("daily_briefs").select("user_id, edition, gen_version, generated_at").eq("brief_date", briefDate).in("edition", live).in("user_id", userIds);
@@ -628,7 +645,7 @@ Deno.serve(async (req) => {
       // same tag keeps "AMD rose 2.5%" from reading as live.
       // DIVIDENDS, keyed by symbol (round 4 newcomer, an income investor, was told nothing about SCHD's payouts)
       const divRows = await dividendRows(admin, holdings.map((r) => r.symbol));
-      const divData = holdings.map((r) => ({ r, d: dividendLine(krName(r.symbol, r.nickname, r.name), divRows.get(r.symbol), Number(r.qty ?? 0), r.currency ?? "USD", fxMap.get(r.currency ?? "USD") ?? 1) }));
+      const divData = holdings.map((r) => ({ r, d: r.kind === "crypto" || /-USD$/.test(r.symbol) ? { line: `${krName(r.symbol, r.nickname, r.name)}: a coin, pays no dividend`, amounts: [] as number[], annual: 0, current: false } : dividendLine(krName(r.symbol, r.nickname, r.name), divRows.get(r.symbol), Number(r.qty ?? 0), r.currency ?? "USD", fxMap.get(r.currency ?? "USD") ?? 1) }));
       const divIncome = divData.reduce((a, x) => a + x.d.annual, 0);
       const divBlock = divData.some((x) => x.d.amounts.length)
         ? `DIVIDENDS (per holding; the ONLY dividend figures you may state):\n${divData.filter((x) => x.d.amounts.length).map((x) => "- " + x.d.line).join("\n")}\nPortfolio dividend income ≈ $${Math.round(divIncome).toLocaleString("en-US")} a year (${(divIncome / total * 100).toFixed(2)}% of assets).`
@@ -908,6 +925,15 @@ lede 20-30 words (the verdict on this book); overnight 40-60 words naming the to
           let base = sections.desk_view.trim().replace(/\s*(recent )?(30|1)[- ]?(day|year) returns?:[^.]*\.?/gi, "").trim();   // returns belong in the notes
           while (wcD(base) + wcD(consequence) > 50 && /[.!?]\s+[^.!?]+[.!?]?$/.test(base)) base = base.replace(/\s+[^.!?]+[.!?]?$/, "").trim();
           sections.desk_view = `${base} ${consequence}`.trim();
+        }
+        // round 8 newcomer: STRUCTURE left out a 24.6% single-stock NVDA position. The largest single STOCK over 15% of assets
+        // is always named in it (a fund is diversified inside; a stock is not)
+        {
+          const big = holdings.filter((r) => r.kind === "stock" || r.kind === "equity").map((r) => ({ r, w: w(r) })).sort((a, b) => b.w - a.w)[0];
+          const nm = big ? krName(big.r.symbol, big.r.nickname, big.r.name) : "";
+          if (big && big.w > 15 && ![nm, big.r.symbol, ...aliasesFor(big.r.symbol, big.r.name)].some((n) => n && sections!.desk_view.includes(n))) {
+            sections.desk_view = `${sections.desk_view.trim().replace(/[.\s]*$/, ".")} ${nm} alone is ${big.w.toFixed(1)}% of assets, the largest single-stock position.`;
+          }
         }
         // STRUCTURE must carry its percentage (guaranteed in code): a desk_view that lost it gets the deterministic structure fact up front
         if (!/\d+(?:\.\d+)?\s?%/.test(sections.desk_view) && skStructure) {
@@ -1661,8 +1687,12 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           { label: /\bcrypto\b/i, value: exposure.crypto }, { label: /\bcash\b/i, value: exposure.cash }, { label: /\bbonds?\b/i, value: exposure.bonds },
           { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity },
         ];
+        const TECH_T = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]);
+        const techGroup = [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: [...themeShare].filter(([th]) => TECH_T.has(th)).reduce((a, [, v]) => a + v, 0) }];
         const clean = (t: string) => {
-          const x = fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(String(t ?? ""), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]);
+          // round 8: a verdict TAIL leaves a one-sentence lede as a clause ("…, keeping the portfolio on track"), and a
+          // tech share is held to the computed one ("Tech makes up about 57%" at ~97%)
+          const x = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup);
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
           // assessment), another holding's dividend, and a deliveries date that is not the known one
@@ -1677,7 +1707,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             ...weightAsMoveHits(x, moveWeightFacts), ...(allowedYields.length ? wrongYieldClaims(x, allowedYields) : []),
             // round 7 newcomer: "while cushioning volatility", "crypto hedge", "delivering most of its dividend yield"
             // (AAPL + MSFT pay 26% of it), "+7.2% this month, on pace with your 8-12% annual target"
-            ...promoCharacterisations(x), ...dividendShareClaims(x, divShares), ...targetPaceClaims(x),
+            ...promoCharacterisations(x), ...dividendShareClaims(x, divShares), ...targetPaceClaims(x), ...targetBandClaims(x),
             // a two-word fragment left by an earlier deletion ("It adds.", round 5) goes without a model call
             ...brokenSentences(x).filter((b) => b.split(/\s+/).length <= 2)];
           if (!bad.length) return x;
@@ -1691,7 +1721,12 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         // above the note moves on: "$211 gain … $116,500" under +$319 / $116,620)
         if (edition !== "assessment" && edition !== "weekend") {
           const at = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
-          const lbl = `as of ${at} ET`, figsLive = [Math.round(dayUsd), Math.round(total)];
+          // round 8: a close edition read "gained $9,400 (as of 7:31 PM ET)" for a figure fixed at the 4:00 PM close,
+          // and a fresh close lede whose $211 was the stats block's figure (not today's recomputed $319) got no label
+          const closed = edition === "close" || marketState("US").phase === "post" || marketState("US").phase === "closed";
+          const lbl = closed ? "as of the 4:00 PM ET close" : `as of ${at} ET`;
+          const stated = [...String(sections.lede ?? "").matchAll(/\b(?:gain(?:ed|s)?|los(?:s|t|es)|lifts?|lifted|up|down|adds?|added|to)\s+(?:about\s+|roughly\s+)?[+\-−]?\$(\d{1,3}(?:,\d{3})+|\d+)/gi)].map((m) => Number(m[1].replace(/,/g, "")));
+          const figsLive = [Math.round(dayUsd), Math.round(total), ...stated];
           sections.lede = labelLiveFigures(sections.lede, figsLive, lbl); sections.overnight = labelLiveFigures(sections.overnight, figsLive, lbl); sections.desk_view = labelLiveFigures(sections.desk_view, figsLive, lbl);
         }
         // "The risk: net cash balance sheet." labels a strength as the risk (round 4): that clause goes, and the
@@ -1757,6 +1792,21 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections.overnight = yourPortfolio(holdings.map((r) => ({ name: krName(r.symbol, r.nickname, r.name), usd: usd(Number(r.value ?? 0), r.currency) })),
           assets.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0), total, exposure, sections.overnight);
       }
+      // round 8 newcomer: the same sanitize() as every other surface, over EVERY field (ideas and watch items included:
+      // "Crypto risk: hedge with stablecoin yield platforms to smooth volatility" shipped in GAPS & IDEAS)
+      if (!backfillOnly) {
+        const keepOr = (t: string, fallback: string) => sanitize(t) || fallback;
+        sections.lede = keepOr(sections.lede, stripVerdictTails(sections.lede));
+        sections.overnight = keepOr(sections.overnight, sections.overnight);
+        sections.desk_view = keepOr(sections.desk_view, stripVerdictTails(sections.desk_view));
+        if (sections.horizon) sections.horizon = keepOr(sections.horizon, sections.horizon);
+        sections.ideas = (sections.ideas ?? []).map((i) => sanitize(i, { ideaSurface: true })).filter(Boolean);
+        sections.positions = sections.positions.map((p) => ({ ...p, note: keepOr(p.note, p.note), watch: sanitize(p.watch) || "No confirmed date yet" }));
+        sections.calendar = (sections.calendar ?? []).map((c) => sanitize(c)).filter(Boolean);
+      }
+      // round 8: signed figures use the true minus sign, as the client renders them
+      { const um = (v: unknown): unknown => typeof v === "string" ? unicodeMinus(v) : Array.isArray(v) ? v.map(um) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, k === "day_by_symbol" || k === "held" || k === "as_of" ? x : um(x)])) : v;
+        sections = um(sections) as Sections; }
       snap("YOUR PORTFOLIO (code)", sections);
       if (TRACE) { const tf = Deno.env.get("BRIEF_TRACE_FILE"); if (tf) Deno.writeTextFileSync(tf, JSON.stringify(TRACE)); else console.log("TRACE_JSON " + JSON.stringify(TRACE)); }
       const briefRow = {

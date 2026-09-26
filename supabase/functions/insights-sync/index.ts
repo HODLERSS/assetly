@@ -7,7 +7,8 @@ import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } 
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
   YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
-  digitsForWritten, dropInstructionEcho, fixFractions, promoCharacterisations, crossedLevelClaims,
+  digitsForWritten, dropInstructionEcho, fixFractions, promoCharacterisations, crossedLevelClaims, unicodeMinus, sanitize, glossParenthetical, anchorNewsLine, staleNewsTitle,
+  readerLevel,
 } from "../_shared/intel.ts";
 import { dividendRows, ensureHistory, hiLo, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
@@ -136,7 +137,9 @@ const lineOk = (l: string, facts: LiveFact[], dlv: DlvFact[] = []) => !dayMoveMi
 // the shared cards are read by every tier, so desk slang is translated for everyone ("show-me tape", "ripping")
 // round 6: our own prompt words echoed into a card ("…two weeks old, so it is context, not news") go, and figures
 // stay digits in written copy
-const cardScrub = (t: string) => tidyNumbers(digitsForWritten(noviceGloss(plainScrub(dropInstructionEcho(t), [...PORTFOLIO_PLAIN, ...CARD_PLAIN]))));
+// round 8: position cards are shared by every reader of a symbol, so they carry no beginner glosses ("a wide the biggest
+// companies gap of its price tag against profits" reached advanced readers); signed figures use the true minus sign
+const cardScrub = (t: string) => sanitize(tidyNumbers(plainScrub(t, [...PORTFOLIO_PLAIN, ...CARD_PLAIN])));
 
 /** A second read of a finished card by the fast model, for what patterns cannot see: a bullet that is garbled
  *  (two headlines compressed into nonsense, round 3: "TSLA leads 2,500 electric trucks backed by Microsoft and
@@ -159,7 +162,8 @@ type Investor = { styles?: string[] | string; purpose?: string[] | string; horiz
 // answers may be single strings (old profiles) or arrays (multi-select quiz): normalize, and reduce where one value must win
 const toArr = (x: unknown, d: string[]): string[] => Array.isArray(x) ? (x.length ? x.map(String) : d) : (typeof x === "string" && x ? [x] : d);
 const LVL_ORDER = ["novice", "intermediate", "advanced", "pro"];
-const topLevel = (xs: string[]): string => xs.reduce((a, b) => (LVL_ORDER.indexOf(b) > LVL_ORDER.indexOf(a) ? b : a), "novice");
+// round 8: an unknown level ("confident" on the showcase profile) reads as intermediate, never as beginner
+const topLevel = (xs: string[]): string => readerLevel(xs);
 const HZ_ORDER = ["<1y", "1-3y", "3-10y", "10y+"];
 const longestHz = (xs: string[]): string => xs.reduce((a, b) => (HZ_ORDER.indexOf(b) > HZ_ORDER.indexOf(a) ? b : a), xs[0] ?? "3-10y");
 
@@ -213,7 +217,8 @@ function readerBlock(inv: Investor | null | undefined): string {
 // deterministic plain-language pass for BEGINNER readers: the recurring terms the model keeps leaking, mapped in code
 // idempotent: a gloss the model already wrote is never doubled ("VIX, the market's fear gauge, the market's ...")
 // one shared beginner map (_shared/intel.ts NOVICE_PLAIN), applied in context so a gloss never reads as nonsense
-const noviceScrub = (t: string): string => noviceGloss(t);
+// round 8 newcomer: beginner glosses are parenthetical ("moat (lasting edge over competitors)"), never substitutions
+const noviceScrub = (t: string): string => glossParenthetical(t);
 
 function parseInsight(raw: string): { bullets: string[]; windows: Record<string, string>; news5: string[] | null } | null {
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
@@ -428,16 +433,16 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const liveFacts: LiveFact[] = [{ names: [symbol, ...aka], pct: quote?.change_pct === null || quote?.change_pct === undefined ? null : Number(quote.change_pct), price: price === null ? null : Number(price), ...hl2 }];
       // no historical comparison the data does not hold ("Tech concentration at 1965 highs", round 3)
       let bullets = parsed.bullets.map((b) => fixArticles(cardScrub(deJust(b, trAge))))
-        .filter((b) => lineOk(b, liveFacts, dlvFacts) && !(sourceText && (historicalClaims(b, sourceText, today).length || unsupportedCauses(b, sourceText).length))
+        .filter((b) => !!b.trim() && lineOk(b, liveFacts, dlvFacts) && !(sourceText && (historicalClaims(b, sourceText, today).length || unsupportedCauses(b, sourceText).length))
           // "Up 453% in a year" when the trailing year is +422% (the run from the 12-month low), round 4
           && !periodReturnMismatches(b, [{ names: [symbol, ...aka], windows: wr.pct }]).length);
       if (!fixture) { const bad = await incoherent(key, bullets, sourceText); bullets = bullets.filter((_, i) => !bad.has(i)); }
       if (bullets.length < 2) { errors.push(symbol + ": take contradicted the live numbers; kept the previous one"); continue; }
-      const trend = parsed.windows?.trend ? fixArticles(cardScrub(String(parsed.windows.trend))) : null;
+      const trend = parsed.windows?.trend ? (fixArticles(cardScrub(String(parsed.windows.trend))) || null) : null;
       // the summary line may not restate a bullet (round 4: "Off 7.6% over two months despite 5% one-year gain"
       // under "Two-month 7.6% slide contrasts with 5% one-year gain" on every card)
       const echoes = trend !== null && bullets.some((b) => overlap(b, trend) >= 0.6);
-      const windows = trend === null ? parsed.windows : lineOk(trend, liveFacts, dlvFacts) && !echoes && !periodReturnMismatches(trend, [{ names: [symbol, ...aka], windows: wr.pct }]).length ? { ...parsed.windows, trend } : {};
+      const windows = trend === null ? (parsed.windows?.trend ? { ...parsed.windows, trend: "" } : parsed.windows) : lineOk(trend, liveFacts, dlvFacts) && !echoes && !periodReturnMismatches(trend, [{ names: [symbol, ...aka], windows: wr.pct }]).length ? { ...parsed.windows, trend } : {};
       const { error: upErr } = await admin.from("insights").insert({
         symbol, bullets, windows, model,
       });
@@ -528,7 +533,7 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
       const todayEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
       const earnLines = sigSyms.map((sy) => earningsLine(nOf(sy), ((fls ?? []) as { symbol: string; form: string; filed_at: string; items?: string | null }[]).filter((f) => f.symbol === sy), (trsAll ?? []).filter((t) => t.symbol === sy), todayEt)).filter(Boolean).map((x) => "- " + x).join("\n");
       const akaOf = new Map(bookNames.map((b) => [b.symbol, b.names]));
-      const newsLines = sigSyms.map((sy) => (nws ?? []).filter((x) => x.symbol === sy && usableNews(x, akaOf.get(sy) ?? aliasesFor(sy))).slice(0, 2).map((x) => `- ${nOf(sy)} [${x.source}]: ${String(x.title).slice(0, 90)}`).join("\n")).filter(Boolean).join("\n");
+      const newsLines = sigSyms.map((sy) => (nws ?? []).filter((x) => x.symbol === sy && usableNews(x, akaOf.get(sy) ?? aliasesFor(sy)) && !staleNewsTitle(String(x.title), x.published_at, todayEt)).slice(0, 2).map((x) => `- ${nOf(sy)} [${x.source}]: ${String(x.title).slice(0, 90)}`).join("\n")).filter(Boolean).join("\n");
       let content: string | null;
       let prompt = "";
       if (fixture) {
@@ -612,6 +617,15 @@ ${VALUE_LAW}`;
       if (bullets.length < 2) { errors.push("user " + uid.slice(0, 8) + ": take contradicted the live book; kept the previous one"); continue; }
       const heldBook = bookNames.map((b) => b.symbol).filter((sy) => !gone.has(sy));
       const tagged = { bullet_symbols: bullets.map((b) => mentionedSymbols(b, bookNames)), news5_symbols: news5 ? news5.map((b) => mentionedSymbols(b, bookNames)) : null, held_symbols: heldBook };
+      bullets = bullets.map((b) => sanitize(b)).filter(Boolean);
+      // round 8 newcomer: a News line reversed its source ("NVDA CEO warns AI slowdown risk despite hype" for "Nvidia CEO
+      // Pushes Back On The 'AI Apocalypse'"): each line is replaced by the matching source headline, verbatim and cleaned
+      if (news5) {
+        const heads = (nws ?? []).filter((x) => !staleNewsTitle(String(x.title), x.published_at, todayEt) && usableNews(x, akaOf.get(x.symbol) ?? aliasesFor(x.symbol)))
+          .map((x) => ({ symbol: String(x.symbol), names: akaOf.get(x.symbol) ?? aliasesFor(x.symbol), title: String(x.title) }));
+        const seen = new Set<string>();
+        news5 = news5.map((l) => anchorNewsLine(l, heads)).filter((l): l is string => !!l && !seen.has(l) && (seen.add(l), true)).map((l) => sanitize(l)).filter(Boolean);
+      }
       const row = { user_id: uid, bullets, news5, model };
       // the symbol tags arrive with migration 38; before it the row is written without them
       let { error: piErr } = await admin.from("portfolio_insights").insert({ ...row, ...tagged });

@@ -6,7 +6,7 @@
 //   - callers: daily-brief (fire-and-forget after every write), the backfill sweep (rows missing audio),
 //     and the orchestrator. Auth: internal token, service role, or the owning user.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { scriptProblems } from "../_shared/intel.ts";
+import { readerLevel, scriptProblems } from "../_shared/intel.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -245,7 +245,8 @@ Deno.serve(async (req) => {
     const lvls = Array.isArray(inv.level) ? inv.level : [inv.level ?? "novice"];
     const purps = Array.isArray(inv.purpose) ? inv.purpose : [inv.purpose ?? "watch"];
     const order = ["novice", "intermediate", "advanced", "pro"];
-    const top = lvls.reduce((a, b) => (order.indexOf(String(b)) > order.indexOf(String(a)) ? b : a), "novice");
+    const top = readerLevel(lvls);   // round 8: an unknown level reads as intermediate
+    void order;
     const lvl = top === "pro" || top === "advanced" ? "The listener is experienced: professional vocabulary is fine, keep it dense."
       : top === "intermediate" ? "The listener knows the basics: plain language, no definitions needed. Keep spoken sentences under 18 words."
       : "The listener is a BEGINNER: plain everyday words, and briefly explain any financial term as you use it. Keep every spoken sentence under 14 words: a long sentence is hard to follow by ear.";
