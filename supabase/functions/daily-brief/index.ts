@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
-  fixBookMove, fixWhatItMeans, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
+  fixBookMove, fixWhatItMeans, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
   sanitize, glossParenthetical, stripVerdictTails, unicodeMinus, fixGroupShares, targetBandClaims, perLine, assessmentReader, capNoteKeepRisk, dividendShareClaims, fixProperCase, promoCharacterisations, stripStrayEst, targetPaceClaims, fixFractions, mergeChecked, weightAsMoveHits, wrongYieldClaims, labelLiveFigures, liveNotYesterday as liveNotYesterday2, capSentenceStarts, circularCauses, digitsForWritten, dividendContradictions, dropInstructionEcho, noteDividendClaims, spelledNumbers,
   weekendDated, wrongDeliveriesDates, wrongDividendAmounts, overlap, pctText, plainScrub, PORTFOLIO_PLAIN, unsupportedCauses, unsupportedDated, usableNews, valuationHits, wrongEarningsDates, type FilingLite,
@@ -1682,6 +1682,13 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         // "30.1% Bitcoin weight" when Bitcoin is 25.2% (30.1% = Bitcoin + Ether, round 5): a holding's weight is its
         // own; a group share must be labelled as the group
         const weightFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / total * 100 }));
+        const bookNamesAll = weightFacts.flatMap((w) => w.names);
+        // round 9 intelligence: events and causes are grounded in DATA only (headlines, earnings estimates, dividend and
+        // deliveries dates), never in model text: the memos are model output and would ground their own inventions
+        const { data: gNews } = fixture ? { data: [] } : await admin.from("news").select("title, summary").in("symbol", holdings.map((r) => r.symbol).slice(0, 25))
+          .gte("published_at", new Date(Date.now() - 10 * 86400000).toISOString()).limit(400);
+        const groundSrc = [...nextEarn, ...divData.map((x) => x.d.line), ...dlvFacts.filter((d) => d.est).map((d) => `${d.names[0]} deliveries ${d.est}`),
+          ...((gNews ?? []) as { title: string; summary?: string | null }[]).map((n) => `${n.title} ${n.summary ?? ""}`)].join("\n");
         const weightGroups = [{ label: /\bcrypto\b/i, value: exposure.crypto }, { label: /\bbonds?\b/i, value: exposure.bonds }, { label: /\bKorea(?:n)?\b/i, value: exposure.krEquity },
           { label: /\b(?:US|U\.S\.) (?:stocks?|equit)/i, value: exposure.usEquity }, { label: /\bcash\b/i, value: exposure.cash }, { label: /\b(?:top (?:three|3|five|5)|together|combined)\b/i, value: -1 }];
         const moveWeightFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / total * 100, pct: r.change_pct === null ? null : Number(r.change_pct) }));
@@ -1724,6 +1731,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
             ...wrongEarningsDates(parts, earnEsts, briefDate), ...wrongDividendAmounts(x, divFacts), ...wrongDeliveriesDates(x, dlvFacts, briefDate),
             // round 5: "captures the full S&P 500 upside while avoiding individual stock fees", "support a 4-8% annual return"
             ...promoClaims(x), ...returnForecasts(x),
+            // round 9 intelligence: a dated event or a cause no source line carries ("MSFT Copilot revenue update
+            // Monday", "Microsoft's AI spend boosted earnings")
+            ...(fixture ? [] : [...ungroundedEventSentences(x, groundSrc, bookNamesAll), ...ungroundedCauses(x, groundSrc, bookNamesAll)]),
             // round 6: "NVDA and QQQ pay no dividend" (both do), "SoFi fell after an article noted its drop"
             ...dividendContradictions(x, payerNames), ...circularCauses(x),
             // round 7: "META dropped 12.8%" (its weight), "a yield near 0.5%" (the book yields 0.30% / 0.34%)
@@ -1772,9 +1782,13 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections.ideas = (sections.ideas ?? []).map(clean);
         // a weekend-dated item is no event (round 4: "Copilot earnings preview Sep 27", a Sunday), nor is a
         // deliveries date that is not the estimate ("Tesla delivery numbers Sep 28"; the report is Oct 2)
-        const offCal = new Set([...weekendDated(sections.calendar ?? [], briefDate), ...wrongDeliveriesDates((sections.calendar ?? []).join("\n"), dlvFacts, briefDate)]);
+        const offCal = new Set([...weekendDated(sections.calendar ?? [], briefDate), ...wrongDeliveriesDates((sections.calendar ?? []).join("\n"), dlvFacts, briefDate),
+          // round 9 intelligence: an event no source line carries ("Meta Q4 guidance Monday")
+          ...(fixture ? [] : ungroundedEvents(sections.calendar ?? [], groundSrc, bookNamesAll))]);
         sections.calendar = (sections.calendar ?? []).filter((c) => !offCal.has(c)).map((c) => tidyNumbers(plainScrub(c, PORTFOLIO_PLAIN)));
-        sections.positions = sections.positions.map((p) => weekendDated([p.watch], briefDate).length || wrongDeliveriesDates(p.watch, dlvFacts, briefDate).length ? { ...p, watch: watchFallback(p.name) } : p);
+        sections.positions = sections.positions.map((p) => weekendDated([p.watch], briefDate).length || wrongDeliveriesDates(p.watch, dlvFacts, briefDate).length
+          || (!fixture && ungroundedEvents([p.watch], groundSrc, bookNamesAll).length)
+          ? { ...p, watch: ((w) => !fixture && ungroundedEvents([w], groundSrc, bookNamesAll).length ? "No confirmed date yet" : w)(watchFallback(p.name)) } : p);
       }
       snap("clean (plain words/exposure/weights/claims)", sections);
       // GRAMMAR PASS (round 3 newcomer: "Watch QQQ on sustained a shrinking price tag relative.", "Total assets

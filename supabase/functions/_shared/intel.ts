@@ -2392,3 +2392,67 @@ export function fixWhatItMeans(text: string): string {
   return String(text ?? "").replace(/(^|[.!?]\s+)What (?:it|this) means(?:\s*[:,-]\s*|\s+)(?=[A-Za-z])/g, (_m, lead) => lead)
     .replace(/(^|[.!?]\s+)([a-z])/g, (_m, lead, c) => lead + c.toUpperCase());
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 9 intelligence: grounding for events and causes
+// ---------------------------------------------------------------------------------------------------------------
+const MON3: Record<string, string> = { january: "jan", february: "feb", march: "mar", april: "apr", june: "jun", july: "jul", august: "aug", september: "sep", sept: "sep", october: "oct", november: "nov", december: "dec" };
+const normSrc = (t: string) => String(t ?? "").toLowerCase().replace(/[‘’]/g, "'")
+  .replace(/\b(january|february|march|april|june|july|august|september|sept|october|november|december)\b/g, (m) => MON3[m] ?? m).replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\.\s/g, "$1 ");
+const EVENT_W = /\b(?:earnings|results|report(?:s|ing)?|guidance|outlook|update|launch(?:es)?|release|renewal|decision|ruling|verdict|vote|hearing|meeting|conference|keynote|event|deliver(?:y|ies)|call|investor day|ex-date|ex-dividend|payout|split|filing|approval|deadline|trial|announcement|unveil\w*|reveal\w*|presentation|data|readout|summit|expiry|expiration)\b/i;
+const TIME_W = /\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b|\btomorrow\b|\btonight\b|\b(?:next|this|later this) week\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/i;
+const GENERIC = new Set(["the", "and", "for", "with", "its", "their", "from", "this", "that", "into", "over", "after", "before", "next", "week", "later", "day", "today", "tomorrow", "tonight", "expected", "est", "update", "updates", "report", "reports", "event", "call", "data", "new", "stock", "shares", "share", "company", "signal", "watch", "key", "level", "levels", "risk", "any", "more", "about",
+  "around", "roughly", "near", "likely", "due", "set", "scheduled", "ahead", "until", "when", "still", "also", "will", "could", "should",
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]);
+const contentToks = (t: string, names: string[]) => {
+  const nameT = new Set(names.flatMap((n) => String(n).toLowerCase().match(/[a-z0-9]+/g) ?? []));
+  return [...new Set((normSrc(t).match(/[a-z][a-z0-9-]{2,}|q[1-4]/g) ?? []).map((w) => w.replace(/(?:ing|s)$/, "")).filter((w) => w.length >= 2 && !GENERIC.has(w) && !nameT.has(w)))];
+};
+const stemIn = (line: string, w: string) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")}(?:s|es|ing|ed|d)?\\b`).test(line);
+
+/** An event that the model dated or named with nothing behind it (round 9: "MSFT Copilot revenue update Monday", "Meta
+ *  Q4 guidance Monday", the watch item "Azure AI contract renewal"). An item is grounded when one source line carries
+ *  its date (or weekday) together with one of its own words, or, for an undated item, two of its own words. A watch
+ *  that is a price level ("$350 level") is not an event. `sources`: the prompts the writer saw (headlines, earnings
+ *  estimates, dividend dates). Returns the items / sentences that are NOT grounded. */
+export function ungroundedEvents(items: string[], sources: string, names: string[] = [], opts: { needTime?: boolean } = {}): string[] {
+  const lines = String(sources ?? "").split(/\n+/).map(normSrc).filter((l) => l.trim());
+  return items.filter((it) => {
+    const x = String(it ?? "").trim();
+    if (!x || /^no confirmed date yet$/i.test(x)) return false;
+    const time = TIME_W.exec(x);
+    if (!EVENT_W.test(x) && !time) return false;
+    if (opts.needTime && !time) return false;
+    if (/[$€₩]\s?\d|\d\s?%/.test(x) && !time && !EVENT_W.test(x.replace(/\blevel\b/i, ""))) return false;
+    const toks = contentToks(x, names);
+    if (time) {
+      const t = normSrc(time[0]).replace(/(\w{3})[a-z]*\.? (\d{1,2})/, "$1 $2");
+      // the date plus one of the item's own words, or plus the holding it names ("Microsoft reports around Oct 28")
+      const named = names.filter((n) => n && n.length >= 2 && nameIn(x, n)).map((n) => n.toLowerCase());
+      return !lines.some((l) => l.includes(t) && (toks.length === 0 || toks.some((w) => stemIn(l, w)) || named.some((n) => l.includes(n))));
+    }
+    if (toks.length < 2) return !lines.some((l) => toks.some((w) => stemIn(l, w)));
+    return !lines.some((l) => toks.filter((w) => stemIn(l, w)).length >= 2);
+  });
+}
+
+/** Sentences inside a text whose dated event is not grounded (see ungroundedEvents). */
+export function ungroundedEventSentences(text: string, sources: string, names: string[] = []): string[] {
+  return ungroundedEvents(sentencesOf(text).filter((s) => EVENT_W.test(s) && TIME_W.test(s)), sources, names, { needTime: true });
+}
+
+/** A cause asserted for a holding's results or shares that no source line carries (round 9: "Microsoft's AI spend
+ *  boosted earnings"). The cause's own words must meet the effect in one source line. */
+export function ungroundedCauses(text: string, sources: string, names: string[] = []): string[] {
+  const lines = String(sources ?? "").split(/\n+/).map(normSrc).filter((l) => l.trim());
+  const re = /\b((?:[\w'-]+\s+){1,4}?)(boosted|lifted|drove|driven|fueled|fuelled|powered|propelled|hurt|weighed on|dragged(?: down)?|pressured|dented|squeezed|sank|sent)\s+(?:its |their |the |[\w'-]+'s )?(earnings|revenue|sales|profits?|margins?|shares|the stock|stock|results|growth|guidance)\b/i;
+  return sentencesOf(text).filter((s) => {
+    const m = re.exec(s);
+    if (!m) return false;
+    const cause = contentToks(m[1], names);
+    if (!cause.length) return false;
+    const eff = m[3].toLowerCase().replace(/^the /, "");
+    const effs = /shares|stock/.test(eff) ? ["share", "stock"] : /profit|earning|result/.test(eff) ? ["earning", "profit", "result", "eps", "quarter"] : [eff.replace(/s$/, "")];
+    return !lines.some((l) => cause.filter((w) => stemIn(l, w)).length >= Math.min(2, cause.length) && effs.some((e) => stemIn(l, e)));
+  });
+}
