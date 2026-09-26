@@ -651,8 +651,10 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
     const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {
       signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: FAST, temperature: 0, max_tokens: 400, reasoning_effort: "low", response_format: { type: "json_object" },
-        messages: [{ role: "system", content: JUDGE_POLICY }, { role: "user", content: `Items:\n${list.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] }),
+      body: JSON.stringify({ model: FAST, temperature: 0, max_tokens: 600, response_format: { type: "json_object" },
+        // gpt-oss reads its reasoning level from the system prompt ("Reasoning: low"); an unknown request field could
+        // be refused by the gateway, which would turn every judgement into a timeout
+        messages: [{ role: "system", content: `Reasoning: low\n\n${JUDGE_POLICY}` }, { role: "user", content: `Items:\n${list.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] }),
     }).catch(() => null);
     if (!r || !r.ok) { clearTimeout(timer); return null; }
     const out = await r.json().catch(() => null);
