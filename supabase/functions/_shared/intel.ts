@@ -3163,3 +3163,28 @@ export function directionCauseClaims(text: string): string[] {
     return (down && bull && !bear) || (up && bear && !bull);
   });
 }
+
+/** A model answer that carries escaped line breaks ("…\n• BRK.A …" printed literally): they become real ones. */
+export const unescapeBreaks = (t: string): string => String(t ?? "").replace(/\\r\\n|\\n/g, "\n").replace(/\\t/g, " ");
+
+/** Share-class facts for dual-class listings the user holds or asks about (r11 newcomer M2: "BRK.B vs BRK.A" got wrong
+ *  conversion and vote facts). Returned as data lines for the prompt; empty when no dual-class name is involved. */
+export function dualClassFacts(text: string): string[] {
+  const t = String(text ?? "");
+  const out: string[] = [];
+  if (/\bBRK(?:[.\-\s]?[AB])?\b|\bBerkshire\b|버크셔/i.test(t)) out.push("Berkshire Hathaway share classes: one Class A share (BRK.A) is economically equal to 1,500 Class B shares (BRK.B), and an A share can be converted into 1,500 B shares at any time (never the reverse). A Class B share carries 1/10,000 of the vote of a Class A share. Both classes own the same company; neither pays a dividend.");
+  if (/\bGOOGL?\b|\bAlphabet\b|알파벳/i.test(t)) out.push("Alphabet share classes: GOOGL (Class A) carries one vote per share; GOOG (Class C) carries no vote. Both have the same economic claim on the company and trade at nearly the same price.");
+  if (/\bMETA\b[^.]{0,40}\bclass\b|\bclass [AB]\b[^.]{0,40}\bMeta\b/i.test(t)) out.push("Meta: public shareholders hold Class A shares (one vote each); Class B shares (ten votes each) are held mostly by insiders and are not listed.");
+  return out;
+}
+/** A Berkshire share-class ratio other than the real ones (1 A = 1,500 B; a B vote = 1/10,000 of an A vote). */
+export function dualClassClaims(text: string): string[] {
+  return sentencesOf(text).filter((s) => {
+    if (!/\bBRK|\bBerkshire|버크셔/i.test(s)) return false;
+    const conv = /(\d[\d,]*)\s*(?:Class )?B(?:[- ]class)? shares?\b|\b(?:equals?|worth|converts? (?:in)?to)\s+(\d[\d,]*)\s+(?:Class )?B\b/i.exec(s);
+    if (conv && /\b(?:Class )?A\b|BRK\.?A/i.test(s)) { const n = Number(String(conv[1] ?? conv[2]).replace(/,/g, "")); if (n > 1 && n !== 1500) return true; }
+    const vote = /1\s*\/\s*([\d,]+)\s+(?:of (?:the|a) )?vote|(\d[\d,]*)\s*times (?:the |more )?vot/i.exec(s);
+    if (vote) { const n = Number(String(vote[1] ?? vote[2]).replace(/,/g, "")); if (n !== 10000) return true; }
+    return false;
+  });
+}

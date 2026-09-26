@@ -34,3 +34,12 @@ Deno.test("r28 P5/P6: routing, lexicon, income is not a projection", async () =>
   assertEquals(isForecastQuestion("How much will I get in dividends each year?"), false);
   assertEquals(isForecastQuestion("How much will my portfolio be worth in 5 years?"), true);
 });
+
+Deno.test("r28 P7: escaped breaks and share-class facts", async () => {
+  const { unescapeBreaks, dualClassFacts, dualClassClaims } = await import("./intel.ts");
+  assertEquals(unescapeBreaks("• BRK.B is 12%.\\n• BRK.A is 0%."), "• BRK.B is 12%.\n• BRK.A is 0%.");
+  assertEquals(dualClassFacts("BRK.B vs BRK.A").length, 1);
+  assertEquals(dualClassClaims("One BRK.A share equals 1,000 Class B shares.").length, 1);
+  assertEquals(dualClassClaims("One BRK.A share equals 1,500 Class B shares.").length, 0);
+  assertEquals(dualClassClaims("A BRK.B share has 1/200 of the vote of an A share.").length, 1);
+});
