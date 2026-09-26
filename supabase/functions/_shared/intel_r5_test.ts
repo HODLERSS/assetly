@@ -68,19 +68,19 @@ Deno.test("calendar: a dated event on a weekend is not an event", () => {
 });
 
 Deno.test("windows: 'today' is the market's day, and the previous day until that market opens (the chart's rule)", () => {
-  // Samsung at 20:00 UTC Sep 25 = 05:00 KST Sep 26, before KRX opens: still Sep 25, so 1Y starts Sep 25, 2025
-  const sam = Date.parse("2026-09-25T20:00:00Z");
-  assertEquals(marketToday("KR", sam), "2026-09-25");
-  assertEquals(windowTargetYmd(365, sam, "KR"), "2025-09-25");
-  // after KRX opens (00:30 UTC = 09:30 KST) it is Sep 26
-  assertEquals(windowTargetYmd(365, Date.parse("2026-09-26T00:30:00Z"), "KR"), "2025-09-26");
+  // Samsung at 20:00 UTC Sep 21 = 05:00 KST Sep 22, before KRX opens: still Sep 21, so 1Y starts Sep 21, 2025
+  const sam = Date.parse("2026-09-21T20:00:00Z");
+  assertEquals(marketToday("KR", sam), "2026-09-21");
+  assertEquals(windowTargetYmd(365, sam, "KR"), "2025-09-21");
+  // after KRX opens (00:30 UTC = 09:30 KST) it is Sep 22
+  assertEquals(windowTargetYmd(365, Date.parse("2026-09-22T00:30:00Z"), "KR"), "2025-09-22");
   // NVDA at 14:00 UTC = 10:00 ET, after the open: Sep 25 (1M from Aug 25); at 13:00 UTC = 9:00 ET, before it: Sep 24
   assertEquals(windowTargetYmd(30, Date.parse("2026-09-25T14:00:00Z"), "US"), "2026-08-25");
   assertEquals(windowTargetYmd(30, Date.parse("2026-09-25T13:00:00Z"), "US"), "2026-08-24");
-  // Samsung's 1Y base at 20:00 UTC is the Sep 25, 2025 close, never the Sep 26 one
+  // Samsung's 1Y base at 20:00 UTC Sep 21 is the Sep 19, 2025 close (Sep 21, 2025 was a Sunday), never the Sep 22 one
   const h = [
-    { ts: "2025-09-25T06:30:00Z", price: 100 }, { ts: "2025-09-26T06:30:00Z", price: 103.3 },
-    { ts: "2026-09-25T06:30:00Z", price: 331.6 },
+    { ts: "2025-09-19T06:30:00Z", price: 100 }, { ts: "2025-09-22T06:30:00Z", price: 103.3 },
+    { ts: "2026-09-21T06:30:00Z", price: 331.6 },
   ];
   assertEquals(pctOver(h, 365, sam, "KR")?.toFixed(1), "231.6");
 });
