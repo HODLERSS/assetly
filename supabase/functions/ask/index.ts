@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -645,6 +645,8 @@ async function handle(req: Request): Promise<Response> {
     ? `Money: portfolio totals and position values are US dollars ($); Korean shares also show their won price. Write won amounts with the ₩ sign.`
     : `Money: every amount is in US dollars ($). This account holds nothing in Korean won: write ₩ only when the user asks for won, converting at the rate on file: USD/KRW ${Math.round(fxMap.get("KRW") ?? 1380).toLocaleString("en-US")} (₩ per $1); say it is a conversion at that rate.`;
   // round 9 C (and newcomer 6): a data question's figures are computed here and lead the answer
+  const TECH_A = new Set(["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]);
+  const techShareA = held.filter((r) => TECH_A.has(themeOf(r.symbol, r.kind))).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
   const perfRows: PerfRow[] = held.map((r) => ({ symbol: r.symbol, label: nameOf(r), names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], usd: usd(Number(r.value ?? 0), r.currency), pct: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null>, unknown: perfUnknown.has(r.symbol) }));
   // round 9 v44: "How did the market do today?" leads with the indexes; a dividend question with the payers ranked
   const { data: idxRows } = await pIdx;
@@ -883,7 +885,16 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...windowDollarMismatches(answer, perfRows, questionWindows(question)[0] ?? null),
     // round 9 v44: an order the figures contradict ("NVDA +20.7%, followed by AAPL +25.5%"), a highest/lowest yield or weight
     // that is another holding's, a P/E from another holding, "$10 billion" written as 10조, a count its names do not match
-    ...orderingClaims(answer, perfRows), ...countClaims(answer, perfRows), ...softVerdicts(answer),
+    ...orderingClaims(answer, perfRows), ...softVerdicts(answer),
+    // r11 P4: counts against the book, "one week before earnings" against the dates, "biggest company" against market caps,
+    // "~83% mega-cap tech" (figure first) against the group share, "15 points" against weight x return, "iPhone 17"
+    // against the headlines, a drop blamed on a bullish call
+    ...countClaims(answer, perfRows, { stocks: held.filter((r) => r.kind === "stock" || r.kind === "equity").length, funds: held.filter((r) => r.kind === "etf" || r.kind === "fund").length, holdings: held.length }),
+    ...relativeGapClaims(answer, held.map((r) => { const e = askEsts.find((x) => x.names[0] === nameOf(r)); return { names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], dates: { earnings: e ? (e.range ? e.range[0] : e.est) : null, deliveries: deliveriesEstimate(r.symbol, today)?.est ?? null, exdate: divRows.get(r.symbol)?.div_next_ex ?? null } }; })),
+    ...companySizeClaims(answer, held.map((r) => { const so = sharesOut.get(r.symbol); return { names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], mcap: so && r.price !== null ? so.n * usd(Number(r.price), r.currency) : null }; })),
+    ...groupShareFirstClaims(answer, [{ label: /(?:mega[- ]?cap )?tech(?:nology)?(?: stocks| names| holdings| exposure)?/, value: techShareA }]),
+    ...pointContributionClaims(answer, perfRows.map((r) => ({ names: r.names, weight: r.usd / (assetsUsd || 1) * 100, pct: r.pct }))),
+    ...productVersionClaims(answer, causeSource), ...directionCauseClaims(answer),
     // r10: "Portfolio up $70 today" (whole-book base, Korea's move left out): the book's day dollars must be today's figure
     ...splitSentences(answer).filter((sen) => /\b(?:portfolio|book|account|holdings)\b/i.test(sen) && /\btoday\b|오늘/i.test(sen) && !/\bKorea|한국/i.test(sen)
       && [...sen.matchAll(/([+\u2212-])?\$\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)/g)].some((m) => { const v = Number(m[2].replace(/,/g, "")); return Math.abs(v - Math.abs(bookDayUsd)) > Math.max(5, Math.abs(bookDayUsd) * 0.05) && Math.abs(v - totNow) > totNow * 0.01; })),

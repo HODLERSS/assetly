@@ -8,7 +8,7 @@ import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
   YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
   digitsForWritten, dropInstructionEcho, fixFractions, promoCharacterisations, crossedLevelClaims, unicodeMinus, sanitize, glossParenthetical, anchorNewsItem, staleNewsTitle,
-  readerLevel, glossedCardHits, CARD_MAX_AGE_DAYS, canonicalSymbol,
+  readerLevel, earningsEstimate, relativeGapClaims, productVersionClaims, directionCauseClaims, splitSentences, glossedCardHits, CARD_MAX_AGE_DAYS, canonicalSymbol,
 } from "../_shared/intel.ts";
 import { dividendRows, ensureHistory, hiLo, refreshDividends, repairNames, windowReturns } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
@@ -462,6 +462,14 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
           // "Up 453% in a year" when the trailing year is +422% (the run from the 12-month low), round 4
           && !periodReturnMismatches(b, [{ names: [symbol, ...aka], windows: wr.pct }]).length);
       if (!fixture) { const bad = await incoherent(key, bullets, sourceText); bullets = bullets.filter((_, i) => !bad.has(i)); }
+      // r11 P4: a card is the source Ask echoes ("Q3 deliveries ~Oct 2, one week before earnings" at ~Oct 21): its date gaps,
+      // product generations and cause directions are checked before it is stored
+      {
+        const est = earningsEstimate((filItems ?? fils ?? []) as { form: string; filed_at: string; items?: string | null }[], (tr ?? []) as { title: string; published_at: string | null }[], today);
+        const gapFacts = [{ names: [symbol, ...aka], dates: { earnings: est ? (est.range ? est.range[0] : est.est) : null, deliveries: deliveriesEstimate(symbol, today)?.est ?? null, exdate: null } }];
+        const badG = new Set([...relativeGapClaims(bullets.join(" "), gapFacts), ...productVersionClaims(bullets.join(" "), sourceText), ...directionCauseClaims(bullets.join(" "))]);
+        if (badG.size) bullets = bullets.map((b) => splitSentences(b).filter((x) => !badG.has(x)).join(" ")).filter((b) => b.trim());
+      }
       // r10: card bullets in the app's own voice ("UPI dominance caps near-term growth", "a structural risk to AMZN") go
       // through the same compliance judge as Ask; a card the judge cannot read keeps the regex result
       // r10 load: bullets the served card already carries were judged when it was written; only new text is judged
