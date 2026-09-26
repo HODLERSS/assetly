@@ -2,7 +2,7 @@
 // warmup, news-sync, price-sync). No I/O here, so every rule is unit-tested in intel_test.ts.
 // Each helper exists because a model got a number, a date or a framing wrong in production; the
 // comment on each names the failure it closes.
-import { CLOSE_MIN, HOL, OPEN_MIN, TZ, type Mkt, zonedEpoch, zonedParts } from "./calendar.ts";
+import { CLOSE_MIN, HOL, OPEN_MIN, TZ, type Mkt, zonedEpoch, zonedParts, isTradingDay, prevTradingDay } from "./calendar.ts";
 export { aliasesFor, centrality, decodeEntities, isJunkNews, newsRelevant, type NewsRow, publisherFor, staleRedated, titleKey, urlDate, usableNews } from "./news_rules.ts";
 
 // ---------------------------------------------------------------------------------------------
@@ -44,14 +44,16 @@ export function windowTargetYmd(days: number, now = Date.now(), mkt?: Mkt | null
   const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
   return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, lastDay))).toISOString().slice(0, 10);
 }
-/** The market's current day, the rule web/src/lib/chartRange.ts uses: its zone's date, or the day before while
- *  that market has not opened yet. A US afternoon is already the next morning in Seoul; counting Samsung's 1Y
- *  from that Seoul date based it on a close one day later than Yahoo does (+242.7% instead of +231.6%). */
+/** The market's current day: its zone's date once that day's session has opened, else the LAST TRADING SESSION.
+ *  A US afternoon is already the next morning in Seoul; counting Samsung's 1Y from that Seoul date based it on a close
+ *  one day later (+242.7% instead of +231.6%, round 4). Round 9 poweruser: the old fallback was the CALENDAR day
+ *  before, so at 9:00 KST on a Saturday (00:00 UTC) or a KRX holiday "today" became that non-trading date and every
+ *  1M-2Y window slid a day with no trading at all (Samsung 1Y +231.59% -> +242.74%). Windows now end at the last
+ *  session and hold still through weekends and holidays. */
 export function marketToday(mkt: Mkt, now = Date.now()): string {
   const z = zonedParts(new Date(now), TZ[mkt]);
-  if (z.minutes >= OPEN_MIN[mkt]) return z.ymd;
-  const [y, m, d] = z.ymd.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+  if (isTradingDay(mkt, z.ymd) && z.minutes >= OPEN_MIN[mkt]) return z.ymd;
+  return prevTradingDay(mkt, z.ymd);
 }
 /** The last instant that still belongs to the window's target date (its end, in the market's zone). */
 export function windowCutoff(days: number, now = Date.now(), mkt?: Mkt | null): number {
@@ -1498,7 +1500,8 @@ export const THEMES: Record<string, string> = {
   RDDT: "consumer internet", SNAP: "consumer internet", PINS: "consumer internet", UBER: "consumer internet", SPOT: "consumer internet", DUOL: "consumer internet", "035420.KS": "consumer internet", "035720.KS": "consumer internet",
   PLTR: "software", CRM: "software", NOW: "software", ORCL: "software", SNOW: "software", FIG: "software", CRWD: "software", ADBE: "software",
   JPM: "financials", BAC: "financials", GS: "financials", COF: "financials", V: "financials", MA: "financials", "024110.KS": "financials", "105560.KS": "financials",
-  "BRK.B": "diversified conglomerate", "BRK-B": "diversified conglomerate",
+  // round 9: Berkshire counts as Financials (GICS), under every spelling of the ticker
+  "BRK.B": "financials", "BRK-B": "financials", BRKB: "financials", "BRK.A": "financials", "BRK-A": "financials", BRKA: "financials",
   JNJ: "healthcare", UNH: "healthcare", LLY: "healthcare", PFE: "healthcare", "068270.KS": "healthcare", "207940.KS": "healthcare",
   XOM: "energy", CVX: "energy", "373220.KS": "batteries", "006400.KS": "batteries", "003690.KS": "consumer staples", KO: "consumer staples", PG: "consumer staples", COST: "consumer staples", WMT: "consumer staples",
   "012450.KS": "defense", LMT: "defense", RTX: "defense", "042660.KS": "shipbuilding", "009540.KS": "shipbuilding", "329180.KS": "shipbuilding",
@@ -2202,4 +2205,80 @@ export function anchorNewsLine(line: string, heads: { symbol: string; names: str
   if (t.length > maxLen) t = t.slice(0, maxLen).replace(/\s+\S*$/, "") + "…";
   const sym = best.h.symbol.replace(/\.(?:KS|KQ)$/, "");
   return [sym, ...best.h.names].some((n) => n && t.toLowerCase().includes(n.toLowerCase())) ? t : `${best.h.names[0]}: ${t}`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 9 newcomer
+// ---------------------------------------------------------------------------------------------------------------
+/** One symbol for one listing: "BRKB" and "BRK-B" are BRK.B (round 9: the duplicate BRKB ranked first in search with its
+ *  own wrong price row). A US class share written without its dot, or with Yahoo's dash, takes the dotted form. */
+export function canonicalSymbol(symbol: string, yahoo?: string | null): string {
+  const s = String(symbol ?? "").toUpperCase().trim();
+  if (/\.(?:KS|KQ)$|-USD$|^\^|=F$|^USD[A-Z]{3}$/.test(s)) return s;
+  const y = String(yahoo ?? "").toUpperCase();
+  const m = /^([A-Z]{1,4})-([A-Z])$/.exec(y);
+  if (m && (s === `${m[1]}${m[2]}` || s === `${m[1]}-${m[2]}` || s === `${m[1]}.${m[2]}`)) return `${m[1]}.${m[2]}`;
+  if (/^[A-Z]{1,4}-[A-Z]$/.test(s)) return s.replace("-", ".");
+  return s;
+}
+
+const THEME_WORDS: [RegExp, string[]][] = [
+  [/\bhealth ?care|health-care|pharma|medical\b/i, ["healthcare"]], [/\bfinancials?|banks?|banking|insurers?\b/i, ["financials"]],
+  [/\btech(?:nology)?\b/i, ["AI semiconductors", "AI infrastructure", "mega-cap platforms", "software", "consumer internet", "Nasdaq 100 index"]],
+  [/\bsemiconductors?|chips?\b/i, ["AI semiconductors"]], [/\benergy|oil\b/i, ["energy"]], [/\bconsumer staples|staples\b/i, ["consumer staples"]],
+  [/\bcrypto\b/i, ["crypto", "crypto beta"]], [/\bdividend\b/i, ["dividend equity", "income equity"]], [/\bbonds?\b/i, ["bonds"]], [/\bsoftware\b/i, ["software"]],
+];
+/** "healthcare-heavy", "the single biggest thematic weight" for a theme that is not the biggest (round 9: healthcare 19.4%
+ *  called the biggest while financials, JPM + BRK, were 28.5%). `themes` are the computed theme weights (% of assets). */
+export function themeClaims(text: string, themes: { name: string; pct: number }[]): string[] {
+  if (themes.length < 2) return [];
+  const top = [...themes].sort((a, b) => b.pct - a.pct)[0];
+  const share = (names: string[]) => themes.filter((t) => names.includes(t.name)).reduce((a, t) => a + t.pct, 0);
+  return sentencesOf(text).filter((s) => {
+    const heavy = /\b([a-z][a-z -]{2,20})-heavy\b|\bheavy (?:in|on) ([a-z][a-z ]{2,20})\b|\bdominated by ([a-z][a-z ]{2,20})\b/i.exec(s);
+    const biggest = /\b(?:single )?(?:biggest|largest|top|dominant|main|heaviest)\s+(?:thematic weight|theme|sector|exposure|bet|tilt)\b/i.test(s);
+    if (!heavy && !biggest) return false;
+    const scope = heavy ? (heavy[1] ?? heavy[2] ?? heavy[3] ?? "") : s;
+    const hit = THEME_WORDS.find(([re]) => re.test(scope));
+    if (!hit) return false;
+    const mine = share(hit[1]);
+    // the named theme must be the biggest (within 2 points of the top theme's weight)
+    return !hit[1].includes(top.name) && top.pct - mine > 2;
+  });
+}
+
+/** Ideas that contradict the book (round 9: "All-US book: developed-market ex-US index funds" next to a 12.6% Korean
+ *  holding; "dividend-growth ETFs beyond SCHD" for a SCHD holder) or copy the prompt's own examples word for word. */
+export function ideaContradictions(idea: string, book: { names: string[]; theme: string; pct: number; region: "US" | "KR" | "crypto" }[], examples: string[] = []): boolean {
+  const t = String(idea ?? "");
+  const low = t.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  if (examples.some((e) => { const x = e.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim(); return x && (low === x || low.includes(x)); })) return true;
+  const nonUS = book.filter((b) => b.region === "KR").reduce((a, b) => a + b.pct, 0);
+  if (/\ball[- ]us\b|\bus[- ]only\b|\bonly us\b|\bno (?:international|non-us|foreign|ex-us|overseas)\b/i.test(t) && nonUS >= 2) return true;
+  if (/\bno crypto\b/i.test(t) && book.some((b) => b.region === "crypto" && b.pct >= 1)) return true;
+  // an idea is about a GAP: naming a holding, or a category the book already holds (3%+), is not one
+  if (book.some((b) => b.names.some((n) => n && n.length >= 2 && nameIn(t, n)))) return true;
+  const CAT: [RegExp, string[]][] = [[/\bdividend(?:-growth)?\b|\bincome\b/i, ["dividend equity", "income equity"]], [/\bbonds?\b|\bfixed income\b|\btreasur/i, ["bonds"]],
+    [/\bgold\b/i, ["gold"]], [/\binternational|ex-us|developed-market\b/i, ["international index"]], [/\bs&p 500|broad (?:us |market )?index\b/i, ["broad US index"]]];
+  for (const [re, themes] of CAT) if (re.test(t) && book.filter((b) => themes.includes(b.theme)).reduce((a, b) => a + b.pct, 0) >= 3) return true;
+  return false;
+}
+
+/** A holding's quality note, cleaned (round 9: KO's "The risk:" listed strengths, the raw field name leaked as
+ *  ">consensus tripwire", SCHD's risk came twice, JNJ and BRKB had none). Field names go, repeated sentences go, and a
+ *  risk sentence with no negative in it goes. `needsRisk` says the caller must supply one (from data) or leave it out. */
+export function cleanNote(note: string): { note: string; needsRisk: boolean } {
+  let x = String(note ?? "").replace(/\s*\b(?:tripwire|long[_ ]case|near[_ ]term catalyst|role|memo)\b\s*:?/gi, (m) => /^\s*tripwire\b/i.test(m) ? " " : m)
+    .replace(/(\S)\s+tripwire\b/gi, "$1").replace(/\b(?:business|quality|role|tripwire|near)\s*:\s*/gi, "").replace(/\s{2,}/g, " ").trim();
+  const seen: string[] = [];
+  const NEG = /\b(?:risk|below|declin\w*|slow\w*|cut\w*|weak\w*|loss\w*|lose|debt|leverage\w*|competit\w*|depend\w*|concentrat\w*|regulat\w*|cyclical|volatil\w*|stretch\w*|expensive|uncertain\w*|pressure\w*|dilut\w*|custody|export|miss\w*|fall\w*|drop\w*|shrink\w*|lawsuit|litigation|probe|tariff\w*|headwind\w*|exposure to|could|if|fails?|erod\w*|squeeze\w*|slump\w*|downgrad\w*)\b/i;
+  const sents = splitSentences(x).filter((sen) => {
+    const k = sen.toLowerCase().replace(/[^a-z0-9%.]+/g, " ").trim();
+    if (seen.some((p) => p === k || overlap(p, k) >= 0.9)) return false;
+    seen.push(k);
+    return true;
+  }).filter((sen) => !(/^\s*(?:the )?risk\s*:/i.test(sen) && !NEG.test(sen.replace(/^\s*(?:the )?risk\s*:/i, ""))));
+  x = sents.join(" ");
+  const needsRisk = !/\b(?:the risk:|but|however|though|yet)\b/i.test(x) && !/\brisk\b/i.test(x);
+  return { note: x, needsRisk };
 }
