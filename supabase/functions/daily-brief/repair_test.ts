@@ -13,6 +13,9 @@ const T: Record<string, unknown[]> = {
     { user_id: UID, symbol: "VOO", name: "Vanguard S&P 500 ETF", kind: "etf", account: "brokerage", currency: "USD", qty: 10, price: 700, value: 7000, change_pct: 0.5, avg_cost: 500, total_gl: 2000, as_of: day(0) },
   ],
   profiles: [{ id: UID, investor: null }],
+  // r13 brief: a yield row per holding (TSLA pays none) and a headline naming the current product version
+  symbols: [{ symbol: "TSLA", div_yield: 0, div_last: 0 }, { symbol: "VOO", div_yield: 1.2, div_last: 1.82 }],
+  news: [{ symbol: "TSLA", title: "Tesla Model 5 reveal set for October", summary: "", published_at: day(1) }],
   prices: [{ symbol: "USDKRW", price: 1357 }],
   price_history: [
     // a base on each of the 7-11 days back: on a weekend or a Monday the 7-day cutoff is an earlier session's close, and a
@@ -26,7 +29,7 @@ const T: Record<string, unknown[]> = {
   daily_briefs: [{ id: 1, user_id: UID, edition: "close", brief_date: etToday, gen_version: 11, generated_at: day(0.05),
     sections: { lede: "A $9,447 (as of the 4:00 PM ET close) (+0.3%) gain. TSLA was the week's biggest loser.",
       overnight: "The S&P 500 closed at 7,743.41 (+0.5%), Nasdaq futures sit at 30,921.75.", desk_view: "Concentration stays high. A clean beat rerates the whole portfolio. Tesla leads the book. It rose 280% this year.",
-      positions: [{ name: "Tesla", note: "Tesla fell 2.1%.", watch: "No confirmed date yet" }], calendar: [] } }],
+      positions: [{ name: "Tesla", note: "Tesla fell 2.1%. The 0.7% yield adds meaningful income to your portfolio. Shares rose on Model 4 launch optimism.", watch: "No confirmed date yet" }], calendar: [] } }],
 };
 const patches: Record<string, unknown>[] = [];
 const eqOf = (u: URL, col: string) => { const v = u.searchParams.get(col); return v && v.startsWith("eq.") ? decodeURIComponent(v.slice(3)) : null; };
@@ -78,5 +81,8 @@ Deno.test({ name: "repair: today's live row is patched in place; no placeholder 
   assert(/280% over the past year/.test((sec as { desk_view?: string }).desk_view ?? ""), (sec as { desk_view?: string }).desk_view);   // r13 M1
   assert(!/\) \(/.test(sec.lede), sec.lede);
   assert(sec.positions.every((x) => !/no confirmed date yet/i.test(x.watch)), JSON.stringify(sec.positions));
+  // r13 brief: the note is held to its own yield and to the product version in the headlines
+  const tn = (sec.positions as unknown as { note: string }[])[0].note;
+  assert(/Tesla fell 2\.1%/.test(tn) && !/meaningful income/.test(tn) && !/Model 4/.test(tn), tn);
   await server.shutdown();
 } });

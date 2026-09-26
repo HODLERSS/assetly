@@ -82,10 +82,12 @@ const FAST_MODEL = "gpt-oss-120b";
 // 14 (r10 native): fragments and seams, no futures in a closing note
 // 15 (r11): stored rows held to the windows ("the week's biggest loser"), merged parentheticals
 // 16 (r11): live rows repaired in place, estimated watches kept, no "No confirmed date yet" placeholder
+// 19 (r13 brief): stored notes held to their own yield (MSFT "0.7% yield adds meaningful income") and to the product
+//    versions in the headlines (AAPL "iPhone 17")
 // 18 (r13 M1): period figures relabelled to their true window (SOXL "347.4% this year" is its 1-year return)
 // 17 (r12 D): house-voice verdicts/forecasts ("A clean beat rerates the whole portfolio") and low-yield income claims
 //    dropped from stored rows; scripts re-made (card decimals, "~" / "(est)" in words, "Platforms'")
-const GEN_VERSION = 18;   // 4:
+const GEN_VERSION = 19;   // 4:
 const REPAIR_ROWS_PER_RUN = 12, REPAIR_ROWS_PER_USER = 6;   // r10 load: a GEN bump no longer rewrites every stored row in one run calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
@@ -420,7 +422,8 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
       // "yield adds meaningful income" at 0.7%
       ...softVerdicts(x), ...(ctx ? holdingIncomeClaims(x, ctx.facts.map((f) => ({ names: f.names, yieldPct: f.yieldPct ?? null }))) : []),
       ...(ctx?.wins?.length ? [...superlativeClaims(x, ctx.wins), ...periodReturnMismatches(x, ctx.wins)] : []),
-      ...(groundSrc !== null ? [...ungroundedEventSentences(x, groundSrc, allNames), ...ungroundedCauses(x, groundSrc, allNames)] : [])]);
+      // r13 brief: the stored AAPL note kept "iPhone 17 launch optimism" (the headlines say iPhone 18)
+      ...(groundSrc !== null ? [...ungroundedEventSentences(x, groundSrc, allNames), ...ungroundedCauses(x, groundSrc, allNames), ...productVersionClaims(x, groundSrc)] : [])]);
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
     return kept.length ? kept.join(" ") : x;
   };
@@ -435,7 +438,13 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     const own = ests.find((e) => (e.est || e.range) && e.names.some((n) => n && String(p.watch).toLowerCase().includes(n.toLowerCase())));
     const estOk = !!own && (canon.length > 0 || /\(est\)|\best(?:imate[sd]?)?\b|~/i.test(p.watch));
     const w0 = /^\s*no confirmed date yet\.?\s*$/i.test(String(p.watch ?? "")) ? "" : String(p.watch ?? "");
-    return { ...p, note: dropWrong(p.note), watch: !w0 ? "" : earn || estOk ? canon[0] ?? (estOk ? stripStrayEst(text(w0)).replace(/\s*\(est\)/i, "") + " (est)" : "") : dated || ungroundedItem(w0) ? "" : stripStrayEst(text(w0)) };
+    // r13 brief: "The 0.7% yield adds meaningful income to your portfolio" names no holding, so the named check missed it:
+    // each note is held to its own position's yield
+    const own0 = ctx?.facts.find((f) => f.names.some((n) => n && n.toLowerCase() === String(p.name ?? "").toLowerCase()));
+    const n0 = dropWrong(p.note);
+    const lowY = own0 && typeof own0.yieldPct === "number" ? new Set(lowYieldIncomeClaims(n0, own0.yieldPct)) : new Set<string>();
+    const note = lowY.size ? splitSentences(n0).filter((x) => !lowY.has(x)).join(" ") || n0 : n0;
+    return { ...p, note, watch: !w0 ? "" : earn || estOk ? canon[0] ?? (estOk ? stripStrayEst(text(w0)).replace(/\s*\(est\)/i, "") + " (est)" : "") : dated || ungroundedItem(w0) ? "" : stripStrayEst(text(w0)) };
   });
   s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today).filter((c) => !weekendDated([c], today).length && !ungroundedItem(c));
   if (src.ideas) s.ideas = src.ideas.map(text).filter((i) => !repairDrops(i).length);
