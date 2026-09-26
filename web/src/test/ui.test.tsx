@@ -327,11 +327,11 @@ describe("U44 intelligence refresh light", () => {
     await screen.findByTestId("portfolio-insights-card");        // the portfolio read now lives on News
     await userEvent.click(screen.getByRole("button", { name: /refresh assetly intelligence/i }));
     await userEvent.click(tabs().getByRole("button", { name: /^Home$/ }));   // leave mid-generation
-    expect(screen.queryByLabelText("New Assetly Intelligence")).toBeNull();
+    expect(screen.queryByLabelText("News, new Assetly Intelligence")).toBeNull();
     resolveRefresh(fresh);
-    await screen.findByLabelText("New Assetly Intelligence");     // the light
-    await userEvent.click(tabs().getByRole("button", { name: /New Assetly Intelligence|^News$/ }));
-    await vi.waitFor(() => expect(screen.queryByLabelText("New Assetly Intelligence")).toBeNull());
+    await screen.findByLabelText("News, new Assetly Intelligence");     // the light
+    await userEvent.click(tabs().getByRole("button", { name: /new Assetly Intelligence|^News$/ }));
+    await vi.waitFor(() => expect(screen.queryByLabelText("News, new Assetly Intelligence")).toBeNull());
     expect((await screen.findByTestId("portfolio-insights-card")).textContent).toContain("Fresh bullet");
   });
 });
@@ -349,10 +349,10 @@ describe("U45 brief arrival light", () => {
     // first poll saw nothing; now the first brief exists
     briefs.mockResolvedValue([{ brief_date: "2026-08-28", edition: "morning", generated_at: "2026-08-28T12:40:00Z", sections: sec, audio_path: "u/2026-08-28-morning.mp3" }]);
     // the watcher polls every 20s in production; in tests, drive one tick via the exposed interval
-    await screen.findByLabelText("Your brief is ready", {}, { timeout: 25000 });
-    await userEvent.click(tabs().getByRole("button", { name: /Your brief is ready|^Home$/ }));
+    await screen.findByLabelText("Home, your brief is ready", {}, { timeout: 25000 });
+    await userEvent.click(tabs().getByRole("button", { name: /your brief is ready|^Home$/ }));
     expect((await screen.findByTestId("brief-banner")).textContent).toMatch(/to listen/i);
-    await vi.waitFor(() => expect(screen.queryByLabelText("Your brief is ready")).toBeNull());
+    await vi.waitFor(() => expect(screen.queryByLabelText("Home, your brief is ready")).toBeNull());
   }, 40000);   // the brief watcher polls every 20s; this test waits for one real tick
 });
 

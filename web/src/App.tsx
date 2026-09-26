@@ -657,14 +657,20 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
 
       <MiniPlayer />
 
+      {/* each tab's alert dot is announced as part of its name ("News, new Assetly Intelligence"), not run together with it */}
       <nav className="tabbar" aria-label="Tabs">
         {(["home", "news", "ask", "settings"] as Tab[]).map((t) => (
-          <button key={t} aria-current={tab === t ? "page" : undefined} onClick={() => go({ kind: "tab", tab: t })}>
+          <button key={t} aria-current={tab === t ? "page" : undefined} onClick={() => go({ kind: "tab", tab: t })}
+            aria-label={(() => {
+              const name = t === "home" ? "Home" : t === "news" ? "News" : t === "ask" ? "Ask" : "Settings";
+              const alert = t === "ask" && askAlert ? "new answer ready" : t === "news" && newsAlert ? "new Assetly Intelligence" : t === "home" && homeAlert ? "your brief is ready" : "";
+              return alert ? `${name}, ${alert}` : undefined;
+            })()}>
             <TabIcon tab={t} active={tab === t} />
             {t === "home" ? "Home" : t === "news" ? "News" : t === "ask" ? "Ask" : "Settings"}
-            {t === "ask" && askAlert && <span className="tab-alert" aria-label="New answer ready" />}
-            {t === "news" && newsAlert && <span className="tab-alert" aria-label="New Assetly Intelligence" />}
-            {t === "home" && homeAlert && <span className="tab-alert" aria-label="Your brief is ready" />}
+            {t === "ask" && askAlert && <span className="tab-alert" aria-hidden="true" />}
+            {t === "news" && newsAlert && <span className="tab-alert" aria-hidden="true" />}
+            {t === "home" && homeAlert && <span className="tab-alert" aria-hidden="true" />}
           </button>
         ))}
       </nav>
