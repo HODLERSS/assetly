@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -1039,6 +1039,18 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const TECH = TECH_THEMES;
   const techShare = held.filter((r) => TECH.has(themeOf(r.symbol, r.kind))).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0) / (assetsUsd || 1) * 100;
   guarded = fixGroupShares(guarded, [{ label: /\b(?:tech|technology)(?: stocks| names| holdings| exposure| share)?/i, value: techShare }], 5, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)] })));
+  // r13 M2 ("How did I do this week?", a starter chip): the model copied the day tag onto week figures (TSLA "+2.2%
+  // (Fri)" while Friday was −1.54%; "SOXL fell 40% (Fri) over three months"), called VOO flat at +1.28% on the week, and
+  // gave a mood cause no headline carries. Last word on figures, after the judge and every sanitizer.
+  {
+    const namesOfR = (r: typeof held[number]) => [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)];
+    const weekQ = questionWindows(question).includes(7) || /\bweek\b|이번 주/i.test(question);
+    guarded = fixDayTags(guarded, held.map((r) => ({ names: namesOfR(r), dayPct: r.change_pct === null ? null : Number(r.change_pct) })));
+    guarded = stripUngroundedMoodCauses(guarded, causeSource, held.map((r) => nameOf(r))).replace(/\s+([.,;])/g, "$1");
+    const flat = new Set(flatClaims(guarded, held.map((r) => ({ names: namesOfR(r), day: r.change_pct === null ? null : Number(r.change_pct), week: perf.get(r.symbol)?.pct[7] ?? null })), weekQ));
+    if (flat.size) guarded = perLine(guarded, (line) => splitSentences(line).filter((sen) => !flat.has(sen)).join(" ")).replace(/\n{2,}/g, "\n").trim() || guarded;
+    guarded = relabelPeriodClaims(guarded, perfRows.filter((r) => !r.unknown).map((r) => ({ names: r.names, windows: r.pct }))) || guarded;
+  }
   answer = unicodeMinus(plainDataWords(tidyNumbers(digitsForWritten(withNoCallLine(dropInstructionEcho(fixFractions(ko ? guarded : fixArticles(plainScrub(guarded, PORTFOLIO_PLAIN)), fracHold, fracGroupsA)), question, lastA, prevQ, decisionQ)))));
   void softFallback;
   // the code-built answer is 4-5 checked bullets (~100 words with the opener): the phone cap must not cut its

@@ -3359,3 +3359,110 @@ export function nameFunds(text: string, held: Set<string>): string {
 
 /** r12 F: a desk view whose sentence 1 was dropped opens on "This means…", pointing at nothing: the pointer goes. */
 export const fixDanglingThisMeans = (t: string) => String(t ?? "").replace(/^(\s*)This means(?: that)?\s+([a-zA-Z])/, (_m, a: string, c: string) => a + c.toUpperCase());
+
+// ---------------------------------------------------------------------------------------------------------------
+// r13: mislabelled figures
+// ---------------------------------------------------------------------------------------------------------------
+const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** The index of the last mention of any of `names` before `at` in `s` (-1 when none). */
+function lastMentionBefore(s: string, names: string[], at: number): number {
+  let best = -1;
+  for (const n of names) {
+    if (!n) continue;
+    for (const m of s.matchAll(new RegExp(`(?<![A-Za-z0-9])${escRe(n)}(?![A-Za-z0-9])`, "g"))) if ((m.index ?? 0) < at && (m.index ?? 0) > best) best = m.index ?? 0;
+  }
+  return best;
+}
+function nearestBefore<T extends { names: string[] }>(s: string, facts: T[], at: number): T | undefined {
+  return facts.map((f) => ({ f, i: lastMentionBefore(s, f.names, at) })).filter((x) => x.i >= 0).sort((a, b) => b.i - a.i)[0]?.f;
+}
+
+const PERIOD_LABELS: [RegExp, number, string][] = [
+  [/\b(?:year[- ]to[- ]date|YTD|so far this year|this year|since (?:the start of the year|January))\b/gi, YTD, "this year"],
+  [/\b(?:in a year|one-year|1-year|1Y|12-month|(?:over|in) the (?:past|last) (?:year|12 months)|past 12 months)\b/gi, 365, "over the past year"],
+  [/\b(?:three months|3-month|3M|(?:over|in) (?:the )?(?:past |last )?(?:three|3) months)\b/gi, 90, "over three months"],
+  [/\b(?:one-month|1-month|30-day|this month|(?:in|over) the (?:past|last) month|in a month)\b/gi, 30, "over the past month"],
+  [/\b(?:one-week|1-week|this week|(?:in|over) the (?:past|last) week|in a week|five-day|5-day)\b/gi, 7, "over the past week"],
+];
+/** r13 M1: "It gained 30.9% in the last month and 347.4% this year" for SOXL, whose 347.4% is its 1-year return (YTD
+ *  +260.3%). Each figure is read against the window phrase beside it (after it, else before it), for the holding named
+ *  in the sentence, or, for a sentence that opens on "It"/"The fund", the one named in the sentence before. A figure
+ *  that is another window's return is relabelled to that window; a figure that is no window's return drops the
+ *  sentence. An unknown window (null) is left alone. */
+export function relabelPeriodClaims(text: string, facts: { names: string[]; windows: Record<number, number | null> }[]): string {
+  const tolOk = (v: number, t: number) => Math.abs(v - Math.abs(t)) <= Math.max(1, Math.abs(t) * 0.02);
+  return perLine(String(text ?? ""), (line) => {
+    let prev: { names: string[]; windows: Record<number, number | null> } | undefined;
+    return splitSentences(line).map((sen) => {
+      const named = facts.filter((f) => f.names.some((n) => n && nameIn(sen, n)));
+      const pronoun = /^\s*(?:It|Its|It's|The fund|The stock|The ETF|That)\b/.test(sen);
+      const ctxSubj = named.length === 0 && pronoun ? prev : undefined;
+      if (named.length) prev = named.length === 1 ? named[0] : undefined;
+      const reps: { a: number; b: number; label: string }[] = [];
+      let drop = false;
+      for (const m of sen.matchAll(/([+−-]?\d+(?:\.\d+)?)\s?%/g)) {
+        const at = m.index ?? 0, end = at + m[0].length;
+        const subj = named.length ? nearestBefore(sen, named, at) ?? (named.length === 1 ? named[0] : undefined) : ctxSubj;
+        if (!subj) continue;
+        // the window phrase: the first one within 30 characters after the figure, else the last one within 30 before it
+        type Hit = { a: number; b: number; w: number };
+        const hits: Hit[] = PERIOD_LABELS.flatMap(([re, w]) => [...sen.matchAll(re)].map((h) => ({ a: h.index ?? 0, b: (h.index ?? 0) + h[0].length, w })));
+        const nextPct = [...sen.slice(end).matchAll(/\d+(?:\.\d+)?\s?%/g)][0]?.index;
+        const after = hits.filter((h) => h.a >= end && h.a - end <= 30 && (nextPct === undefined || h.a < end + nextPct)).sort((x, y) => x.a - y.a)[0];
+        const before = hits.filter((h) => h.b <= at && at - h.b <= 30).sort((x, y) => y.b - x.b)[0];
+        const claimed = after ?? before;
+        if (!claimed) continue;
+        const v = Math.abs(Number(m[1].replace("−", "-")));
+        const truth = subj.windows[claimed.w];
+        if (truth === null || truth === undefined || tolOk(v, truth)) continue;
+        const alt = PERIOD_LABELS.find(([, w]) => typeof subj.windows[w] === "number" && tolOk(v, subj.windows[w] as number));
+        if (!alt) { drop = true; break; }
+        reps.push({ a: claimed.a, b: claimed.b, label: alt[2] });
+      }
+      if (drop) return "";
+      let out = sen;
+      for (const r of reps.sort((x, y) => y.a - x.a)) {
+        const lab = r.a === 0 || /^\s*$/.test(out.slice(0, r.a)) ? r.label[0].toUpperCase() + r.label.slice(1) : r.label;
+        out = out.slice(0, r.a) + lab + out.slice(r.b);
+      }
+      return out;
+    }).filter(Boolean).join(" ");
+  });
+}
+
+const WD_TAG = String.raw`(?:Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun)(?:day)?`;
+/** r13 M2: the day tag Ask attaches to change_pct ("[Friday US session]") copied by the model onto any figure: "TSLA
+ *  added 2.2% (Fri)" (its week; Friday was −1.54%), "SOXL fell 40% (Fri) over three months". A "(Fri)" tag stays only on
+ *  a figure that IS that holding's day change (±0.1). */
+export function fixDayTags(text: string, facts: { names: string[]; dayPct: number | null }[]): string {
+  const re = new RegExp(String.raw`([+−-]?\d+(?:\.\d+)?)\s?%\s*\((` + WD_TAG + String.raw`)\b[^)]{0,24}\)`, "g");
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => sen.replace(re, (m: string, n: string, _wd: string, off: number) => {
+    const v = Math.abs(Number(n.replace("−", "-")));
+    const eq = (f: { dayPct: number | null }) => typeof f.dayPct === "number" && Math.abs(v - Math.abs(f.dayPct)) <= 0.1;
+    const who = nearestBefore(sen, facts, off);
+    const ok = who ? eq(who) : facts.some(eq);
+    return ok ? m : `${n}%`;
+  })).join(" "));
+}
+
+/** r13 M2: "VOO… flat" when VOO was +1.28% on the week. A holding called flat / unchanged moved at least 0.75% over the
+ *  window the sentence (or the question) is about: the week when either says week, else the day. */
+export function flatClaims(text: string, facts: { names: string[]; day: number | null; week: number | null }[], weekQ = false): string[] {
+  return sentencesOf(text).filter((s) => [...s.matchAll(/\b(?:flat|unchanged|barely moved|little changed|held steady|went nowhere|did(?:n't| not) move)\b/gi)].some((m) => {
+    const f = nearestBefore(s, facts, m.index ?? 0);
+    if (!f) return false;
+    const v = weekQ || /\bweek(?:ly)?\b/i.test(s) ? f.week : f.day;
+    return typeof v === "number" && Math.abs(v) >= 0.75;
+  }));
+}
+
+/** r13 M2: "…after bullish semiconductor comeback story": a cause clause of mood words that no headline carries goes
+ *  (the clause, not the sentence: the figure beside it is checked on its own). */
+export function stripUngroundedMoodCauses(text: string, sources: string, names: string[] = []): string {
+  const lines = String(sources ?? "").split(/\n+/).map(normSrc).filter((l) => l.trim());
+  return String(text ?? "").replace(/,?\s*\b(?:after|on|amid|thanks to|following|riding)\s+(?:a |an |the |its |their )?((?:[\w'-]+\s+){0,4}?)((?:comeback|story|optimism|hype|rally|momentum|enthusiasm|fears?|worries|concerns|buzz|sentiment|narrative|euphoria|jitters)(?:\s+(?:comeback|story|optimism|hype|rally|momentum|narrative))*)\b/gi, (m: string, pre: string, word: string) => {
+    const toks = contentToks(`${pre} ${word}`, names).filter((w) => !/^(?:bullish|bearish|strong|renewed|fresh|big|broad|growing|ongoing)$/i.test(w));
+    if (!toks.length) return m;
+    return lines.some((l) => toks.filter((w) => stemIn(l, w)).length >= Math.min(2, toks.length)) ? m : "";
+  });
+}

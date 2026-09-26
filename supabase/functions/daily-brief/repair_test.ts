@@ -18,11 +18,14 @@ const T: Record<string, unknown[]> = {
     // a base on each of the 7-11 days back: on a weekend or a Monday the 7-day cutoff is an earlier session's close, and a
     // single base stamped exactly now-7d fell after it (every window read null on Saturday 2026-09-26)
     ...[7, 8, 9, 10, 11].flatMap((n) => [{ symbol: "TSLA", ts: day(n), price: 360 }, { symbol: "VOO", ts: day(n), price: 690 }]),
+    // r13 M1: a 1-year base (365-369 days back) and a year-end base, so TSLA is +280% over 1Y and +90% YTD
+    ...[365, 366, 367, 368, 369].map((n) => ({ symbol: "TSLA", ts: day(n), price: 100 })),
+    { symbol: "TSLA", ts: "2025-12-30T21:00:00.000Z", price: 200 }, { symbol: "TSLA", ts: "2025-12-31T21:00:00.000Z", price: 200 },
     { symbol: "TSLA", ts: day(0), price: 380 }, { symbol: "VOO", ts: day(0), price: 700 },
   ],
   daily_briefs: [{ id: 1, user_id: UID, edition: "close", brief_date: etToday, gen_version: 11, generated_at: day(0.05),
     sections: { lede: "A $9,447 (as of the 4:00 PM ET close) (+0.3%) gain. TSLA was the week's biggest loser.",
-      overnight: "The S&P 500 closed at 7,743.41 (+0.5%), Nasdaq futures sit at 30,921.75.", desk_view: "Concentration stays high. A clean beat rerates the whole portfolio.",
+      overnight: "The S&P 500 closed at 7,743.41 (+0.5%), Nasdaq futures sit at 30,921.75.", desk_view: "Concentration stays high. A clean beat rerates the whole portfolio. Tesla leads the book. It rose 280% this year.",
       positions: [{ name: "Tesla", note: "Tesla fell 2.1%.", watch: "No confirmed date yet" }], calendar: [] } }],
 };
 const patches: Record<string, unknown>[] = [];
@@ -72,6 +75,7 @@ Deno.test({ name: "repair: today's live row is patched in place; no placeholder 
   assert(!/biggest loser/.test(sec.lede), sec.lede);
   assert(!/futures/.test(sec.overnight), sec.overnight);
   assert(!/rerates/.test((sec as { desk_view?: string }).desk_view ?? ""), (sec as { desk_view?: string }).desk_view);   // r12 D
+  assert(/280% over the past year/.test((sec as { desk_view?: string }).desk_view ?? ""), (sec as { desk_view?: string }).desk_view);   // r13 M1
   assert(!/\) \(/.test(sec.lede), sec.lede);
   assert(sec.positions.every((x) => !/no confirmed date yet/i.test(x.watch)), JSON.stringify(sec.positions));
   await server.shutdown();
