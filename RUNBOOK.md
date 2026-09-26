@@ -148,3 +148,12 @@ runs on iPad in compatibility mode and App Review does test there.
 
 1.1 follow-up: `transcripts.content` still holds verbatim earnings-call text as model input (the client grant is revoked
 as of `20260914000033`). Replace it with a model-written summary, then re-test briefs, insights and Ask.
+
+**1.0.1 prepared 2026-09-26** (branch `release-1.0.1` b1d38e4 + legal e01476f): ASC version `1f611f5d-c4ec-4a2b-b757-baf04293a5d9`
+(release type MANUAL), build `202609261817` archived + uploaded with the RUNBOOK commands above (MARKETING_VERSION=1.0.1 passed
+on the command line), en-US localization `5ec97a55-…` inherited the 1.0 description and the APP_IPHONE_67 screenshot set,
+What's New set from `/tmp/whatsnew101.txt` (copy in `answers/20260926_182000_assetly_1_0_1_submission_checklist.md`), review
+detail `585f7ed8-…` PATCHed with the 1.0.1 notes and the reviewer demo account, age rating override `ageRatingOverrideV2 =
+EIGHTEEN_PLUS` on the PREPARE_FOR_SUBMISSION appInfo `5b9a4ea9-…` (Terms say 18+; owner decision 9/26). Web 1.0.1 was
+published to gh-pages in the same run (`VITE_BASE=/assetly/ npm run build`, rsync -rc into the pages worktree). Deferred to
+1.0.2: Sign in with Apple token revocation on delete-account (5.1.1(v)); streaming Ask answers; an ex-date history column.
