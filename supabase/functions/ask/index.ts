@@ -21,7 +21,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
 } from "../_shared/intel.ts";
 
 const CORS = {
@@ -343,17 +343,20 @@ Deno.serve(async (req) => {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
   let digest = "";
   const askEsts: { names: string[]; est: string | null; range?: [string, string] }[] = [];
+  let earnReadOk = true;
   const headlinesBy = new Map<string, string>();
   const digSyms = held.slice(0, 12).map((r) => r.symbol);
   if (digSyms.length) {
     const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
     const none = { data: [] as never[] };
+    const noneE = { data: [] as never[] };
     const [{ data: dn }, { data: dt }, { data: df }] = await Promise.all([
       capped(admin.from("news").select("symbol,title,url,source,summary,published_at").in("symbol", digSyms).gte("published_at", since14).order("published_at", { ascending: false }).limit(160).then((r) => r) as unknown as Promise<{ data: unknown[] | null }>, 5000, none as { data: unknown[] | null }),
       capped(admin.from("transcripts").select("symbol,title,published_at").in("symbol", digSyms).order("published_at", { ascending: false, nullsFirst: false }).limit(48).then((r) => r) as unknown as Promise<{ data: unknown[] | null }>, 5000, none as { data: unknown[] | null }),
       // only the forms that date a report, 13 months deep (a page of "newest of any form" lost the year-ago quarter)
-      capped(earningsFilings(admin, digSyms).then((data) => ({ data })), 5000, none as { data: unknown[] | null }),
+      capped(earningsFilings(admin, digSyms).then((data) => ({ data })), 5000, noneE as { data: unknown[] | null }),
     ]) as unknown as [{ data: { symbol: string; title: string; url: string; source: string; summary: string | null; published_at: string }[] | null }, { data: { symbol: string; title: string; published_at: string | null }[] | null }, { data: { symbol: string; form: string; filed_at: string; items?: string | null }[] | null }];
+    earnReadOk = df !== (noneE.data as unknown);
     // each holding's own recent headlines, for the cause check (round 8: META's drop "after a director sale filing" was AVGO's)
     for (const s of digSyms) {
       const r = held.find((h) => h.symbol === s)!;
@@ -407,7 +410,9 @@ Deno.serve(async (req) => {
     const [{ data: news }, { data: ins }, { data: fils }, { data: trAll }] = deep[k];
     const hr = held.find((h) => h.symbol === sym)!;
     const nm = nameOf(hr);
-    const heads = (news ?? []).filter((n) => usableNews(n, aliasesFor(hr.symbol, hr.name)) && !staleNewsTitle(String(n.title), n.published_at, today)).slice(0, 12);
+    // round 9 D: buy-framed and clickbait titles no longer crowd the causes out of the 12 (META's jury loss and the
+    // Forbes "$9 billion in a day" story were there, and the answer said no headline explained the drop)
+    const heads = (news ?? []).filter((n) => usableNews(n, aliasesFor(hr.symbol, hr.name)) && !staleNewsTitle(String(n.title), n.published_at, today) && headlineOk(String(n.title))).slice(0, 12);
     context += `\n[${nm}] 7d headlines:\n${heads.map((n) => `- [${n.source}, ${String(n.published_at).slice(5, 10)}] ${n.title}`).join("\n") || "- none"}`;
     if (ins?.[0]) context += `\n[${nm}] current desk take (written ${String(ins[0].generated_at).slice(0, 16).replace("T", " ")} UTC; its prices may be older than the stats above, which win): ${(ins[0].bullets as string[]).join(" | ")}`;
     if (fils?.length) context += `\n[${nm}] SEC filings: ${fils.map((f) => `${f.form} ${f.filed_at}`).join(", ")}`;
@@ -471,7 +476,7 @@ Deno.serve(async (req) => {
     holdings: held.map((r) => ({ name: nameOf(r), symbol: r.symbol, kind: r.kind, usd: usd(Number(r.value ?? 0), r.currency) })),
     cashUsd: book.filter((r) => r.symbol.startsWith("$") || r.kind === "cash").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0),
     assetsUsd, today,
-    reports: askEsts.map((e) => ({ name: e.names[0], est: e.est, ...(e.range ? { range: e.range } : {}) })),
+    reports: askEsts.map((e) => ({ name: e.names[0], est: e.est, ...(e.range ? { range: e.range } : {}) })), reportsUnknown: !earnReadOk,
     dividends: divLines.map((x) => ({ name: nameOf(x.r), annualUsd: x.d.annual, nextEx: divRows.get(x.r.symbol)?.div_next_ex ?? null, current: x.d.current })),
     mode: isRankQuestion(question) ? "rank" : isSellQuestion(question) ? "sell" : "buy",
     returns1m: Object.fromEntries(held.map((r) => [r.symbol, perf.get(r.symbol)?.pct[30] ?? null])),
@@ -560,6 +565,9 @@ Deno.serve(async (req) => {
   const ccyLine = korean
     ? `Money: portfolio totals and position values are US dollars ($); Korean shares also show their won price. Write won amounts with the ₩ sign.`
     : `Money: every amount is in US dollars ($). This account holds nothing in Korean won: write ₩ only when the user asks for won, converting at the rate on file: USD/KRW ${Math.round(fxMap.get("KRW") ?? 1380).toLocaleString("en-US")} (₩ per $1); say it is a conversion at that rate.`;
+  // round 9 C (and newcomer 6): a data question's figures are computed here and lead the answer
+  const perfRows: PerfRow[] = held.map((r) => ({ symbol: r.symbol, label: nameOf(r), names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], usd: usd(Number(r.value ?? 0), r.currency), pct: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> }));
+  const dataLead = tradeQ ? null : computedDataLead(question, perfRows, mentionedNow, ko);
   const prompt = `TODAY is ${today} (US Eastern date).
 ${ccyLine}
 User's portfolio (deterministic; the ONLY source of numbers). For each holding: "share price" is the price of ONE share; "position value" is what the user's whole holding is worth. They are different numbers: a question about the stock's price or close gets the SHARE PRICE, never the position value. Each "day" figure is tagged with the session it belongs to: a LIVE session is today's move so far, a "past (not today)" session is named by its day, and a live move is never "yesterday".
@@ -571,6 +579,7 @@ ${divLines.map((x) => "- " + x.d.line).join("\n")}
 ${divPending ? `Portfolio dividend income: still loading for ${divPending} holding(s); say the figures are being fetched and to ask again in a minute, never state $0 or a partial total as the portfolio's income.` : `Portfolio dividend income ≈ ${money(divIncome)} a year (shares × last 12 months' payments per holding)${assetsUsd > 0 ? `, ${(divIncome / assetsUsd * 100).toFixed(2)}% of assets` : ""}.`}
 Signals on file per holding (earnings dates, filings, headlines; the earnings dates are computed from SEC filings and are the ONLY earnings dates you may state, with "(est)" estimates spoken as "expected around ..."):${digest || "\n(none)"}
 ${context}
+${dataLead ? `\nCOMPUTED ANSWER (from the stats; open the answer with exactly these figures, then add context):\n${dataLead}\n` : ""}CAUSES: when a holding's 7d headlines give a reason for its move, name it and its source; never say no headline explains a move when its headlines are listed above.
 
 ${convoBlock}Question: "${question}"
 
@@ -619,9 +628,10 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model, messages: msgs, temperature, max_tokens: 6000, response_format: { type: "json_object" } }),
     }).catch(() => null);
-    clearTimeout(timer);
-    if (!r || !r.ok) return null;
+    // round 9 E: the body read stays under the timer (a slow body stream took two answers to 31.9s and 32.7s)
+    if (!r || !r.ok) { clearTimeout(timer); return null; }
     const out = await r.json().catch(() => null);
+    clearTimeout(timer);
     return parseAnswer(out?.choices?.[0]?.message?.content ?? "");
   };
   const base = [{ role: "system", content: system }, { role: "user", content: prompt }];
@@ -636,9 +646,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       body: JSON.stringify({ model: FAST, temperature: 0, max_tokens: 900, response_format: { type: "json_object" },
         messages: [{ role: "system", content: JUDGE_POLICY }, { role: "user", content: `Items:\n${list.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] }),
     }).catch(() => null);
-    clearTimeout(timer);
-    if (!r || !r.ok) return null;
+    if (!r || !r.ok) { clearTimeout(timer); return null; }
     const out = await r.json().catch(() => null);
+    clearTimeout(timer);
     const txt = String(out?.choices?.[0]?.message?.content ?? "");
     try {
       const m = /\{[\s\S]*\}/.exec(txt);
@@ -649,7 +659,10 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   };
   let parsedA: { answer: string; followups: string[] } | null = null;
   type Ans = { answer: string; followups: string[] } | null;
-  parsedA = await new Promise<Ans>((resolve) => {
+  // round 9 E: the reads before the model are capped, but together they can eat the budget; a model call that cannot
+  // finish before the deadline is not started (the code-built answer ships instead)
+  if (room() < (decisionQ ? 4000 : 6000)) parsedA = null;
+  else parsedA = await new Promise<Ans>((resolve) => {
     let settled = false, fastStarted = false, open = 1;
     const finish = (v: Ans) => {
       if (settled) return;
@@ -667,7 +680,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     if (decisionQ) setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, Math.max(0, room() - 1000));
     else setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, Math.max(0, room() - 500));
   });
-  const deDash = (v: string) => v.trim().replace(/\s*—\s*/g, ": ").replace(/\s*–\s*/g, ": ");
+  // round 9: "1M is –0.9%" became "1M is: 0.9%" (the en-dash minus flipped the sign). A dash right before a digit is a
+  // minus sign; only a spaced dash between words is punctuation.
+  const deDash = (v: string) => v.trim().replace(/([\s(:,]|^)[\u2013\u2014](?=\$?\d)/g, "$1\u2212").replace(/\s*\u2014\s*/g, ": ").replace(/\s+\u2013\s+/g, ": ");
   // one bullet per line before any check: a shortlist written "• A. • B." on one line reads as one line otherwise
   let answer = normalizeBullets(deDash(parsedA?.answer ?? ""));
   // ---- verifier: a trade instruction or a position value quoted as a share price gets ONE rewrite ----
@@ -696,7 +711,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // Round 7: no 502 any more. A decision question falls through to the code-built husk; any other question gets the
   // code-built figures (the three 502s were plain data questions that worked on a re-ask)
   let softFallback = false;
-  if (!answer && !(tradeQ || pickQ)) { answer = dataFallback(); softFallback = true; }
+  if (!answer && !(tradeQ || pickQ)) { answer = dataLead ? `${dataLead}\n${dataFallback()}` : dataFallback(); softFallback = true; }
   // code-side guards, on EVERY answer (whether or not an opener is added): verdicts and valuation calls, a
   // shortlist answering a pick question, a deliveries date that is not in the data
   const dropLines = new Set([...(pickQ ? curatedListHits(answer, bookNames) : []), ...(decisionQ ? suggestionHits(answer, bookNames) : []),
@@ -714,6 +729,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     ...targetBandClaims(answer),
     ...misattributedCauses(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name)], headlines: headlinesBy.get(r.symbol) ?? "" }))),
     // round 7 newcomer: "339% this year" for Samsung (YTD +138%): a period claim is held to the holding's own window
+    // round 9 C: a window's dollar move held to the holding's own ("TSLA −$35,896" over 1M was its 1Y figure)
+    ...windowDollarMismatches(answer, perfRows, questionWindows(question)[0] ?? null),
     ...periodReturnMismatches(answer, held.map((r) => ({ names: [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)], windows: (perf.get(r.symbol)?.pct ?? {}) as Record<number, number | null> })))]);
   const pruned0 = answer;
   // Round 8: "What share of my portfolio is NVDA?" shipped "That is $675,210 out of…" with the 19.2% gone, and a premise
@@ -738,6 +755,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // second model reads the answer (and the model's chips) against a short policy and names the sentences that give
   // advice, name a product to buy, pass a verdict in the app's voice or forecast. Those sentences go. If the judge
   // does not answer in time, a decision question gets the code-built answer and any other keeps the regex result.
+  if (dataLead && guarded.trim() && !statesLead(guarded, dataLead)) guarded = `${dataLead}\n${guarded}`;
   let judgedChips: string[] | null = null;
   if (guarded.trim()) {
     const chips0 = (parsedA?.followups ?? []).map(deDash);

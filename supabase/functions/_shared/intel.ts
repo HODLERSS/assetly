@@ -1526,6 +1526,8 @@ export type HuskInput = {
   holdings: { name: string; symbol: string; kind: string | null; usd: number }[];
   cashUsd: number; assetsUsd: number; today: string;
   reports: { name: string; est: string | null; range?: [string, string] }[];
+  /** round 9: the estimates read failed (timed out): say nothing about reports rather than "no holding reports" */
+  reportsUnknown?: boolean;
   dividends: { name: string; annualUsd: number; nextEx: string | null; current?: boolean }[];
   // round 7: the husk fits the question. sell/trim/dump questions get a SELLER's frame, "rank my holdings" a ranking
   // by stated metrics, and a trade question about ONE holding an answer built around that holding
@@ -1567,7 +1569,7 @@ export function buildHusk(inp: HuskInput, ko: boolean): string {
   if (ko) {
     if (top.length) out.push(top.length === 1 ? `• 집중도: 보유 종목은 ${top[0].name} 하나로 자산의 ${topShare.toFixed(0)}%입니다.` : `• 집중도: 상위 ${top.length}개 종목(${top.map((h) => `${h.name} ${pct1(h.usd / A * 100, true)}`).join(", ")})이 자산의 ${topShare.toFixed(0)}%입니다.`);
     out.push(`• 구성: ${[...topThemes.map(([t, v]) => `${THEME_KO[t] ?? t} ${pct1(v / A * 100, true)}`), ...(crypto > 0 && !cryptoListed ? [`암호화폐 ${pct1(crypto, true)}`] : []), `현금 ${pct1(cashPct, true)}(${usdText(inp.cashUsd)})`].join(", ")}입니다.`);
-    out.push(reports.length ? `• 45일 안에 예상되는 실적 발표(추정): ${reports.map((r) => `${r.name} ${r.range ? spanOfMonthKo(r.range) : md(r.est!) + "경"}`).join(", ")}.` : "• 45일 안에 실적 발표가 예상되는 보유 종목은 없습니다.");
+    if (!inp.reportsUnknown) out.push(reports.length ? `• 45일 안에 예상되는 실적 발표(추정): ${reports.map((r) => `${r.name} ${r.range ? spanOfMonthKo(r.range) : md(r.est!) + "경"}`).join(", ")}.` : "• 45일 안에 실적 발표가 예상되는 보유 종목은 없습니다.");
     out.push(payers.length ? `• 배당: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` 외 ${payers.length - 4}개` : ""}에서 연 약 ${usdText(income)}이 나옵니다${payers.some((d) => d.current) ? "(현재 배당률 기준)" : ""}. ${soonEx.length ? `45일 안의 배당락(추정): ${soonEx.map((d) => `${d.name} ${md(d.nextEx!)}경`).join(", ")}.` : "45일 안에 배당락이 예상되는 종목은 없습니다."}` : "• 배당: 기록상 배당을 주는 보유 종목이 없습니다.");
     if (inp.mode === "sell") { out.push(`• 파는 쪽에서 보통 따지는 것: 차익에 붙는 세금, 한 종목(상위 ${top[0]?.name ?? ""} ${pct1((top[0]?.usd ?? 0) / A * 100, true)})에 원하는 것보다 많이 실려 있는지, 처음 산 이유가 아직 유효한지.`); return out.join("\n"); }
     out.push(`• 이런 결정에서 보통 따지는 것: 새 돈이 이미 ${topShare.toFixed(0)}%인 ${top.length === 1 ? top[0].name : "상위 종목"} 비중을 더 키우는지, ${crypto > 0 ? `포트폴리오가 암호화폐(현재 ${pct1(crypto)})에 얼마나 흔들리길 원하는지` : `현금(현재 ${pct1(cashPct)})을 얼마나 남겨둘지`}, 투자 기간과 세금.`);
@@ -1576,7 +1578,7 @@ export function buildHusk(inp: HuskInput, ko: boolean): string {
   if (top.length) out.push(top.length === 1 ? `• Concentration: your only holding, ${top[0].name}, is ${topShare.toFixed(0)}% of the portfolio.` : `• Concentration: your ${NUM_WORD[top.length]} largest holdings (${top.map((h) => `${h.name} ${pct1(h.usd / A * 100)}`).join(", ")}) are ${topShare.toFixed(0)}% of the portfolio.`);
   const mix = [...topThemes.map(([t, v]) => `${t} ${pct1(v / A * 100)}`), ...(crypto > 0 && !cryptoListed ? [`crypto ${pct1(crypto)}`] : [])];
   out.push(`• Mix: ${mix.length ? mix.join(", ") + ", and " : ""}cash ${pct1(cashPct)} (${usdText(inp.cashUsd)}).`);
-  out.push(reports.length ? `• Reports expected in the next 45 days (estimates): ${reports.map((r) => `${r.name} ${r.range ? spanOfMonth(r.range) : "~" + md(r.est!)}`).join(", ")}.` : "• No holding has an earnings report expected in the next 45 days.");
+  if (!inp.reportsUnknown) out.push(reports.length ? `• Reports expected in the next 45 days (estimates): ${reports.map((r) => `${r.name} ${r.range ? spanOfMonth(r.range) : "~" + md(r.est!)}`).join(", ")}.` : "• No holding has an earnings report expected in the next 45 days.");
   out.push(payers.length ? `• Dividends: ${payers.slice(0, 4).map((d) => d.name).join(", ")}${payers.length > 4 ? ` and ${payers.length - 4} more` : ""} pay about ${usdText(income)} a year together${payers.some((d) => d.current) ? " at the current rate" : ""}; ${soonEx.length ? `ex-dates expected in the next 45 days: ${soonEx.map((d) => `${d.name} ~${md(d.nextEx!)}`).join(", ")}.` : "none has an ex-date expected in the next 45 days."}` : "• Dividends: no holding pays a dividend on record.");
   if (inp.mode === "sell") {
     out.push(`• What a seller usually weighs here: the tax on any gain, whether one holding (${top[0]?.name ?? "the largest"} is ${pct1((top[0]?.usd ?? 0) / A * 100)}) is more of the portfolio than you want, and whether the reason you bought still holds.`);
@@ -2086,7 +2088,9 @@ export function misattributedCauses(text: string, facts: { names: string[]; head
     const named = facts.filter((f) => f.names.some((n) => n && nameIn(s, n)));
     if (named.length !== 1) return false;
     const me = named[0];
-    if (/\bon no (?:clear |obvious )?news\b|\bno (?:clear |obvious )?(?:headline|news) (?:explains|behind)\b|뚜렷한 (?:뉴스|이유) 없이/i.test(s)) return me.headlines.trim().length > 0 && /\b(?:jump|rose|rise|climb|surg|fell|drop|slid|sank|gain|lost)/i.test(s);
+    // round 9: "No META headline explains today's 3.3% drop" (Forbes and Yahoo carried two), "none in file", "No fresh
+    // headlines available" (NVDA had 40): a no-news claim for a holding that HAS headlines goes
+    if (/\bon no (?:clear |obvious )?news\b|\bno (?:clear |obvious |specific |single )?(?:[A-Z][\w.&-]* )?(?:headlines?|news)\b[^.]{0,40}\b(?:explains?|behind|available|points? to|in (?:the )?file|on file|cites?|gives?)\b|\bnone (?:in|on) file\b|\bno fresh (?:headlines?|news)\b|뚜렷한 (?:뉴스|이유) 없이|(?:헤드라인|뉴스)(?:이|가|은|는)? 없/i.test(s)) return me.headlines.trim().length > 0;
     const m = /\b(?:after|on|following|as|because of|due to|amid)\s+(?:a |an |the )?([^.,;]{6,80})/i.exec(s);
     if (!m) return false;
     const words = (m[1].toLowerCase().match(/[a-z][a-z-]{4,}/g) ?? []).filter((w) => !STOP.has(w) && !me.names.some((n) => n.toLowerCase().includes(w)));
@@ -2547,4 +2551,107 @@ export function applyJudge(answer: string, chips: string[], items: { where: { li
     return /^\s*•/.test(line) && !/^\s*•/.test(joined) ? `• ${joined.trim()}` : joined;
   }).filter((l): l is string => l !== null && !!l.trim());
   return { text: lines.join("\n"), chips: chips.filter((_, i) => !flags.has(items.chipAt + i)) };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 9 C: data questions answered from computed data
+// ---------------------------------------------------------------------------------------------------------------
+export type PerfRow = { symbol: string; label: string; names: string[]; usd: number; pct: Record<number, number | null> };
+/** The return windows a question asks about, in the order written: 7, 30, 90, 365 or YTD (-1). */
+export function questionWindows(q: string): number[] {
+  const t = String(q ?? "");
+  const found: { at: number; w: number }[] = [];
+  const add = (re: RegExp, w: number) => { for (const m of t.matchAll(re)) found.push({ at: m.index ?? 0, w }); };
+  add(/\b(?:1|one)[- ]?week\b|\b1W\b|\bthis week\b|\bpast week\b|이번 주|1주/gi, 7);
+  add(/\b(?:1|one)[- ]?month\b|\b1M\b|\bthis month\b|\bpast month\b|\blast month\b|\bmonth to date\b|\bMTD\b|한 달|1개월|이번 달/gi, 30);
+  add(/\b(?:3|three)[- ]?months?\b|\b3M\b|\bpast quarter\b|3개월|석 달/gi, 90);
+  add(/\b(?:1|one)[- ]?year\b|\b1Y\b|\b12[- ]?months?\b|\bpast year\b|1년/gi, 365);
+  add(/\bthis year\b|\bYTD\b|\byear[- ]to[- ]date\b|올해/gi, YTD);
+  return [...new Set(found.sort((a, b) => a.at - b.at).map((f) => f.w))];
+}
+const wLabel = (w: number, ko: boolean) => ko ? ({ 7: "1주", 30: "1개월", 90: "3개월", 365: "1년", [-1]: "올해" } as Record<number, string>)[w] : ({ 7: "1 week", 30: "1 month", 90: "3 months", 365: "1 year", [-1]: "this year" } as Record<number, string>)[w];
+const pctS = (v: number | null | undefined, ko: boolean) => typeof v === "number" ? `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}%` : (ko ? "데이터 부족" : NO_HISTORY);
+const usdS = (v: number) => `${v >= 0 ? "+" : "−"}$${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
+/** The dollar move of a position over a window at today's size: value now minus value at the window's start. */
+export const windowUsd = (usd: number, pct: number | null | undefined): number | null => typeof pct === "number" && pct > -100 ? usd - usd / (1 + pct / 100) : null;
+
+/** The figures a data question asks for, built in code (round 9 C; newcomer 6: "Is Coca-Cola up this year?" never got
+ *  +25.6%). Returns bullet lines to lead the answer, or null when the question is not a computable data question:
+ *  - "best / worst N-month return" -> every holding ranked on that window;
+ *  - "compare NVDA and AVGO over 1M and 1Y", "Is KO up this year?" -> each named holding on each window;
+ *  - "how much did I make this month?" -> the book's dollar move on the window with the biggest gain and loss. */
+export function computedDataLead(q: string, rows: PerfRow[], mentionedNow: string[], ko: boolean): string | null {
+  const ws = questionWindows(q);
+  if (!ws.length || !rows.length) return null;
+  const t = String(q ?? "");
+  // period P/L
+  if (/\bhow much (?:did|have|has) (?:i|we|my (?:portfolio|book|account)) (?:make|made|lose|lost|gain|gained|earn|earned)\b|\bp\s?\/\s?l\b|\bprofit and loss\b|얼마(?:나)? (?:벌|잃|수익)|손익/i.test(t)) {
+    const w = ws[0];
+    const each = rows.map((r) => ({ r, d: windowUsd(r.usd, r.pct[w]) })).filter((x): x is { r: PerfRow; d: number } => x.d !== null);
+    if (!each.length) return null;
+    const tot = each.reduce((a, x) => a + x.d, 0);
+    const best = [...each].sort((a, b) => b.d - a.d)[0], worst = [...each].sort((a, b) => a.d - b.d)[0];
+    const gain = best.d > 0 ? best : null, loss = worst.d < 0 ? worst : null;
+    const partsKo = [gain ? `가장 크게 오른 종목: ${gain.r.label} ${usdS(gain.d)}` : "", loss ? `가장 크게 내린 종목: ${loss.r.label} ${usdS(loss.d)}` : ""].filter(Boolean);
+    const partsEn = [gain ? `Biggest gain: ${gain.r.label} ${usdS(gain.d)} (${pctS(gain.r.pct[w], ko)})` : "", loss ? `biggest loss: ${loss.r.label} ${usdS(loss.d)} (${pctS(loss.r.pct[w], ko)})` : ""].filter(Boolean);
+    const second = each.length < 2 ? "" : ko ? (partsKo.length ? `\n• ${partsKo.join(" · ")}.` : "") : (partsEn.length ? `\n• ${partsEn.join("; ").replace(/^b/, "B")}.` : "");
+    return ko
+      ? `• ${wLabel(w, ko)} 동안 보유 종목의 평가액 변화는 ${usdS(tot)}입니다(현재 보유 수량 기준).${second}`
+      : `• Over ${wLabel(w, ko)} your holdings moved ${usdS(tot)} at today's position sizes.${second}`;
+  }
+  const perfWords = /\b(?:return|returns|perform|performance|performer|performing|did|do|does|doing|up|down|gain|gained|lose|lost|compare|vs\.?|versus|move|moved)\b|수익률|올랐|내렸|어땠|비교/i;
+  if (!perfWords.test(t)) return null;
+  // ranking on a window, of THEIR holdings ("best stock in the S&P 500 this year" is not about the book)
+  if (isDataRankQuestion(t) && /\bmy\b|\bholdings?\b|\bportfolio\b|\bi own\b|내 |보유/i.test(t) && !/\b(?:dividend|yield|weight|p\/?e)\b|배당|비중/i.test(t)) {
+    return ws.map((w) => {
+      const ranked = rows.filter((r) => typeof r.pct[w] === "number").sort((a, b) => (b.pct[w] as number) - (a.pct[w] as number));
+      if (!ranked.length) return null;
+      const list = ranked.map((r) => `${r.label} ${pctS(r.pct[w], ko)}`).join(", ");
+      return ko ? `• ${wLabel(w, ko)} 수익률 (높은 순): ${list}.` : `• ${wLabel(w, ko)} returns, best to worst: ${list}.`;
+    }).filter(Boolean).join("\n") || null;
+  }
+  // named holdings on each window
+  const named = mentionedNow.map((sy) => rows.find((r) => r.symbol === sy)).filter((r): r is PerfRow => !!r);
+  if (!named.length) return null;
+  if (named.length === 1 && ws.length === 1) {
+    const r = named[0], v = r.pct[ws[0]];
+    if (typeof v !== "number") return ko ? `• ${r.label}의 ${wLabel(ws[0], ko)} 수익률은 데이터가 부족합니다.` : `• ${r.label}: ${wLabel(ws[0], ko)}, ${NO_HISTORY}.`;
+    const lbl = ws[0] === YTD ? (ko ? "올해" : "this year") : (ko ? `최근 ${wLabel(ws[0], ko)}` : `over ${wLabel(ws[0], ko)}`);
+    return ko ? `• ${r.label}는 ${lbl} ${pctS(v, ko)}입니다.` : `• ${r.label} is ${v >= 0 ? "up" : "down"} ${Math.abs(v).toFixed(1)}% ${lbl}.`;
+  }
+  return named.map((r) => `• ${r.label}: ${ws.map((w) => `${wLabel(w, ko)} ${pctS(r.pct[w], ko)}`).join(", ")}.`).join("\n");
+}
+
+/** Does the answer already state the computed figures? (every percent of the lead appears in it) */
+export function statesLead(answer: string, lead: string): boolean {
+  const figs = [...String(lead).matchAll(/[+−-]?(\d+(?:\.\d)?)%/g)].map((m) => m[1]);
+  const a = String(answer ?? "");
+  return figs.length > 0 && figs.every((f) => a.includes(f + "%"));
+}
+
+/** A dollar move stated for a holding over a window that is not that holding's (round 9: "Biggest 1M losers: TSLA
+ *  −$35,896", its 1Y figure, when its 1M was +$15.3K; "GOOGL +$3,344" for −$3,344). The window is read from the
+ *  sentence (or `defaultWindow`); a figure off by more than 15% or of the wrong sign removes the sentence. */
+export function windowDollarMismatches(text: string, rows: PerfRow[], defaultWindow: number | null = null): string[] {
+  return sentencesOf(text).filter((s) => {
+    const ws = questionWindows(s);
+    const w = ws.length === 1 ? ws[0] : ws.length ? null : defaultWindow;
+    if (w === null) return false;
+    if (/\b(?:today|day's|since you bought|cost|basis|dividend|income|a year in dividends)\b|오늘|배당/i.test(s)) return false;
+    // each holding named in the sentence, with the first dollar figure within 24 characters after it
+    for (const row of rows) for (const nm of new Set([row.symbol, ...row.names])) {
+      if (!nm || nm.length < 2) continue;
+      const m = new RegExp(`(?:^|[^A-Za-z0-9])${esc(nm)}(?![A-Za-z0-9])[^$\\d.]{0,24}?([+\\u2212-])?\\s?\\$(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)\\s?([KkMm](?![a-z]))?`).exec(s);
+      if (!m) continue;
+      m.splice(1, 0, nm);
+      const want = windowUsd(row.usd, row.pct[w]);
+      if (want === null) continue;
+      let v = Number(m[3].replace(/,/g, "")) * (m[4] ? (/k/i.test(m[4]) ? 1e3 : 1e6) : 1);
+      const signed = m[2] === "-" || m[2] === "−" ? -v : m[2] === "+" ? v : null;
+      if (signed !== null) v = signed;
+      if (signed !== null && Math.sign(v) !== Math.sign(want) && Math.abs(want) > 1) return true;
+      if (Math.abs(Math.abs(v) - Math.abs(want)) > Math.max(50, Math.abs(want) * 0.15)) return true;
+    }
+    return false;
+  });
 }
