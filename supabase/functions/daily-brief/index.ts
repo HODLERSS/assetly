@@ -78,7 +78,8 @@ const FAST_MODEL = "gpt-oss-120b";
 // 12 (r10): a day move related to the return target, scope labels that do not match the figure's composition
 // 13 (r10 newcomer / intelligence): theme shares, notes with a real risk each, watches in words, ideas' wording, week
 //    superlatives, grounded earnings watches; every stored script is re-made through narrate's card gates
-const GEN_VERSION = 13;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+// 14 (r10 native): fragments and seams, no futures in a closing note
+const GEN_VERSION = 14;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -391,7 +392,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   });
   const bookPct = typeof (src as unknown as { day_pct?: number }).day_pct === "number" && edition !== "assessment" && edition !== "weekend" ? (src as unknown as { day_pct: number }).day_pct : null;
   const repairMixed = (ctx?.facts ?? []).some((f) => /\.(?:KS|KQ)$|-USD$|^(?:BTC|ETH|SOL|XRP|DOGE)$/.test(f.symbol));
-  const text = (t: string) => fixScopeLabels(fixBookMove(fixWhatItMeans(closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))))), bookPct), repairMixed);
+  const text = (t: string) => ((u: string) => edition === "close" || edition === "kr_close" ? dropFuturesAfterClose(u) : u)(fixFragments(fixScopeLabels(fixBookMove(fixWhatItMeans(closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))))), bookPct), repairMixed)));
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
