@@ -73,7 +73,9 @@ const FAST_MODEL = "gpt-oss-120b";
 // and a 0.5% yield; they are patched (past-window) or regenerated (the current edition).
 // 9 (round 7 newcomer): theme weights, gloss grammar, "(est)" on non-dates, promo characterisations, 6-holding reads
 // 10 (round 8): verdict tails, close-time labels, true minus signs, tech share and target-band checks
-const GEN_VERSION = 10;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
+// 11 (round 9 / r10): grounded events and causes, book day move, "X% in <holding>", theme claims, cleaned notes; the
+//    latest past date's rows are patched too, so the live Sep 25 close loses its invented Monday events
+const GEN_VERSION = 11;   // 4: calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
 let SOURCES: string[] = [];
@@ -304,7 +306,7 @@ function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: numbe
  *  (`live`: those are regenerated from current data, never patched). Returns the editions it patched, whose
  *  script and audio were cleared, so the caller can have them re-narrated. */
 // deno-lint-ignore no-explicit-any
-type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null }[]; yields: number[] };
+type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null }[]; yields: number[]; ground?: string };
 async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctx?: RepairCtx): Promise<{ edition: string; date: string }[]> {
   // Round 9 designer: the rows a reader SEES are the latest ones, not only today's. Over a weekend (or before the first
   // edition of a day) Home shows the last trading day's rows, and a repair keyed to today's date never reached them: the
@@ -332,6 +334,12 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
     earningsFilings(admin, syms),
     admin.from("transcripts").select("symbol, title, published_at").in("symbol", syms).order("published_at", { ascending: false }).limit(60),
   ]);
+  // r10: stored rows are grounded too ("MSFT Copilot revenue update Monday" stayed on the live Sep 25 close)
+  if (ctx && ctx.ground === undefined) {
+    const { data: gn } = await admin.from("news").select("title, summary").in("symbol", syms)
+      .gte("published_at", new Date(Date.parse(briefDate + "T12:00:00Z") - 10 * 86400000).toISOString()).limit(400).then((x: unknown) => x, () => ({ data: [] })) as { data: { title: string; summary?: string | null }[] | null };
+    ctx.ground = (gn ?? []).map((n) => `${n.title} ${n.summary ?? ""}`).join("\n");
+  }
   const ests = syms.map((sy) => {
     const h = rows.find((x) => x.symbol === sy)!;
     const e = earningsEstimate(fl.filter((f) => f.symbol === sy), ((tr ?? []) as { symbol: string; title: string; published_at: string | null }[]).filter((t) => t.symbol === sy), briefDate);
@@ -359,6 +367,10 @@ function spokenText(o: Sections): string {
   return JSON.stringify([o.lede, o.overnight, o.desk_view, o.horizon ?? "", o.ideas ?? [], (o.positions ?? []).map((p) => [p.name, p.note, p.watch]), o.calendar ?? []]);
 }
 function repairSections(src: Sections, ests: { names: string[]; label: string; est: string | null; range?: [string, string]; dlv?: string | null }[], today: string, ctx?: RepairCtx, edition = ""): Sections {
+  // r10: events and causes in stored rows are grounded in the same data as fresh ones (headlines + estimates)
+  const allNames = [...new Set([...(ctx?.facts ?? []).flatMap((f) => f.names), ...ests.flatMap((e) => e.names)])];
+  const groundSrc = ctx?.ground !== undefined ? [ctx.ground, ...ests.map((e) => `${e.label} earnings expected ~${e.est ?? ""} ${e.range ? e.range.join(" ") : ""} ${e.dlv ? `deliveries ${e.dlv}` : ""}`)].join("\n") : null;
+  const ungroundedItem = (t: string) => groundSrc !== null && ungroundedEvents([t], groundSrc, allNames).length > 0;
   // round 7: a morning written after the open called live moves "yesterday": with the row's own basis (its as_of and
   // the day moves it was written against), a figure that IS that day's move is relabelled "so far today"
   const basis = src as unknown as { as_of?: string; day_by_symbol?: Record<string, number> };
@@ -383,7 +395,8 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     const bad = new Set([...wrongEarningsDates(parts, ests, today), ...wrongEarningsMonths(x, ests), ...wrongDeliveriesDates(x, dlvFacts, today), ...parts.filter((p) => strengthAsRisk(p)), ...repairDrops(x),
       // round 7: a weight printed as a move ("META dropped 12.8%"), a yield we never computed ("near 0.5%")
       ...(ctx ? [...weightAsMoveHits(x, ctx.facts), ...(ctx.yields.length ? wrongYieldClaims(x, ctx.yields) : [])] : []),
-      ...promoCharacterisations(x), ...targetPaceClaims(x)]);
+      ...promoCharacterisations(x), ...targetPaceClaims(x),
+      ...(groundSrc !== null ? [...ungroundedEventSentences(x, groundSrc, allNames), ...ungroundedCauses(x, groundSrc, allNames)] : [])]);
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
     return kept.length ? kept.join(" ") : x;
   };
@@ -393,9 +406,9 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     const canon = canonicalCalendar([p.watch], ests, "", today);
     const earn = /\b(earnings|results|reports?|call|print|preview)\b/i.test(p.watch) && ests.some((e) => e.names.some((n) => n && String(p.watch).toLowerCase().includes(n.toLowerCase())));
     const dated = datesIn(p.watch, today).length > 0 || weekendDated([p.watch], today).length > 0;
-    return { ...p, note: dropWrong(p.note), watch: earn ? canon[0] ?? "No confirmed date yet" : dated ? "No confirmed date yet" : stripStrayEst(text(p.watch)) };
+    return { ...p, note: dropWrong(p.note), watch: earn ? canon[0] ?? "No confirmed date yet" : dated || ungroundedItem(p.watch) ? "No confirmed date yet" : stripStrayEst(text(p.watch)) };
   });
-  s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today).filter((c) => !weekendDated([c], today).length);
+  s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today).filter((c) => !weekendDated([c], today).length && !ungroundedItem(c));
   if (src.ideas) s.ideas = src.ideas.map(text).filter((i) => !repairDrops(i).length);
   return s;
 }
