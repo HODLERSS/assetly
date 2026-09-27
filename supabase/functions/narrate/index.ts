@@ -561,7 +561,9 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
         const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 40000);
         const vr = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
           signal: ac.signal, method: "POST", headers: { "xi-api-key": ek, "Content-Type": "application/json" },
-          body: JSON.stringify({ text: spoken, model_id: "eleven_multilingual_v2", voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true } }),
+          // Professional voice clone (Minjae, 9/27): style exaggeration is off, as ElevenLabs recommends for a
+          // PVC; the earlier 0.35 was tuned for the stock George voice and adds artifacts on a clone.
+          body: JSON.stringify({ text: spoken, model_id: "eleven_multilingual_v2", voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.0, use_speaker_boost: true } }),
         }).catch(() => null);
         clearTimeout(tm);
         if (vr && vr.ok) { const buf = new Uint8Array(await vr.arrayBuffer()); if (buf.length > 20000) audio = buf; }
