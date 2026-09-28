@@ -1058,7 +1058,7 @@ export function verblessList(text: string): string[] {
  *  threshold on a day move ("if NVIDIA falls below zero point two percent"), a move read as a weight
  *  ("Microsoft added three point seven percent weight" when it rose 3.7%), a broken sentence, or a
  *  historical comparison the brief does not make. Round 4: the midday script said all of these. */
-export function scriptProblems(script: string, sectionsText: string, todayYmd: string): string[] {
+export function scriptProblems(script: string, sectionsText: string, todayYmd: string, aliases: [string, string][] = []): string[] {
   const src = String(sectionsText ?? "");
   const movePcts = new Set([...src.matchAll(/\b(?:up|down|rose|fell|gained|lost|slipped|climbed|jumped|dropped|added|shed|rallied|declined)\s+(?:by\s+)?(\d+(?:\.\d+)?)\s?%/gi)].map((m) => Number(m[1])));
   const weightPcts = new Set([...src.matchAll(/(\d+(?:\.\d+)?)\s?%\s+(?:of (?:assets|the portfolio|your portfolio|the book|holdings)|weight|stake)/gi)].map((m) => Number(m[1])));
@@ -1072,7 +1072,7 @@ export function scriptProblems(script: string, sectionsText: string, todayYmd: s
     || historicalClaims(s, src, todayYmd).length > 0
     // round 8 close script: a figure spoken for the wrong subject ("Oracle … more than five point one percent" was the
     // VIX change), checked with spelled numbers read as digits
-    || misplacedScriptFigures(s, src).length > 0
+    || misplacedScriptFigures(s, src, aliases).length > 0
     || productPushHits(s).length > 0 || promoCharacterisations(s).length > 0);
 }
 
@@ -2143,7 +2143,7 @@ export const stripVerdictTails = (t: string): string => String(t ?? "")
 /** Spoken-script figures that belong to something else (round 8: "Oracle may cut data center spending by more than
  *  five point one percent", where 5.1% was the VIX change). Each percent spoken (words or digits) must appear in a
  *  sentence of the brief that names the same subject. */
-export function misplacedScriptFigures(script: string, sectionsText: string): string[] {
+export function misplacedScriptFigures(script: string, sectionsText: string, aliases: [string, string][] = []): string[] {
   // the sections arrive as JSON: every string value is its own text, split into sentences
   const src = String(sectionsText ?? "");
   const values = src.trim().startsWith("{") ? (src.match(/"(?:[^"\\]|\\.)*"/g) ?? []).map((x) => x.slice(1, -1).replace(/\\n/g, " ")) : [src];
@@ -2158,7 +2158,12 @@ export function misplacedScriptFigures(script: string, sectionsText: string): st
     return figs.some((v) => {
       const homes = briefSents.filter((b) => [...b.matchAll(/(\d+(?:\.\d+)?)\s?%/g)].some((m) => Math.abs(Number(m[1]) - v) < 0.06 || Math.abs(Math.round(Number(m[1])) - v) < 0.01));
       if (!homes.length) return true;
-      return !homes.some((b) => [...subj].some((w) => b.includes(w)));
+      // 9/28: the card says "META"/"NVDA", the script says "Meta Platforms"/"NVIDIA": match case-insensitively and
+      // through the ticker/name pairs the narrator itself used, or every true restatement is flagged
+      const sl = sent.toLowerCase();
+      return !homes.some((b) => { const bl = b.toLowerCase();
+        return [...subj].some((w) => bl.includes(w.toLowerCase()))
+          || aliases.some(([tk, nm]) => sl.includes(String(nm).toLowerCase()) && new RegExp(`(^|[^a-z0-9])${String(tk).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9])`).test(bl)); });
     });
   });
 }

@@ -3,7 +3,7 @@
 // forecast. Returns the flagged 0-based indices, or null when it did not answer usably (the caller decides how to fail).
 import { JUDGE_POLICY } from "./intel.ts";
 
-export type JudgeResult = { flags: Set<number> | null; status: "ok" | "timeout" | "error" | "unparseable" | "skipped" };
+export type JudgeResult = { flags: Set<number> | null; status: "ok" | "timeout" | "error" | "unparseable" | "skipped"; detail?: string };
 
 export function parseJudge(txt: string, n: number): Set<number> | null {
   const all = [...String(txt ?? "").matchAll(/\{[^{}]*"flag"\s*:\s*\[[^\]]*\][^{}]*\}/g)];
@@ -20,12 +20,13 @@ export async function callJudge(key: string, items: string[], ms: number, model 
   if (!key || ms < 1200) return { flags: null, status: "skipped" };
   const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
   let aborted = false;
-  const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {
+  const base = (Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com").replace(/\/+$/, "").replace(/\/v1$/, "");
+  const r = await fetch(`${base}/v1/chat/completions`, {
     signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, temperature: 0, max_tokens: 600, response_format: { type: "json_object" },
+    body: JSON.stringify({ model, temperature: 0, max_tokens: 2500, response_format: { type: "json_object" },
       messages: [{ role: "system", content: `Reasoning: low\n\n${JUDGE_POLICY}` }, { role: "user", content: `Items:\n${items.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] }),
   }).catch((e) => { aborted = e instanceof DOMException && e.name === "AbortError"; return null; });
-  if (!r || !r.ok) { clearTimeout(timer); return { flags: null, status: aborted ? "timeout" : "error" }; }
+  if (!r || !r.ok) { clearTimeout(timer); const detail = r ? `http ${r.status} ${(await r.text().catch(() => "")).slice(0, 120)}` : "network"; return { flags: null, status: aborted ? "timeout" : "error", detail }; }
   const out = await r.json().catch(() => null);
   clearTimeout(timer);
   if (!out) return { flags: null, status: "timeout" };

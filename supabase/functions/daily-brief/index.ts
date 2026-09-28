@@ -10,6 +10,7 @@
 //   3 editor synthesis (memos + rebuttals + market context + yesterday's brief -> the note)
 //   4 fact-check       (every number verified against the deterministic stats, or cut)
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { fixQuotedPrices } from "../_shared/prices.ts";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
   superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, tidyClauseEndings, krxDollarTargets, taxRemarkClaims, bondValueClaims, isTaxAdvantaged, plainForBeginner, roundBookTotal, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
@@ -770,7 +771,9 @@ Deno.serve(async (req) => {
         if (r.kind === "debt") return `${nm}: debt owed $${Math.round(v)}`;
         if (r.symbol.startsWith("$") || r.kind === "cash") return `${nm}: cash balance $${Math.round(v)} (${(v / total * 100).toFixed(1)}% of assets)`;
         const px = r.price === null || r.price === undefined ? null : usd(Number(r.price), r.currency);
-        const pxT = px === null ? "n/a" : "$" + (px >= 1000 ? Math.round(px).toLocaleString("en-US") : px.toFixed(2));
+        // a won-priced stock is quoted in won (9/28: SK hynix's $1,295 USD equivalent came back as "₩1,300")
+        const pxT = px === null ? "n/a" : r.currency === "KRW" ? `₩${Math.round(Number(r.price)).toLocaleString("en-US")} (about $${Math.round(px).toLocaleString("en-US")})`
+          : "$" + (px >= 1000 ? Math.round(px).toLocaleString("en-US") : px.toFixed(2));
         const chg = r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%";
         return `${nm}: position value $${Math.round(v)} (${(v / total * 100).toFixed(1)}% of assets), share price ${pxT}, day ${chg} [${dayTag(marketOf(r.symbol, r.kind, r.currency))}], total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
       }).join("\n");
@@ -1462,6 +1465,14 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, scrubDeep(x)])) : v;
       sections = scrubDeep(sections) as Sections;
       snap("scrubDeep", sections);
+      // PRICE FIDELITY (9/28): a quoted share price must be the holding's real price in its own currency. A wrong
+      // currency label on the USD equivalent is corrected to the local price; any other mismatch loses the clause.
+      sections.positions = sections.positions.map((p) => {
+        const h = holdings.find((r) => { const nm = krName(r.symbol, r.nickname, r.name).toLowerCase(); const pn = String(p.name).toLowerCase(); return nm === pn || pn.includes(nm) || nm.includes(pn) || aliasesFor(r.symbol, r.name).some((a) => a && pn.includes(String(a).toLowerCase())); });
+        if (!h || h.price === null || h.price === undefined) return p;
+        return { ...p, note: fixQuotedPrices(p.note, Number(h.price), h.currency ?? "USD", usd(Number(h.price), h.currency)) };
+      });
+      snap("priceFidelity", sections);
       // The diet runs AFTER the expansion loop that enforces the length floor, so an aggressive trim can
       // starve a brief back below it. Snapshot first and keep the trim only if the brief stays long enough.
       // A daily edition written on a day the US market did not trade (operator-forced, or a holiday tick): the
