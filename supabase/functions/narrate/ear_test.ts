@@ -27,7 +27,7 @@ Deno.test("9/28 owner feedback: figures, dates, times and symbols are spoken as 
   assertEquals(speakable("It was 2,450 won, then 205,500 won."), "It was two thousand four hundred fifty won, then two hundred five thousand five hundred won.");
 });
 Deno.test("9/28 owner feedback: trade slang is said plainly", () => {
-  assertEquals(speakable("Your Korean sleeve gave back 15000 dollars on MARA's dip."), "Your Korean holdings gave back fifteen thousand dollars on MARA's drop.");
+  assertEquals(speakable("Your Korean sleeve gave back 15000 dollars on MARA's dip."), "Your Korean holdings gave back fifteen thousand dollars on Mara's drop.");
   assertEquals(speakable("Samsung Pref led the KOSPI lower; the drawdown deepened."), "Samsung Electronics preferred shares led the KOSPI lower; the decline deepened.");
 });
 Deno.test("speakable output passes the ear audit and is idempotent", () => {
@@ -36,9 +36,22 @@ Deno.test("speakable output passes the ear audit and is idempotent", () => {
   assertEquals(speakable(x), x);
 });
 Deno.test("9/28: pause tags are left exactly as written", () => {
-  assertEquals(speakable('Hi. <break time="0.5s" /> MARA fell 2.4 percent. <break time="0.6s" /> Bye.'), 'Hi. <break time="0.5s" /> MARA fell two point four percent. <break time="0.6s" /> Bye.');
+  assertEquals(speakable('Hi. <break time="0.5s" /> MARA fell 2.4 percent. <break time="0.6s" /> Bye.'), 'Hi. <break time="0.5s" /> Mara fell two point four percent. <break time="0.6s" /> Bye.');
 });
 Deno.test("9/28 owner: clock times read as 'four PM Eastern Time'", () => {
   assertEquals(speakable("The market closed at 4:00 PM ET."), "The market closed at four PM Eastern Time.");
   assertEquals(speakable("Korea opens 9:00 AM KST."), "Korea opens nine AM Korea time.");
+});
+
+Deno.test("speakable: companies are said by name, never spelled as tickers (owner 9/29)", () => {
+  const out = speakable("MARA fell 4% while GOOGL and NVDA rose; MARA Holdings is your largest. Alphabet's cloud grew. 000660.KS closed higher.", [["RDDT", "Reddit"]]);
+  assertEquals(/\b(MARA|GOOGL|NVDA|000660)\b/.test(out), false, out);
+  assertEquals(out.includes("Mara fell four percent"), true, out);
+  assertEquals(out.includes("Google and NVIDIA rose"), true, out);
+  assertEquals(out.includes("Mara is your largest"), true, out);
+  assertEquals(out.includes("Google's cloud"), true, out);
+  assertEquals(out.includes("SK hynix closed higher"), true, out);
+  assertEquals(speakable(out), out);   // idempotent
+  assertEquals(speakable("RDDT jumped.", [["RDDT", "Reddit"]]), "Reddit jumped.");
+  assertEquals(speakable("AMD and the US market."), "AMD and the US market.");
 });

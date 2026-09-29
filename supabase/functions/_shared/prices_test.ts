@@ -12,3 +12,6 @@ Deno.test("a correct won or dollar price is left alone", () => {
 Deno.test("a quoted price that matches nothing loses the clause, never gains a new number", () => {
   assertEquals(fixQuotedPrices("AMD slid 3.6% to $580.", 607.87, "USD", 607.87), "AMD slid 3.6%.");
 });
+Deno.test("a won stock quoted in dollars is re-quoted in won", () => {
+  assertEquals(fixQuotedPrices("SK hynix slipped 0.2% to $1,300.", 1761000, "KRW", 1294.9), "SK hynix slipped 0.2% to ₩1,761,000.");
+});

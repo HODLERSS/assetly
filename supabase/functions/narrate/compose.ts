@@ -1,6 +1,6 @@
 // Script composition for narration, separated from the HTTP handler so it can run on stored briefs locally
 // (scripts/narrate_harness.ts) with no TTS and no database writes. index.ts calls exactly this.
-import { earWords, roundPct, speakable } from "./ear.ts";
+import { earWords, roundPct, sayAs, speakable } from "./ear.ts";
 import { scriptProblems, sanitize, ungroundedEventSentences } from "../_shared/intel.ts";
 import { callJudge } from "../_shared/judge.ts";
 
@@ -129,7 +129,7 @@ export const speechName = (name: string) => {
   for (let i = 0; i < 3; i++) n = n.replace(/[,\s]*\b(Incorporated|Inc\.?|Corporation|Corp\.?|Company|Co\.?|Limited|Ltd\.?|PLC|N\.V\.|S\.A\.|AG|SE|Holdings?|Group|Trust|Fund|ETF|Class [A-C]( Shares)?|Common Stock|Ordinary Shares|ADR|\(.*?\))\s*$/i, "").trim();
   // "JPMORGAN CHASE & CO" loses "CO" above and is left ending in a bare ampersand, which is then SPOKEN
   n = n.replace(/[\s,]*&\s*$/, "").trim();
-  return n || name;
+  return sayAs(n || name);
 };
 const sayNames = (t: string, names: [string, string][]) => {
   let x = t;
@@ -483,7 +483,7 @@ spoken: ${spec.len} spoken radio script of this brief, BOTTOM LINE UP FRONT, at 
   }
   // the voice (ElevenLabs or the device's) reads only words: figures, dates, times and symbols are spelled out and
   // trade slang is said plainly. Deterministic and idempotent, so a saved script passes through unchanged.
-  const heard = speakable(spoken);
+  const heard = speakable(spoken, names);
   if (savedScript && heard !== spoken) savedChanged = true;
   spoken = heard;
   return { spoken, usedFallback, savedChanged, log };

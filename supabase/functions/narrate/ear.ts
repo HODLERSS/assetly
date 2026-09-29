@@ -22,7 +22,7 @@ export function earAudit(t: string): string[] {
   hit("digits", /\d[\d,.:]*/g);
   hit("symbols", /[$₩%&~()\[\]{}#@*_/\\|]/g);
   hit("odd dash or quote", /[‐-―−‘’“”]/g);
-  hit("all-caps", /\b(?!AI\b|US\b|UK\b|EU\b|CEO\b|ETF\b|VIX\b|MARA\b|OK\b|TV\b|NVIDIA\b|SK\b|AM\b|PM\b|IBK\b|KOSPI\b|ARM\b|P\b|S\b|O\b|I\b)[A-Z]{2,}\b/g);
+  hit("all-caps", /\b(?!AI\b|US\b|UK\b|EU\b|CEO\b|ETF\b|VIX\b|AMD\b|OK\b|TV\b|NVIDIA\b|SK\b|AM\b|PM\b|IBK\b|KOSPI\b|P\b|S\b|O\b|I\b)[A-Z]{2,}\b/g);
   hit("signed move", /\b(?:rose|fell|climbed|dropped|gained|slid|up|down|slipped)\s+(?:plus|minus)\b/gi);
   hit("jargon", EAR_PLAIN_WORDS);
   hit("doubled punctuation", /[.,]\s*[.,]/g);
@@ -99,12 +99,42 @@ const PLAIN: [RegExp, string][] = [
   [/\b8-K filed\b/g, "A company filing on"], [/\ban 8-K\b/g, "a company filing"], [/\b8-K\b/g, "a company filing"], [/\bHBM\b/g, "high-bandwidth memory"], [/\bKRX\b/g, "the Korean market"], [/(?<!\bthe )\bKOSPI\b/g, "the KOSPI"],
   [/\bvs\.?\s/gi, "versus "], [/\bYoY\b/g, "from a year ago"], [/\bQoQ\b/g, "from last quarter"], [/\bIPO\b/g, "I P O"],
 ];
+// Names for the ear. Owner 9/29: "MARA" was spelled out M-A-R-A (it is said "Mah-rah"), and a ticker left in a
+// script is read letter by letter (G-O-O-G-L). A script names a company the way people say it. SAY_AS fixes names a
+// voice gets wrong; TICKER_SAY is the backstop for a ticker that slipped past the model and the per-user name list.
+const SAY_AS: [RegExp, string][] = [
+  [/\bMARA Holdings\b/gi, "Mara"], [/\bMARA\b/g, "Mara"], [/\bAlphabet\b/g, "Google"], [/\bAmazon\.com\b/gi, "Amazon"],
+  [/\bARM\b/g, "Arm"],
+];
+export const sayAs = (t: string) => SAY_AS.reduce((x, [re, w]) => x.replace(re, w), String(t ?? ""));
+export const TICKER_SAY: Record<string, string> = {
+  GOOGL: "Google", GOOG: "Google", NVDA: "NVIDIA", AMZN: "Amazon", AAPL: "Apple", MSFT: "Microsoft", META: "Meta", TSLA: "Tesla",
+  AVGO: "Broadcom", INTC: "Intel", RDDT: "Reddit", MSTR: "Strategy", "BRK.B": "Berkshire Hathaway", "BRK-B": "Berkshire Hathaway",
+  ABNB: "Airbnb", UBER: "Uber", NFLX: "Netflix", ADBE: "Adobe", FIG: "Figma", COIN: "Coinbase", PLTR: "Palantir", ORCL: "Oracle",
+  CRM: "Salesforce", HOOD: "Robinhood", SPOT: "Spotify", SHOP: "Shopify", COF: "Capital One", IREN: "Iren", SPACEX: "SpaceX",
+  QQQM: "the Nasdaq one hundred fund", QQQ: "the Nasdaq one hundred fund", SPY: "the S and P 500 fund", VOO: "the S and P 500 fund",
+  FXAIX: "the Fidelity 500 index fund", BTC: "bitcoin", ETH: "ether",
+  "000660.KS": "SK hynix", "005930.KS": "Samsung Electronics", "005935.KS": "Samsung Electronics preferred shares",
+  "024110.KS": "Industrial Bank of Korea", "003690.KS": "Korean Reinsurance",
+};
+const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Every ticker code becomes the company's spoken name: the user's own list first, then TICKER_SAY. */
+export function sayTickers(t: string, names: [string, string][] = []): string {
+  const map = new Map<string, string>(Object.entries(TICKER_SAY));
+  for (const [sym, nm] of names) if (nm && nm.toUpperCase() !== sym) map.set(sym, sayAs(nm));
+  for (const [sym, nm] of [...map.entries()]) { const bare = sym.replace(/\.(KS|KQ)$/, ""); if (bare !== sym && !map.has(bare)) map.set(bare, nm); }
+  let x = String(t ?? "");
+  for (const sym of [...map.keys()].sort((a, b) => b.length - a.length)) {
+    x = x.replace(new RegExp("(^|[^A-Za-z0-9$.])" + esc(sym) + "(?![A-Za-z0-9])", "g"), `$1${map.get(sym)}`);
+  }
+  return sayAs(x);
+}
 const TZ: Record<string, string> = { ET: "Eastern Time", EST: "Eastern Time", EDT: "Eastern Time", CT: "Central Time", KST: "Korea time", PT: "Pacific Time" };
 
 /** Tags (<break time="0.5s" />) are markup, not words: only the text between them is rewritten. */
-export function speakable(input: string): string {
+export function speakable(input: string, names: [string, string][] = []): string {
   const parts = String(input ?? "").split(/(<[^>]*>)/);
-  const out = parts.map((p) => (p.startsWith("<") ? p : speakText(p)));
+  const out = parts.map((p) => (p.startsWith("<") ? p : speakText(sayTickers(p, names))));
   return out.join(" ").replace(/\s{2,}/g, " ").replace(/\s+([.,;:!?])/g, "$1").trim();
 }
 function speakText(input: string): string {
@@ -138,7 +168,7 @@ function speakText(input: string): string {
   t = t.replace(/\b(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion)?\s+(dollars|won)\b/gi, (_m, n, mag, unit) =>
     sayMagnitude(Number(String(n).replace(/,/g, "")) * (mag ? MAGN[mag.toLowerCase()] : 1), unit.toLowerCase()));
   // 9) percentages
-  t = t.replace(/\b(\d+(?:\.\d+)?)\s*percent\b/gi, (_m, n) => `${numWords(n)} percent`);
+  t = t.replace(/(\d+(?:\.\d+)?)\s*%/g, "$1 percent").replace(/\b(\d+(?:\.\d+)?)\s*percent\b/gi, (_m, n) => `${numWords(n)} percent`);
   // 10) ordinals and years left in text, then every other figure
   t = t.replace(/\b(\d{1,2})(st|nd|rd|th)\b/g, (_m, n) => ordinalWords(Number(n)))
     .replace(/\b(19\d{2}|20\d{2})\b/g, (_m, y) => yearWords(Number(y)))

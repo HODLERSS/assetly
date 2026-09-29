@@ -8,7 +8,7 @@ export function fixQuotedPrices(note: string, localPx: number, currency: string,
     const v = Number(String(num).replace(/,/g, ""));
     const labelLocal = (sym === "₩") === (currency === "KRW");
     if (labelLocal && near(v, localPx)) return m;
-    if (!labelLocal && sym === "$" && near(v, usdPx)) return m;
+    if (!labelLocal && sym === "$" && near(v, usdPx) && currency === "USD") return m;
     if (near(v, usdPx) || near(v, localPx)) return ` ${prep} ${fmtLocal}`;
     return "";
   }).replace(/\s+([.,;])/g, "$1");
