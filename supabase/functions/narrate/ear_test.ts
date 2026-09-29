@@ -55,3 +55,15 @@ Deno.test("speakable: companies are said by name, never spelled as tickers (owne
   assertEquals(speakable("RDDT jumped.", [["RDDT", "Reddit"]]), "Reddit jumped.");
   assertEquals(speakable("AMD and the US market."), "AMD and the US market.");
 });
+
+Deno.test("speakable: money shorthand, ranges, slashes and product codes (9/29)", () => {
+  const cases: [string, string][] = [
+    ["The IPO at $100-150B could unlock value.", "The I P O at one hundred to one hundred fifty billion dollars could unlock value."],
+    ["The IPO at 100 dollars-150B.", "The I P O at one hundred to one hundred fifty billion dollars."],
+    ["It has a $150B buyback.", "It has a one hundred fifty billion dollar buyback."],
+    ["Targets of $200–$250 per share.", "Targets of two hundred to two hundred fifty dollars per share."],
+    ["Watch the MI355/MI400 ramp.", "Watch the M I three hundred fifty-five and M I four hundred ramp."],
+    ["Earnings on 10/29 and a 3.5/5 rating.", "Earnings on October twenty-ninth and a three point five out of five rating."],
+  ];
+  for (const [i, o] of cases) { assertEquals(speakable(i), o); assertEquals(speakable(o), o); assertEquals(earAudit(speakable(i)), []); }
+});

@@ -137,8 +137,32 @@ export function speakable(input: string, names: [string, string][] = []): string
   const out = parts.map((p) => (p.startsWith("<") ? p : speakText(sayTickers(p, names))));
   return out.join(" ").replace(/\s{2,}/g, " ").replace(/\s+([.,;:!?])/g, "$1").trim();
 }
+// money written for the eye: "$150B", "$3.5M", "₩1,761,000", ranges "$100-150B", "$200–$250" -> "<n> <magnitude> <unit>".
+// Runs first, before dashes become commas, so a range stays a range ("one hundred to one hundred fifty billion dollars").
+const MAG_ABBR: Record<string, string> = { k: "thousand", m: "million", mn: "million", b: "billion", bn: "billion", t: "trillion" };
+const magWord = (m?: string) => (m ? MAG_ABBR[m.toLowerCase()] ?? m.toLowerCase() : "");
+const NUM = String.raw`(\d[\d,]*(?:\.\d+)?)`, MAG = String.raw`(K|M|B|T|bn|mn|k|thousand|million|billion|trillion)?`;
+function money(t: string): string {
+  return t
+    .replace(new RegExp(NUM + String.raw`\s*dollars\s*[-–—]\s*` + NUM + String.raw`\s*(K|M|B|T|bn|mn)\b`, "g"), (_m, a, b, m) => `$${a}-${b}${m}`)
+    .replace(new RegExp(String.raw`([$₩])` + NUM + String.raw`\s?` + MAG + String.raw`\s*(?:[-–—]|\bto\b)\s*[$₩]?` + NUM + String.raw`\s?` + MAG + String.raw`(?![A-Za-z])`, "g"),
+      (_m, c, a, m1, b, m2) => { const hi = magWord(m2 || m1), lo = magWord(m1); return `${a}${lo && lo !== hi ? " " + lo : ""} to ${b}${hi ? " " + hi : ""} ${c === "₩" ? "won" : "dollars"}`; })
+    .replace(new RegExp(String.raw`([$₩])` + NUM + String.raw`\s?` + MAG + String.raw`(?![A-Za-z])`, "g"),
+      (_m, c, a, m) => `${a}${m ? " " + magWord(m) : ""} ${c === "₩" ? "won" : "dollars"}`);
+}
+// slashes and product codes a voice reads literally: "MI355/MI400", "H100", "9/29", "Q3/Q4", "24/7"
+const MONTHS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function codes(t: string): string {
+  return t
+    .replace(/\b24\/7\b/g, "around the clock")
+    .replace(/(?<![\d.])(\d+\.\d+)\/(5|10|100)\b|(?<![\d.])(\d+)\/(5|10|100)(?=\s+(?:rating|stars?|score))/g, (_m, a, b, c, d) => `${a ?? c} out of ${b ?? d}`)
+    .replace(/(?<![\d.\/])\b(1[0-2]|[1-9])\/(3[01]|[12]\d|[1-9])\b(?!\/)/g, (_m, mo, d) => `${MONTHS[Number(mo)]} ${d}`)
+    .replace(/\band\/or\b/gi, "or")
+    .replace(/([A-Za-z0-9])\s*\/\s*(?=[A-Za-z0-9])/g, "$1 and ")
+    .replace(/\b([A-Z]{1,3})(\d{2,4})\b/g, (_m, l: string, n) => `${l.split("").join(" ")} ${n}`);
+}
 function speakText(input: string): string {
-  let t = String(input ?? "");
+  let t = codes(money(String(input ?? "")));
   // 1) characters voices misread: non-breaking and figure hyphens, dashes, curly quotes, stray spaces
   t = t.replace(/[‐‑‒]/g, "-").replace(/\s*[–—―]\s*/g, ", ").replace(/−/g, "-")
     .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[  ]/g, " ");
