@@ -1,42 +1,368 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Assetly</title>
-<meta name="description" content="Assetly shows your whole portfolio priced live, and a short brief on what moved and why. Read-only: it can never trade or move money.">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Assetly: what your money did today, and why</title>
+<meta name="description" content="Assetly keeps every stock, ETF, coin and cash balance in one live view, and writes you a short brief before the open, at midday and after the close. Read it or listen to it. Read-only: it can never trade or move money.">
+<meta property="og:title" content="Assetly: what your money did today, and why">
+<meta property="og:description" content="Your whole portfolio in one live view, and a short brief three times a trading day. Read it or listen to it.">
+<meta property="og:image" content="https://hodlerss.github.io/assetly/icon-512.png">
+<meta name="theme-color" content="#F4F5F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1216" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="./icon.svg">
-<link rel="stylesheet" href="./_legal.css">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="preload" href="fonts/schibsted-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-  .hero{padding:64px 0 36px;border-bottom:1px solid var(--as-rule);margin-bottom:32px}
-  .hero h1{font-size:40px;line-height:1.08;letter-spacing:-.03em;margin-top:18px;text-wrap:balance}
-  .hero p{font-size:18px;color:var(--as-muted);margin-top:14px;max-width:34ch}
-  .cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}
-  .btn{display:inline-flex;align-items:center;min-height:46px;padding:0 22px;border-radius:999px;font-weight:600;text-decoration:none}
-  .btn.primary{background:var(--as-primary);color:var(--as-bg)}
-  .btn.ghost{border:1px solid var(--as-rule);color:var(--as-ink)}
-  .feats{display:grid;gap:22px}
-  .feat h3{font-size:18px;letter-spacing:-.01em;margin-bottom:4px}
-  .feat p{color:var(--as-muted);margin:0}
-  .trust{margin-top:34px;padding:18px 20px;border:1px solid var(--as-rule);border-radius:12px;background:var(--as-surface)}
-  .trust p{margin:0}
+@font-face{font-family:"Schibsted Grotesk";font-style:normal;font-weight:400 800;font-display:swap;src:url("fonts/schibsted-grotesk-latin.woff2") format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Schibsted Grotesk";font-style:normal;font-weight:400 800;font-display:swap;src:url("fonts/schibsted-grotesk-latin-ext.woff2") format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+:root{
+  --bg:#F4F5F7;--surface:#FFFFFF;--ink:#16181D;--muted:#5D636E;--faint:#9AA0AA;--primary:#2A3F92;--on-primary:#F4F5F7;
+  --gain:#1E7A4C;--loss:#942B21;--rule:#E2E4E9;--tint:#EEF1FA;--tint-rule:#C9D1EE;
+  --font:"Schibsted Grotesk","Noto Sans KR",-apple-system,system-ui,sans-serif;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0F1216;--surface:#161A21;--ink:#E9ECF1;--muted:#9BA3B0;--faint:#5F6775;--primary:#8AA0F2;--on-primary:#0F1216;
+  --gain:#62D29A;--loss:#E36B5B;--rule:#262B34;--tint:#171C2C;--tint-rule:#2E3A63;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F1216;--surface:#161A21;--ink:#E9ECF1;--muted:#9BA3B0;--faint:#5F6775;--primary:#8AA0F2;--on-primary:#0F1216;
+  --gain:#62D29A;--loss:#E36B5B;--rule:#262B34;--tint:#171C2C;--tint-rule:#2E3A63;color-scheme:dark}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--ink);font:17px/1.6 var(--font);font-feature-settings:"tnum" 0;padding-inline:20px;padding-block:0 env(safe-area-inset-bottom)}
+.num{font-variant-numeric:tabular-nums lining-nums}
+a{color:inherit}
+.page{max-width:1080px;margin:0 auto}
+:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:4px}
+
+/* top bar */
+.bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:22px}
+.brand{display:inline-flex;align-items:center;gap:9px;color:var(--primary);font-weight:700;font-size:19px;letter-spacing:-.02em;text-decoration:none}
+.bar nav{display:flex;gap:6px;align-items:center}
+.bar nav a{font-size:15px;color:var(--muted);text-decoration:none;padding:10px 10px;border-radius:6px}
+.bar nav a:hover{color:var(--ink)}
+.bar nav a.store{color:var(--ink);font-weight:600;border:1px solid var(--rule);padding:9px 14px;border-radius:999px}
+
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,460px);gap:56px;align-items:start;padding-block:48px 72px;border-bottom:1px solid var(--rule)}
+.hero h1{font-size:clamp(40px,5.6vw,66px);line-height:1.02;letter-spacing:-.035em;font-weight:700;text-wrap:balance;max-width:12ch}
+.hero .lead{font-size:clamp(18px,1.6vw,20px);line-height:1.55;color:var(--muted);margin-top:24px;max-width:34ch}
+.cta{display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px;margin-top:32px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:50px;padding:0 24px;border-radius:999px;font:600 16px/1 var(--font);text-decoration:none;white-space:nowrap}
+.btn.primary{background:var(--ink);color:var(--bg)}
+.btn.primary:hover{background:var(--primary);color:var(--on-primary)}
+.textlink{font-size:15px;color:var(--muted);text-underline-offset:3px}
+.textlink:hover{color:var(--ink)}
+.fine{font-size:13.5px;color:var(--muted);margin-top:18px}
+
+/* the brief card: the app's own card, with the audio in it */
+.card{background:var(--surface);border:1px solid var(--rule);border-left:4px solid var(--primary);border-radius:8px;padding:22px 24px 20px}
+.label{font:700 12.5px/1.2 var(--font);letter-spacing:.11em;text-transform:uppercase;color:var(--primary)}
+.player{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;margin-top:16px}
+.play{width:52px;height:52px;border-radius:50%;border:0;background:var(--primary);color:var(--on-primary);display:grid;place-items:center;cursor:pointer;flex:none}
+.play:hover{filter:brightness(1.08)}
+.play svg{width:20px;height:20px}
+.play .i-pause{display:none}.playing .play .i-play{display:none}.playing .play .i-pause{display:block}
+.track{display:grid;gap:7px}
+.meta{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+.meta b{color:var(--ink);font-weight:600}
+.scrub{position:relative;height:18px;cursor:pointer;touch-action:none}
+.scrub::before{content:"";position:absolute;inset:8px 0;background:var(--rule);border-radius:2px}
+.scrub i{position:absolute;left:0;top:8px;height:2px;background:var(--primary);border-radius:2px;width:0}
+.transcript{margin-top:18px;font-size:16px;line-height:1.62;display:grid;gap:10px}
+.transcript p{color:var(--ink)}
+.transcript span{cursor:pointer;transition:color .18s}
+.started .transcript span{color:var(--faint)}
+.started .transcript span.said{color:var(--ink)}
+.started .transcript span.now{color:var(--primary)}
+.card .foot{margin-top:16px;padding-top:12px;border-top:1px solid var(--rule);font-size:12.5px;color:var(--muted);line-height:1.5}
+
+/* sections */
+section.s{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:56px;padding-block:72px;border-bottom:1px solid var(--rule)}
+.s h2{font-size:clamp(26px,2.6vw,32px);line-height:1.12;letter-spacing:-.025em;font-weight:700;text-wrap:balance}
+.s .aside{font-size:16px;color:var(--muted);margin-top:14px;max-width:32ch}
+.kicker{display:block;font:700 12.5px/1.2 var(--font);letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+/* schedule: a real day, to scale */
+.day{display:grid;gap:26px}
+.row{display:grid;grid-template-columns:92px 1fr;gap:16px;align-items:start}
+.row .tz{font-size:13px;font-weight:600;color:var(--muted);padding-top:36px}
+.axis{position:relative;height:96px}
+.axis::before{content:"";position:absolute;left:0;right:0;top:44px;height:1px;background:var(--rule)}
+.tick{position:absolute;top:40px;width:1px;height:9px;background:var(--faint)}
+.hour{position:absolute;top:56px;font-size:12px;color:var(--faint);transform:translateX(-50%)}
+.mark{position:absolute;top:0;transform:translateX(-50%);display:grid;justify-items:center;text-align:center}
+.mark b{font-size:14px;font-weight:600;white-space:nowrap}
+.mark small{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.mark::after{content:"";width:11px;height:11px;border-radius:50%;background:var(--primary);box-shadow:0 0 0 4px var(--bg);margin-top:4px}
+.mark.kr::after{background:var(--surface);border:2px solid var(--primary)}
+.session{position:absolute;top:43px;height:3px;background:var(--tint-rule);border-radius:2px}
+.day-note{font-size:15px;color:var(--muted);max-width:60ch}
+
+/* written brief */
+.written{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:26px 28px}
+.written .lede{font-size:19px;line-height:1.5;margin-top:12px;letter-spacing:-.005em}
+.written h4{font:700 12.5px/1.2 var(--font);letter-spacing:.09em;text-transform:uppercase;color:var(--ink);margin-top:22px}
+.lines{margin-top:10px;display:grid}
+.line{display:grid;grid-template-columns:118px 72px 1fr;gap:14px;padding-block:11px;border-top:1px solid var(--rule);font-size:15.5px;align-items:baseline}
+.line:last-child{border-bottom:1px solid var(--rule)}
+.line .who{font-weight:600}
+.line .mv{text-align:right;font-weight:600}
+.up{color:var(--gain)}.down{color:var(--loss)}
+.line p{color:var(--muted)}
+.cal{margin-top:10px;display:grid;gap:6px;font-size:15.5px}
+.cal div{display:grid;grid-template-columns:118px 1fr;gap:14px}
+.cal span{color:var(--muted)}
+.disclaim{font-size:12.5px;color:var(--muted);margin-top:18px}
+
+/* ask */
+.asks{display:grid;gap:0;border-top:1px solid var(--rule)}
+.asks li{list-style:none;display:grid;grid-template-columns:28px 1fr;gap:10px;padding-block:16px;border-bottom:1px solid var(--rule);font-size:19px;letter-spacing:-.01em}
+.asks li::before{content:"Q";font-size:13px;font-weight:700;color:var(--primary);padding-top:5px}
+.asks-note{font-size:15px;color:var(--muted);margin-top:16px;max-width:60ch}
+
+/* holdings */
+.kinds{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 32px}
+.kinds div{padding-block:16px;border-top:1px solid var(--rule)}
+.kinds b{display:block;font-size:17px;font-weight:600}
+.kinds span{font-size:15px;color:var(--muted)}
+
+/* promises */
+.promise{display:grid;gap:0;border-top:1px solid var(--ink)}
+.promise div{display:grid;grid-template-columns:minmax(0,240px) 1fr;gap:24px;padding-block:18px;border-bottom:1px solid var(--rule)}
+.promise b{font-size:17px;font-weight:600}
+.promise span{color:var(--muted);font-size:16px}
+
+/* close */
+.close{padding-block:88px 72px;display:grid;gap:22px;justify-items:start}
+.close h2{font-size:clamp(34px,4.4vw,52px);line-height:1.04;letter-spacing:-.035em;font-weight:700;max-width:16ch;text-wrap:balance}
+.close p{color:var(--muted);font-size:18px;max-width:44ch}
+footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px 24px;padding-block:22px 40px;border-top:1px solid var(--rule);font-size:14px;color:var(--muted)}
+footer nav{display:flex;gap:4px 18px;flex-wrap:wrap}
+footer a{text-decoration:none;display:inline-block;padding-block:10px}
+footer a:hover{color:var(--ink)}
+
+@media (max-width:900px){
+  .hero{grid-template-columns:1fr;gap:40px;padding-block:28px 56px}
+  .hero h1{max-width:13ch}
+  section.s{grid-template-columns:1fr;gap:28px;padding-block:56px}
+}
+@media (max-width:620px){
+  body{font-size:16px}
+  .bar nav a:not(.store){display:none}
+  .card{padding:18px 18px 16px}
+  .written{padding:20px 18px}
+  .line{grid-template-columns:1fr auto;gap:2px 12px}
+  .line p{grid-column:1 / -1}
+  .cal div{grid-template-columns:1fr;gap:0}
+  .row{grid-template-columns:1fr;gap:4px}
+  .row .tz{padding-top:0}
+  .axis{height:88px}
+  .mark small{display:none}
+  .hour.minor{display:none}
+  .kinds{grid-template-columns:1fr}
+  .promise div{grid-template-columns:1fr;gap:4px}
+  .asks li{font-size:17px}
+}
+@media (prefers-reduced-motion:reduce){.transcript span{transition:none}}
 </style></head>
-<body><div class="wrap">
-<header class="hero">
-  <span class="brand"><svg width="26" height="12" viewBox="0 0 32 12" aria-hidden="true"><rect x="0" y="3" width="14" height="6" rx="3" fill="currentColor"/><rect x="17" y="3" width="14" height="6" rx="3" fill="currentColor" opacity=".45"/></svg>Assetly</span>
-  <h1>Your whole portfolio, and why it moved.</h1>
-  <p>Every stock, ETF, crypto and cash balance in one place, priced live, with a short daily brief on what changed and what to watch.</p>
-  <div class="cta">
-    <a class="btn primary" href="https://apps.apple.com/app/id6811739789">Download on the App Store</a>
-    <a class="btn ghost" href="./">Open in your browser</a>
-  </div>
+<body><div class="page">
+
+<header class="bar">
+  <a class="brand" href="./about.html" aria-label="Assetly home"><svg width="28" height="12" viewBox="0 0 32 12" aria-hidden="true"><rect x="0" y="3" width="14" height="6" rx="3" fill="currentColor"/><rect x="17" y="3" width="14" height="6" rx="3" fill="currentColor" opacity=".45"/></svg>Assetly</a>
+  <nav aria-label="Primary">
+    <a href="#schedule">How it works</a>
+    <a href="#promise">Privacy</a>
+    <a class="store" href="https://apps.apple.com/app/id6811739789">Get the app</a>
+  </nav>
 </header>
 
-<h2>What it does</h2>
-<div class="feats">
-  <div class="feat"><h3>One live view of everything you own</h3><p>Connect a brokerage read-only, or add positions by hand. US and Korean stocks, ETFs, crypto and cash, in your base currency.</p></div>
-  <div class="feat"><h3>A brief on what moved, and why</h3><p>Before the open, at midday and after the close: a few sentences on your biggest movers and the news behind them. Read it or listen to it.</p></div>
-  <div class="feat"><h3>Ask about your own holdings</h3><p>Questions like "what drove my week?" or "what's my biggest risk?" are answered from your numbers and today's news.</p></div>
+<main>
+<div class="hero">
+  <div>
+    <h1>What your money did today, and why.</h1>
+    <p class="lead">Assetly puts every stock, ETF, coin and cash balance you own in one live view, then writes you a short brief three times a trading day. Read it at your desk, or listen on the way in.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://apps.apple.com/app/id6811739789">Download on the App Store</a>
+      <a class="textlink" href="./">Or open it in your browser</a>
+    </div>
+    <p class="fine">Free. iPhone and web. Read-only: it can never trade or move money.</p>
+  </div>
+
+  <figure class="card" id="brief" aria-labelledby="brief-label">
+    <div class="label" id="brief-label">After the close · Sep 29</div>
+    <div class="player">
+      <button class="play" id="play" type="button" aria-label="Play the sample brief">
+        <svg class="i-play" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.8v12.4a.8.8 0 0 0 1.2.7l10-6.2a.8.8 0 0 0 0-1.4l-10-6.2A.8.8 0 0 0 6 3.8Z" fill="currentColor"/></svg>
+        <svg class="i-pause" viewBox="0 0 20 20" aria-hidden="true"><rect x="4.5" y="3.5" width="4" height="13" rx="1" fill="currentColor"/><rect x="11.5" y="3.5" width="4" height="13" rx="1" fill="currentColor"/></svg>
+      </button>
+      <div class="track">
+        <div class="meta"><span><b>Tuesday's closing brief</b></span><span class="num" id="time">0:44</span></div>
+        <div class="scrub" id="scrub" role="slider" aria-label="Position in the brief" aria-valuemin="0" aria-valuemax="44" aria-valuenow="0" tabindex="0"><i id="fill"></i></div>
+      </div>
+    </div>
+    <div class="transcript" id="transcript"></div>
+    <figcaption class="foot">Tuesday's brief for a demo portfolio, narrated in a voice clone of Minjae Lee, who builds Assetly. Yours is written from your own holdings.</figcaption>
+    <audio id="audio" src="audio/sample-brief.mp3" preload="metadata"></audio>
+  </figure>
 </div>
 
-<div class="trust"><p><strong>Read-only, always.</strong> Assetly can never place a trade or move money. It does not sell your data or show ads. It explains your portfolio; it does not tell you what to buy or sell.</p></div>
+<section class="s" id="schedule">
+  <div>
+    <span class="kicker">The schedule</span>
+    <h2>Three briefs a trading day, timed to the market.</h2>
+    <p class="aside">Each one is timed to a moment in the trading day and covers what changed since the one before.</p>
+  </div>
+  <div class="day">
+    <div class="row">
+      <div class="tz">New York</div>
+      <div class="axis" aria-label="US briefs at 8 AM, 11 AM and 4 PM Eastern">
+        <!-- 6 AM to 6 PM ET: 12 hours; market 9:30 to 4:00 -->
+        <div class="session" style="left:29.17%;width:54.17%"></div>
+        <div class="tick" style="left:0"></div><div class="hour minor" style="left:0">6a</div>
+        <div class="tick" style="left:25%"></div><div class="hour" style="left:25%">9a</div>
+        <div class="tick" style="left:50%"></div><div class="hour" style="left:50%">12p</div>
+        <div class="tick" style="left:75%"></div><div class="hour" style="left:75%">3p</div>
+        <div class="tick" style="left:100%"></div><div class="hour minor" style="left:100%">6p</div>
+        <div class="mark" style="left:16.67%"><b>8 AM</b><small>Before the open</small></div>
+        <div class="mark" style="left:41.67%"><b>11 AM</b><small>Midday</small></div>
+        <div class="mark" style="left:83.33%"><b>4 PM</b><small>After the close</small></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="tz">Seoul</div>
+      <div class="axis" aria-label="Korean briefs at the Seoul open and close, for Korean holdings">
+        <!-- 6 AM to 6 PM KST; KRX 9:00 to 3:30 -->
+        <div class="session" style="left:25%;width:54.17%"></div>
+        <div class="tick" style="left:0"></div><div class="hour minor" style="left:0">6a</div>
+        <div class="tick" style="left:25%"></div><div class="hour" style="left:25%">9a</div>
+        <div class="tick" style="left:50%"></div><div class="hour" style="left:50%">12p</div>
+        <div class="tick" style="left:75%"></div><div class="hour" style="left:75%">3p</div>
+        <div class="tick" style="left:100%"></div><div class="hour minor" style="left:100%">6p</div>
+        <div class="mark kr" style="left:27.78%"><b>9:20 AM</b><small>Seoul open</small></div>
+        <div class="mark kr" style="left:80.56%"><b>3:40 PM</b><small>Seoul close</small></div>
+      </div>
+    </div>
+    <p class="day-note">The Seoul briefs arrive only if you hold Korean stocks. On weekends there is one brief each morning.</p>
+  </div>
+</section>
 
-<footer><a href="./privacy.html">Privacy</a> · <a href="./terms.html">Terms</a> · <a href="./support.html">Support</a></footer>
-</div></body></html>
+<section class="s">
+  <div>
+    <span class="kicker">Read it</span>
+    <h2>The same brief, written down.</h2>
+    <p class="aside">Every figure is checked against your live prices before it is written or read aloud. It explains; it never tells you to buy or sell.</p>
+  </div>
+  <article class="written" aria-label="Sample written brief">
+    <div class="label">After the close · Tue Sep 29</div>
+    <p class="lede">Down <span class="num">$6,500</span> (<span class="num">−0.2%</span>) on the day, in step with the S&amp;P 500. Meta's rally made up for most of Apple's slide.</p>
+    <h4>What moved</h4>
+    <div class="lines">
+      <div class="line"><span class="who">Meta</span><span class="mv up num">+3.2%</span><p>Investors warmed to its AI business.</p></div>
+      <div class="line"><span class="who">Apple</span><span class="mv down num">−2.7%</span><p>Reports that new CEO John Ternus is planning layoffs as costs rise.</p></div>
+      <div class="line"><span class="who">S&amp;P 500</span><span class="mv down num">−0.2%</span><p>A quiet session; tech carried most of the moves.</p></div>
+    </div>
+    <h4>Coming up</h4>
+    <div class="cal">
+      <div><b>Oct 21</b><span>Tesla earnings</span></div>
+      <div><b>~Oct 29</b><span>Apple earnings (estimated)</span></div>
+    </div>
+    <p class="disclaim">Demo portfolio. Not financial advice.</p>
+  </article>
+</section>
+
+<section class="s">
+  <div>
+    <span class="kicker">Ask it</span>
+    <h2>Questions about your own money, answered from your own numbers.</h2>
+  </div>
+  <div>
+    <ul class="asks">
+      <li>What drove my week?</li>
+      <li>How much of my portfolio is really one bet?</li>
+      <li>What should I watch before Friday?</li>
+      <li>Why did my Korean stocks fall while New York was up?</li>
+    </ul>
+    <p class="asks-note">Answers use your holdings, your cost basis and today's news. Your data is never sold or used for ads.</p>
+  </div>
+</section>
+
+<section class="s">
+  <div>
+    <span class="kicker">Everything you own</span>
+    <h2>One view, in your own currency.</h2>
+    <p class="aside">Connect a brokerage read-only through SnapTrade, or type positions in by hand. Mix both.</p>
+  </div>
+  <div class="kinds">
+    <div><b>US stocks and ETFs</b><span>Priced live through the trading day</span></div>
+    <div><b>Korean stocks</b><span>KOSPI and KOSDAQ, in won or dollars</span></div>
+    <div><b>Crypto</b><span>Bitcoin, ether and the rest, around the clock</span></div>
+    <div><b>Cash</b><span>Bank and brokerage balances</span></div>
+  </div>
+</section>
+
+<section class="s" id="promise">
+  <div>
+    <span class="kicker">What it will never do</span>
+    <h2>Read-only, always.</h2>
+  </div>
+  <div class="promise">
+    <div><b>No trading</b><span>Assetly cannot place an order or move money. Brokerage connections are read-only.</span></div>
+    <div><b>No ads, no data sales</b><span>Your holdings are not sold, rented or used to target you.</span></div>
+    <div><b>No tips</b><span>It explains what happened and what is coming. What to do about it stays your call.</span></div>
+    <div><b>Delete anytime</b><span>Remove your account and its data from Settings in the app.</span></div>
+  </div>
+</section>
+
+<section class="close">
+  <h2>Your first brief is written as soon as you add a holding.</h2>
+  <p>After that, the next one lands before tomorrow's open.</p>
+  <div class="cta" style="margin-top:6px">
+    <a class="btn primary" href="https://apps.apple.com/app/id6811739789">Download on the App Store</a>
+    <a class="textlink" href="./">Or open it in your browser</a>
+  </div>
+</section>
+</main>
+
+<footer>
+  <span>© 2026 Assetly</span>
+  <nav aria-label="Legal"><a href="./privacy.html">Privacy</a><a href="./terms.html">Terms</a><a href="./support.html">Support</a></nav>
+</footer>
+</div>
+
+<script>
+(() => {
+  const W = [[["Good",0.0,0.16],["evening,",0.28,0.8],["it's",0.88,1.12],["Tuesday.",1.36,2.0],["Here's",2.08,2.24],["how",2.32,2.4],["the",2.48,2.52],["day",2.56,2.72],["ended.",2.8,3.6]],[["Your",3.68,3.76],["portfolio",4.08,4.4],["closed",4.56,4.72],["down",4.8,4.96],["about",5.04,5.36],["six",5.44,5.6],["thousand",5.68,6.0],["five",6.16,6.4],["hundred",6.44,6.64],["dollars,",6.72,7.36],["or",7.52,7.68],["zero",7.8,7.92],["point",8.08,8.4],["two",8.44,8.48],["percent.",8.64,9.52],["That's",9.6,9.84],["right",9.92,10.08],["in",10.16,10.24],["line",10.32,10.56],["with",10.6,10.64],["the",10.72,10.8],["S&P",10.88,11.28],["500,",11.36,12.08],["which",12.2,12.32],["slipped",12.36,12.64],["zero",12.72,12.88],["point",13.04,13.28],["two",13.32,13.36],["percent",13.44,13.84],["too.",13.92,14.64]],[["Meta",14.72,14.96],["was",15.04,15.2],["the",15.24,15.28],["bright",15.36,15.6],["spot,",15.76,16.16],["up",16.28,16.4],["three",16.48,16.64],["point",16.8,17.04],["two",17.08,17.12],["percent,",17.28,17.81],["as",17.87,17.92],["investors",18.12,18.56],["warmed",18.64,19.04],["to",19.12,19.2],["its",19.32,19.44],["AI",19.52,19.76],["business.",19.84,20.85],["Apple",20.99,21.12],["pulled",21.16,21.36],["the",21.44,21.52],["other",21.6,21.76],["way,",21.84,22.35],["down",22.45,22.56],["two",22.6,22.64],["point",22.8,23.04],["seven",23.12,23.28],["percent,",23.44,23.97],["on",24.03,24.08],["reports",24.32,24.56],["that",24.6,24.64],["its",24.72,24.88],["new",24.96,25.12],["CEO,",25.2,25.92],["John",26.04,26.16],["Ternus,",26.24,26.88],["is",26.96,27.12],["planning",27.16,27.52],["layoffs",27.64,28.0],["as",28.08,28.24],["costs",28.4,28.64],["rise.",28.72,29.52]],[["Almost",29.76,30.0],["all",30.08,30.16],["of",30.24,30.32],["this",30.4,30.48],["portfolio",30.56,31.12],["is",31.2,31.36],["US",31.44,31.68],["tech,",31.76,32.32],["so",32.48,32.64],["days",32.76,32.88],["like",32.96,33.12],["today",33.32,33.52],["come",33.64,33.76],["down",33.84,33.92],["to",34.0,34.08],["a",34.24,34.35],["handful",34.45,34.64],["of",34.72,34.8],["names.",35.24,35.71],["The",35.73,35.76],["next",35.92,36.08],["real",36.16,36.4],["test",36.56,36.72],["is",36.8,36.88],["October",37.16,37.44],["earnings,",37.56,38.19],["starting",38.29,38.4],["with",38.48,38.56],["Tesla",38.64,38.96],["on",39.04,39.12],["the",39.16,39.2],["twenty-first",39.28,40.16],["and",40.24,40.4],["Apple",40.48,40.8],["around",40.88,41.12],["the",41.16,41.2],["twenty-ninth.",41.28,42.36]],[["That's",42.4,42.56],["your",42.6,42.64],["brief.",42.96,43.36],["Talk",43.48,43.6],["soon.",43.72,44.08]]];
+  const audio = document.getElementById("audio"), card = document.getElementById("brief"), btn = document.getElementById("play");
+  const box = document.getElementById("transcript"), fill = document.getElementById("fill"), scrub = document.getElementById("scrub"), time = document.getElementById("time");
+  const spans = [];
+  for (const para of W) {
+    const p = document.createElement("p");
+    para.forEach(([w, s, e], i) => {
+      const sp = document.createElement("span"); sp.textContent = w; sp.dataset.s = s; sp.dataset.e = e;
+      sp.addEventListener("click", () => { audio.currentTime = s; if (audio.paused) start(); });
+      p.append(sp); if (i < para.length - 1) p.append(" "); spans.push(sp);
+    });
+    box.append(p);
+  }
+  const dur = () => audio.duration || 44;
+  const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  let last = -1;
+  const paint = () => {
+    const t = audio.currentTime;
+    fill.style.width = `${(100 * t) / dur()}%`;
+    time.textContent = audio.paused && t === 0 ? fmt(dur()) : `${fmt(t)} / ${fmt(dur())}`;
+    scrub.setAttribute("aria-valuenow", Math.round(t));
+    let now = -1;
+    for (let i = 0; i < spans.length; i++) { if (+spans[i].dataset.s <= t) now = i; else break; }
+    if (now !== last) { spans.forEach((sp, i) => { sp.classList.toggle("said", i < now); sp.classList.toggle("now", i === now); }); last = now; }
+    if (!audio.paused) requestAnimationFrame(paint);
+  };
+  const start = () => { card.classList.add("started", "playing"); btn.setAttribute("aria-label", "Pause the sample brief"); audio.play(); requestAnimationFrame(paint); };
+  const stop = () => { card.classList.remove("playing"); btn.setAttribute("aria-label", "Play the sample brief"); audio.pause(); };
+  btn.addEventListener("click", () => (audio.paused ? start() : stop()));
+  audio.addEventListener("ended", () => { stop(); last = -1; spans.forEach((sp) => sp.classList.add("said")); spans.forEach((sp) => sp.classList.remove("now")); });
+  audio.addEventListener("loadedmetadata", paint);
+  const seekTo = (x) => { const r = scrub.getBoundingClientRect(); audio.currentTime = Math.min(1, Math.max(0, (x - r.left) / r.width)) * dur(); card.classList.add("started"); paint(); };
+  scrub.addEventListener("pointerdown", (e) => { seekTo(e.clientX); scrub.setPointerCapture(e.pointerId); });
+  scrub.addEventListener("pointermove", (e) => { if (scrub.hasPointerCapture(e.pointerId)) seekTo(e.clientX); });
+  scrub.addEventListener("keydown", (e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { audio.currentTime = Math.min(dur(), Math.max(0, audio.currentTime + (e.key === "ArrowRight" ? 5 : -5))); card.classList.add("started"); paint(); e.preventDefault(); } });
+})();
+</script>
+</body></html>
