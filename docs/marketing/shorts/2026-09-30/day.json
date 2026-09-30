@@ -3,205 +3,6 @@
  "demo": 1,
  "script": "AI stocks today. Micron beat after the bell, with record revenue of $54.2 billion. Google rose 0.9% as it launched Gemini 4. Meta slipped 1.8%, ending a September rally driven by its Muse AI app. This demo portfolio closed up 0.2%. That's your brief.",
  "hook": "AI stocks today|September 30",
- "cues": [
-  {
-   "skip": true,
-   "show": [
-    [
-     "AI",
-     1
-    ],
-    [
-     "stocks",
-     1
-    ],
-    [
-     "today.",
-     1
-    ]
-   ]
-  },
-  {
-   "eyebrow": "MICRON · AFTER THE BELL",
-   "show": [
-    [
-     "Micron",
-     1
-    ],
-    [
-     "beat",
-     1
-    ],
-    [
-     "after",
-     1
-    ],
-    [
-     "the",
-     1
-    ],
-    [
-     "bell,",
-     1
-    ],
-    [
-     "with",
-     1
-    ],
-    [
-     "record",
-     1
-    ],
-    [
-     "revenue",
-     1
-    ],
-    [
-     "of",
-     1
-    ],
-    [
-     "$54.2",
-     3
-    ],
-    [
-     "billion.",
-     2
-    ]
-   ]
-  },
-  {
-   "eyebrow": "GOOGLE",
-   "show": [
-    [
-     "Google",
-     1
-    ],
-    [
-     "rose",
-     1
-    ],
-    [
-     "0.9%",
-     4
-    ],
-    [
-     "as",
-     1
-    ],
-    [
-     "it",
-     1
-    ],
-    [
-     "launched",
-     1
-    ],
-    [
-     "Gemini 4.",
-     2
-    ]
-   ]
-  },
-  {
-   "eyebrow": "META",
-   "show": [
-    [
-     "Meta",
-     1
-    ],
-    [
-     "slipped",
-     1
-    ],
-    [
-     "1.8%,",
-     4
-    ],
-    [
-     "ending",
-     1
-    ],
-    [
-     "a",
-     1
-    ],
-    [
-     "September",
-     1
-    ],
-    [
-     "rally",
-     1
-    ],
-    [
-     "driven",
-     1
-    ],
-    [
-     "by",
-     1
-    ],
-    [
-     "its",
-     1
-    ],
-    [
-     "Muse",
-     1
-    ],
-    [
-     "AI",
-     1
-    ],
-    [
-     "app.",
-     1
-    ]
-   ]
-  },
-  {
-   "eyebrow": "DEMO PORTFOLIO 001",
-   "show": [
-    [
-     "This",
-     1
-    ],
-    [
-     "demo",
-     1
-    ],
-    [
-     "portfolio",
-     1
-    ],
-    [
-     "closed",
-     1
-    ],
-    [
-     "up 0.2%.",
-     5
-    ]
-   ]
-  },
-  {
-   "show": [
-    [
-     "That's",
-     1
-    ],
-    [
-     "your",
-     1
-    ],
-    [
-     "brief.",
-     1
-    ]
-   ]
-  }
- ],
  "beats": [
   {
    "take": "take1.mp4",
@@ -209,15 +10,25 @@
    "freeze": true,
    "zoom": {
     "to": 1.8,
-    "focus_src": 620,
+    "focus_src": 640,
     "in": [
-     0.25,
-     1.35
+     0.3,
+     3.0
     ],
     "out": "auto"
    },
    "to_cue": 2,
-   "note": "MU page header"
+   "note": "MU header, '0.00% today · closed 4:00 PM ET' highlighted",
+   "highlight": {
+    "src_box": [
+     40,
+     772,
+     790,
+     832
+    ],
+    "pad": 10,
+    "radius": 10
+   }
   },
   {
    "take": "take2.mp4",
@@ -250,22 +61,32 @@
    "freeze": true,
    "zoom": {
     "to": 1.8,
-    "focus_src": 620,
+    "focus_src": 640,
     "in": [
-     0.25,
-     1.35
+     0.3,
+     3.4
     ],
     "out": "auto"
    },
    "to_cue": 4,
-   "note": "META page header"
+   "note": "META header, '-1.84% today' highlighted",
+   "highlight": {
+    "src_box": [
+     40,
+     770,
+     820,
+     834
+    ],
+    "pad": 10,
+    "radius": 10
+   }
   },
   {
    "take": "take1.mp4",
    "start": 3.2,
    "zoom": {
     "to": 1.8,
-    "focus_src": 540,
+    "focus_src": 560,
     "in": [
      0.2,
      1.2
@@ -273,7 +94,17 @@
     "out": "auto"
    },
    "to_cue": 5,
-   "note": "Home net worth, day change"
+   "note": "Home, 'Today +$336 (+0.16%)' highlighted",
+   "highlight": {
+    "src_box": [
+     40,
+     534,
+     530,
+     582
+    ],
+    "pad": 7,
+    "radius": 10
+   }
   },
   {
    "take": "take1.mp4",
@@ -288,6 +119,124 @@
    },
    "tail": 0.45,
    "note": "close brief open, player running"
+  }
+ ],
+ "lines": [
+  {
+   "voice": "marin",
+   "say": "AI stocks today. Micron beat after the bell, with record revenue of fifty-four point two billion dollars.",
+   "reuse": {
+    "file": "voice/line0-marin.wav",
+    "from": 0,
+    "to": 8.05
+   },
+   "cues": [
+    {
+     "skip": true,
+     "show": [
+      "AI",
+      "stocks",
+      "today."
+     ]
+    },
+    {
+     "eyebrow": "MICRON · AFTER THE BELL",
+     "show": [
+      "Micron",
+      "beat",
+      "after",
+      "the",
+      "bell,",
+      "with",
+      "record",
+      "revenue",
+      "of",
+      "$54.2",
+      "billion."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "cedar",
+   "say": "Google rose zero point nine percent as it launched Gemini four.",
+   "reuse": {
+    "file": "voice/line1-cedar.wav",
+    "from": 0,
+    "to": 4.2
+   },
+   "cues": [
+    {
+     "eyebrow": "GOOGLE",
+     "show": [
+      "Google",
+      "rose",
+      "0.9%",
+      "as",
+      "it",
+      "launched",
+      "Gemini 4."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "marin",
+   "say": "Meta slipped one point eight percent, ending a September rally driven by its Muse AI app.",
+   "reuse": {
+    "file": "voice/line2-marin.wav",
+    "from": 0,
+    "to": 6.45
+   },
+   "cues": [
+    {
+     "eyebrow": "META",
+     "show": [
+      "Meta",
+      "slipped",
+      "1.8%,",
+      "ending",
+      "a",
+      "September",
+      "rally",
+      "driven",
+      "by",
+      "its",
+      "Muse",
+      "AI",
+      "app."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "minjae",
+   "say": "This demo portfolio closed up zero point two percent. That's your brief.",
+   "reuse": {
+    "file": "voice/line3-minjae.wav",
+    "from": 0,
+    "to": 4.58
+   },
+   "cues": [
+    {
+     "eyebrow": "YOUR ASSETLY BRIEF · DEMO 001",
+     "show": [
+      "This",
+      "demo",
+      "portfolio",
+      "closed",
+      "up 0.2%."
+     ]
+    },
+    {
+     "eyebrow": "YOUR ASSETLY BRIEF",
+     "show": [
+      "That's",
+      "your",
+      "brief."
+     ]
+    }
+   ]
   }
  ]
 }

@@ -80,6 +80,24 @@ you cannot source (intelligence bullets with contested figures) out of zoomed fr
 
 ## 4. Build: one command
 
+**Voices.** The default (since 9/30, owner's call) is a hand-off, as the launch clip: 2-3 commentary lines
+in OpenRouter `openai/gpt-audio` voices **marin** and **cedar** (alternate them), then the app's own
+brief voice (the **minjae** ElevenLabs clone) for "This demo portfolio closed up X. That's your brief."
+Each line is word-synced on screen with an eyebrow naming the story, and five speaking pills follow
+whoever is talking, so a muted viewer can follow every line. Put `"lines"` in day.json (see the 9/30
+file): `voice`, `say` (spoken text; `speakable()` turns figures into words), `cues` (display tokens,
+one per shown word, `\u00a0` to keep "Gemini 4." together). `voice-lines.py` renders each line
+(read-verbatim transcript check, pauses shortened, gpt-audio +6% tempo), times the words with
+faster-whisper and snaps each sentence to the audio's own onset. `"reuse"` pins an approved take so
+a re-cut never re-voices (9/30 keeps its four takes in `voice/`). Without `"lines"`, `"cues"` with
+spoken-word counts voices the whole script in the Minjae clone (the first 9/30 cut, kept as
+`-alt-minjae-voice.mp4`). Keys: OpenRouter from `~/.private_keys/openrouter.txt`, ElevenLabs from
+`$W/build/elk` (only for minjae lines that are not reused).
+
+Highlights: give each zoomed beat a `highlight.src_box` (recording pixels, 1206 wide) around the line
+being spoken; a freeze beat needs a slow push (`"in": [0.3, 3.0]`) or the freeze metric trips.
+
+
 Write `docs/marketing/shorts/<date>/day.json` (copy the 9/30 one): the display script, the subtitle cues
 (each token with how many spoken words it covers, e.g. `["$54.2",3]` for "fifty-four point two", an
 eyebrow per story), and the beats (`take`, `start`, `freeze`, `zoom`, `highlight`, and `to_cue`: the beat

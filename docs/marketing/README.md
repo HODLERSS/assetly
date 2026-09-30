@@ -354,3 +354,7 @@ frozen frame), still-PNG `overlays` (the standing disclaimer), `END_SUB1/END_SUB
 greedy multi-line fill subtitles (`SUB_MAXW` keeps text left of the action rail), and `make-cards.py line`.
 Two traps: a stream-copied hook join made the next xfade stop at the end of that file at 60 fps (the
 join is re-encoded now), and `-shortest` at the mux dropped the last 9 video frames (not used).
+The daily Short is voiced as a hand-off by default (`"lines"` in day.json): marin and cedar on OpenRouter
+gpt-audio for the commentary, then the Minjae clone for the brief line, each word-synced on screen with the
+speaking pills; `shorts/voice-lines.py` times gpt-audio (no timestamps) with faster-whisper and snaps each
+sentence to its audio onset (whisper ran 150 ms late after a pause and 160 ms early on "That's").

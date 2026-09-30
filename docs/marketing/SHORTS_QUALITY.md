@@ -7,7 +7,7 @@ with the proof frames open, and recorded in the same report.
 
 | # | Metric | Pass when | How it is measured |
 |---|---|---|---|
-| Q1 | Duration | 20.0 to 25.0 s | ffprobe format duration |
+| Q1 | Duration | 20.0 to 25.0 s, and the video stream ends within 0.04 s of the file (one AAC frame + one video frame) | ffprobe format and stream durations |
 | Q2 | Format | 1080x1920, 60 fps (30 allowed), H.264 High, yuv420p, AAC 48 kHz, faststart | ffprobe streams + moov before mdat |
 | Q3 | Loudness | integrated -14 LUFS ±1 | ffmpeg `ebur128=peak=true` |
 | Q4 | True peak | <= -1.5 dBTP | same pass |
