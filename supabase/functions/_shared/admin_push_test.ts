@@ -1,7 +1,7 @@
 // Run: npx -y deno@2 test --allow-read supabase/functions/_shared/admin_push_test.ts
 // admin-push: identity (401/403), allowlist, validation, rate limits, broadcast confirmation, dry runs, audit.
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1";
-import { adminEmails, type AdminDeps, BODY_MAX, handleAdmin, TITLE_MAX, validateDraft } from "./admin_push.ts";
+import { adminEmails, adminOrigins, type AdminDeps, originOk, BODY_MAX, handleAdmin, TITLE_MAX, validateDraft } from "./admin_push.ts";
 import { ADMIN, actors, fakeApns, MemStore, testP8, tok, U1, U2 } from "./push_test_kit.ts";
 
 async function setup(opts: { admins?: string; configured?: boolean } = {}) {
@@ -170,4 +170,14 @@ Deno.test("every call is audited with the payload and the result", async () => {
   assertEquals((a.payload as Record<string, unknown>).title, draft.title);
   assertEquals((a.result as Record<string, unknown>).sent, 1);
   assert(a.ok);
+});
+
+Deno.test("origins: only the admin site answers a browser; the consumer site and look-alikes are refused; scripts pass", () => {
+  const allowed = adminOrigins("");
+  assertEquals(allowed, ["https://assetly-admin.vercel.app"]);
+  assert(originOk("https://assetly-admin.vercel.app", allowed));
+  assert(originOk(null, allowed));   // no Origin: not a browser; the token + allowlist still decide
+  for (const o of ["https://hodlerss.github.io", "https://assetly-admin.vercel.app.evil.com", "http://assetly-admin.vercel.app", "null", "capacitor://localhost"]) assertFalse(originOk(o, allowed), o);
+  assertEquals(adminOrigins("https://a.example/, http://localhost:5198"), ["https://a.example", "http://localhost:5198"]);
+  assertEquals(adminOrigins("not a url"), ["https://assetly-admin.vercel.app"]);
 });

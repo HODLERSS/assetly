@@ -1,6 +1,6 @@
 // 1.0.3 brief notifications, client side: the on/off preference and its migration, provisional (no prompt) vs full
 // authorization, the soft ask and its "Not now", the Settings switch (Off deletes this device's token, a denied
-// permission points to iOS Settings), a notification tap opening its brief, and the internal push tool's page.
+// permission points to iOS Settings), and a notification tap opening its brief. (The admin tool is a separate app: app/admin.)
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -71,7 +71,6 @@ vi.mock("../lib/supabase", () => ({
 
 import { App } from "../App";
 import { SettingsScreen } from "../screens/Settings";
-import { AdminPushScreen } from "../screens/AdminPush";
 import { PushAsk } from "../components/PushAsk";
 import type { DailyBrief } from "../lib/api";
 import {
@@ -225,7 +224,7 @@ describe("P4 the soft-ask card", () => {
 });
 
 describe("P5 the Settings switch", () => {
-  const settings = (api = stubApi()) => render(<SettingsScreen api={api} profile={profile} rows={[]} onChanged={() => {}} onSignedOut={() => {}} onOpenAdmin={() => {}} />);
+  const settings = (api = stubApi()) => render(<SettingsScreen api={api} profile={profile} rows={[]} onChanged={() => {}} onSignedOut={() => {}} />);
   it("defaults to On in the app for a reader who never chose", async () => {
     settings();
     expect(screen.getByTestId("push-toggle").getAttribute("aria-checked")).toBe("true");
@@ -263,13 +262,11 @@ describe("P5 the Settings switch", () => {
     settings();
     expect(screen.queryByTestId("notify-card")).toBeNull();
   });
-  it("the internal tools row shows only when the server says admin", async () => {
+  it("the consumer app carries no admin tool: nothing admin in Settings", async () => {
     settings();
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(screen.queryByTestId("admin-card")).toBeNull();
-    const api = stubApi({ adminPush: vi.fn().mockResolvedValue({ status: 200, body: { ok: true, admin: true, email: "minjae.m.lee@gmail.com" } }) });
-    render(<SettingsScreen api={api} profile={profile} rows={[]} onChanged={() => {}} onSignedOut={() => {}} onOpenAdmin={() => {}} />);
-    await screen.findByTestId("admin-card");
+    expect(document.body.textContent).not.toMatch(/internal tools|send a push/i);
   });
 });
 
@@ -311,64 +308,5 @@ describe("P6 a notification tap opens its brief", () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
     expect(shell.requests).toEqual([]);
     expect(plugin.registers).toBe(0);
-  });
-});
-
-describe("P7 the internal push tool's page", () => {
-  const recipients = [{ user_id: "22222222-2222-4222-8222-222222222222", email: "two@example.com", display_name: null, devices: 1, environments: ["production"], last_brief_at: null, last_push_at: null }];
-  const adminApi = () => stubApi({
-    adminPush: vi.fn().mockImplementation(async (b: Record<string, unknown>) => {
-      if (b.action === "whoami") return { status: 200, body: { ok: true, admin: true, email: "minjae.m.lee@gmail.com" } };
-      if (b.action === "recipients") return { status: 200, body: { ok: true, recipients, count: 1 } };
-      if (b.action === "history") return { status: 200, body: { ok: true, history: [] } };
-      if (b.action === "test") return { status: 200, body: { ok: true, sent: 1, devices: 1, ...(b.dry_run ? { dry_run: true } : {}) } };
-      if (b.action === "broadcast") return { status: 200, body: { ok: true, recipients: 1, sent: 1, failed: 0 } };
-      return { status: 200, body: { ok: true, sent: 1, devices: 1 } };
-    }),
-  });
-  it("a non-admin sees nothing but a polite refusal", async () => {
-    render(<AdminPushScreen api={stubApi()} onBack={() => {}} />);
-    await screen.findByTestId("admin-denied");
-    expect(screen.queryByTestId("admin-title")).toBeNull();
-  });
-  it("live counts, a lock-screen preview, and sending to others unlocks only after a test of the same words", async () => {
-    const api = adminApi();
-    render(<AdminPushScreen api={api} onBack={() => {}} />);
-    await userEvent.type(await screen.findByTestId("admin-title"), "Holiday");
-    await userEvent.type(screen.getByTestId("admin-body"), "Closed Monday.");
-    expect(screen.getByTestId("admin-title-count").textContent).toBe("7/60");
-    expect(screen.getByTestId("admin-body-count").textContent).toBe("14/178");
-    expect(within(screen.getByTestId("admin-preview")).getByText("Holiday")).toBeTruthy();
-    expect((screen.getByTestId("admin-broadcast") as HTMLButtonElement).disabled).toBe(true);
-    await userEvent.click(screen.getByTestId("admin-send-test"));
-    await screen.findByText(/Sent to your 1 device/);
-    expect((screen.getByTestId("admin-broadcast") as HTMLButtonElement).disabled).toBe(false);
-    // editing the words locks it again
-    await userEvent.type(screen.getByTestId("admin-body"), "!");
-    expect((screen.getByTestId("admin-broadcast") as HTMLButtonElement).disabled).toBe(true);
-  });
-  it("over the limit: the count turns red and nothing can be sent", async () => {
-    render(<AdminPushScreen api={adminApi()} onBack={() => {}} />);
-    await userEvent.type(await screen.findByTestId("admin-title"), "x".repeat(61));
-    await userEvent.type(screen.getByTestId("admin-body"), "b");
-    expect(screen.getByTestId("admin-title-count").className).toContain("over");
-    expect((screen.getByTestId("admin-send-test") as HTMLButtonElement).disabled).toBe(true);
-  });
-  it("broadcast needs the recipient count typed", async () => {
-    const api = adminApi();
-    render(<AdminPushScreen api={api} onBack={() => {}} />);
-    await userEvent.type(await screen.findByTestId("admin-title"), "Hi");
-    await userEvent.type(screen.getByTestId("admin-body"), "There");
-    await userEvent.click(screen.getByTestId("admin-send-test"));
-    await screen.findByText(/Sent to your/);
-    await userEvent.click(screen.getByTestId("admin-broadcast"));
-    const go = screen.getByTestId("admin-confirm-broadcast") as HTMLButtonElement;
-    expect(go.disabled).toBe(true);
-    await userEvent.type(screen.getByTestId("admin-confirm-count"), "2");
-    expect(go.disabled).toBe(true);
-    await userEvent.clear(screen.getByTestId("admin-confirm-count"));
-    await userEvent.type(screen.getByTestId("admin-confirm-count"), "1");
-    await userEvent.click(go);
-    await waitFor(() => expect(api.adminPush).toHaveBeenCalledWith(expect.objectContaining({ action: "broadcast", confirm_count: 1, title: "Hi", body: "There" })));
   });
 });

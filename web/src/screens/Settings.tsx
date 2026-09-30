@@ -17,10 +17,8 @@ const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? 
 
 // Gap screen g2: account, currency matrix, markets, sign out. The matrix (totals / US assets /
 // KR assets, each USD or KRW) appears once the book actually holds KRW — no clutter before that.
-export function SettingsScreen({ api, profile, rows, email = null, onChanged, onSignedOut, bookUnknown = false, onOpenAdmin }: {
+export function SettingsScreen({ api, profile, rows, email = null, onChanged, onSignedOut, bookUnknown = false }: {
   api: Api; profile: Profile | null; rows: PortfolioRow[]; email?: string | null;
-  /** the internal push tool; offered only once admin-push says this account is an admin */
-  onOpenAdmin?: () => void;
   /** no book has loaded yet: the markets row says so instead of a placeholder dash */
   bookUnknown?: boolean;
   onChanged: () => Promise<void> | void; onSignedOut: () => void;
@@ -90,16 +88,6 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
     try { const r = await upgradePush(saveToken); setOs(r.status); setTimeout(r.off, 15_000); }
     finally { setPushBusy(false); }
   };
-  // the internal tool's entry: asked of the server, never decided here
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
-    if (!onOpenAdmin) return;
-    let live = true;
-    // a thrown call (or an api without the tool) is simply "not an admin"
-    Promise.resolve().then(() => api.adminPush({ action: "whoami" }))
-      .then((r) => { if (live) setIsAdmin(r.status === 200 && r.body.admin === true); }, () => {});
-    return () => { live = false; };
-  }, [api, onOpenAdmin]);
   const base = profile?.base_currency ?? "USD";
   const dispUs = profile?.display_us ?? "USD";
   const dispKr = profile?.display_kr ?? "KRW";
@@ -288,14 +276,6 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
               <button className="chip" disabled={pushBusy} onClick={turnOnAlerts} data-testid="push-turn-on-alerts">Turn on alerts</button>
             </div>
           )}
-        </div>
-      )}
-      {isAdmin && onOpenAdmin && (
-        <div className="card" style={{ marginBottom: 14 }} data-testid="admin-card">
-          <div className="row" style={{ alignItems: "center" }}>
-            <span>Internal tools<br /><span className="sub">Send a push notification</span></span>
-            <button className="chip" onClick={onOpenAdmin} data-testid="open-admin-push">Open</button>
-          </div>
         </div>
       )}
       <div className="card" style={{ marginBottom: 14 }} data-testid="legal-card">

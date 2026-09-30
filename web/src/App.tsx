@@ -27,7 +27,6 @@ import { PositionScreen } from "./screens/Position";
 import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
 import { SettingsScreen } from "./screens/Settings";
-import { AdminPushScreen } from "./screens/AdminPush";
 import { ASK_FIRST_QUESTION, AskScreen } from "./screens/Ask";
 import { Icon } from "./components/Icon";
 
@@ -35,7 +34,6 @@ export type Tab = "home" | "news" | "ask" | "settings";
 export type View =
   | { kind: "tab"; tab: Tab }
   | { kind: "add" }
-  | { kind: "admin" }
   | { kind: "position"; holdingId: string };
 
 const REFRESH_MS = 60_000;
@@ -464,10 +462,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
   // the prices banner and "Prices as of" come and go above the reader: keep their place (r7 design n-3)
   useKeepScrollAnchor(mainRef, !!error);
   const homeSnapRef = useRef<Underlay | null>(null);   // Home as it was left: drawn under a swipe back
-  useEdgeSwipeBack(mainRef, view.kind !== "tab", () => {
-    if (viewRef.current.kind === "admin") { setView({ kind: "tab", tab: "settings" }); return; }
-    setHomeAlert(false); setView({ kind: "tab", tab: "home" });
-  }, () => (viewRef.current.kind === "admin" ? null : homeSnapRef.current));
+  useEdgeSwipeBack(mainRef, view.kind !== "tab", () => { setHomeAlert(false); setView({ kind: "tab", tab: "home" }); }, () => homeSnapRef.current);
 
   // Book-changed pipeline for MANUAL adds: a run of adds (one after another) is coalesced into ONE
   // orchestrator call, the same chain a brokerage connect runs (sync -> news -> intelligence -> assessment).
@@ -515,7 +510,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
   // unmounting (sign-out, or a test's cleanup) stops the hold: left running, its frames kept calling scrollTo
   // for up to 600ms after the app was gone (the F2 "tab switch starts at the top" flake under suite load)
   useEffect(() => () => { holdStopRef.current?.(); holdStopRef.current = null; }, []);
-  const viewKey = view.kind === "tab" ? `tab:${view.tab}` : view.kind;
+  const viewKey = view.kind === "tab" ? `tab:${view.tab}` : view.kind === "position" ? "position" : "add";
   useLayoutEffect(() => {
     const prev = prevViewRef.current;
     prevViewRef.current = view;
@@ -543,14 +538,6 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewKey]);
 
-  // the internal push tool on the web: .../assetly/#admin (the page itself asks the server whether this account may)
-  useEffect(() => {
-    if (!session || !profile?.onboarded_at) return;
-    const open = () => { if (window.location.hash === "#admin") setView({ kind: "admin" }); };
-    open();
-    window.addEventListener("hashchange", open);
-    return () => window.removeEventListener("hashchange", open);
-  }, [session, profile?.onboarded_at]);
   // the tapped notification's destination, once someone is signed in and past setup
   useEffect(() => {
     if (!pushRoute || !session || !profile?.onboarded_at) return;
@@ -684,13 +671,8 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
           }} />
         </div>
         {view.kind === "tab" && view.tab === "settings" && (
-          <SettingsScreen api={api} profile={profile} rows={rows} bookUnknown={!hasBook} email={session.user.email ?? null} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })}
-            onOpenAdmin={() => go({ kind: "admin" })} />
+          <SettingsScreen api={api} profile={profile} rows={rows} bookUnknown={!hasBook} email={session.user.email ?? null} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
         )}
-        {view.kind === "admin" && <AdminPushScreen api={api} onBack={() => {
-          if (window.location.hash === "#admin") window.history.replaceState(null, "", window.location.pathname + window.location.search);
-          go({ kind: "tab", tab: "settings" });
-        }} />}
       </main>
 
       <MiniPlayer />

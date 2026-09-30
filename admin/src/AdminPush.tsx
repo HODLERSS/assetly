@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Api } from "../lib/api";
-import { timeAgo } from "../lib/format";
-import { Icon } from "../components/Icon";
+import { Check, timeAgo } from "./ui";
 
-// Internal tool: send a push by hand (Settings > Internal tools, or #admin on the web). Every rule that matters is
-// enforced by the admin-push function, not here: who may use it (verified token + email allowlist), the limits,
+// The Assetly admin app's one screen: send a push by hand. It is its own site (app/admin, deployed apart from the
+// consumer app, which carries none of this). Every rule that matters is enforced by the admin-push function, not here: who may use it (verified token + email allowlist), the limits,
 // the in-app-only links, the broadcast count, the audit. This page only makes the safe path the easy one:
 // preview on a lock screen, "Send test to me" first, a single send only after a test of the same words, and a
 // broadcast that needs the recipient count typed out.
@@ -22,7 +20,9 @@ const chars = (s: string) => [...s.trim()].length;
 type Recipient = { user_id: string; email: string | null; display_name: string | null; devices: number; environments: string[]; last_brief_at: string | null; last_push_at: string | null };
 type LogRow = { id: number; created_at: string; email: string | null; kind: string; title: string | null; status: string; devices: number; sent: number; dropped: number; apns_id: string | null; error: string | null };
 
-export function AdminPushScreen({ api, onBack }: { api: Api; onBack: () => void }) {
+export type AdminCall = (body: Record<string, unknown>) => Promise<{ status: number; body: Record<string, unknown> }>;
+
+export function AdminPushScreen({ call: adminPush, onSignOut }: { call: AdminCall; onSignOut: () => void }) {
   const [phase, setPhase] = useState<"checking" | "denied" | "ready">("checking");
   const [me, setMe] = useState<string | null>(null);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
@@ -39,13 +39,13 @@ export function AdminPushScreen({ api, onBack }: { api: Api; onBack: () => void 
   const [typed, setTyped] = useState("");
 
   const refresh = useCallback(async () => {
-    const [r, h] = await Promise.all([api.adminPush({ action: "recipients" }), api.adminPush({ action: "history", limit: 50 })]);
+    const [r, h] = await Promise.all([adminPush({ action: "recipients" }), adminPush({ action: "history", limit: 50 })]);
     if (r.status === 200) setRecipients((r.body.recipients ?? []) as Recipient[]);
     if (h.status === 200) setHistory((h.body.history ?? []) as LogRow[]);
-  }, [api]);
+  }, [adminPush]);
   useEffect(() => {
     let live = true;
-    api.adminPush({ action: "whoami" }).then(async (r) => {
+    adminPush({ action: "whoami" }).then(async (r) => {
       if (!live) return;
       if (r.status !== 200 || r.body.admin !== true) { setPhase("denied"); return; }
       setMe(String(r.body.email ?? ""));
@@ -53,7 +53,7 @@ export function AdminPushScreen({ api, onBack }: { api: Api; onBack: () => void 
       await refresh();
     }).catch(() => { if (live) setPhase("denied"); });
     return () => { live = false; };
-  }, [api, refresh]);
+  }, [adminPush, refresh]);
 
   const words = `${title.trim()}\u0000${body.trim()}\u0000${link}`;
   const titleN = chars(title), bodyN = chars(body);
@@ -65,7 +65,7 @@ export function AdminPushScreen({ api, onBack }: { api: Api; onBack: () => void 
   const call = async (payload: Record<string, unknown>, done: (b: Record<string, unknown>) => string) => {
     setBusy(true); setNote(null); setErrors({});
     try {
-      const r = await api.adminPush({ ...payload, title: title.trim(), body: body.trim(), link: link || null });
+      const r = await adminPush({ ...payload, title: title.trim(), body: body.trim(), link: link || null });
       if (r.status === 200 && r.body.ok !== false) { setNote({ ok: true, text: done(r.body) }); return r.body; }
       if (r.body.errors) setErrors(r.body.errors as Record<string, string>);
       setNote({ ok: false, text: String(r.body.error ?? `Failed (${r.status})`) + (r.status === 401 ? " Your session may have expired." : "") });
@@ -77,16 +77,16 @@ export function AdminPushScreen({ api, onBack }: { api: Api; onBack: () => void 
   if (phase === "denied") {
     return (
       <div className="empty" data-testid="admin-denied">
-        <p>This page isn't available for your account.</p>
-        <button className="btn secondary" onClick={onBack}>Back</button>
+        <p>This account is not an Assetly admin.</p>
+        <button className="btn secondary" onClick={onSignOut} data-testid="admin-sign-out">Sign out</button>
       </div>
     );
   }
   return (
     <div className="admin-push" data-testid="admin-push">
-      <button className="chip" onClick={onBack}>&larr; Settings</button>
       <h2 className="h1">Send a push</h2>
-      <p className="sub" style={{ marginTop: -6, marginBottom: 14 }}>Signed in as {me}. Every send is logged.</p>
+      <p className="sub" style={{ marginTop: -6, marginBottom: 14 }}>Signed in as {me}. Every send is logged.{" "}
+        <button className="chip" onClick={onSignOut} data-testid="admin-sign-out">Sign out</button></p>
 
       <div className="card" style={{ padding: 14, marginBottom: 14 }}>
         <label className="field">
@@ -155,7 +155,7 @@ export function AdminPushScreen({ api, onBack }: { api: Api; onBack: () => void 
         {valid && tested !== words && <p className="sub" style={{ margin: 0 }} data-testid="admin-test-first">Send a test to yourself first: sending to others unlocks for these exact words.</p>}
         {note && (
           <div className={note.ok ? "status-note ok" : "error-note"} role="status" data-testid="admin-result" style={{ marginTop: 10 }}>
-            <span className="lead">{note.ok && <Icon name="check" />}{note.text}</span>
+            <span className="lead">{note.ok && <Check />}{note.text}</span>
           </div>
         )}
       </div>

@@ -195,15 +195,24 @@ prints names and lengths only). Vault reads are live (no redeploy needed, unlike
 `~/.private_keys/AuthKey_APNS_<NEWID>.p8`, run `node scripts/set-apns-secrets.mjs <NEWID>`, send a "test to me" from the
 admin tool, and only then revoke the old key at Apple.
 
-**Admin tool (internal).** In the app: Settings > Internal tools > Open (the row appears only when `admin-push`
-says the signed-in account is an admin). On the web: https://hodlerss.github.io/assetly/#admin. The function
-verifies the access token server side and checks the ACCOUNT's verified email against the allowlist; the page
-holds no keys. Flow: pick a recipient, write title (<=60) and body (<=178), check the lock-screen preview,
-**Send test to me** (sending to anyone else unlocks only after a test of the exact same words, so the admin needs a
-device with notifications on), then send to one person, or **Send to everyone (N)**, which needs N typed. Dry run
-validates and counts devices without sending. Limits: 50 single sends/hour, 1 broadcast/10 minutes per admin.
-Links are in-app routes only (`/home`, `/news`, `/ask`, `/settings`, `/brief/latest`, `/brief/<date>/<edition>`).
-Every call is in `admin_audit`, every send in `push_log` (the page shows the last 50).
+**Admin app (internal, separate from the product).** https://assetly-admin.vercel.app. Source `app/admin/`
+(own package.json, Vite + React, imports nothing from the consumer app; design tokens from `web/src/theme.css`),
+deployed on its own with `cd admin && npm install && bash deploy.sh` (Vercel project `assetly-admin` under the
+hodlerss account; the prebuilt `dist/` is deployed). Nothing admin-related ships in the consumer app or the iOS build,
+and nothing in the product links to it. `noindex` in the page, `X-Robots-Tag: noindex`, `robots.txt` Disallow, CSP,
+`X-Frame-Options: DENY`. **Sign in:** Continue with GitHub (the owner's GitHub is minjae.m.lee@gmail.com) or Google,
+through Supabase Auth; `https://assetly-admin.vercel.app/**` is in Auth > URL Configuration's redirect list. The
+session is stored under its own key (`assetly-admin-auth`). Whether the account is an admin is decided only by
+`admin-push`: a verified token, a confirmed email on the account, and the allowlist. `admin-push` answers browsers
+only from `ADMIN_ORIGINS` (function secret, comma-separated; default `https://assetly-admin.vercel.app`) and refuses
+any other Origin with 403 (the consumer site included); requests with no Origin (scripts) still need an admin token.
+Flow: pick a recipient, write title (<=60) and body (<=178), check the lock-screen preview, **Send test to me**
+(sending to anyone else unlocks only after a test of the exact same words, so the admin needs a device with
+notifications on), then send to one person, or **Send to everyone (N)**, which needs N typed. Dry run validates and
+counts devices without sending. Limits: 50 single sends/hour, 1 broadcast/10 minutes per admin. Links are in-app
+routes only (`/home`, `/news`, `/ask`, `/settings`, `/brief/latest`, `/brief/<date>/<edition>`). Every call is in
+`admin_audit`, every send in `push_log` (the page shows the last 50). Moving the site to another origin: add it to
+the auth redirect list and to `ADMIN_ORIGINS`, then redeploy `admin-push` (function env is frozen at deploy).
 
 **Add an admin:** default is `minjae.m.lee@gmail.com` only. To change it, set the full list (comma-separated):
 `select vault.create_secret('minjae.m.lee@gmail.com,other@example.com','admin_emails');` (or `vault.update_secret`
@@ -214,8 +223,12 @@ account must have a verified email.
 ```bash
 npx -y deno@2 test --allow-read supabase/functions/_shared/push_send_test.ts supabase/functions/_shared/admin_push_test.ts
 cd web && npx vitest run src/test/push.test.tsx
-# production API contract + web page; allowlists the showcase demo account as a TEST admin for the run, then removes it
-npx vite --port 5199 --mode production &  APP_URL=http://localhost:5199/ node e2e/admin-push.mjs   # SEND=1 for a real send
+cd ../admin && npx vitest run                      # the admin page (refusal, counts, test-first, typed broadcast count)
+# production API contract + the deployed admin site (session injected; allowlists the showcase demo account as a
+# TEST admin for the run, then removes it in finally). SEND=1 adds a real single send to the reviewer's devices.
+cd ../web && node e2e/admin-push.mjs
+# the consumer bundle must carry nothing admin: all zero
+VITE_BASE=/assetly/ npx vite build && for s in AdminPush admin-push "Internal tools"; do grep -rl -- "$s" dist | wc -l; done
 # simulator (reviewer demo account; screenshots to $SHOTS)
 cd ios/App && ./run-push-sim.sh <udid>                                  # fresh install: provisional, no prompt, switch
 ./run-push-sim.sh <udid> testTurnOnAlertsUpgrades --keep                # system prompt -> Allow

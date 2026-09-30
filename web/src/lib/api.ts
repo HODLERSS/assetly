@@ -543,17 +543,6 @@ export function makeApi(sb: SupabaseClient = supabase) {
       const { error } = await (token ? q.eq("token", token) : q);
       if (error) throw new Error(error.message);
     },
-    /** The internal push tool (admin-push). Answers the function's JSON and status; a refusal is data, not a throw. */
-    async adminPush(body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
-      const { data, error } = await sb.functions.invoke("admin-push", { body });
-      if (!error) return { status: 200, body: (data ?? {}) as Record<string, unknown> };
-      const ctx = (error as { context?: unknown }).context;
-      if (ctx instanceof Response) {
-        const j = await ctx.json().catch(() => ({ ok: false, error: `HTTP ${ctx.status}` }));
-        return { status: ctx.status, body: j as Record<string, unknown> };
-      }
-      return { status: 0, body: { ok: false, error: error.message || "Network error" } };
-    },
     /** Portfolio intelligence: refresh now (force regen for this user), then return the fresh row. */
     async refreshPortfolioInsights(): Promise<Insight | null> {
       const uid = await currentUserId(sb);

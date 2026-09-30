@@ -68,7 +68,6 @@ export function stubApi(over: Partial<Api> = {}): Api {
     signOut: vi.fn().mockResolvedValue(undefined),
     savePushToken: vi.fn().mockResolvedValue(undefined),
     removePushToken: vi.fn().mockResolvedValue(undefined),
-    adminPush: vi.fn().mockResolvedValue({ status: 403, body: { ok: false, error: "forbidden" } }),
     ...over,
   } as Api;
 }

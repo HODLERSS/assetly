@@ -41,6 +41,15 @@ export type AdminDeps = Omit<Deps, "store"> & {
 type Res = { status: number; body: Record<string, unknown> };
 const res = (status: number, body: Record<string, unknown>): Res => ({ status, body });
 
+/** The browser origins allowed to call admin-push: ADMIN_ORIGINS (comma-separated) or the admin site. */
+export const DEFAULT_ADMIN_ORIGINS = ["https://assetly-admin.vercel.app"];
+export const adminOrigins = (raw: string | null | undefined): string[] => {
+  const list = String(raw ?? "").split(/[,\s]+/).map((s) => s.trim().replace(/\/+$/, "")).filter((s) => /^https?:\/\/[^/]+$/.test(s));
+  return list.length ? list : DEFAULT_ADMIN_ORIGINS;
+};
+/** A request without an Origin is not a browser (curl, a script with a token); one with a foreign Origin is refused. */
+export const originOk = (origin: string | null, allowed: string[]): boolean => origin === null || allowed.includes(origin);
+
 export const adminEmails = (raw: string | null | undefined): string[] => {
   const list = String(raw ?? "").split(/[,\s]+/).map((s) => s.trim().toLowerCase()).filter((s) => /.+@.+\..+/.test(s));
   return list.length ? list : DEFAULT_ADMINS;
