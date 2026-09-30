@@ -1,12 +1,12 @@
 // App Store screenshots: iPhone 6.7"/6.9" class at 440x956 CSS px @3x = 1320x2868 (accepted for the 6.9" display set).
-// Signs in as the App Review demo account (or SHOTS_EMAIL/SHOTS_PW), walks Home, the open brief, a position,
-// News, Ask and Settings, and writes PNGs to e2e/store/. Run against the deployed build by default.
-//   node e2e/store-shots.mjs            # SHOTS_URL=... to point elsewhere, DARK=1 for the dark set
+// Signs in as the App Review demo account (or SHOTS_EMAIL/SHOTS_PW), walks Home, the open brief, the player,
+// a position, Ask with an answer and News, and writes PNGs to e2e/store/ (the listing order since 1.0.2).
+//   node e2e/store-shots.mjs            # SHOTS_URL=... to point elsewhere, DARK=1 for the dark set, ASK_Q=... for Ask
 import { webkit, chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
 import fs from "node:fs";
 const URL_ = process.env.SHOTS_URL ?? "https://hodlerss.github.io/assetly/";
-const OUT = new URL("./store/", import.meta.url).pathname; fs.mkdirSync(OUT, { recursive: true });
+const OUT = process.env.SHOTS_OUT ?? new URL("./store/", import.meta.url).pathname; fs.mkdirSync(OUT, { recursive: true });
 const cred = Object.fromEntries(fs.readFileSync(`${process.env.HOME}/.private_keys/assetly-reviewer.txt`, "utf8").split("\n").filter(Boolean).map((l) => l.split("=")));
 const email = process.env.SHOTS_EMAIL ?? cred.email, password = process.env.SHOTS_PW ?? cred.password;
 const sb = createClient("https://hhdpthrfmsdmxdrfckxq.supabase.co", "sb_publishable_MKb_6rBvHA6JJ4UYxhg9Cw_BIrKkICE", { auth: { persistSession: false } });
@@ -35,6 +35,12 @@ if (await card.count()) {
 }
 const row = page.locator("main .row").first();
 if (await row.count()) { await row.click(); await page.waitForTimeout(2500); await shot("position"); const back = page.getByRole("button", { name: /holdings/i }).first(); if (await back.count()) await back.click(); await page.waitForTimeout(800); }
-for (const t of ["News", "Ask", "Settings"]) { await page.getByRole("button", { name: new RegExp("^" + t + "$") }).click(); await page.waitForTimeout(2000); await shot(t.toLowerCase()); }
+const tab = (t) => page.getByRole("button", { name: new RegExp("^" + t + "$") }).click();
+await tab("Ask"); await page.waitForTimeout(1500);
+await page.getByLabel("Ask about your portfolio").fill(process.env.ASK_Q ?? "What moved my portfolio this week?");
+await page.locator(".ask-send").click();
+await page.getByTestId("ask-answer").last().waitFor({ timeout: 120000 }); await page.waitForTimeout(2500);
+await shot("ask");
+await tab("News"); await page.waitForTimeout(2000); await shot("news");
 await browser.close();
 console.log(`done: ${n} screenshots in ${OUT}`);
