@@ -1,7 +1,8 @@
 // App Store screenshots: iPhone 6.7"/6.9" class at 440x956 CSS px @3x = 1320x2868 (accepted for the 6.9" display set).
 // Signs in as the App Review demo account (or SHOTS_EMAIL/SHOTS_PW), walks Home, the open brief, the player,
 // a position, Ask with an answer and News, and writes PNGs to e2e/store/ (the listing order since 1.0.2).
-//   node e2e/store-shots.mjs            # SHOTS_URL=... to point elsewhere, DARK=1 for the dark set, ASK_Q=... for Ask
+//   node e2e/store-shots.mjs            # SHOTS_URL=... to point elsewhere, DARK=1 for the dark set, ASK_Q=... for Ask,
+//   BRIEF_CHIP=... for the brief edition on screen
 import { webkit, chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
 import fs from "node:fs";
@@ -24,8 +25,10 @@ await page.waitForTimeout(3500);
 const sfx = process.env.DARK ? "-dark" : "";
 let n = 0;
 const shot = async (name) => { await page.waitForTimeout(700); const p = `${OUT}${String(++n).padStart(2, "0")}-${name}${sfx}.png`; await page.screenshot({ path: p }); console.log("wrote", p); };
-await shot("home");
 const card = page.getByTestId("brief-card");
+// BRIEF_CHIP="Korea close" shows that edition instead of the latest (pick one whose text is store-worthy)
+if (process.env.BRIEF_CHIP) { await card.getByRole("button", { name: process.env.BRIEF_CHIP, exact: true }).click(); await page.waitForTimeout(800); }
+await shot("home");
 if (await card.count()) {
   const read = card.getByRole("button", { name: /read · \d+ min/i });
   if (await read.count()) { await read.click(); await page.waitForTimeout(800); await shot("brief"); }
