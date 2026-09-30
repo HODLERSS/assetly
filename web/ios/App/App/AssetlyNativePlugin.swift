@@ -1,6 +1,7 @@
 import UIKit
 import Capacitor
 import AVFoundation
+import UserNotifications
 
 /// The app's own small native surface, registered by AppViewController. The web side reaches it
 /// through `src/lib/native.ts`; every method there degrades to a no-op in the browser.
@@ -14,6 +15,10 @@ import AVFoundation
 ///    so the next cold launch paints the right ground before any JavaScript runs.
 ///  - getTextScale (+ "textScaleChange"): the iOS text size as a multiple of the default, so the
 ///    page can follow Dynamic Type.
+///  - pushStatus / requestPush / openSettings / apnsEnvironment / setBadge: brief notifications (1.0.3).
+///    Capacitor's own plugin can't ask for PROVISIONAL authorization, which is what lets notifications default
+///    to on without a system prompt: they are delivered quietly to Notification Center until the reader
+///    chooses to keep them (or taps "Turn on alerts" in the app, which asks for the full kind).
 @objc(AssetlyNativePlugin)
 public class AssetlyNativePlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "AssetlyNativePlugin"
@@ -22,7 +27,12 @@ public class AssetlyNativePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "activateAudio", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "deactivateAudio", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setAppearance", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getTextScale", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getTextScale", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pushStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestPush", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "apnsEnvironment", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setBadge", returnType: CAPPluginReturnPromise)
     ]
 
     static let appearanceKey = "assetly.appearance"
@@ -97,5 +107,86 @@ public class AssetlyNativePlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func textSizeChanged() {
         DispatchQueue.main.async { self.notifyListeners("textScaleChange", data: ["value": Self.textScale()]) }
+    }
+
+    // MARK: brief notifications
+
+    static func name(of status: UNAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "notDetermined"
+        case .denied: return "denied"
+        case .authorized: return "authorized"
+        case .provisional: return "provisional"
+        case .ephemeral: return "ephemeral"
+        @unknown default: return "notDetermined"
+        }
+    }
+
+    @objc func pushStatus(_ call: CAPPluginCall) {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            call.resolve(["status": Self.name(of: settings.authorizationStatus)])
+        }
+    }
+
+    /// provisional: true asks quietly (no prompt; delivered to Notification Center only). false asks for the
+    /// full kind, which shows the system prompt once: from provisional it upgrades, from denied it does nothing.
+    @objc func requestPush(_ call: CAPPluginCall) {
+        var options: UNAuthorizationOptions = [.alert, .sound, .badge]
+        if call.getBool("provisional") ?? false { options.insert(.provisional) }
+        UNUserNotificationCenter.current().requestAuthorization(options: options) { granted, error in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                var out: [String: Any] = ["granted": granted, "status": Self.name(of: settings.authorizationStatus)]
+                if let error = error { out["error"] = error.localizedDescription }
+                call.resolve(out)
+            }
+        }
+    }
+
+    /// The app's own page in the Settings app, where a denied permission is turned back on.
+    @objc func openSettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openSettingsURLString) else { call.resolve(["opened": false]); return }
+            UIApplication.shared.open(url, options: [:]) { ok in call.resolve(["opened": ok]) }
+        }
+    }
+
+    /// Which APNs host issued this build's device token. The simulator and builds signed with a development
+    /// profile (Xcode runs) register with the sandbox; App Store and TestFlight builds, which carry no
+    /// embedded profile or a distribution one, with production. The server routes each token to its own host.
+    static func apnsEnvironment() -> String {
+        #if targetEnvironment(simulator)
+        return "sandbox"
+        #else
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .isoLatin1),
+              let start = text.range(of: "<plist"), let end = text.range(of: "</plist>") else { return "production" }
+        let plist = String(text[start.lowerBound..<end.upperBound])
+        guard let pdata = plist.data(using: .isoLatin1),
+              let dict = try? PropertyListSerialization.propertyList(from: pdata, format: nil) as? [String: Any],
+              let ents = dict["Entitlements"] as? [String: Any],
+              let aps = ents["aps-environment"] as? String else { return "production" }
+        return aps == "development" ? "sandbox" : "production"
+        #endif
+    }
+
+    @objc func apnsEnvironment(_ call: CAPPluginCall) {
+        call.resolve(["environment": Self.apnsEnvironment()])
+    }
+
+    /// The app icon badge. A brief push sets 1; opening the app clears it, and with 0 the delivered briefs leave
+    /// Notification Center too. (Capacitor's removeAllDeliveredNotifications refuses until this launch's token
+    /// callback has fired, so at launch it silently did nothing and read briefs piled up.)
+    @objc func setBadge(_ call: CAPPluginCall) {
+        let count = call.getInt("count") ?? 0
+        if count == 0 { UNUserNotificationCenter.current().removeAllDeliveredNotifications() }
+        if #available(iOS 16.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(count) { _ in call.resolve() }
+        } else {
+            DispatchQueue.main.async {
+                UIApplication.shared.applicationIconBadgeNumber = count
+                call.resolve()
+            }
+        }
     }
 }

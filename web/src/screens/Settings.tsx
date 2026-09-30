@@ -6,8 +6,8 @@ import { ConnectNote, connectMsg, type ConnectMsg } from "../components/ConnectN
 import { Icon } from "../components/Icon";
 import { timeAgo } from "../lib/format";
 import { getTheme, setTheme, THEME_CHOICES, type ThemeChoice } from "../lib/theme";
-import { isNative, openConnectPortal, openExternal, platformTag } from "../lib/native";
-import { pushEnabled, registerPush, setPushEnabled } from "../lib/push";
+import { isNative, onForeground, openAppSettings, openConnectPortal, openExternal, platformTag, pushAuthStatus, type PushAuthStatus } from "../lib/native";
+import { deviceToken, pushEnabled, registerPush, setPushEnabled, upgradePush } from "../lib/push";
 import { LEGAL_BASE } from "../lib/legal";
 import { marketOf } from "../lib/markets";
 import { useInFlight } from "../lib/inflight";
@@ -17,8 +17,10 @@ const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? 
 
 // Gap screen g2: account, currency matrix, markets, sign out. The matrix (totals / US assets /
 // KR assets, each USD or KRW) appears once the book actually holds KRW — no clutter before that.
-export function SettingsScreen({ api, profile, rows, email = null, onChanged, onSignedOut, bookUnknown = false }: {
+export function SettingsScreen({ api, profile, rows, email = null, onChanged, onSignedOut, bookUnknown = false, onOpenAdmin }: {
   api: Api; profile: Profile | null; rows: PortfolioRow[]; email?: string | null;
+  /** the internal push tool; offered only once admin-push says this account is an admin */
+  onOpenAdmin?: () => void;
   /** no book has loaded yet: the markets row says so instead of a placeholder dash */
   bookUnknown?: boolean;
   onChanged: () => Promise<void> | void; onSignedOut: () => void;
@@ -56,17 +58,48 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [signingOut, signOut] = useInFlight();
+  // what iOS allows, read again whenever the app comes back (the reader may have just changed it in iOS Settings)
+  const [os, setOs] = useState<PushAuthStatus>("unavailable");
+  useEffect(() => {
+    if (!isNative()) return;
+    let live = true;
+    const read = () => { void pushAuthStatus().then((v) => { if (live) setOs(v); }); };
+    read();
+    const stop = onForeground(read);
+    return () => { live = false; stop(); };
+  }, []);
+  const saveToken = (token: string, env: "production" | "sandbox") => api.savePushToken(token, "ios", env);
   const togglePush = async () => {
     setPushBusy(true);
     try {
-      if (push) { setPushEnabled(false); setPush(false); await api.removePushToken().catch(() => {}); }
-      else {
+      if (push) {
+        // Off: this device stops receiving them. The server sends to tokens, so deleting this one IS the opt-out.
+        setPushEnabled(false); setPush(false);
+        await api.removePushToken(deviceToken()).catch(() => {});
+      } else {
         setPushEnabled(true); setPush(true);
-        // registerPush asks for permission on iOS and stores the token; on the web it is a no-op
-        await registerPush((token) => api.savePushToken(token));
+        // On: registers again (quietly, if iOS was never asked) and saves the token; on the web a no-op
+        const r = await registerPush(saveToken);
+        setOs(r.status);
+        setTimeout(r.off, 15_000);   // long enough for the token event; App keeps its own listener for the session
       }
     } finally { setPushBusy(false); }
   };
+  const turnOnAlerts = async () => {
+    setPushBusy(true);
+    try { const r = await upgradePush(saveToken); setOs(r.status); setTimeout(r.off, 15_000); }
+    finally { setPushBusy(false); }
+  };
+  // the internal tool's entry: asked of the server, never decided here
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!onOpenAdmin) return;
+    let live = true;
+    // a thrown call (or an api without the tool) is simply "not an admin"
+    Promise.resolve().then(() => api.adminPush({ action: "whoami" }))
+      .then((r) => { if (live) setIsAdmin(r.status === 200 && r.body.admin === true); }, () => {});
+    return () => { live = false; };
+  }, [api, onOpenAdmin]);
   const base = profile?.base_currency ?? "USD";
   const dispUs = profile?.display_us ?? "USD";
   const dispKr = profile?.display_kr ?? "KRW";
@@ -240,8 +273,28 @@ export function SettingsScreen({ api, profile, rows, email = null, onChanged, on
       {isNative() && (
         <div className="card" style={{ marginBottom: 14 }} data-testid="notify-card">
           <div className="row" style={{ alignItems: "center" }}>
-            <span>Brief notifications<br /><span className="sub">A push when your morning, midday and closing briefs are ready</span></span>
-            <button className="chip" role="switch" aria-checked={push} disabled={pushBusy} onClick={togglePush} data-testid="push-toggle">{push ? "On" : "Off"}</button>
+            <span>Brief notifications<br /><span className="sub">A note when your morning, midday and closing briefs are ready</span></span>
+            <button className="chip" role="switch" aria-checked={push} aria-label="Brief notifications" disabled={pushBusy} onClick={togglePush} data-testid="push-toggle">{push ? "On" : "Off"}</button>
+          </div>
+          {push && os === "denied" && (
+            <div className="notify-note" data-testid="push-denied">
+              <span>Notifications are off for Assetly in iOS Settings. Turn on Allow Notifications there to get them.</span>
+              <button className="chip" onClick={() => void openAppSettings()} data-testid="push-open-settings">Open Settings</button>
+            </div>
+          )}
+          {push && os === "provisional" && (
+            <div className="notify-note" data-testid="push-quiet">
+              <span>Arriving quietly in Notification Center.</span>
+              <button className="chip" disabled={pushBusy} onClick={turnOnAlerts} data-testid="push-turn-on-alerts">Turn on alerts</button>
+            </div>
+          )}
+        </div>
+      )}
+      {isAdmin && onOpenAdmin && (
+        <div className="card" style={{ marginBottom: 14 }} data-testid="admin-card">
+          <div className="row" style={{ alignItems: "center" }}>
+            <span>Internal tools<br /><span className="sub">Send a push notification</span></span>
+            <button className="chip" onClick={onOpenAdmin} data-testid="open-admin-push">Open</button>
           </div>
         </div>
       )}

@@ -15,9 +15,46 @@ interface AssetlyNativePlugin {
   deactivateAudio(): Promise<void>;
   setAppearance(options: { style: "system" | "light" | "dark" }): Promise<void>;
   getTextScale(): Promise<{ value: number }>;
+  pushStatus(): Promise<{ status: PushAuthStatus }>;
+  requestPush(options: { provisional: boolean }): Promise<{ granted: boolean; status: PushAuthStatus; error?: string }>;
+  openSettings(): Promise<{ opened: boolean }>;
+  apnsEnvironment(): Promise<{ environment: ApnsEnvironment }>;
+  setBadge(options: { count: number }): Promise<void>;
   addListener(event: "textScaleChange", cb: (data: { value: number }) => void): Promise<PluginListenerHandle>;
 }
 const AssetlyNative = registerPlugin<AssetlyNativePlugin>("AssetlyNative");
+
+/** iOS notification authorization. "unavailable" is the web, or a native call that failed. */
+export type PushAuthStatus = "notDetermined" | "denied" | "authorized" | "provisional" | "ephemeral" | "unavailable";
+export type ApnsEnvironment = "production" | "sandbox";
+
+export async function pushAuthStatus(): Promise<PushAuthStatus> {
+  if (!isNative()) return "unavailable";
+  try { return (await AssetlyNative.pushStatus()).status; } catch { return "unavailable"; }
+}
+
+/** Ask iOS for notifications. provisional: quiet delivery, no prompt. Otherwise the one-time system prompt. */
+export async function requestPushAuth(provisional: boolean): Promise<PushAuthStatus> {
+  if (!isNative()) return "unavailable";
+  try { return (await AssetlyNative.requestPush({ provisional })).status; } catch { return "unavailable"; }
+}
+
+/** This app's page in the iOS Settings app (where a denied permission is turned back on). */
+export async function openAppSettings(): Promise<void> {
+  if (!isNative()) return;
+  try { await AssetlyNative.openSettings(); } catch { /* nothing to open */ }
+}
+
+/** Which APNs host issued this build's token: sandbox for Xcode builds and the simulator, else production. */
+export async function apnsEnvironment(): Promise<ApnsEnvironment> {
+  if (!isNative()) return "production";
+  try { return (await AssetlyNative.apnsEnvironment()).environment === "sandbox" ? "sandbox" : "production"; } catch { return "production"; }
+}
+
+export async function setAppBadge(count: number): Promise<void> {
+  if (!isNative()) return;
+  try { await AssetlyNative.setBadge({ count }); } catch { /* older shell */ }
+}
 
 /**
  * Claim the narration audio session: .playback, so the brief keeps talking on the lock screen. Called

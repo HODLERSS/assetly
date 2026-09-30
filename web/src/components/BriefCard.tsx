@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Api, BriefEdition, DailyBrief } from "../lib/api";
 import { notAdvice } from "../lib/i18n";
 import { marketClock } from "../lib/format";
@@ -7,6 +7,8 @@ import { getSnapshot, load as loadTrack, loadSpeech, subscribe, toggle as toggle
 import { hasDeviceVoice } from "../lib/speech";
 import { Icon } from "./Icon";
 import { briefBasis, foreignBrief, type BookName } from "../lib/briefBasis";
+import { consumeBrief, pendingBrief, subscribeBrief } from "../lib/briefLink";
+import { noteBriefOpened } from "../lib/push";
 
 // The Daily Brief — three personal research notes a trading day: morning (pre-open),
 // midday pulse (11am CT), closing note (post-close) — plus the Portfolio Assessment, the
@@ -115,6 +117,28 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
   const [picked, setPicked] = useState<BriefEdition | null>(null);
   const [open, setOpen] = useState(false);
   const player = useSyncExternalStore(subscribe, getSnapshot);
+  const cardRef = useRef<HTMLElement>(null);
+  // a notification tap asked for a brief (lib/briefLink): pick it, open the full read, bring it into view
+  const req = useSyncExternalStore(subscribeBrief, pendingBrief);
+  const reqReadRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!req || briefs === undefined) return;
+    const bookNow = book ?? (held ? held.map((symbol) => ({ symbol, kind: "stock" })) : null);
+    const list = briefs.filter((b) => !foreignBrief(b, bookNow));
+    const hit = req.edition ? list.find((b) => b.edition === req.edition && (!req.date || b.brief_date === req.date)) : undefined;
+    if (!hit && req.date && reqReadRef.current !== req.at) {
+      // the push can beat this card's last read of the editions: read once more before settling for the newest
+      reqReadRef.current = req.at;
+      api.getDailyBriefs().then((b) => { memo.set(api, b); setBriefs(b); }, () => setBriefs((x) => (x ? [...x] : x)));
+      return;
+    }
+    if (hit) { setPicked(hit.edition); choiceMemo.set(api, { key: briefKey(hit), among: list.map(briefKey).join("|") }); noteBriefOpened(briefKey(hit)); }
+    else { setPicked(null); choiceMemo.delete(api); }   // "the latest", or a brief no longer on offer: the newest one
+    if (list.length) setOpen(true);
+    consumeBrief(req);
+    const scroll = () => { try { cardRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }); } catch { /* not a browser */ } };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(scroll); else scroll();
+  }, [req, briefs, api, book, held]);
 
   useEffect(() => {
     let live = true; let tries = 0;
@@ -216,6 +240,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
   const canListen = (!!brief.audio_path || voiceOnly) && !offlineAudio;
   const toggleAudio = () => {
     remember(brief);   // what is being played is the card's edition when Home comes back
+    noteBriefOpened(briefKey(brief));
     if (isThis) { togglePlayer(); return; }
     const track = { id: trackId, title, subtitle: dateLabel, date: brief.brief_date };
     const path = brief.audio_path;
@@ -228,7 +253,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
   const fresh = freshOf(brief);
   const canRefresh = brief.edition === "assessment" && !!fresh.bookChanged && !pendingSince && !!onRefreshAssessment && !refreshAsked;
   return (
-    <section className={"card insights" + (fresh.stale ? " brief-stale" : "") + (fresh.bookChanged ? " brief-other-book" : "")} data-testid="brief-card" data-stale={fresh.stale || undefined}
+    <section ref={cardRef} className={"card insights" + (fresh.stale ? " brief-stale" : "") + (fresh.bookChanged ? " brief-other-book" : "")} data-testid="brief-card" data-stale={fresh.stale || undefined}
       aria-label={`Your ${title.toLowerCase()}`}>
       <div className="insights-head">
         {/* the date says whether this is today's: it never gives way; a long title ellipsizes first (r7 native m3) */}
@@ -241,7 +266,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
               <Icon name={playing ? "pause" : "play"} size={15} />
             </button>
           )}
-          <button className="insights-toggle" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Close the brief" : meta.read}>
+          <button className="insights-toggle" onClick={() => { if (!open) noteBriefOpened(briefKey(brief)); setOpen(!open); }} aria-expanded={open} aria-label={open ? "Close the brief" : meta.read}>
             <Icon name={open ? "close" : "book"} size={16} />
           </button>
         </span>
@@ -266,7 +291,7 @@ export function BriefCard({ api, liveDayPct = null, pendingSince = null, held = 
       {/* the lede itself opens the full read; the small book icon was the only way in (r2 newcomer audit) */}
       <p className="prose brief-lede" style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, fontWeight: open || fresh.stale ? 400 : 500 }}
         role="button" tabIndex={0} aria-expanded={open} data-testid="brief-lede"
-        onClick={() => { if (!window.getSelection?.()?.toString()) setOpen(!open); }}
+        onClick={() => { if (!window.getSelection?.()?.toString()) { if (!open) noteBriefOpened(briefKey(brief)); setOpen(!open); } }}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open); } }}>{s.lede}</p>
       {open && (
         <div className="prose" data-testid="brief-body">

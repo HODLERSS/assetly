@@ -3,6 +3,7 @@ import { useInFlight } from "../lib/inflight";
 import { useEffect, useState } from "react";
 import type { Api, PortfolioRow } from "../lib/api";
 import { BriefCard } from "../components/BriefCard";
+import { PushAsk } from "../components/PushAsk";
 import { AssessmentCard } from "../components/AssessmentCard";
 import { ConnectNote, connectMsg, type ConnectMsg } from "../components/ConnectNote";
 import type { AssessState } from "../lib/assessment";
@@ -240,6 +241,7 @@ export function Home({ api, rows: book, totals, baseCurrency, onOpen, onAdd, dis
       <BriefCard api={api} reload={`${assessment?.readyAt ?? "brief"}:${briefRev}`} liveDayPct={liveDayPct} held={heldSymbols} book={rows}
         totalUsd={convertCcy(totals.assets, baseCurrency, "USD", totals.fx)}
         pendingSince={assessPending ? assessment!.startedAt : null} onRefreshAssessment={onAssessRetry} />
+      <PushAsk api={api} recheck={String(briefRev)} />
       {nextArmed && rows.filter((r) => r.kind !== "cash" && r.kind !== "debt").length < 3 && (
         // after the first adds: the obvious next moves, until the book looks like a portfolio or it is dismissed
         <section className="card next-steps" data-testid="next-steps" aria-label="Next steps">

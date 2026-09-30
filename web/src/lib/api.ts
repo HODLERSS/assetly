@@ -2,6 +2,7 @@
 // against the real local Supabase stack, UI tests stub this module.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+import { deviceToken } from "./push";
 import { canonicalSymbol, cleanListingName, mergeListings, rankSymbols, searchQuery } from "./search";
 import { cleanNews } from "./news";
 import { FAIL_FAST_MS, failFast, OfflineError, offlineNow } from "./net";
@@ -525,20 +526,33 @@ export function makeApi(sb: SupabaseClient = supabase) {
     async firstBrief(): Promise<void> {
       await sb.functions.invoke("first-brief", { body: {} }).catch(() => null);
     },
-    /** Remember this device so a finished brief can be pushed to it. Upsert: iOS reissues tokens. */
-    async savePushToken(token: string, platform = "ios"): Promise<void> {
+    /** Remember this device so a finished brief can be pushed to it. The token IS the device, so it is claimed for
+     *  this account (claim_push_token moves it off any account that used the phone before), with the APNs host
+     *  that issued it. */
+    async savePushToken(token: string, platform = "ios", environment: "production" | "sandbox" = "production"): Promise<void> {
       const uid = await currentUserId(sb);
       if (!uid || !token) return;
-      await sb.from("push_tokens").upsert(
-        { user_id: uid, token, platform, last_seen_at: new Date().toISOString() },
-        { onConflict: "user_id,token" },
-      );
+      const { error } = await sb.rpc("claim_push_token", { p_token: token, p_platform: platform, p_environment: environment });
+      if (error) throw new Error(error.message);
     },
-    /** The reader turned notifications off: forget every token for this account. */
-    async removePushToken(): Promise<void> {
+    /** Notifications off: forget this device's token (or, when it isn't known here, every device on the account). */
+    async removePushToken(token: string | null = null): Promise<void> {
       const uid = await currentUserId(sb);
       if (!uid) return;
-      await sb.from("push_tokens").delete().eq("user_id", uid);
+      const q = sb.from("push_tokens").delete().eq("user_id", uid);
+      const { error } = await (token ? q.eq("token", token) : q);
+      if (error) throw new Error(error.message);
+    },
+    /** The internal push tool (admin-push). Answers the function's JSON and status; a refusal is data, not a throw. */
+    async adminPush(body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+      const { data, error } = await sb.functions.invoke("admin-push", { body });
+      if (!error) return { status: 200, body: (data ?? {}) as Record<string, unknown> };
+      const ctx = (error as { context?: unknown }).context;
+      if (ctx instanceof Response) {
+        const j = await ctx.json().catch(() => ({ ok: false, error: `HTTP ${ctx.status}` }));
+        return { status: ctx.status, body: j as Record<string, unknown> };
+      }
+      return { status: 0, body: { ok: false, error: error.message || "Network error" } };
     },
     /** Portfolio intelligence: refresh now (force regen for this user), then return the fresh row. */
     async refreshPortfolioInsights(): Promise<Insight | null> {
@@ -652,7 +666,13 @@ export function makeApi(sb: SupabaseClient = supabase) {
       if (error || !data?.ok) throw new Error(data?.error ?? "Could not delete the account. Try again.");
       await sb.auth.signOut().catch(() => {});
     },
-    async signOut() { await sb.auth.signOut(); },
+    async signOut() {
+      // this device stops receiving the account's briefs: the next person to sign in here must not get them
+      const token = deviceToken();
+      const uid = token ? await currentUserId(sb).catch(() => null) : null;
+      if (token && uid) await sb.from("push_tokens").delete().eq("user_id", uid).eq("token", token).then(() => {}, () => {});
+      await sb.auth.signOut();
+    },
   };
 }
 

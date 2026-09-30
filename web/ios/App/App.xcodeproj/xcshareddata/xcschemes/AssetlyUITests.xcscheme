@@ -29,6 +29,9 @@
          <TestPlanReference
             reference = "container:Hero.xctestplan">
          </TestPlanReference>
+         <TestPlanReference
+            reference = "container:Push.xctestplan">
+         </TestPlanReference>
       </TestPlans>
    </TestAction>
    <LaunchAction

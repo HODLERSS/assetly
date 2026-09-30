@@ -21,11 +21,13 @@ import { applyTheme, getTheme, watchSystemTheme } from "./lib/theme";
 import { onAuthReturn, onForeground, onOAuthReturn, PORTAL_CLOSED } from "./lib/native";
 import { snapshotUnder, useEdgeSwipeBack, type Underlay } from "./lib/swipeBack";
 import { PullToRefresh } from "./components/PullToRefresh";
-import { clearBadge, pushEnabled, registerPush } from "./lib/push";
+import { clearBadge, noteLaunchWithBrief, onPushOpen, pushEnabled, registerPush, type PushRoute } from "./lib/push";
+import { requestBrief } from "./lib/briefLink";
 import { PositionScreen } from "./screens/Position";
 import { AddPosition } from "./screens/AddPosition";
 import { NewsScreen } from "./screens/News";
 import { SettingsScreen } from "./screens/Settings";
+import { AdminPushScreen } from "./screens/AdminPush";
 import { ASK_FIRST_QUESTION, AskScreen } from "./screens/Ask";
 import { Icon } from "./components/Icon";
 
@@ -33,6 +35,7 @@ export type Tab = "home" | "news" | "ask" | "settings";
 export type View =
   | { kind: "tab"; tab: Tab }
   | { kind: "add" }
+  | { kind: "admin" }
   | { kind: "position"; holdingId: string };
 
 const REFRESH_MS = 60_000;
@@ -138,7 +141,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
         // the narration and its script are attached to the row after it first appears: when they land, the card
         // on Home reads its editions again (quietly: no new banner) so ▶ shows without leaving Home (r7 native m1)
         const media = `${key}:${latest.audio_path ? 1 : 0}${latest.script ? 1 : 0}`;
-        if (seenBriefRef.current === null) { seenBriefRef.current = key; seenMediaRef.current = media; return true; }
+        if (seenBriefRef.current === null) { seenBriefRef.current = key; seenMediaRef.current = media; noteLaunchWithBrief(); return true; }
         if (key === seenBriefRef.current && media !== seenMediaRef.current) {
           seenMediaRef.current = media;
           setBriefRev((n) => n + 1);
@@ -239,16 +242,23 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
   viewRef.current = view;
 
   useEffect(() => { applyTheme(getTheme()); return watchSystemTheme(); }, []);
-  // Push needs a signed-in user to attach the device token to. Registering is best-effort:
-  // a declined prompt is a normal outcome and the in-app poll still lights the tab.
-  // Notifications are opt-in (Settings > Brief notifications): the permission sheet never fires unasked.
+  // Push needs a signed-in user to attach the device token to. On by default in the app (lib/push): the first run asks
+  // iOS for PROVISIONAL authorization, which never shows a prompt, then registers and saves the token. Settings >
+  // Brief notifications > Off is remembered on the device and skips all of this. A denied permission is a normal
+  // outcome; the in-app poll still lights the tab.
   useEffect(() => {
     if (!session || !pushEnabled()) return;
     let off: (() => void) | undefined;
-    void registerPush((token) => api.savePushToken(token)).then((f) => { off = f; });
+    let live = true;
+    void registerPush((token, env) => api.savePushToken(token, "ios", env)).then((r) => { if (live) off = r.off; else r.off(); });
     void clearBadge();
-    return () => off?.();
+    const stopFg = onForeground(() => { void clearBadge(); });
+    return () => { live = false; off?.(); stopFg(); };
   }, [session, api]);
+  // A notification tap (also the one that launched the app) opens where it points: a brief opens on Home, read in
+  // full; a tab link opens that tab. Held until a session and a book are there to show it.
+  const [pushRoute, setPushRoute] = useState<PushRoute | null>(null);
+  useEffect(() => onPushOpen((r) => setPushRoute(r)), []);
   // iOS: Supabase OAuth comes back through assetly://auth-callback
   useEffect(() => onAuthReturn((u) => { void completeNativeAuth(u).then((r) => { if (r.error) setError(r.error); }); }), []);
   useEffect(() => {
@@ -454,7 +464,10 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
   // the prices banner and "Prices as of" come and go above the reader: keep their place (r7 design n-3)
   useKeepScrollAnchor(mainRef, !!error);
   const homeSnapRef = useRef<Underlay | null>(null);   // Home as it was left: drawn under a swipe back
-  useEdgeSwipeBack(mainRef, view.kind !== "tab", () => { setHomeAlert(false); setView({ kind: "tab", tab: "home" }); }, () => homeSnapRef.current);
+  useEdgeSwipeBack(mainRef, view.kind !== "tab", () => {
+    if (viewRef.current.kind === "admin") { setView({ kind: "tab", tab: "settings" }); return; }
+    setHomeAlert(false); setView({ kind: "tab", tab: "home" });
+  }, () => (viewRef.current.kind === "admin" ? null : homeSnapRef.current));
 
   // Book-changed pipeline for MANUAL adds: a run of adds (one after another) is coalesced into ONE
   // orchestrator call, the same chain a brokerage connect runs (sync -> news -> intelligence -> assessment).
@@ -502,7 +515,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
   // unmounting (sign-out, or a test's cleanup) stops the hold: left running, its frames kept calling scrollTo
   // for up to 600ms after the app was gone (the F2 "tab switch starts at the top" flake under suite load)
   useEffect(() => () => { holdStopRef.current?.(); holdStopRef.current = null; }, []);
-  const viewKey = view.kind === "tab" ? `tab:${view.tab}` : view.kind === "position" ? "position" : "add";
+  const viewKey = view.kind === "tab" ? `tab:${view.tab}` : view.kind;
   useLayoutEffect(() => {
     const prev = prevViewRef.current;
     prevViewRef.current = view;
@@ -529,6 +542,26 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewKey]);
+
+  // the internal push tool on the web: .../assetly/#admin (the page itself asks the server whether this account may)
+  useEffect(() => {
+    if (!session || !profile?.onboarded_at) return;
+    const open = () => { if (window.location.hash === "#admin") setView({ kind: "admin" }); };
+    open();
+    window.addEventListener("hashchange", open);
+    return () => window.removeEventListener("hashchange", open);
+  }, [session, profile?.onboarded_at]);
+  // the tapped notification's destination, once someone is signed in and past setup
+  useEffect(() => {
+    if (!pushRoute || !session || !profile?.onboarded_at) return;
+    const r = pushRoute;
+    setPushRoute(null);
+    if (r.kind === "brief") { requestBrief(r.date, r.edition); setHomeAlert(false); setView({ kind: "tab", tab: "home" }); return; }
+    if (r.tab === "home") setHomeAlert(false);
+    if (r.tab === "news") setNewsAlert(false);
+    if (r.tab === "ask") setAskAlert(false);
+    setView({ kind: "tab", tab: r.tab });
+  }, [pushRoute, session, profile]);
 
   const base = profile?.base_currency ?? "USD";
   // The book every screen sees: only rows that hold something, biggest first in the base currency.
@@ -651,8 +684,13 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
           }} />
         </div>
         {view.kind === "tab" && view.tab === "settings" && (
-          <SettingsScreen api={api} profile={profile} rows={rows} bookUnknown={!hasBook} email={session.user.email ?? null} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })} />
+          <SettingsScreen api={api} profile={profile} rows={rows} bookUnknown={!hasBook} email={session.user.email ?? null} onChanged={load} onSignedOut={() => setView({ kind: "tab", tab: "home" })}
+            onOpenAdmin={() => go({ kind: "admin" })} />
         )}
+        {view.kind === "admin" && <AdminPushScreen api={api} onBack={() => {
+          if (window.location.hash === "#admin") window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          go({ kind: "tab", tab: "settings" });
+        }} />}
       </main>
 
       <MiniPlayer />
