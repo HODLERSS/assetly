@@ -73,11 +73,18 @@ def layout(tokens):
     """Sentence per line, per make-cards.py sub: split at the first '. ' if both halves fit."""
     text = " ".join(tokens)
     d = ImageDraw.Draw(Image.new("RGBA", (W, H)))
-    fits = lambda t: d.textbbox((0, 0), t, font=font)[2] <= W - 120
+    fits = lambda t: d.textbbox((0, 0), t, font=font)[2] <= int(os.environ.get("SUB_MAXW", W - 120))   # Shorts: 820 keeps text left of the action rail
     lines = [tokens]
     if ". " in text and not fits(text):
         cut = next(i for i, t in enumerate(tokens) if t.endswith(".")) + 1
         lines = [tokens[:cut], tokens[cut:]]
+    if not all(fits(" ".join(l)) for l in lines):       # one long sentence (the Shorts cues): greedy wrap
+        lines, cur = [], []
+        for tok in tokens:
+            if cur and not fits(" ".join(cur + [tok])): lines.append(cur); cur = [tok]
+            else: cur.append(tok)
+        lines.append(cur)
+        if len(lines) > int(os.environ.get("SUB_MAX_LINES", "3")): sys.exit(f"subtitle needs {len(lines)} lines: {text!r}")
     hs = [d.textbbox((0, 0), " ".join(l), font=font)[3] - d.textbbox((0, 0), " ".join(l), font=font)[1] for l in lines]
     gap = int(spec.get("size", 42) * 0.3); total = sum(hs) + gap * (len(lines) - 1)
     y = (H - total) // 2 + int(os.environ.get("CAP_SHIFT", "8")) + EYE_DROP   # the shared optical centre, dropped under the eyebrow

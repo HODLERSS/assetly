@@ -1,0 +1,10 @@
+{"bpm":100,"len":24.8,"loudness":-15,"fade_out":1.6,
+ "stems":[
+  {"loop":"Forward Progress Bass","gain":-4,"from":0,"to":10},
+  {"loop":"Analog Clap Beat 01","gain":-8,"from":0,"to":4},
+  {"loop":"Forward Progress Synth","gain":-10,"from":1,"to":10},
+  {"loop":"Pastel Colors Beat 02","gain":-9,"from":4,"to":8},
+  {"loop":"Forward Progress Guitar","gain":-13,"from":6,"to":10},
+  {"loop":"Analog Clap Beat 01","gain":-8,"from":8,"to":10}
+ ],
+ "oneshots":[]}

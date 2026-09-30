@@ -341,3 +341,16 @@ one thing measurement cannot say — play them before posting.
 screen-to-screen slide becomes a hard cut on the same grid, and nothing else changes (zooms, captions,
 subtitles, voices, music, 60 fps CRF 15). Plan: `web/ios/App/marketing/spots/dark-4x5-linkedin-cuts.json`.
 Archived as `~/Desktop/assetly-linkedin/versions/assetly-dark-4x5-cuts_20260925_0828.mp4`.
+
+## Daily market Shorts (2026-09-30)
+
+9:16 Shorts, one per trading day, built from a numbered demo account's real close brief and footage:
+[SHORTS_RUNBOOK.md](SHORTS_RUNBOOK.md) (the day's steps, one build command), [SHORTS_QUALITY.md](SHORTS_QUALITY.md)
+(the 16 pass/fail metrics), tools in `web/ios/App/marketing/shorts/`. The launch-clip tools gained what
+the 1080x1920 layout needed, all opt-in by plan field so the 4:5 and 1:1 builds are unchanged:
+`cap_top` / `cap_h` / `bottom` (the caption strip sits below the platform's top chrome and the phone
+reaches the bottom edge), a `static` hook (frame one is the thumbnail, with a slow 5% push so it is not a
+frozen frame), still-PNG `overlays` (the standing disclaimer), `END_SUB1/END_SUB2/END_CTA` for the card,
+greedy multi-line fill subtitles (`SUB_MAXW` keeps text left of the action rail), and `make-cards.py line`.
+Two traps: a stream-copied hook join made the next xfade stop at the end of that file at 60 fps (the
+join is re-encoded now), and `-shortest` at the mux dropped the last 9 video frames (not used).

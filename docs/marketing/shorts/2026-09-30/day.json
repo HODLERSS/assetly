@@ -1,0 +1,293 @@
+{
+ "date": "2026-09-30",
+ "demo": 1,
+ "script": "AI stocks today. Micron beat after the bell, with record revenue of $54.2 billion. Google rose 0.9% as it launched Gemini 4. Meta slipped 1.8%, ending a September rally driven by its Muse AI app. This demo portfolio closed up 0.2%. That's your brief.",
+ "hook": "AI stocks today|September 30",
+ "cues": [
+  {
+   "skip": true,
+   "show": [
+    [
+     "AI",
+     1
+    ],
+    [
+     "stocks",
+     1
+    ],
+    [
+     "today.",
+     1
+    ]
+   ]
+  },
+  {
+   "eyebrow": "MICRON · AFTER THE BELL",
+   "show": [
+    [
+     "Micron",
+     1
+    ],
+    [
+     "beat",
+     1
+    ],
+    [
+     "after",
+     1
+    ],
+    [
+     "the",
+     1
+    ],
+    [
+     "bell,",
+     1
+    ],
+    [
+     "with",
+     1
+    ],
+    [
+     "record",
+     1
+    ],
+    [
+     "revenue",
+     1
+    ],
+    [
+     "of",
+     1
+    ],
+    [
+     "$54.2",
+     3
+    ],
+    [
+     "billion.",
+     2
+    ]
+   ]
+  },
+  {
+   "eyebrow": "GOOGLE",
+   "show": [
+    [
+     "Google",
+     1
+    ],
+    [
+     "rose",
+     1
+    ],
+    [
+     "0.9%",
+     4
+    ],
+    [
+     "as",
+     1
+    ],
+    [
+     "it",
+     1
+    ],
+    [
+     "launched",
+     1
+    ],
+    [
+     "Gemini 4.",
+     2
+    ]
+   ]
+  },
+  {
+   "eyebrow": "META",
+   "show": [
+    [
+     "Meta",
+     1
+    ],
+    [
+     "slipped",
+     1
+    ],
+    [
+     "1.8%,",
+     4
+    ],
+    [
+     "ending",
+     1
+    ],
+    [
+     "a",
+     1
+    ],
+    [
+     "September",
+     1
+    ],
+    [
+     "rally",
+     1
+    ],
+    [
+     "driven",
+     1
+    ],
+    [
+     "by",
+     1
+    ],
+    [
+     "its",
+     1
+    ],
+    [
+     "Muse",
+     1
+    ],
+    [
+     "AI",
+     1
+    ],
+    [
+     "app.",
+     1
+    ]
+   ]
+  },
+  {
+   "eyebrow": "DEMO PORTFOLIO 001",
+   "show": [
+    [
+     "This",
+     1
+    ],
+    [
+     "demo",
+     1
+    ],
+    [
+     "portfolio",
+     1
+    ],
+    [
+     "closed",
+     1
+    ],
+    [
+     "up 0.2%.",
+     5
+    ]
+   ]
+  },
+  {
+   "show": [
+    [
+     "That's",
+     1
+    ],
+    [
+     "your",
+     1
+    ],
+    [
+     "brief.",
+     1
+    ]
+   ]
+  }
+ ],
+ "beats": [
+  {
+   "take": "take1.mp4",
+   "start": 42.4,
+   "freeze": true,
+   "zoom": {
+    "to": 1.8,
+    "focus_src": 620,
+    "in": [
+     0.25,
+     1.35
+    ],
+    "out": "auto"
+   },
+   "to_cue": 2,
+   "note": "MU page header"
+  },
+  {
+   "take": "take2.mp4",
+   "start": 38.0,
+   "zoom": {
+    "to": 1.7,
+    "focus_src": 770,
+    "in": [
+     0.9,
+     1.7
+    ],
+    "out": "auto"
+   },
+   "highlight": {
+    "src_box": [
+     96,
+     712,
+     1104,
+     826
+    ],
+    "pad": 10,
+    "radius": 10
+   },
+   "to_cue": 3,
+   "note": "GOOGL header -> intelligence, Gemini bullet"
+  },
+  {
+   "take": "take1.mp4",
+   "start": 80.4,
+   "freeze": true,
+   "zoom": {
+    "to": 1.8,
+    "focus_src": 620,
+    "in": [
+     0.25,
+     1.35
+    ],
+    "out": "auto"
+   },
+   "to_cue": 4,
+   "note": "META page header"
+  },
+  {
+   "take": "take1.mp4",
+   "start": 3.2,
+   "zoom": {
+    "to": 1.8,
+    "focus_src": 540,
+    "in": [
+     0.2,
+     1.2
+    ],
+    "out": "auto"
+   },
+   "to_cue": 5,
+   "note": "Home net worth, day change"
+  },
+  {
+   "take": "take1.mp4",
+   "start": 21.3,
+   "zoom": {
+    "to": 1.6,
+    "focus_src": 880,
+    "in": [
+     0.1,
+     0.9
+    ]
+   },
+   "tail": 0.45,
+   "note": "close brief open, player running"
+  }
+ ]
+}

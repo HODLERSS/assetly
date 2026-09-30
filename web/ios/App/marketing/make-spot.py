@@ -40,10 +40,14 @@ ENC = ["-c:v", "libx264", "-crf", "12", "-preset", "medium", "-pix_fmt", "yuv420
 
 # ---- phone geometry, per make-hero-clip.sh -----------------------------------------------------
 TOP, CAP_H, CAP_SIZE, PAD = (28, 168, 58, 100) if H > W else (18, 140, 50, 100)
+CAP_H = plan.get("cap_h", CAP_H)       # a taller strip for multi-line spoken subtitles (Shorts)
 CAPTIONS_TOP = plan.get("captions", "bottom") == "top"
-BOTTOM = 40 if CAPTIONS_TOP else 0
+# 9:16 Shorts: the platform draws its own UI over the top edge and the bottom ~20%, so the strip can
+# start lower ("cap_top") and the phone can stop short of the bottom ("bottom").
+CAP_OFF = plan.get("cap_top", 0) if CAPTIONS_TOP else 0
+BOTTOM = plan.get("bottom", 40) if CAPTIONS_TOP else 0
 if CAPTIONS_TOP:
-    TOP = CAP_H + 28                 # the strip, then the same breathing room the bottom layout had
+    TOP = CAP_OFF + CAP_H + 28       # the strip, then the same breathing room the bottom layout had
 srcs = [b["src"] for b in plan["beats"]]
 s0 = probe(srcs[0]); SRC_W, SRC_H = s0["width"], s0["height"]
 aspect = SRC_H / SRC_W
@@ -55,7 +59,7 @@ body_w = screen_w + 2 * bez
 body_r = int(round(body_w * 0.155))
 body_x = (W - body_w) // 2
 SCREEN_X, SCREEN_Y, BODY_X, BODY_Y = body_x + bez, TOP + bez, body_x - PAD, TOP - PAD
-CAP_Y = 0 if CAPTIONS_TOP else H - CAP_H
+CAP_Y = CAP_OFF if CAPTIONS_TOP else H - CAP_H
 STAGE_CY = (TOP + (H - BOTTOM)) / 2 if CAPTIONS_TOP else (H - CAP_H) / 2
 os.environ["CAP_SHIFT"] = "22" if CAPTIONS_TOP else "8"   # text sits under the pills in a top strip
 SCALE = screen_w / SRC_W
@@ -129,7 +133,7 @@ from PIL import Image as _I
 _bg = (0x14, 0x18, 0x1F) if DARK else (0xF4, 0xF5, 0xF7)
 _sc = _I.new("RGBA", (W, H), _bg + (0,)); _px = _sc.load()
 if CAPTIONS_TOP:
-    y0, y1 = CAP_H + 44, CAP_H - 6         # opaque through the strip, gone 44px below it: the zoomed UI reads
+    y0, y1 = CAP_OFF + CAP_H + 44, CAP_OFF + CAP_H - 6         # opaque through the strip, gone 44px below it: the zoomed UI reads
                                             # right under the caption, the same gap the phone has at rest
     for yy in range(0, y0):
         a = 255 if yy <= y1 else int(255 * ((y0 - yy) / (y0 - y1)) ** 1.6)
@@ -152,9 +156,15 @@ if hook:
     for i, name in enumerate(layers):
         inputs += ["-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/cards/{name}"]
         st = 0.12 + 0.16 * i                      # each line lands a beat after the last
+        if hook.get("static"):                    # Shorts: frame one IS the thumbnail, so the title is fully in
+            fc += f"[{i}:v]format=rgba[l{i}];[b{i}][l{i}]overlay=0:0:format=auto[b{i+1}];"; continue
         fc += (f"[{i}:v]format=rgba,fade=t=in:st={st:.2f}:d=0.38:alpha=1[l{i}];"
                f"[b{i}][l{i}]overlay=0:'18*(1-min(max(t-{st:.2f},0)/0.45,1))':format=auto[b{i+1}];")
-    fc += f"[b{len(layers)}]format=yuv420p[v]"
+    if hook.get("static"):     # no entrance, so a slow push keeps the card alive (frame one is untouched)
+        fc += (f"[b{len(layers)}]scale=w='trunc({W}*(1+0.05*t/{d:.3f})/2)*2':h='trunc({H}*(1+0.05*t/{d:.3f})/2)*2':eval=frame:flags=lanczos,"
+               f"crop={W}:{H},format=yuv420p[v]")
+    else:
+        fc += f"[b{len(layers)}]format=yuv420p[v]"
     ff(*inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", str(frames(d)), *ENC, f"{T}/p_hook.mp4")
     parts.append(f"{T}/p_hook.mp4"); print(f"hook {d}s")
 
@@ -233,7 +243,9 @@ cur = parts[0]; t_len = (hook["dur"] if hook else 0) + (bts[0]["dur"] if not hoo
 if hook:
     # hook -> first beat is a hard cut on the beat drop, by design
     with open(f"{T}/l0.txt", "w") as f: f.write(f"file '{parts[0]}'\nfile '{parts[1]}'\n")
-    ff("-f", "concat", "-safe", "0", "-i", f"{T}/l0.txt", "-c", "copy", f"{T}/j0.mp4"); cur = f"{T}/j0.mp4"
+    # re-encoded, not stream-copied: a copied join carries the hook's edit list, and at 60 fps the next
+    # xfade then stopped at the end of this file (8.0s of a 24.4s Short) instead of running on
+    ff("-f", "concat", "-safe", "0", "-i", f"{T}/l0.txt", *ENC, f"{T}/j0.mp4"); cur = f"{T}/j0.mp4"
     t_len = hook["dur"] + bts[0]["dur"]
 for k in range(1, len(bts)):
     nxt = parts[hook_n + k]; trans = bts[k].get("transition", plan.get("transition", "slide"))
@@ -259,7 +271,10 @@ if plan.get("speaking"):
 seqs += plan.get("overlays", [])
 base = "b0"
 for j, sq in enumerate(seqs):
-    inputs += ["-framerate", str(FPS), "-i", os.path.join(sq["frames"], "%05d.png")]
+    if sq.get("png"):             # a still layer for the whole product (the Short's disclaimer line)
+        inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{t_len:.3f}", "-i", sq["png"]]
+    else:
+        inputs += ["-framerate", str(FPS), "-i", os.path.join(sq["frames"], "%05d.png")]
     fc += f"[{j+1}:v]format=rgba[sq{j}];[{base}][sq{j}]overlay={sq['x']}:{sq['y']}:format=auto:shortest=1[b0s{j}];"
     base = f"b0s{j}"
 off = 1 + len(seqs)
@@ -282,7 +297,7 @@ for k, (s, e, text, kind) in enumerate(texts):
            f"[{prev}][c{k}]overlay=0:'{CAP_Y}+12*(1-min(max(t-{si:.3f},0)/0.32,1))':format=auto:enable='between(t,{si:.3f},{e:.3f})'[b{k+1}];")
     prev = f"b{k+1}"
 # a short fade from the canvas at the top: a hard cut into a full screen on frame one reads as a glitch
-fc += f"[{prev}]fade=t=in:st=0:d=0.3:color={BG},format=yuv420p[v]"
+fc += (f"[{prev}]fade=t=in:st=0:d=0.3:color={BG},format=yuv420p[v]" if not (hook and hook.get("static")) else f"[{prev}]format=yuv420p[v]")
 ff(*inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", str(frames(PRODUCT)), *ENC, f"{T}/product.mp4")
 print(f"product {PRODUCT:.2f}s with {len(caps)} captions, {len(plan.get('subtitles', []))} subtitles")
 

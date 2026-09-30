@@ -5,6 +5,7 @@ that the compositor animates separately (one layer fades or rises independently 
     make-cards.py hook <w> <h> <out-dir> "<line one>|<line two>"
     make-cards.py end  <w> <h> <icon.png> <out-dir>
     make-cards.py cap  <w> <h> <size> <out.png> "<caption>"
+    make-cards.py line <w> <h> <y> <size> <out.png> "<text>"
 
 Type is the app's own: Schibsted Grotesk for words, Chivo Mono for the one figure. Both are OFL and
 fetched from Google Fonts' repo into ~/Library/Fonts/assetly-brand/ (variable weight axes, set here).
@@ -88,6 +89,12 @@ elif mode == "sub":
         centred(d, y, s, f, SUB, w); y += hh + gap
     img.save(out); print(f"subtitle {w}x{h}: {len(lines)} line(s): {text}")
 
+elif mode == "line":
+    # one small muted line at a fixed y on a full-canvas layer (the Short's standing disclaimer)
+    w, h, y, size, out, text = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), sys.argv[6], sys.argv[7]
+    img = layer(w, h); centred(ImageDraw.Draw(img), y, text, grotesk(size, 600), MUTED, w)
+    img.save(out); print(f"line at y={y}: {text}")
+
 elif mode == "hook":
     w, h, out = int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
     lines = sys.argv[5].split("|")
@@ -122,7 +129,11 @@ elif mode == "end":
     f_name, f_sub, f_cta = grotesk(92, 800), grotesk(40, 500), grotesk(44, 700)
     d0 = ImageDraw.Draw(layer(w, h))
     def hgt(text, f): l, t, r, b = d0.textbbox((0, 0), text, font=f); return b - t
-    name, sub1, sub2, cta = "Assetly", "Your whole portfolio, priced live", "Briefs · Intelligence · Ask", "Available on the App Store"
+    name = "Assetly"
+    # the daily Short swaps the lines (END_SUB1/END_SUB2/END_CTA); the launch clips keep these
+    sub1 = os.environ.get("END_SUB1", "Your whole portfolio, priced live")
+    sub2 = os.environ.get("END_SUB2", "Briefs · Intelligence · Ask")
+    cta = os.environ.get("END_CTA", "Available on the App Store")
     block = ICON + 56 + hgt(name, f_name) + 26 + hgt(sub1, f_sub) + 10 + hgt(sub2, f_sub) + 58 + hgt(cta, f_cta)
     y = (h - block) // 2 - int(h * 0.03)
     img = layer(w, h); img.paste(icon, ((w - ICON) // 2, y), mask); img.save(os.path.join(out, "end_icon.png")); y += ICON + 56

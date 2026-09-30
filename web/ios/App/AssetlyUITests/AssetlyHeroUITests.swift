@@ -132,6 +132,52 @@ final class AssetlyHeroUITests: XCTestCase {
         scroll(.up, 0.18); beat(3.0)
     }
 
+    // MARK: the daily market Short
+
+    /// Footage for the daily Short (docs/marketing/SHORTS_RUNBOOK.md): Home, the close brief and its player,
+    /// then the day's story holdings one by one (DAILY_SYMBOLS, e.g. "MU,GOOGL,META"), then News. Every
+    /// hold is long on purpose: the plan picks the frames, the take only has to contain them.
+    func testEdaily() {
+        app.launch()
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 60), "not signed in for the take")
+        beat(4.0)                                 // net worth, day change
+        scroll(.up, 0.24); beat(2.4)              // the brief card and the movers
+        scroll(.down, 0.40); beat(1.2)
+
+        let read = button(startingWith: "Read")
+        if read.waitForExistence(timeout: 10) { read.tap() }
+        beat(3.0)
+        let listen = button(startingWith: "Listen")
+        if listen.waitForExistence(timeout: 6) { listen.tap(); beat(4.5) }
+        scroll(.up, 0.22); beat(2.4)
+        let pause = button(startingWith: "Pause")
+        if pause.exists { pause.tap(); beat(0.6) }
+        let closePlayer = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Close the player' OR label CONTAINS[c] 'Close player'")).firstMatch
+        if closePlayer.exists { closePlayer.tap(); beat(0.6) }
+
+        let symbols = env("DAILY_SYMBOLS").isEmpty ? ["NVDA"] : env("DAILY_SYMBOLS").split(separator: ",").map(String.init)
+        for sym in symbols {
+            if app.buttons["Home"].exists { app.buttons["Home"].tap(); beat(1.0) }
+            let close = button(startingWith: "Close the brief")
+            if close.exists { close.tap(); beat(0.8) }
+            scroll(.down, 0.5); scroll(.down, 0.5); beat(0.8)
+            let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", sym + " ")).firstMatch
+            var tries = 0
+            while !(row.exists && row.isHittable) && tries < 6 { scroll(.up, 0.25); beat(0.6); tries += 1 }
+            if row.exists { row.tap() } else { NSLog("DAILY no row for %@", sym); continue }
+            beat(3.5)                             // price, day move
+            scroll(.up, 0.28); beat(2.6)
+            scroll(.up, 0.28); beat(2.6)
+            scroll(.up, 0.28); beat(2.6)          // the headlines
+        }
+
+        if app.buttons["News"].exists { app.buttons["News"].tap(); beat(3.0) }
+        scroll(.up, 0.24); beat(2.6)
+        scroll(.up, 0.24); beat(2.6)
+        if app.buttons["Home"].exists { app.buttons["Home"].tap(); beat(1.0) }
+        scroll(.down, 0.5); scroll(.down, 0.5); beat(3.0)
+    }
+
     // MARK: the longer spots
 
     /// Footage for the 20s and 30s spots. Same beats as the hero take, then two more: Settings, and
