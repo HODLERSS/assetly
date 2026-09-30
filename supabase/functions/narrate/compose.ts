@@ -1,6 +1,6 @@
 // Script composition for narration, separated from the HTTP handler so it can run on stored briefs locally
 // (scripts/narrate_harness.ts) with no TTS and no database writes. index.ts calls exactly this.
-import { earWords, roundPct, sayAs, speakable } from "./ear.ts";
+import { earWords, replaceTicker, roundPct, sayAs, speakable } from "./ear.ts";
 import { scriptProblems, sanitize, ungroundedEventSentences } from "../_shared/intel.ts";
 import { callJudge } from "../_shared/judge.ts";
 
@@ -136,8 +136,8 @@ const sayNames = (t: string, names: [string, string][]) => {
   for (const [sym, nm] of names) {
     if (nm.toUpperCase() === sym) continue;   // the company IS called by its ticker (MARA): nothing to say differently
     const bare = sym.replace(/\.(KS|KQ)$/, "");
-    x = x.replace(new RegExp("(^|[^A-Za-z0-9$])" + sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9])", "g"), `$1${nm}`);
-    if (bare !== sym && /^[A-Z]{2,5}$/.test(bare)) x = x.replace(new RegExp("(^|[^A-Za-z0-9$])" + bare + "(?![A-Za-z0-9])", "g"), `$1${nm}`);
+    x = replaceTicker(x, sym, nm);
+    if (bare !== sym && /^[A-Z]{2,5}$/.test(bare)) x = replaceTicker(x, bare, nm);
   }
   return x;
 };

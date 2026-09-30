@@ -67,3 +67,16 @@ Deno.test("speakable: money shorthand, ranges, slashes and product codes (9/29)"
   ];
   for (const [i, o] of cases) { assertEquals(speakable(i), o); assertEquals(speakable(o), o); assertEquals(earAudit(speakable(i)), []); }
 });
+
+Deno.test("9/30: a name that contains its ticker is not stuttered (Invesco QQQ)", () => {
+  const names: [string, string][] = [["QQQ", "Invesco QQQ"]];
+  assertEquals(speakable("Your QQQ fund rose. Invesco QQQ tracks the Nasdaq.", names), "Your Invesco QQQ fund rose. Invesco QQQ tracks the Nasdaq.");
+  assertEquals(speakable("That single holding is Invesco Invesco Invesco Invesco QQQ.", names), "That single holding is Invesco QQQ.");
+  const once = speakable("QQQ and Invesco QQQ.", names);
+  assertEquals(speakable(once, names), once);
+});
+
+Deno.test("9/30: card slang said plainly (book, thesis, tripwire, setup)", () => {
+  assertEquals(speakable("The morning's slide thesis failed. Your all-in QQQ book is up. The bearish setup flipped. The tripwire is VIX above 18.", [["QQQ", "Invesco QQQ"]]),
+    "The morning's call for a drop failed. Your all-in Invesco QQQ portfolio is up. The gloomy mood flipped. The warning sign is VIX above eighteen.");
+});

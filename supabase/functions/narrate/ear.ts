@@ -94,7 +94,8 @@ const PLAIN: [RegExp, string][] = [
   [/\bfree cash flow\b/gi, "cash left over"], [/\bEBITDA\b/g, "operating profit"], [/\bbasis points\b/gi, "hundredths of a percent"],
   [/\bbuyback bid\b/gi, "buyback"], [/\brisk-off\b/gi, "cautious"], [/\brisk-on\b/gi, "confident"], [/\bprint\b(?=\s+(?:expected|due|on|in|next))/gi, "report"],
   [/\bsentiment tell\b/gi, "mood signal"], [/\bvalue-income hold\b/gi, "steady dividend holding"],
-  [/\bdownside exposure\b/gi, "risk of losses"], [/\bupside potential\b/gi, "room to grow"],
+[/\bslide thesis\b/gi, "call for a drop"], [/\b(?:investment )?thesis\b/gi, "view"], [/\btripwire\b/gi, "warning sign"], [/\bbearish setup\b/gi, "gloomy mood"], [/\bbullish setup\b/gi, "upbeat mood"],
+  [/\bbook\b(?! value)/gi, "portfolio"],   [/\bdownside exposure\b/gi, "risk of losses"], [/\bupside potential\b/gi, "room to grow"],
   [/\bSamsung Electronics \(?Pref\)?|\bSamsung Pref\b/g, "Samsung Electronics preferred shares"], [/\bPref\b/g, "preferred shares"],
   [/\b8-K filed\b/g, "A company filing on"], [/\ban 8-K\b/g, "a company filing"], [/\b8-K\b/g, "a company filing"], [/\bHBM\b/g, "high-bandwidth memory"], [/\bKRX\b/g, "the Korean market"], [/(?<!\bthe )\bKOSPI\b/g, "the KOSPI"],
   [/\bvs\.?\s/gi, "versus "], [/\bYoY\b/g, "from a year ago"], [/\bQoQ\b/g, "from last quarter"], [/\bIPO\b/g, "I P O"],
@@ -118,6 +119,21 @@ export const TICKER_SAY: Record<string, string> = {
   "024110.KS": "Industrial Bank of Korea", "003690.KS": "Korean Reinsurance",
 };
 const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Say a ticker as its name. 9/30: "Invesco QQQ" CONTAINS its ticker, so a plain swap turned "Invesco QQQ" into
+ *  "Invesco Invesco QQQ" and every later pass added another. A ticker already inside its own name is left alone,
+ *  and a stutter left by an earlier pass is collapsed back to the name. Idempotent. */
+export function replaceTicker(text: string, sym: string, name: string): string {
+  let x = String(text ?? "");
+  const at = name.search(new RegExp("(^|[^A-Za-z0-9])" + esc(sym) + "(?![A-Za-z0-9])"));
+  if (at >= 0) {
+    const pre = name.slice(0, name.indexOf(sym, at));
+    if (pre) x = x.replace(new RegExp("(?:" + esc(pre) + "){2,}" + esc(sym) + "(?![A-Za-z0-9])", "g"), pre + sym);
+    const guard = pre ? "(?<!" + esc(pre) + ")" : "";
+    return x.replace(new RegExp("(^|[^A-Za-z0-9$.])" + guard + esc(sym) + "(?![A-Za-z0-9])", "g"), (m, lead: string, off: number, whole: string) =>
+      pre && whole.slice(Math.max(0, off + lead.length - pre.length), off + lead.length) === pre ? m : lead + name);
+  }
+  return x.replace(new RegExp("(^|[^A-Za-z0-9$.])" + esc(sym) + "(?![A-Za-z0-9])", "g"), `$1${name}`);
+}
 /** Every ticker code becomes the company's spoken name: the user's own list first, then TICKER_SAY. */
 export function sayTickers(t: string, names: [string, string][] = []): string {
   const map = new Map<string, string>(Object.entries(TICKER_SAY));
@@ -125,7 +141,7 @@ export function sayTickers(t: string, names: [string, string][] = []): string {
   for (const [sym, nm] of [...map.entries()]) { const bare = sym.replace(/\.(KS|KQ)$/, ""); if (bare !== sym && !map.has(bare)) map.set(bare, nm); }
   let x = String(t ?? "");
   for (const sym of [...map.keys()].sort((a, b) => b.length - a.length)) {
-    x = x.replace(new RegExp("(^|[^A-Za-z0-9$.])" + esc(sym) + "(?![A-Za-z0-9])", "g"), `$1${map.get(sym)}`);
+    x = replaceTicker(x, sym, map.get(sym)!);
   }
   return sayAs(x);
 }
