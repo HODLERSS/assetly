@@ -16,4 +16,4 @@ More: https://hodlerss.github.io/assetly/about.html
 #Shorts #AIstocks #stockmarket #Micron #Google #Meta #NVIDIA #investing
 
 **Thumbnail**
-Frame 0 (0.00 s): the title card, "AI stocks today / September 30" on the dark ground with the standing disclaimer line. The card is fully drawn from the first frame (no fade), so the default Shorts cover works; pick 0.0 s in the cover selector if YouTube offers a different frame.
+Frame 0 (0.00 s): the headline cover, "AI STOCKS · SEP 30" over "Micron beats. / Gemini 4 launches. / Meta slips." (company names in the accent colour), "Demo Portfolio 001 · Assetly" and the standing disclaimer line. The card is fully drawn from the first frame (no fade), so the default Shorts cover works; pick 0.0 s in the cover selector if YouTube offers a different frame.

@@ -95,6 +95,46 @@ elif mode == "line":
     img = layer(w, h); centred(ImageDraw.Draw(img), y, text, grotesk(size, 600), MUTED, w)
     img.save(out); print(f"line at y={y}: {text}")
 
+elif mode == "hook" and "[" in sys.argv[5]:
+    # Headline-led cover for the daily Short: a small tracked kicker ("AI STOCKS · SEP 30", HOOK_KICKER)
+    # over the day's stories stacked large, one [accent] word each: "[Micron] beats.|[Gemini 4] launches."
+    # Sized so the widest line fits the Shorts text zone (HOOK_MAXW, 820 px keeps it left of the action
+    # rail). One layer per line, like the question hook, so the compositor can stagger or hold them.
+    import re
+    w, h, out = int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+    lines = sys.argv[5].split("|"); maxw = int(os.environ.get("HOOK_MAXW", "820"))
+    os.makedirs(out, exist_ok=True)
+    d0 = ImageDraw.Draw(layer(w, h))
+    plain = lambda s: s.replace("[", "").replace("]", "")
+    size = 132
+    while size > 60 and max(d0.textlength(plain(l), font=grotesk(size, 800)) for l in lines) > maxw: size -= 2
+    f = grotesk(size, 800); asc = d0.textbbox((0, 0), "Hg", font=f)
+    lh = int(size * 1.12); gap_k = int(size * 0.55)
+    kick = os.environ.get("HOOK_KICKER", ""); fk = grotesk(34, 700); track = 4
+    kh = (d0.textbbox((0, 0), kick, font=fk)[3] - d0.textbbox((0, 0), kick, font=fk)[1]) if kick else 0
+    total = (kh + gap_k if kick else 0) + lh * len(lines)
+    y = (h - total) // 2 - int(h * 0.05)
+    if kick:
+        img = layer(w, h); d = ImageDraw.Draw(img)
+        kw = sum(d.textlength(ch, font=fk) for ch in kick) + track * (len(kick) - 1); x = (w - kw) / 2
+        t0 = d.textbbox((0, 0), kick, font=fk)[1]
+        for ch in kick: d.text((x, y - t0), ch, font=fk, fill=ACCENT + (255,)); x += d.textlength(ch, font=fk) + track
+        img.save(os.path.join(out, "hook_kicker.png")); y += kh + gap_k
+    for i, ln in enumerate(lines):
+        img = layer(w, h); d = ImageDraw.Draw(img)
+        x = (w - d.textlength(plain(ln), font=f)) / 2
+        for part in re.split(r"(\[[^\]]*\])", ln):
+            if not part: continue
+            acc = part.startswith("["); t = part.strip("[]")
+            d.text((x, y - asc[1]), t, font=f, fill=(ACCENT if acc else INK) + (255,)); x += d.textlength(t, font=f)
+        img.save(os.path.join(out, f"hook{i}.png")); y += lh
+    img = layer(w, h); d = ImageDraw.Draw(img)
+    rw = 88; d.rounded_rectangle([(w - rw) // 2, y + 30, (w + rw) // 2, y + 30 + 8], radius=4, fill=ACCENT + (255,))
+    foot = os.environ.get("HOOK_FOOT", "")        # a quiet sign-off under the rule: whose brief this is
+    if foot: centred(d, y + 30 + 8 + 44, foot, grotesk(36, 500), MUTED, w)
+    img.save(os.path.join(out, "hook_rule.png"))
+    print(f"headline hook: {len(lines)} lines at {size}px -> {out}")
+
 elif mode == "hook":
     w, h, out = int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
     lines = sys.argv[5].split("|")

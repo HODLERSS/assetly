@@ -15,9 +15,9 @@ gpt-audio lines: brisk news-anchor prompt, read-verbatim check on the returned t
 
 | Time | Picture | Voice / words |
 |---|---|---|
-| 0.00 to 1.89 | Title card "AI stocks today / September 30" (thumbnail), slow 5% push | marin: "AI stocks today." |
+| 0.00 to 1.89 | Cover (thumbnail, fully drawn at frame 0): kicker "AI STOCKS · SEP 30", then "**Micron** beats. / **Gemini 4** launches. / **Meta** slips." (company in accent), "Demo Portfolio 001 · Assetly"; slow 5% push | marin: "AI stocks today." |
 | 1.89 to 7.30 | Micron page, frozen; slow push-in, '0.00% today · closed 4:00 PM ET' highlighted | marin: "Micron beat after the bell, with record revenue of $54.2 billion." |
-| 7.30 to 11.18 | Google page scrolling to Assetly Intelligence; push-in, the Gemini 4 bullet highlighted | cedar: "Google rose 0.9% as it launched Gemini 4." |
+| 7.30 to 11.18 | Google page with the chart set to 1D (+0.93%, today), frozen; slow push-in, '+0.93% today · closed 4:00 PM ET' highlighted | cedar: "Google rose 0.9% as it launched Gemini 4." |
 | 11.18 to 17.18 | Meta page, frozen; slow push-in, '-1.84% today · closed 4:00 PM ET' highlighted | marin: "Meta slipped 1.8%, ending a September rally driven by its Muse AI app." |
 | 17.18 to 20.64 | Home; push-in, 'Today +$336 (+0.16%)' highlighted | Minjae: "This demo portfolio closed up 0.2%." |
 | 20.64 to 22.04 | The close brief open, its player running; push-in held into the end card | Minjae: "That's your brief." |

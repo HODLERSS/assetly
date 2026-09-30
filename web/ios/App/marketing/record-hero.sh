@@ -16,7 +16,7 @@ PASSWORD=$(grep '^password=' "$CRED" | cut -d= -f2-)
 # "Light" or "Dark" — the label on the app's own Appearance chip, tapped during the seed pass.
 case "${THEME:-light}" in dark) HERO_THEME=Dark ;; *) HERO_THEME=Light ;; esac
 
-python3 - "$EMAIL" "$PASSWORD" "$HERO_THEME" "${DAILY_SYMBOLS:-}" <<'PY'
+python3 - "$EMAIL" "$PASSWORD" "$HERO_THEME" "${DAILY_SYMBOLS:-}" "${DAILY_RANGE:-}" <<'PY'
 import json, sys
 plan = {
   "configurations": [{"id": "9C8B7A65-4D3E-4F21-A0B9-8C7D6E5F4A3B", "name": "Hero", "options": {}}],
@@ -26,6 +26,7 @@ plan = {
       {"key": "SHOWCASE_PASSWORD", "value": sys.argv[2]},
       {"key": "HERO_THEME", "value": sys.argv[3]},
       {"key": "DAILY_SYMBOLS", "value": sys.argv[4]},
+      {"key": "DAILY_RANGE", "value": sys.argv[5]},
     ],
     "preferredScreenCaptureFormat": "screenRecording",
     "testTimeoutsEnabled": False,

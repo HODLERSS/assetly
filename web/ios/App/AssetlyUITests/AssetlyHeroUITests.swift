@@ -166,6 +166,12 @@ final class AssetlyHeroUITests: XCTestCase {
             while !(row.exists && row.isHittable) && tries < 6 { scroll(.up, 0.25); beat(0.6); tries += 1 }
             if row.exists { row.tap() } else { NSLog("DAILY no row for %@", sym); continue }
             beat(3.5)                             // price, day move
+            // DAILY_RANGE=1D: the chart shows today's move, so it agrees with a "rose 0.9% today" line
+            // (the page opens on 1M). Coordinate tap: range chips can report not-hittable in the web view.
+            if !env("DAILY_RANGE").isEmpty {
+                let chip = app.buttons[env("DAILY_RANGE")]
+                if chip.waitForExistence(timeout: 6) { chip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap(); beat(4.0) }
+            }
             scroll(.up, 0.28); beat(2.6)
             scroll(.up, 0.28); beat(2.6)
             scroll(.up, 0.28); beat(2.6)          // the headlines

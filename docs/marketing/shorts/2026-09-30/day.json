@@ -2,7 +2,7 @@
  "date": "2026-09-30",
  "demo": 1,
  "script": "AI stocks today. Micron beat after the bell, with record revenue of $54.2 billion. Google rose 0.9% as it launched Gemini 4. Meta slipped 1.8%, ending a September rally driven by its Muse AI app. This demo portfolio closed up 0.2%. That's your brief.",
- "hook": "AI stocks today|September 30",
+ "hook": "[Micron] beats.|[Gemini 4] launches.|[Meta] slips.",
  "beats": [
   {
    "take": "take1.mp4",
@@ -31,29 +31,30 @@
    }
   },
   {
-   "take": "take2.mp4",
-   "start": 38.0,
+   "take": "take3.mp4",
+   "start": 44.6,
+   "freeze": true,
    "zoom": {
-    "to": 1.7,
-    "focus_src": 770,
+    "to": 1.6,
+    "focus_src": 780,
     "in": [
-     0.9,
-     1.7
+     0.3,
+     2.8
     ],
     "out": "auto"
    },
    "highlight": {
     "src_box": [
-     96,
-     712,
-     1104,
-     826
+     40,
+     772,
+     812,
+     834
     ],
     "pad": 10,
     "radius": 10
    },
    "to_cue": 3,
-   "note": "GOOGL header -> intelligence, Gemini bullet"
+   "note": "GOOGL header with the 1D chart (+0.93%), today line highlighted"
   },
   {
    "take": "take1.mp4",
@@ -238,5 +239,7 @@
     }
    ]
   }
- ]
+ ],
+ "hook_kicker": "AI STOCKS · SEP 30",
+ "hook_foot": "Demo Portfolio 001 · Assetly"
 }

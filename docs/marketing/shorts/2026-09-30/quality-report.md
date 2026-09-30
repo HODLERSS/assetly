@@ -15,13 +15,13 @@ the proof frames, the sources table and a speech-recognition round trip. **All 1
 | Q7 | Hook by 1.5 s | PASS | voice starts 0.31 s; title card on screen from frame 0 |
 | Q8 | Caption sync (first word lit vs speech onset) | PASS | worst 70 ms over 5 sentences: -50, -60, -70, -60, -50 |
 | Q9 | Subtitle cap height >= 34 px | PASS | 36 px cap height at 50 px type |
-| Q10 | Overlay text inside safe zone (x 60-950, y 100-1536) | PASS | 23 layers checked; union x 165-915, y 112-1233 |
+| Q10 | Overlay text inside safe zone (x 60-950, y 100-1536) | PASS | 25 layers checked; union x 138-942, y 112-1233 |
 | Q13 | No advice / hype / jargon words, em dashes, emoji | PASS | hits none, em dash False, emoji 0 |
 | Q11 | Every figure sourced | PASS | Same 8 figures as the first cut, each with two agreeing sources ([sources.md](sources.md)); 5 contested figures dropped |
 | Q12 | Pronunciation | PASS | Every line through `speakable()` (no change: already words; `earAudit()` clean); gpt-audio's own transcript matched each line verbatim at render; faster-whisper small.en on the FINAL MIX returns the script word for word ([asr-transcript.txt](asr-transcript.txt)); only digit formatting differs. Listen list: Micron, Google, Gemini four, Meta, Muse, A I, September, fifty-four point two billion dollars, zero point nine / one point eight / zero point two percent |
 | Q14 | Disclaimer visible | PASS | "Demo portfolio · Not financial advice" at y 112 on every product frame; "Demo portfolio. Not financial advice." on the end card and in the description; eyebrow "YOUR ASSETLY BRIEF · DEMO 001" and the words "this demo portfolio" |
 | Q15 | Brand | PASS | Schibsted Grotesk; #14181F ground, #E9ECF1 ink, #8B98E0 accent (eyebrows, pills, highlights, CTA); icon + name + "Your portfolio, explained daily" + App Store pill |
-| Q16 | Proof frames viewed | PASS | proof/ (0.0, 0.5, 3, 8, 13, 18, 24.21 s) plus 1.5, 4, 9.5, 16, 19.5, 21, 22.5 s viewed: every spoken line has its subtitle lit word by word, its eyebrow, moving pills, and a highlight box on the phone around what is being said (Micron and Meta "today" lines, the Gemini bullet, the portfolio's day) |
+| Q16 | Proof frames viewed | PASS | proof/ (0.0, 0.5, 3, 8, 13, 18, 24.21 s) plus 1.0, 1.5, 4, 7.5, 8.5, 9.5, 11, 16, 19.5, 21, 22.5 s viewed: every spoken line has its subtitle lit word by word, its eyebrow, moving pills, and a highlight box on the phone around what is being said (the Micron, Google and Meta "today" lines, the portfolio's day). Review fixes (main session): the cover is now headline-led ("Micron beats. / Gemini 4 launches. / Meta slips.", fully drawn at frame 0), and the Google beat was re-recorded with the chart on 1D so it reads +0.93% like the caption (it opened on 1M, -0.72%) |
 
 **Also measured:** duck: -11.9 dB under the voices (mixer asserts -6 to -12); 1454 frames;  13M. Speaking pills visible
 whenever a voice is speaking (20.2 s of 24.2 s), absent over the title's silence and the card.

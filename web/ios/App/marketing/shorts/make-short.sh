@@ -4,7 +4,8 @@
 #   ./make-short.sh <day.json> <work-dir> <out-dir>
 #
 # day.json (checked in under docs/marketing/shorts/<date>/day.json):
-#   {"date": "2026-09-30", "demo": 1, "hook": "AI stocks today|September 30",
+#   {"date": "2026-09-30", "demo": 1, "hook": "[Micron] beats.|[Gemini 4] launches.|[Meta] slips.",
+#    "hook_kicker": "AI STOCKS · SEP 30", "hook_foot": "Demo Portfolio 001 · Assetly",   (the cover: frame 0)
 #    "script": "<the whole DISPLAY text, figures as figures: what the subtitles show; the QA scans it>",
 #    two ways to voice it:
 #    "lines": [{"voice": "marin"|"cedar"|"minjae", "say": "<spoken text>",
@@ -121,7 +122,8 @@ for b in tm["beats"]:
     b = dict(b); b["src"] = f"{w}/{b.pop('take')}"; beats.append(b)
 plan = {"w": 1080, "h": 1920, "len": L, "theme": "dark", "fps": 60, "xfade": 0.6, "crf": 15,
         "captions": "top", "cap_top": 150, "cap_h": 300, "bottom": 40, "slide": 0.4,
-        "hook": {"lines": d.get("hook", "AI stocks today|" + d["date"]), "dur": tm["hook"], "static": True},
+        "hook": {"lines": d.get("hook", "AI stocks today|" + d["date"]), "dur": tm["hook"], "static": True,
+                 "kicker": d.get("hook_kicker", ""), "foot": d.get("hook_foot", "")},
         "beats": beats, "card": {"icon": f"{m}/../App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"},
         "overlays": [{"frames": f"{w}/fill", "x": 0, "y": 150}, {"png": f"{w}/disclaimer.png", "x": 0, "y": 0}]}
 if lines: plan.update(speaking=f"{w}/spk", speaking_x=460, speaking_y=152)     # five pills over the strip while anyone speaks
@@ -137,7 +139,8 @@ ffmpeg -v error -y -i video.mp4 -i mix.wav -map 0:v -map 1:a -c:v copy -af "afad
 rm -f "$OUT"/proof/proof_*.png
 for t in 0.0 0.5 3.0 8.0 13.0 18.0 $(python3 -c "print(round($LEN-0.03,2))"); do
   ffmpeg -v error -y -ss "$t" -i "$FINAL" -frames:v 1 "$OUT/proof/proof_${t}s.png"; done
-"$M/make-cards.py" hook 1080 1920 cards "$(python3 -c "import json;print(json.load(open('$DAY')).get('hook',''))")" >/dev/null
+HOOK_KICKER="$(python3 -c "import json;print(json.load(open('$DAY')).get('hook_kicker',''))")" HOOK_FOOT="$(python3 -c "import json;print(json.load(open('$DAY')).get('hook_foot',''))")" \
+  "$M/make-cards.py" hook 1080 1920 cards "$(python3 -c "import json;print(json.load(open('$DAY')).get('hook',''))")" >/dev/null
 END_SUB1="Your portfolio, explained daily" END_SUB2="Demo portfolio. Not financial advice." "$M/make-cards.py" end 1080 1920 \
   "$M/../App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png" cards >/dev/null
 L="disclaimer.png,0,0"; for f in cards/hook*.png cards/end_*.png; do L="$L;$f,0,0"; done

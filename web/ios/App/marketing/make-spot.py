@@ -150,8 +150,9 @@ parts = []
 hook = plan.get("hook")
 if hook:
     d = hook["dur"]
-    subprocess.run([os.path.join(HERE, "make-cards.py"), "hook", str(W), str(H), f"{T}/cards", hook["lines"]], check=True, capture_output=True)
-    layers = [f for f in ("hook0.png", "hook1.png", "hook2.png") if os.path.exists(f"{T}/cards/{f}")] + ["hook_rule.png"]
+    subprocess.run([os.path.join(HERE, "make-cards.py"), "hook", str(W), str(H), f"{T}/cards", hook["lines"]], check=True, capture_output=True,
+                   env=dict(os.environ, HOOK_KICKER=hook.get("kicker", ""), HOOK_FOOT=hook.get("foot", "")))
+    layers = [f for f in ("hook_kicker.png", "hook0.png", "hook1.png", "hook2.png", "hook3.png") if os.path.exists(f"{T}/cards/{f}")] + ["hook_rule.png"]
     inputs = []; fc = f"color=c={BG}:s={W}x{H}:r={FPS}:d={d:.3f}[b0];"
     for i, name in enumerate(layers):
         inputs += ["-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/cards/{name}"]
