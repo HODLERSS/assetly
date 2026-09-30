@@ -157,4 +157,19 @@ final class PushUITests: XCTestCase {
         beat(5)
         XCTAssertFalse(app.staticTexts["Get a buzz when your brief is ready?"].exists, "asked again after Not now")
     }
+
+    /// A REAL APNs push (sandbox) reaches this simulator: waits on the Home screen for a banner titled
+    /// PUSH_EXPECT while the host sends through push-send or admin-push, then taps it.
+    func testRealPushArrives() throws {
+        let expect = env("PUSH_EXPECT")
+        XCTAssertFalse(expect.isEmpty, "PUSH_EXPECT not set")
+        app.launch()
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 60), "Home did not load (sign in first)")
+        XCUIDevice.shared.press(.home)
+        let banner = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] 'now'", expect)).firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 180), "no banner titled \(expect)")
+        shot("12-real-\(expect.replacingOccurrences(of: " ", with: "-"))")
+        banner.tap()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15), "the tap did not open the app")
+    }
 }

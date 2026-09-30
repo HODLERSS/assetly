@@ -15,7 +15,7 @@ EMAIL=$(grep '^email=' "$CRED" | cut -d= -f2-)
 PASSWORD=$(grep '^password=' "$CRED" | cut -d= -f2-)
 
 # the plan carries the credentials: a test plan overrides TEST_RUNNER_* env (see RUNBOOK)
-python3 - "$EMAIL" "$PASSWORD" "$SHOTS" <<'PY'
+python3 - "$EMAIL" "$PASSWORD" "$SHOTS" "${PUSH_EXPECT:-}" <<'PY'
 import json, sys
 plan = {
   "configurations": [{"id": "8B3C4D5E-6F70-4A8B-9C0D-2E3F4A5B6C7D", "name": "Push", "options": {}}],
@@ -24,6 +24,7 @@ plan = {
       {"key": "PUSH_EMAIL", "value": sys.argv[1]},
       {"key": "PUSH_PASSWORD", "value": sys.argv[2]},
       {"key": "PUSH_SHOT_DIR", "value": sys.argv[3]},
+      {"key": "PUSH_EXPECT", "value": sys.argv[4]},
     ],
     "testTimeoutsEnabled": False,
   },
