@@ -10,6 +10,8 @@
 - Q37: the phone's top on one row in every beat and the subtitle-to-phone gap constant (+-8 px), measured on the final
   frames.
 - references/shorts-craft.md: the Shorts guidance applied and what it never overrides.
+- The answer-on-screen search matches the quoted line by its words (two of its first four), not an exact prefix: OCR
+  reads "−4.0%" and bold tickers unreliably, and the 12:12 midday refused on a line that was on screen.
 - A delivered Short whose takes are gone can be re-framed frame by frame (preopen-v5: measure2.py + relayout.py).
 
 ## v1.0.4 (2026-10-01, owner review of preopen-v3 highlights)

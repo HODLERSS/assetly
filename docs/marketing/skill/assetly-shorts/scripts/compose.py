@@ -107,7 +107,12 @@ def first_visible(take, t0, t1, pattern, step=0.1):
         rows = _ocr(_frames(take, ts, d, "v"))
         for t, rs in zip(ts, rows):
             if any(re.search(r"still thinking", r[0], re.I) for r in rs): continue
-            hit = next((r for r in rs if re.search(pattern, r[0], re.I)), None)
+            # a pattern, or a list of words: the row holding at least two of them (OCR reads "−4.0%" and bold tickers
+            # unreliably, words are stable; 10/1 midday: an exact-prefix match never fired on a line that was on screen)
+            if isinstance(pattern, list):
+                hit = next((r for r in rs if sum(w.lower() in r[0].lower() for w in pattern) >= min(2, len(pattern))), None)
+            else:
+                hit = next((r for r in rs if re.search(pattern, r[0], re.I)), None)
             if hit: return t, hit[1:5]
         return None, None
     finally:
@@ -195,7 +200,7 @@ def main():
         k = story["ask"].get("line")
         if isinstance(k, int) and 0 <= k < len(vis):
             # the beat (and so its highlight) starts only once the quoted line is ON SCREEN in the recording
-            key = re.escape(re.sub(r"^[•\-\s]+", "", vis[k]["text"])[:14])
+            key = [w for w in re.findall(r"[A-Za-z]{3,}", vis[k]["text"])][:4]
             t_v, _ = first_visible(os.path.join(W, atake), amk["ask_answer"], amk["ask_answer"] + 15, key)
             if t_v is None:
                 raise SystemExit("REFUSE: the quoted Ask answer line never shows on screen in the recording")
