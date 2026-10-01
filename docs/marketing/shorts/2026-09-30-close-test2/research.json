@@ -1,0 +1,211 @@
+{
+ "edition": "close",
+ "date": "2026-09-30",
+ "asof_et": "2026-09-30 22:32 ET",
+ "context": "Tech shares lifted the Nasdaq while the S&P 500 slipped and Treasury yields rose, as investors looked past cooler inflation data and weighed Fed rate hike signals.",
+ "hot": [
+  "NVDA",
+  "AAPL",
+  "MSFT",
+  "GOOGL"
+ ],
+ "items": [
+  {
+   "kind": "stock",
+   "symbols": [
+    "HPE"
+   ],
+   "cover": "HPE hits high.",
+   "why": "Announced a $1.2 billion Vultr server order and raised revenue targets.",
+   "why_ids": [
+    "h78",
+    "h79"
+   ],
+   "sentiment": "Stock closed at a record high on the news.",
+   "sentiment_ids": [
+    "h78",
+    "h89"
+   ],
+   "figures": [
+    {
+     "symbol": "HPE",
+     "field": "pct",
+     "value": 3.9,
+     "feed1": 3.9,
+     "feed2": 3.9,
+     "ok": true
+    }
+   ],
+   "judge_note": "h78 (Investopedia) and h79 (simplywall.st) together confirm $1.2B Vultr order and raised revenue targets. h78 and h89 (Yahoo Finance) confirm record closing high."
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "INTC"
+   ],
+   "cover": "Intel rallies.",
+   "why": "Chip stocks rose as Intel capped a surprisingly strong September.",
+   "why_ids": [
+    "h93",
+    "h102"
+   ],
+   "sentiment": "Stock outperformed competitors on strong trading.",
+   "sentiment_ids": [
+    "h93",
+    "h95"
+   ],
+   "figures": [
+    {
+     "symbol": "INTC",
+     "field": "pct",
+     "value": 3.71,
+     "feed1": 3.71,
+     "feed2": 3.71,
+     "ok": true
+    }
+   ],
+   "judge_note": "h93 (Yahoo Finance) and h102 (24/7 Wall St.) confirm Intel capped a surprisingly strong September. h93 and h95 (MarketWatch) confirm Intel outperformed competitors on strong trading."
+  },
+  {
+   "kind": "macro",
+   "symbols": [],
+   "cover": "Stocks mixed.",
+   "why": "Tech shares lifted the Nasdaq while the S&P 500 slipped as Treasury yields rose.",
+   "why_ids": [
+    "h326",
+    "h325",
+    "h333"
+   ],
+   "sentiment": "Investors weighed cooler inflation against hotter Treasury yields.",
+   "sentiment_ids": [
+    "h323",
+    "h334"
+   ],
+   "figures": [
+    {
+     "symbol": "^GSPC",
+     "field": "pct",
+     "value": -0.25,
+     "feed1": -0.25,
+     "feed2": -0.251602,
+     "ok": true
+    },
+    {
+     "symbol": "^IXIC",
+     "field": "pct",
+     "value": 0.24,
+     "feed1": 0.24,
+     "feed2": 0.24,
+     "ok": true
+    },
+    {
+     "symbol": "^VIX",
+     "field": "pct",
+     "value": 1.87,
+     "feed1": 1.87,
+     "feed2": 1.870324,
+     "ok": true
+    }
+   ],
+   "judge_note": "WSJ (h326), Reuters (h325), and TV News Check (h333) confirm tech lifted Nasdaq while S&P 500 slipped; multiple headlines confirm Treasury yields rose as the cause. IBD (h323) and Anadolu Ajansı (h334) confirm investors weighed cooler inflation against hotter yields."
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "JBL"
+   ],
+   "cover": "Jabil drops.",
+   "why": "Beat Q4 estimates and raised fiscal 2027 outlook, but investors sold the news.",
+   "why_ids": [
+    "h2",
+    "h204",
+    "h206"
+   ],
+   "sentiment": "Shares fell despite the earnings beat.",
+   "sentiment_ids": [
+    "h2",
+    "h4",
+    "h5",
+    "h6",
+    "h194",
+    "h198",
+    "h204"
+   ],
+   "figures": [
+    {
+     "symbol": "JBL",
+     "field": "pct",
+     "value": -10.03,
+     "feed1": -10.03,
+     "feed2": -10.03,
+     "ok": true
+    }
+   ],
+   "judge_note": "WHY supported by multiple publishers (Yahoo Finance, Quiver Quantitative, GuruFocus) stating beat + raised fiscal 2027 outlook + sell-the-news reaction. SENTIMENT widely supported across many publishers."
+  },
+  {
+   "kind": "earnings",
+   "symbols": [
+    "MU"
+   ],
+   "cover": "Micron beats.",
+   "why": "Beat Q4 estimates and issued a strong Q1 outlook as data center revenue jumped.",
+   "why_ids": [
+    "h166",
+    "h168",
+    "h171"
+   ],
+   "sentiment": "Shares showed little net change after hours despite the beat.",
+   "sentiment_ids": [
+    "h169",
+    "h170"
+   ],
+   "figures": [
+    {
+     "symbol": "MU",
+     "field": "pct",
+     "value": 0.0,
+     "feed1": 0.0,
+     "feed2": 0.0,
+     "ok": true
+    }
+   ],
+   "judge_note": "WHY supported by CNBC, Yahoo Finance, and Seeking Alpha stating beat + strong Q1 outlook; CNBC also notes data center revenue jump. SENTIMENT supported by Investing.com (shares trim gains) and Barron's (stock isn't moving)."
+  }
+ ],
+ "dropped": [
+  {
+   "kind": "stock",
+   "symbols": [
+    "APP"
+   ],
+   "cover": "AppLovin sinks.",
+   "why": "Wells Fargo called the Pixel install spike a false start.",
+   "why_ids": [
+    "h25",
+    "h225"
+   ],
+   "sentiment": "Stock hit a fresh 52-week low on the call.",
+   "sentiment_ids": [
+    "h24",
+    "h25",
+    "h28",
+    "h225"
+   ],
+   "figures": [
+    {
+     "symbol": "APP",
+     "field": "pct",
+     "value": -4.98,
+     "feed1": -4.98,
+     "feed2": -4.98,
+     "ok": true
+    }
+   ],
+   "drop": [
+    "why: fewer than 2 independent sources"
+   ]
+  }
+ ],
+ "model": "mara/MiniMax-M3"
+}

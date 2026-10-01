@@ -7,6 +7,9 @@
 //       [--reset] [--brief close] [--no-content]
 // --book: [{"symbol","qty","cost","account"?}] designed for the day's stories (docs/marketing/shorts/<date>/book.json);
 // --reset deletes the account's holdings first, so a re-design replaces the book instead of adding to it.
+// --out-of-window: write the edition outside its ET window (a test PRE-OPEN at night): the internal token is read from
+// Vault (get_secret) and sent as x-internal-token with body.outOfWindow; never printed. --brief-only: skip the syncs and
+// only (re)generate the brief (a regeneration after a failed check). --no-audio: no TTS spend on the brief.
 // The service key comes from `npx --no-install supabase projects api-keys --project-ref hhdpthrfmsdmxdrfckxq -o json`.
 import fs from "node:fs";
 import crypto from "node:crypto";
@@ -49,9 +52,9 @@ const rest = async (path, init = {}) => {
   if (!r.ok) throw new Error(`${path}: ${r.status} ${t.slice(0, 200)}`);
   return t ? JSON.parse(t) : null;
 };
-const fn = async (name, body) => {
+const fn = async (name, body, extra = {}) => {
   const t0 = Date.now();
-  const r = await fetch(`${URL_}/functions/v1/${name}`, { method: "POST", headers: H, body: JSON.stringify(body) });
+  const r = await fetch(`${URL_}/functions/v1/${name}`, { method: "POST", headers: { ...H, ...extra }, body: JSON.stringify(body) });
   const t = await r.text();
   console.log(`${name} ${Math.round((Date.now() - t0) / 1000)}s ${r.status} ${t.slice(0, 140)}`);
   return r.ok;
@@ -108,18 +111,32 @@ for (const row of BOOK) {
 
 // ---- content: the real pipeline ------------------------------------------------------------------
 const syms = BOOK.map((b) => b.symbol).filter((s) => !s.startsWith("$"));
-if (!process.argv.includes("--no-content")) {
+const briefCall = async () => {
+  const body = { user_id: uid, edition, force: true, ...(process.argv.includes("--no-audio") ? { noAudio: true } : {}) };
+  let extra = {};
+  if (process.argv.includes("--out-of-window")) {
+    const t = await rest("rpc/get_secret", { method: "POST", body: JSON.stringify({ secret_name: "internal_token" }) });
+    extra = { "x-internal-token": String(t ?? "") }; body.outOfWindow = true;
+  }
+  return fn("daily-brief", body, extra);
+};
+if (process.argv.includes("--brief-only")) {
+  await briefCall();
+} else if (!process.argv.includes("--no-content")) {
   await fn("price-sync", { symbols: syms });
   await fn("news-sync", { symbols: syms });
   // filings give the brief its earnings dates: without them a holding that reports tonight reads as
   // "no earnings on the calendar" (9/30, MU)
   await fn("filings-sync", { symbols: syms });
   // insights-sync on ~10 symbols hits WORKER_RESOURCE_LIMIT; three at a time fits
-  for (let i = 0; i < syms.length; i += 3) await fn("insights-sync", { symbols: syms.slice(i, i + 3), user_id: uid });
-  await fn("daily-brief", { user_id: uid, edition, force: true });
+  // each request stays at three symbols (the per-request limit); the requests themselves run side by side
+  const groups = []; for (let i = 0; i < syms.length; i += 3) groups.push(syms.slice(i, i + 3));
+  await Promise.all(groups.map((g) => fn("insights-sync", { symbols: g, user_id: uid })));
+  await briefCall();
 }
 
 const book = await rest(`portfolio?select=symbol,qty,price,value,change_pct,total_gl&user_id=eq.${uid}`);
 const total = book.reduce((s, r) => s + Number(r.value ?? 0), 0);
+if (process.env.SEED_OUT) fs.writeFileSync(process.env.SEED_OUT, JSON.stringify({ uid, email: EMAIL, cred: CRED, book }, null, 1));
 for (const b of book) console.log(`${b.symbol.padEnd(6)} ${String(b.price).padStart(9)} ${(Number(b.change_pct ?? 0)).toFixed(2).padStart(6)}%  $${Math.round(Number(b.value ?? 0)).toLocaleString()}`);
 console.log(`TOTAL $${Math.round(total).toLocaleString()}  |  ${book.length} positions  |  uid ${uid}`);

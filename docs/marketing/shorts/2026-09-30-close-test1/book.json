@@ -1,0 +1,58 @@
+[
+ {
+  "symbol": "MU",
+  "qty": 24,
+  "cost": 491.47
+ },
+ {
+  "symbol": "APP",
+  "qty": 30,
+  "cost": 297.5
+ },
+ {
+  "symbol": "HPE",
+  "qty": 375,
+  "cost": 56.71
+ },
+ {
+  "symbol": "NVDA",
+  "qty": 55,
+  "cost": 197.49
+ },
+ {
+  "symbol": "INTC",
+  "qty": 80,
+  "cost": 46.1
+ },
+ {
+  "symbol": "AAPL",
+  "qty": 195,
+  "cost": 251.42
+ },
+ {
+  "symbol": "AMZN",
+  "qty": 110,
+  "cost": 201.02
+ },
+ {
+  "symbol": "GOOGL",
+  "qty": 80,
+  "cost": 308.87
+ },
+ {
+  "symbol": "MSFT",
+  "qty": 67,
+  "cost": 448.13
+ },
+ {
+  "symbol": "AVGO",
+  "qty": 50,
+  "cost": 294.8
+ },
+ {
+  "symbol": "$CASH",
+  "qty": 7500,
+  "cost": 1,
+  "account": "bank"
+ }
+]

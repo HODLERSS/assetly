@@ -1,0 +1,209 @@
+{
+ "date": "2026-10-01",
+ "slug": "2026-10-01-preopen",
+ "demo": 0,
+ "edition": "preopen",
+ "hook": "[Futures] point higher.|[Kashkari] eyes hikes.|[Accenture] reports.",
+ "hook_kicker": "BEFORE THE BELL · OCT 1",
+ "hook_foot": "Assetly",
+ "hook_dur": 1.5,
+ "script": "Futures rose after a softer inflation reading. Traders see hike bets cooling. Kashkari said inflation still worries the Fed. Commentators say hikes may continue. Accenture rose on Q4 earnings due this week. Shares rose ahead of it. Yesterday my portfolio rose 1.0%. What's ahead for my portfolio today? Your portfolio was up 0.98% yesterday.",
+ "grid": 0.3,
+ "card": 1.8,
+ "len_range": [
+  20,
+  30
+ ],
+ "motion": {
+  "to": 1.3,
+  "in": 0.7,
+  "out": 0.6
+ },
+ "lines": [
+  {
+   "voice": "marin",
+   "say": "Futures rose after a softer inflation reading. Traders see hike bets cooling.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "FUTURES · BEFORE THE BELL",
+     "show": [
+      "Futures",
+      "rose",
+      "after",
+      "a",
+      "softer",
+      "inflation",
+      "reading."
+     ]
+    },
+    {
+     "eyebrow": "FUTURES · THE READ",
+     "show": [
+      "Traders",
+      "see",
+      "hike",
+      "bets",
+      "cooling."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "cedar",
+   "say": "Kashkari said inflation still worries the Fed. Commentators say hikes may continue.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "KASHKARI · THE FED",
+     "show": [
+      "Kashkari",
+      "said",
+      "inflation",
+      "still",
+      "worries",
+      "the",
+      "Fed."
+     ]
+    },
+    {
+     "eyebrow": "KASHKARI · THE READ",
+     "show": [
+      "Commentators",
+      "say",
+      "hikes",
+      "may",
+      "continue."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "marin",
+   "say": "Accenture rose on Q4 earnings due this week. Shares rose ahead of it.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "ACCENTURE · EARNINGS",
+     "show": [
+      "Accenture",
+      "rose",
+      "on",
+      "Q4",
+      "earnings",
+      "due",
+      "this",
+      "week."
+     ]
+    },
+    {
+     "eyebrow": "ACCENTURE · THE READ",
+     "show": [
+      "Shares",
+      "rose",
+      "ahead",
+      "of",
+      "it."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "minjae",
+   "say": "Yesterday my portfolio rose 1.0%.",
+   "tempo": 1.06,
+   "cues": [
+    {
+     "eyebrow": "MY PORTFOLIO",
+     "show": [
+      "Yesterday",
+      "my",
+      "portfolio",
+      "rose",
+      "1.0%."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "cedar",
+   "say": "What's ahead for my portfolio today?",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "ASK ASSETLY",
+     "show": [
+      "What's",
+      "ahead",
+      "for",
+      "my",
+      "portfolio",
+      "today?"
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "minjae",
+   "say": "Your portfolio was up 0.98% yesterday.",
+   "tempo": 1.06,
+   "cues": [
+    {
+     "eyebrow": "THE ANSWER",
+     "show": [
+      "Your",
+      "portfolio",
+      "was",
+      "up",
+      "0.98%",
+      "yesterday."
+     ]
+    }
+   ]
+  }
+ ],
+ "beats": [
+  {
+   "take": "take60.mp4",
+   "start": 67.05,
+   "focus_src": 1000,
+   "note": "brief scrolling (Futures point higher.)",
+   "to_cue": 2
+  },
+  {
+   "take": "take60.mp4",
+   "start": 102.42,
+   "focus_src": 1000,
+   "note": "news scrolling (Kashkari eyes more hikes.)",
+   "to_cue": 4
+  },
+  {
+   "take": "take60.mp4",
+   "start": 88.85,
+   "focus_src": 640,
+   "note": "ACN page, chart then scroll",
+   "to_cue": 6
+  },
+  {
+   "take": "take60.mp4",
+   "start": 50.29,
+   "focus_src": 620,
+   "to_cue": 7,
+   "note": "Home: total value, Today, All time, scrolling to the movers"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 112.71,
+   "focus_src": 1450,
+   "to_cue": 8,
+   "note": "Ask: the question typed"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 125.98,
+   "focus_src": 900,
+   "tail": 1.0,
+   "note": "Ask: the real answer, held into the card"
+  }
+ ]
+}

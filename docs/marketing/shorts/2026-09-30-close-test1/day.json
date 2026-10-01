@@ -1,0 +1,215 @@
+{
+ "date": "2026-09-30",
+ "slug": "2026-09-30-close",
+ "demo": 0,
+ "edition": "close",
+ "hook": "[Stocks] end mixed.|[HPE] hits a record.|[Micron] beats.",
+ "hook_kicker": "MARKET CLOSE · SEP 30",
+ "hook_foot": "Assetly",
+ "hook_dur": 1.5,
+ "script": "Stocks closed mixed as Treasury yields rose. Investors weighed softer inflation. Hewlett Packard Enterprise jumped 3.9% on a $1.2 billion server order. Shares hit a record close. Micron topped fourth-quarter estimates, with a strong outlook. Shares rose after hours. My portfolio closed up 0.9%. How did I do this week and this month? Flat this week, up 3.8% this month.",
+ "grid": 0.3,
+ "card": 1.8,
+ "len_range": [
+  20,
+  30
+ ],
+ "motion": {
+  "to": 1.3,
+  "in": 0.7,
+  "out": 0.6
+ },
+ "lines": [
+  {
+   "voice": "marin",
+   "say": "Stocks closed mixed as Treasury yields rose. Investors weighed softer inflation.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "MARKETS · THE CLOSE",
+     "show": [
+      "Stocks",
+      "closed",
+      "mixed",
+      "as",
+      "Treasury",
+      "yields",
+      "rose."
+     ]
+    },
+    {
+     "eyebrow": "MARKETS · THE READ",
+     "show": [
+      "Investors",
+      "weighed",
+      "softer",
+      "inflation."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "cedar",
+   "say": "Hewlett Packard Enterprise jumped 3.9% on a $1.2 billion server order. Shares hit a record close.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "HPE · RECORD",
+     "show": [
+      "Hewlett",
+      "Packard",
+      "Enterprise",
+      "jumped",
+      "3.9%",
+      "on",
+      "a",
+      "$1.2",
+      "billion",
+      "server",
+      "order."
+     ]
+    },
+    {
+     "eyebrow": "HPE · THE READ",
+     "show": [
+      "Shares",
+      "hit",
+      "a",
+      "record",
+      "close."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "marin",
+   "say": "Micron topped fourth-quarter estimates, with a strong outlook. Shares rose after hours.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "MICRON · AFTER HOURS",
+     "show": [
+      "Micron",
+      "topped",
+      "fourth-quarter",
+      "estimates,",
+      "with",
+      "a",
+      "strong",
+      "outlook."
+     ]
+    },
+    {
+     "eyebrow": "MICRON · THE READ",
+     "show": [
+      "Shares",
+      "rose",
+      "after",
+      "hours."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "minjae",
+   "say": "My portfolio closed up 0.9%.",
+   "tempo": 1.06,
+   "cues": [
+    {
+     "eyebrow": "MY PORTFOLIO",
+     "show": [
+      "My",
+      "portfolio",
+      "closed",
+      "up",
+      "0.9%."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "cedar",
+   "say": "How did I do this week and this month?",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "ASK ASSETLY",
+     "show": [
+      "How",
+      "did",
+      "I",
+      "do",
+      "this",
+      "week",
+      "and",
+      "this",
+      "month?"
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "minjae",
+   "say": "Flat this week, up 3.8% this month.",
+   "tempo": 1.06,
+   "cues": [
+    {
+     "eyebrow": "THE ANSWER",
+     "show": [
+      "Flat",
+      "this",
+      "week,",
+      "up",
+      "3.8%",
+      "this",
+      "month."
+     ]
+    }
+   ]
+  }
+ ],
+ "beats": [
+  {
+   "take": "take60.mp4",
+   "start": 81.13,
+   "focus_src": 1000,
+   "note": "brief scrolling (Stocks close mixed.)",
+   "to_cue": 2
+  },
+  {
+   "take": "take60.mp4",
+   "start": 102.81,
+   "focus_src": 640,
+   "note": "HPE page, chart then scroll",
+   "to_cue": 4
+  },
+  {
+   "take": "take60.mp4",
+   "start": 127.61,
+   "focus_src": 640,
+   "note": "MU page, chart then scroll",
+   "to_cue": 6
+  },
+  {
+   "take": "take60.mp4",
+   "start": 64.4,
+   "focus_src": 620,
+   "to_cue": 7,
+   "note": "Home: total value, Today, All time, scrolling to the movers"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 173.12,
+   "focus_src": 1450,
+   "to_cue": 8,
+   "note": "Ask: the question typed"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 199.82,
+   "focus_src": 900,
+   "tail": 1.0,
+   "note": "Ask: the real answer, held into the card"
+  }
+ ]
+}

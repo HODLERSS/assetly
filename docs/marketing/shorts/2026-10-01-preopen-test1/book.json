@@ -1,0 +1,38 @@
+[
+ {
+  "symbol": "ACN",
+  "qty": 120,
+  "cost": 134.19
+ },
+ {
+  "symbol": "AAPL",
+  "qty": 200,
+  "cost": 254.85
+ },
+ {
+  "symbol": "AMZN",
+  "qty": 120,
+  "cost": 202.42
+ },
+ {
+  "symbol": "GOOGL",
+  "qty": 105,
+  "cost": 238.72
+ },
+ {
+  "symbol": "MSFT",
+  "qty": 32,
+  "cost": 406.28
+ },
+ {
+  "symbol": "META",
+  "qty": 28,
+  "cost": 576.13
+ },
+ {
+  "symbol": "$CASH",
+  "qty": 6000,
+  "cost": 1,
+  "account": "bank"
+ }
+]

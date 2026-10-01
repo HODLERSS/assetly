@@ -1,0 +1,179 @@
+{
+ "edition": "close",
+ "date": "2026-09-30",
+ "asof_et": "2026-09-30 21:57 ET",
+ "context": "Tech shares lifted the Nasdaq while the broader market slipped as Treasury yields hit a 24-year high, with Micron's strong earnings report after the bell.",
+ "hot": [
+  "NVDA",
+  "MU",
+  "HPE",
+  "INTC"
+ ],
+ "items": [
+  {
+   "kind": "macro",
+   "symbols": [],
+   "cover": "Stocks close mixed.",
+   "why": "Tech shares lifted the Nasdaq while the S&P 500 slipped as Treasury yields rose.",
+   "why_ids": [
+    "h327",
+    "h335"
+   ],
+   "sentiment": "Investors weighed softer inflation against rising Treasury yields.",
+   "sentiment_ids": [
+    "h324",
+    "h335"
+   ],
+   "figures": [
+    {
+     "symbol": "^GSPC",
+     "field": "pct",
+     "value": -0.25,
+     "feed1": -0.25,
+     "feed2": -0.251602,
+     "ok": true
+    },
+    {
+     "symbol": "^IXIC",
+     "field": "pct",
+     "value": 0.24,
+     "feed1": 0.24,
+     "feed2": 0.24,
+     "ok": true
+    },
+    {
+     "symbol": "^VIX",
+     "field": "pct",
+     "value": 1.87,
+     "feed1": 1.87,
+     "feed2": 1.870324,
+     "ok": true
+    }
+   ],
+   "judge_note": "h327 states tech lifted Nasdaq while broader market slipped; h335 confirms Treasury yields rose. h324 and h335 both frame the session as weighing softer inflation against rising yields."
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "HPE"
+   ],
+   "cover": "HPE hits record high.",
+   "why": "Stock surged on a $1.2 billion server order.",
+   "why_ids": [
+    "h79",
+    "h80"
+   ],
+   "sentiment": "Shares jumped to a fresh record close.",
+   "sentiment_ids": [
+    "h79",
+    "h91"
+   ],
+   "figures": [
+    {
+     "symbol": "HPE",
+     "field": "pct",
+     "value": 3.9,
+     "feed1": 3.9,
+     "feed2": 3.9,
+     "ok": true
+    }
+   ],
+   "judge_note": "Multiple headlines from different publishers confirm the $1.2B server order and the fresh record close."
+  },
+  {
+   "kind": "earnings",
+   "symbols": [
+    "MU"
+   ],
+   "cover": "Micron beats on AI.",
+   "why": "Micron topped Q4 estimates and issued strong Q1 guidance.",
+   "why_ids": [
+    "h166",
+    "h168"
+   ],
+   "sentiment": "Shares rose in after-hours trading following the report.",
+   "sentiment_ids": [
+    "h170",
+    "h171"
+   ],
+   "figures": [
+    {
+     "symbol": "MU",
+     "field": "pct",
+     "value": 0.0,
+     "feed1": 0.0,
+     "feed2": 0.0,
+     "ok": true
+    }
+   ],
+   "judge_note": "h166 and h168 confirm Q4 beat and strong Q1 guidance. h170 explicitly says 'post-market' surge; h171 implies after-hours rise following the report."
+  }
+ ],
+ "dropped": [
+  {
+   "kind": "stock",
+   "symbols": [
+    "APP"
+   ],
+   "cover": "AppLovin hits 52-week low.",
+   "why": "Shares fell after Wells Fargo described the recent Pixel install spike as a false start.",
+   "why_ids": [
+    "h25",
+    "h226"
+   ],
+   "sentiment": "Shares declined on the session.",
+   "sentiment_ids": [
+    "h22",
+    "h24",
+    "h227"
+   ],
+   "figures": [
+    {
+     "symbol": "APP",
+     "field": "pct",
+     "value": -4.98,
+     "feed1": -4.98,
+     "feed2": -4.98,
+     "ok": true
+    }
+   ],
+   "drop": [
+    "why: fewer than 2 independent sources"
+   ]
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "APP"
+   ],
+   "cover": "AppLovin hits 52-week low.",
+   "why": "Shares fell to a fresh 52-week low.",
+   "why_ids": [
+    "h24",
+    "h25",
+    "h28"
+   ],
+   "sentiment": "Shares declined on the session.",
+   "sentiment_ids": [
+    "h22",
+    "h24",
+    "h227"
+   ],
+   "figures": [
+    {
+     "symbol": "APP",
+     "field": "pct",
+     "value": -4.98,
+     "feed1": -4.98,
+     "feed2": -4.98,
+     "ok": true
+    }
+   ],
+   "judge_note": "All three headlines from 24/7 Wall St., TradingView, and Investing.com confirm AppLovin shares fell to a fresh 52-week low. All three sentiment headlines from Quiver Quantitative, 24/7 Wall St., and Yahoo Finance confirm shares declined on the session.",
+   "drop": [
+    "judge: WHY only restates the move ('shares fell to a fresh 52-week low') without stating a cause; h25 mentions Wells Fargo's 'false start' call as the trigger, but the claim's WHY omits any cause."
+   ]
+  }
+ ],
+ "model": "mara/MiniMax-M3"
+}

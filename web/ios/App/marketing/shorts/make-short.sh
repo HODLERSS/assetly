@@ -103,12 +103,23 @@ for i, b in enumerate(d["beats"]):
     z = b.get("zoom")
     if z and z.get("out") == "auto": b["zoom"] = dict(z, out=[round(b["dur"] - 0.8, 2), round(b["dur"] - 0.1, 2)])   # settle before the cut
     cur += b["dur"]; beats.append(b)
+# over the ceiling by a little: take it out of the held last beat (never below 0.4 s after the last word) and the card
+mx = d.get("len_range", [20, 25])[1] - 0.05; card = d.get("card", 2.2)
+over = cur + card - mx
+if over > 0 and beats:
+    cut = min(over, max(0.0, beats[-1]["dur"] - (last + 0.4 - (cur - beats[-1]["dur"]))))
+    beats[-1]["dur"] = round(beats[-1]["dur"] - cut, 3); cur -= cut; over -= cut
+    if over > 0 and card - over >= 1.5: d["card"] = card = round(card - over, 2); over = 0
+    json.dump(d, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
+    print(f"over the {mx + 0.05:.0f} s ceiling: last beat trimmed by {cut:.2f}s, card {card:.2f}s")
 json.dump({"hook": hook, "beats": beats, "product": round(cur, 3)}, open("timing.json", "w"), indent=1)
 print("timing: hook %.2fs, beats %s, product %.2fs" % (hook, [b["dur"] for b in beats], cur))
 PY
 LEN_PRODUCT=$(python3 -c "import json;print(json.load(open('timing.json'))['product'])")
 LEN=$(python3 -c "import json;print(round($LEN_PRODUCT+json.load(open('$DAY')).get('card',2.2),2))")
-python3 -c "import sys; sys.exit('Short is %.2fs, outside 20-25s: tighten the script' % $LEN) if not 20 <= $LEN <= 25 else None"
+# "len_range" (default [20, 25]); the v1.0 skill's editions run 20-30 s with a hard 30.0 s ceiling
+LMIN=$(python3 -c "import json;print(json.load(open('$DAY')).get('len_range',[20,25])[0])"); LMAX=$(python3 -c "import json;print(json.load(open('$DAY')).get('len_range',[20,25])[1])")
+python3 -c "import sys; sys.exit('Short is %.2fs, outside $LMIN-${LMAX}s: tighten the script' % $LEN) if not $LMIN <= $LEN <= $LMAX else None"
 
 # 3. sound first (the speaking pills are drawn from the mixed voice track): Apple Loops bed at the
 # Short's length, the voice cues, sidechain duck, -14 LUFS
@@ -139,7 +150,7 @@ json.dump(plan, open("plan.json", "w"), indent=1)
 PY
 END_SUB1="Your portfolio, explained daily" END_SUB2="Not financial advice." END_CTA="Available on the App Store" \
   python3 "$M/make-spot.py" plan.json video.mp4
-FINAL="$OUT/assetly-short-$DATE.mp4"
+FINAL="$OUT/assetly-short-$(python3 -c "import json;d=json.load(open('$DAY'));print(d.get('slug',d['date']))").mp4"
 ffmpeg -v error -y -i video.mp4 -i mix.wav -map 0:v -map 1:a -c:v copy -af "afade=t=out:st=$(python3 -c "print($LEN-1.2)"):d=1.2" \
   -c:a aac_at -b:a 256k -ar 48000 -movflags +faststart "$FINAL"   # no -shortest: it cut 9 video frames
 
@@ -155,5 +166,6 @@ L="disclaimer.png,0,0"; for f in cards/hook*.png cards/end_*.png; do L="$L;$f,0,
 for f in $(ls fill | awk 'NR%120==60'); do L="$L;fill/$f,0,150"; done
 [ -d spk ] && for f in $(ls spk | awk 'NR%240==120'); do L="$L;spk/$f,460,152"; done
 STR="$(python3 -c "import json;d=json.load(open('$DAY'));print(d.get('hook',''),d.get('hook_kicker',''),d.get('hook_foot',''))") Not financial advice Your portfolio, explained daily Available on the App Store $(python3 -c "import json;print(' '.join(c.get('eyebrow','') for c in json.load(open('subs.json'))['cues']))")"
-SHORT_PLAN=plan.json SHORT_STRINGS="$STR" SHORT_LAYERS="$L" python3 "$HERE/qa-short.py" "$FINAL" vo-track.wav subs.json script_display.txt "$OUT/youtube-metadata.md" | tee "$OUT/qa-auto.md"
+HOLD_FROM=$(python3 -c "import json;t=json.load(open('timing.json'));print(round(t['hook']+sum(b['dur'] for b in t['beats'][:-1])+0.5,2))")
+SHORT_HOLD_FROM="$HOLD_FROM" SHORT_LEN_RANGE="$LMIN,$LMAX" SHORT_PLAN=plan.json SHORT_STRINGS="$STR" SHORT_LAYERS="$L" python3 "$HERE/qa-short.py" "$FINAL" vo-track.wav subs.json script_display.txt "$OUT/youtube-metadata.md" | tee "$OUT/qa-auto.md"
 echo "-> $FINAL  (demo $NNN)"

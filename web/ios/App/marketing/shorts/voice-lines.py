@@ -31,6 +31,8 @@ TRIM = ("silenceremove=start_periods=1:start_silence=0.02:start_threshold=-50dB:
 def run(*a, **k): return subprocess.run(a, check=True, **k)
 def dur(f): return float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f], capture_output=True, text=True).stdout)
 norm = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())
+NUMW = set("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen "
+           "nineteen twenty thirty forty fifty sixty seventy eighty ninety hundred thousand million billion trillion point percent dollars dollar".split())
 
 from faster_whisper import WhisperModel
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -39,21 +41,40 @@ asr = WhisperModel("small.en", device="cpu", compute_type="int8")
 subs, mix, starts, at = [], [], [], LEAD
 for i, ln in enumerate(day["lines"]):
     v = ln["voice"]; raw = f"line{i}_raw.wav"
-    if ln.get("reuse"):
-        r = ln["reuse"]; run("ffmpeg", "-v", "error", "-y", "-i", r["file"], "-af", f"atrim={r['from']}:{r['to']},asetpts=PTS-STARTPTS", raw)
-    elif v == "minjae":
-        open(f"line{i}.txt", "w").write(ln["say"])
-        run("python3", f"{HERE}/tts.py", f"line{i}.txt", f"line{i}_el"); run("ffmpeg", "-v", "error", "-y", "-i", f"line{i}_el.mp3", raw)
-    else:
-        run("python3", f"{M}/make-voiceover.py", raw, v, env=dict(os.environ, VO_LINE=ln["say"], VO_PACE=ln.get("pace", PACE)))
-    tempo = ln.get("tempo", 1.0 if v == "minjae" else 1.06)
-    run("ffmpeg", "-v", "error", "-y", "-i", raw, "-af", TRIM, "-ar", "48000", "-ac", "1", f"line{i}_t.wav")
-    open("nowords.json", "w").write('[["x",0,0]]')
-    run(f"{HERE}/shrink-pauses.py", f"line{i}_t.wav", "nowords.json", "0.3", f"line{i}_p.wav", "/dev/null", capture_output=True)
-    run("ffmpeg", "-v", "error", "-y", "-i", f"line{i}_p.wav", "-af", f"atempo={tempo}," + TRIM, "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", f"line{i}.wav")
-    D = dur(f"line{i}.wav")
-    segs, _ = asr.transcribe(f"line{i}.wav", word_timestamps=True, beam_size=5)
-    words = [(w.word.strip(), w.start, w.end) for s in segs for w in s.words]
+    # Whisper word-for-word (owner rule): a take whose recognised words differ from the line in anything but a figure's
+    # format is rendered again, up to three takes; the last take is kept and the miss is reported (QA Q28 then decides)
+    for take in range(1 if ln.get("reuse") else 3):
+        if ln.get("reuse"):
+            r = ln["reuse"]; run("ffmpeg", "-v", "error", "-y", "-i", r["file"], "-af", f"atrim={r['from']}:{r['to']},asetpts=PTS-STARTPTS", raw)
+        elif v == "minjae":
+            open(f"line{i}.txt", "w").write(ln["say"])
+            run("python3", f"{HERE}/tts.py", f"line{i}.txt", f"line{i}_el"); run("ffmpeg", "-v", "error", "-y", "-i", f"line{i}_el.mp3", raw)
+        else:
+            r0 = subprocess.run(["python3", f"{M}/make-voiceover.py", raw, v], env=dict(os.environ, VO_LINE=ln["say"], VO_PACE=ln.get("pace", PACE)))
+            if r0.returncode:
+                # gpt-audio can refuse a line that reads like a request ("What should I watch today?" was answered, not
+                # read, three times on 9/30): the app's own voice reads it instead
+                print(f"line {i}: gpt-audio {v} would not read it verbatim; the minjae voice reads it", file=sys.stderr)
+                v = "minjae"; open(f"line{i}.txt", "w").write(ln["say"])
+                run("python3", f"{HERE}/tts.py", f"line{i}.txt", f"line{i}_el"); run("ffmpeg", "-v", "error", "-y", "-i", f"line{i}_el.mp3", raw)
+        tempo = ln.get("tempo", 1.0 if v == "minjae" else 1.06)
+        run("ffmpeg", "-v", "error", "-y", "-i", raw, "-af", TRIM, "-ar", "48000", "-ac", "1", f"line{i}_t.wav")
+        open("nowords.json", "w").write('[["x",0,0]]')
+        run(f"{HERE}/shrink-pauses.py", f"line{i}_t.wav", "nowords.json", "0.3", f"line{i}_p.wav", "/dev/null", capture_output=True)
+        run("ffmpeg", "-v", "error", "-y", "-i", f"line{i}_p.wav", "-af", f"atempo={tempo}," + TRIM, "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", f"line{i}.wav")
+        D = dur(f"line{i}.wav")
+        segs, _ = asr.transcribe(f"line{i}.wav", word_timestamps=True, beam_size=5)
+        words = [(w.word.strip(), w.start, w.end) for s in segs for w in s.words]
+        said = [norm(x) for x in ln["say"].replace("-", " ").split() if norm(x)]
+        heard = [norm(x) for x, _, _ in words for x in [x.replace("-", " ")] if norm(x)]
+        import difflib
+        miss = [(said[a:b], heard[c:d]) for op, a, b, c, d in difflib.SequenceMatcher(a=said, b=heard, autojunk=False).get_opcodes()
+                if op != "equal" and not all(re.search(r"\d", w) or w in NUMW for w in said[a:b] + heard[c:d])]
+        # a brand name heard as its sound-alike ("Vultr" -> "vulture") is not a misread: no retake for that
+        caps = {re.sub(r"[^a-z0-9]", "", w.lower()) for w in re.findall(r"\b[A-Z][A-Za-z]+\b", ln["say"])}
+        miss = [(a, b) for a, b in miss if not (len(b) == 1 and any(w in caps for w in a) and difflib.SequenceMatcher(a=a[-1], b=b[0]).ratio() >= 0.6)]
+        if not miss: break
+        print(f"line {i} take {take + 1}: whisper heard {miss}", file=sys.stderr)
     # match display tokens to recognised words by their letters/digits
     toks = [t for c in ln["cues"] for t in c["show"]]
     times, k, ok = [], 0, True
@@ -75,13 +96,13 @@ for i, ln in enumerate(day["lines"]):
             d = D * (len(t) + 1) / tot; times.append([cur, cur + d]); cur += d
     times[-1][1] = max(times[-1][1], D - 0.03)          # whisper folds a tail word ("dollars") into the last token
     # whisper's word starts can run ~150 ms late after a pause: snap each cue's first word to the audio's
-    # own onset (first 10 ms frame above -35 dBFS after >= 150 ms below it, the QA rule) within 300 ms either side
+    # own onset (first 10 ms frame above -35 dBFS after >= 150 ms below it, the QA rule) within 450 ms either side (340 ms seen 9/30 after a mid-line pause)
     import wave, numpy as np
     wv = wave.open(f"line{i}.wav"); x = np.frombuffer(wv.readframes(wv.getnframes()), dtype=np.int16).astype(float) / 32768
     hop = wv.getframerate() // 100; db = np.array([20 * np.log10(np.sqrt((x[j:j + hop] ** 2).mean()) + 1e-9) for j in range(0, len(x) - hop, hop)])
     j = 0
     for c in ln["cues"]:
-        s = times[j][0]; lo = max(0, int((s - 0.3) * 100)); hi = int((s + 0.3) * 100) + 1
+        s = times[j][0]; lo = max(0, int((s - 0.7) * 100)); hi = int((s + 0.7) * 100) + 1
         ons = [f for f in range(lo, min(hi, len(db))) if db[f] > -35 and (f == 0 or (db[max(0, f - 15):f] < -35).all())]
         if ons: times[j][0] = min(ons, key=lambda f: abs(f / 100 - s)) / 100     # whisper runs early or late by up to ~150 ms
         times[j][1] = max(times[j][1], times[j][0] + 0.05)

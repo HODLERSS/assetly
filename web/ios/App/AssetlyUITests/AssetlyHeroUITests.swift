@@ -348,4 +348,101 @@ final class AssetlyHeroUITests: XCTestCase {
         beat(2.0)
         app.buttons["Home"].tap(); beat(2.0)
     }
+
+    // MARK: the v1.0 Short (assetly-shorts skill)
+
+    /// Wall-clock marks (seconds since 1970; the simulator shares the host clock) so the build can pick every beat
+    /// from the display recording by name instead of from a contact sheet. Attached as "short-markers" with every
+    /// on-screen text of the Ask answer, which the pipeline fact-checks before the answer is shown.
+    private var marks: [[String: Any]] = []
+    private func mark(_ name: String) { marks.append(["name": name, "t": Date().timeIntervalSince1970]) }
+
+    private func openPositionMarked(_ sym: String, range: String) {
+        if app.buttons["Home"].exists { app.buttons["Home"].tap(); beat(0.8) }
+        let close = button(startingWith: "Close the brief")
+        if close.exists { close.tap(); beat(0.6) }
+        scroll(.down, 0.5); scroll(.down, 0.5); beat(0.6)
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", sym + " ")).firstMatch
+        var tries = 0
+        while !(row.exists && row.isHittable) && tries < 7 { scroll(.up, 0.25); beat(0.5); tries += 1 }
+        guard row.exists else { NSLog("SHORT no row for %@", sym); mark("pos_\(sym)_missing"); return }
+        mark("tap_row_\(sym)"); row.tap(); beat(1.6)
+        let chip = app.buttons[range]
+        if !range.isEmpty && chip.waitForExistence(timeout: 6) { chip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        beat(3.4)                                 // the chart loads on the new range
+        mark("pos_\(sym)_chart"); beat(2.2)       // header + chart held
+        mark("pos_\(sym)_scroll")
+        glide(.up, 0.30); beat(1.5)               // chart -> intelligence
+        glide(.up, 0.30); beat(1.5)               // intelligence -> shares, value, gain
+        glide(.up, 0.22); beat(1.6)
+        mark("pos_\(sym)_end")
+    }
+
+    func testGshort() {
+        // the marks and the answer are attached even when a step fails, so a partial take is still diagnosable
+        addTeardownBlock { [self] in
+            let texts = app.staticTexts.allElementsBoundByIndex.map { $0.label }
+            let payload: [String: Any] = ["marks": marks, "question": env("ASK_QUESTION"), "texts": texts]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted]),
+               let s = String(data: data, encoding: .utf8) {
+                let a = XCTAttachment(string: s); a.name = "short-markers"; a.lifetime = .keepAlways; add(a)
+            }
+        }
+        app.launch()
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 60), "not signed in for the take")
+        beat(3.0); mark("home_top"); beat(2.6)    // total value, today, all time
+        mark("home_scroll")
+        glide(.up, 0.20, 300); beat(1.3)          // the brief card
+        glide(.up, 0.24, 300); beat(1.5)          // movers
+        mark("home_movers")
+        glide(.up, 0.30, 300); beat(1.5)          // positions
+        mark("home_end")
+        glide(.down, 0.50, 1400); glide(.down, 0.50, 1400); beat(1.0)
+
+        let read = button(startingWith: "Read")
+        if read.waitForExistence(timeout: 10) { mark("tap_read"); read.tap() }
+        beat(1.8); mark("brief_open"); beat(1.2)
+        mark("brief_scroll")
+        glide(.up, 0.22, 260); beat(1.3)
+        glide(.up, 0.22, 260); beat(1.3)
+        glide(.up, 0.22, 260); beat(1.5)
+        mark("brief_end")
+
+        let range = env("DAILY_RANGE")
+        let symbols = env("DAILY_SYMBOLS").isEmpty ? [] : env("DAILY_SYMBOLS").split(separator: ",").map(String.init)
+        for sym in symbols { openPositionMarked(sym, range: range) }
+
+        if app.buttons["News"].exists { mark("tap_news"); app.buttons["News"].tap(); beat(2.6) }
+        mark("news")
+        glide(.up, 0.24, 320); beat(1.3)
+        glide(.up, 0.24, 320); beat(1.5)
+        mark("news_end")
+
+        // Ask, on camera: the question typed word by word, the real answer, then a slow scroll through it
+        let q = env("ASK_QUESTION").isEmpty ? "How did I do this week and this month?" : env("ASK_QUESTION")
+        if app.buttons["Ask"].exists { mark("tap_ask"); app.buttons["Ask"].tap(); beat(1.6) }
+        mark("ask_screen")
+        let field = app.textFields["Ask about your portfolio"].exists ? app.textFields["Ask about your portfolio"] : app.textFields.firstMatch
+        if field.waitForExistence(timeout: 10) {
+            field.tap(); _ = app.keyboards.element.waitForExistence(timeout: 8); beat(0.5)
+            mark("ask_typing")
+            let words = q.split(separator: " ").map(String.init)
+            for (i, w) in words.enumerated() { app.typeText(i == words.count - 1 ? w : w + " ") }
+            beat(0.5)
+            mark("ask_sent")
+            // the composer's Send (the keyboard has its own "send" key too, so match the first web button)
+            let send = app.webViews.buttons.matching(NSPredicate(format: "label == 'Send'")).firstMatch
+            if send.exists && send.isEnabled { send.tap() }
+            else { for n in ["send", "Send", "Return", "return", "Go", "go"] where app.keyboards.buttons[n].firstMatch.exists { app.keyboards.buttons[n].firstMatch.tap(); break } }
+        } else { mark("ask_no_field") }
+        // the answer is in when the thinking dots are gone (up to the function's own ~60 s budget)
+        let thinking = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Thinking'")).firstMatch
+        _ = thinking.waitForExistence(timeout: 5)
+        let t0 = Date()
+        while thinking.exists && Date().timeIntervalSince(t0) < 75 { beat(0.25) }
+        // held, not scrolled: the answer is the last beat and holds into the end card (a drag here sent the app to the
+        // home screen in one 9/30 take)
+        mark("ask_answer"); beat(7.0)
+        mark("ask_end")
+    }
 }

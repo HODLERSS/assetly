@@ -24,7 +24,8 @@ pr = json.loads(run("ffprobe", "-v", "error", "-show_entries", "format=duration:
 dur = float(pr["format"]["duration"]); v = next(s for s in pr["streams"] if s["codec_type"] == "video"); a = next(s for s in pr["streams"] if s["codec_type"] == "audio")
 vdur = float(v["duration"])
 # streams end within 0.04 s of each other: one AAC frame (21 ms) plus one video frame (17 ms)
-row("Q1", "Duration (video runs the whole file)", 20.0 <= dur <= 25.0 and abs(vdur - dur) <= 0.04, f"{dur:.2f} s, video {vdur:.3f} s")
+LMIN, LMAX = (float(x) for x in os.environ.get("SHORT_LEN_RANGE", "20,25").split(","))
+row("Q1", f"Duration {LMIN:.0f}-{LMAX:.0f} s (video runs the whole file)", LMIN <= dur <= LMAX and abs(vdur - dur) <= 0.04, f"{dur:.2f} s, video {vdur:.3f} s")
 head = open(mp4, "rb").read(200000); faststart = head.find(b"moov") != -1 and (head.find(b"mdat") == -1 or head.find(b"moov") < head.find(b"mdat"))
 fmt_ok = (v["width"], v["height"]) == (1080, 1920) and v["r_frame_rate"] in ("60/1", "30/1") and v["codec_name"] == "h264" and v["profile"] == "High" and v["pix_fmt"] == "yuv420p" and a["codec_name"] == "aac" and a["sample_rate"] == "48000" and faststart
 row("Q2", "Format", fmt_ok, f"{v['width']}x{v['height']} {v['r_frame_rate']} fps {v['codec_name']} {v['profile']} {v['pix_fmt']}, {a['codec_name']} {a['sample_rate']} Hz, faststart={faststart}")
@@ -43,6 +44,8 @@ fd = run("ffmpeg", "-hide_banner", "-i", mp4, "-vf", "freezedetect=n=0.001:d=2",
 fz = [(float(s), float(e)) for s, e in zip(re.findall(r"freeze_start: ([\d.]+)", fd), re.findall(r"freeze_end: ([\d.]+)", fd))]
 fz += [(float(s), dur) for s in re.findall(r"freeze_start: ([\d.]+)", fd)[len(fz):]]
 card_start = dur - 3.2                                    # the end card is a declared hold
+# the last beat holds its push into the card (one camera language): from 0.5 s into it, a still screen is declared too
+if os.environ.get("SHORT_HOLD_FROM"): card_start = min(card_start, float(os.environ["SHORT_HOLD_FROM"]))
 undeclared = [(s, e) for s, e in fz if s < card_start]
 row("Q6", "No frozen video (outside the end card)", not undeclared, f"freezes: {[(round(s,2), round(e,2)) for s, e in fz] or 'none'}")
 
@@ -77,7 +80,7 @@ out = [b for b in boxes if b[1] < 60 or b[3] > 950 or b[2] < 100 or b[4] > 1536]
 row("Q10", "Overlay text inside safe zone (x 60-950, y 100-1536)", bool(boxes) and not out, f"{len(boxes)} layers checked; union x {min(b[1] for b in boxes)}-{max(b[3] for b in boxes)}, y {min(b[2] for b in boxes)}-{max(b[4] for b in boxes)}" if boxes else "no layers passed")
 
 # Q13 word list
-BAN = r"\b(buy|sell|should|must-own|recommend|guaranteed|skyrocket|soar|soars|soaring|explode|moon|crush|crushed|massive|insane|huge|don't miss|act now|best stock|secret|bagger|yolo|alpha|beta|eps|p/e|guidance|bps|basis points|multiple|catalyst|thesis|tripwire|setup|capex|tam)\b"
+BAN = r"\b(buy|sell|should|must-own|recommend|guaranteed|skyrocket|soar|soars|soaring|explode|moon|crush|crushed|massive|insane|huge|don't miss|act now|best stock|secret|bagger|yolo|alpha|beta|eps|p/e|guidance|bps|basis points|multiple|catalyst|thesis|tripwire|setup|capex|tam|tape|book|print)\b"
 texts = open(script_f).read() + "\n" + open(meta_f).read() + "\n" + " ".join(t for c in subs for t, _ in c["words"])
 hits = sorted(set(m.lower() for m in re.findall(BAN, texts, re.I))); dash = "\u2014" in texts or "\u2013" in texts
 emoji = re.findall(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", texts)

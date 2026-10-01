@@ -64,7 +64,7 @@ mix_pass() {   # <gain-dB> <out>
     [0:a]aresample=${SR}[bed]; [1:a]anull[vo]; [2:a]anull[key];
     [bed][key]sidechaincompress=threshold=0.05:ratio=4:attack=20:release=500:makeup=1:level_sc=${DUCK_SC}[ducked];
     [ducked][vo]amix=inputs=2:normalize=0:duration=first[mix];
-    [mix]volume=${1}dB,alimiter=limit=0.84:level=disabled,apad,atrim=end_sample=${LEN_S}[a]
+    [mix]volume=${1}dB,alimiter=limit=0.82:level=disabled,apad,atrim=end_sample=${LEN_S}[a]
   " -map "[a]" -ar ${SR} -ac 2 -c:a pcm_s24le "$2"
 }
 mix_pass 0 "$W/flat.wav"

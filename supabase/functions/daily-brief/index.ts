@@ -452,7 +452,8 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     const note = edition === "assessment" && own0 && !/\bthe risk:/i.test(note1) ? `${note1.trim().replace(/[.\s]+$/, "")}. ${codeRisk(own0.kind, own0.theme ?? "")}` : note1;
     return { ...p, note, watch: tidyClauseEndings(!w0 ? "" : earn || estOk ? canon[0] ?? (estOk ? stripStrayEst(text(w0)).replace(/\s*\(est\)/i, "") + " (est)" : "") : dated || ungroundedItem(w0) ? "" : stripStrayEst(text(w0))) };
   });
-  s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today).filter((c) => !weekendDated([c], today).length && !ungroundedItem(c));
+  // r30: a stored calendar line that is not an earnings estimate kept its desk words ("ahead of the print")
+  s.calendar = canonicalCalendar(src.calendar ?? [], ests, "", today).filter((c) => !weekendDated([c], today).length && !ungroundedItem(c)).map((c) => plainScrub(c, PORTFOLIO_PLAIN));
   if (src.ideas) s.ideas = src.ideas.map(text).filter((i) => !repairDrops(i).length);
   return s;
 }
@@ -2020,6 +2021,14 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // "Crypto risk: hedge with stablecoin yield platforms to smooth volatility" shipped in GAPS & IDEAS)
       if (!backfillOnly) {
         const keepOr = (t: string, fallback: string) => sanitize(t) || fallback;
+        // r30: the grammar pass rewrites sentences on a model AFTER the plain-words pass, so desk words ("a mixed tape",
+        // "the thesis") can come back; the same idempotent scrub runs once more over every shown field
+        const pw = (t: string) => plainScrub(t, PORTFOLIO_PLAIN);
+        sections.lede = pw(sections.lede); sections.overnight = pw(sections.overnight); sections.desk_view = pw(sections.desk_view);
+        if (sections.horizon) sections.horizon = pw(sections.horizon);
+        sections.ideas = (sections.ideas ?? []).map(pw);
+        sections.positions = sections.positions.map((p) => ({ ...p, note: pw(p.note), watch: pw(p.watch) }));
+        sections.calendar = (sections.calendar ?? []).map(pw);
         sections.lede = keepOr(sections.lede, stripVerdictTails(sections.lede));
         sections.overnight = keepOr(sections.overnight, sections.overnight);
         sections.desk_view = keepOr(sections.desk_view, stripVerdictTails(sections.desk_view));

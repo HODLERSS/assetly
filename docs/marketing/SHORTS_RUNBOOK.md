@@ -1,5 +1,11 @@
 # Daily market Short: runbook
 
+> **v1.0 (2026-09-30): three editions a day are made by the `assetly-shorts` skill**
+> (`~/.claude/skills/assetly-shorts/`, one command: `scripts/run.sh preopen|midday|close [--date D] [--test]`):
+> research -> portfolio -> account + brief -> facts -> take with Ask on camera -> Ask check -> storyline -> build ->
+> QA gate (Q1-Q29 in SHORTS_QUALITY.md; refuses to deliver on any failure). The manual steps below are what it automates;
+> keep them for one-off Shorts and for debugging a stage.
+
 One Short per US trading day, after the close: the day's 2-3 biggest AI / market stories, told as one
 demo account's Assetly brief. 20-25 s, 1080x1920, voiced in the Assetly narration voice, word-synced
 subtitles, ends on the App Store card. Quality bar: [SHORTS_QUALITY.md](SHORTS_QUALITY.md).

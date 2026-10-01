@@ -1,0 +1,204 @@
+{
+ "edition": "preopen",
+ "date": "2026-10-01",
+ "asof_et": "2026-09-30 22:38 ET",
+ "context": "Futures are higher overnight as softer inflation data cools rate hike bets, with Micron's earnings beat and AI news lifting tech stocks ahead of Accenture's report.",
+ "hot": [
+  "ACN"
+ ],
+ "items": [
+  {
+   "kind": "macro",
+   "symbols": [],
+   "cover": "Futures point higher.",
+   "why": "S&P 500 and Nasdaq futures rose after a softer core PCE inflation reading.",
+   "why_ids": [
+    "h332",
+    "h354"
+   ],
+   "sentiment": "Traders see softer inflation cooling rate hike bets.",
+   "sentiment_ids": [
+    "h332",
+    "h354"
+   ],
+   "figures": [],
+   "judge_note": "Both headlines link the PCE report to futures rally and cooling hike odds; h332 explicitly cites the Core PCE surprise as the cause, h354 confirms traders flipped to a hold after the PCE report."
+  },
+  {
+   "kind": "macro",
+   "symbols": [],
+   "cover": "Kashkari eyes more hikes.",
+   "why": "Kashkari said inflation pressures remain a concern for the Fed.",
+   "why_ids": [
+    "h345",
+    "h346"
+   ],
+   "sentiment": "Kashkari signals the Fed is not done tightening.",
+   "sentiment_ids": [
+    "h345",
+    "h346"
+   ],
+   "figures": [],
+   "judge_note": "Both headlines from different publishers (Barron's, Reuters) confirm Kashkari views inflation pressures as a concern requiring further Fed action, signaling more tightening ahead."
+  },
+  {
+   "kind": "earnings",
+   "symbols": [
+    "ACN"
+   ],
+   "cover": "Accenture reports today.",
+   "why": "Accenture is set to report Q4 earnings this week.",
+   "why_ids": [
+    "h175",
+    "h176"
+   ],
+   "sentiment": "Shares rose about 3% ahead of the report.",
+   "sentiment_ids": [
+    "h172",
+    "h174"
+   ],
+   "figures": [
+    {
+     "symbol": "ACN",
+     "field": "pct",
+     "value": 0.45,
+     "feed1": 0.45,
+     "feed2": 0.5,
+     "ok": true
+    }
+   ],
+   "judge_note": "Both headlines confirm Accenture earnings are anticipated this week (Thursday/Oct 1), and both GuruFocus and TradingKey confirm shares rose roughly 3% (3.5% and 3.18%) ahead of the report."
+  }
+ ],
+ "dropped": [
+  {
+   "kind": "earnings",
+   "symbols": [
+    "MU"
+   ],
+   "cover": "Micron beats views.",
+   "why": "Micron reported after-hours earnings that crushed views on AI demand.",
+   "why_ids": [
+    "h52",
+    "h334"
+   ],
+   "sentiment": "Micron's AI beat lifts futures and chip stocks.",
+   "sentiment_ids": [
+    "h52",
+    "h334"
+   ],
+   "figures": [],
+   "drop": [
+    "MU: feeds disagree on the move"
+   ]
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "RKLB"
+   ],
+   "cover": "Rocket Lab lands deals.",
+   "why": "NASA awarded Rocket Lab two new missions and it secured a record 20-launch deal.",
+   "why_ids": [
+    "h1",
+    "h2"
+   ],
+   "sentiment": "Shares rose after hours on the news.",
+   "sentiment_ids": [
+    "h1",
+    "h2"
+   ],
+   "figures": [],
+   "drop": [
+    "RKLB: feeds disagree on the move"
+   ]
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "CEG"
+   ],
+   "cover": "Constellation, Amazon deal.",
+   "why": "Constellation Energy signed a 20-year nuclear power deal with Amazon.",
+   "why_ids": [
+    "h15",
+    "h16"
+   ],
+   "sentiment": "The deal expands Amazon's nuclear power footprint.",
+   "sentiment_ids": [
+    "h18",
+    "h28"
+   ],
+   "figures": [],
+   "drop": [
+    "CEG: feeds disagree on the move"
+   ]
+  },
+  {
+   "kind": "earnings",
+   "symbols": [
+    "MU"
+   ],
+   "cover": "Micron beats views.",
+   "why": "Micron reported after-hours earnings that crushed views on AI demand.",
+   "why_ids": [
+    "h52",
+    "h334"
+   ],
+   "sentiment": "Micron's AI beat lifts futures and chip stocks.",
+   "sentiment_ids": [
+    "h52",
+    "h334"
+   ],
+   "figures": [],
+   "drop": [
+    "MU: feeds disagree on the move"
+   ]
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "RKLB"
+   ],
+   "cover": "Rocket Lab lands deals.",
+   "why": "NASA awarded Rocket Lab two new missions and it secured a record 20-launch deal.",
+   "why_ids": [
+    "h1",
+    "h2"
+   ],
+   "sentiment": "Shares jumped after hours on the news.",
+   "sentiment_ids": [
+    "h1",
+    "h2"
+   ],
+   "figures": [],
+   "drop": [
+    "RKLB: 'jumped' needs a 2%+ move on both feeds, got +2.93/+1.49",
+    "RKLB: feeds disagree on the move"
+   ]
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "CEG"
+   ],
+   "cover": "Constellation, Amazon deal.",
+   "why": "Constellation Energy signed a 20-year nuclear power deal with Amazon.",
+   "why_ids": [
+    "h15",
+    "h16"
+   ],
+   "sentiment": "Shares rose overnight on the Amazon agreement.",
+   "sentiment_ids": [
+    "h14",
+    "h15"
+   ],
+   "figures": [],
+   "drop": [
+    "CEG: says up, feeds +2.75/-0.65",
+    "CEG: feeds disagree on the move"
+   ]
+  }
+ ],
+ "model": "mara/MiniMax-M3"
+}

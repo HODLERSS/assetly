@@ -28,10 +28,32 @@ with the proof frames open, and recorded in the same report.
 | Q19 | Real scrolling | at least 3 beats whose source footage scrolls for >= 0.5 s (frame-to-frame row change in the take) | frame differencing of each beat's source window |
 | Q20 | Insight, not headlines | each story line says WHY it moved and the market or community SENTIMENT, attributed ("analysts", "commentators"), and every claim has two sources in sources.md | sources.md insight table |
 
+## v1.0 additions (assetly-shorts skill, three editions a day)
+
+The skill (`~/.claude/skills/assetly-shorts/`, entry `scripts/run.sh preopen|midday|close`) measures every row above
+plus the rows below, and REFUSES to deliver (exit 1, nothing copied into `docs/marketing/shorts/`) if any automatic row
+fails. Q1 is widened to the v1.0 length: **20.0 to 30.0 s, hard maximum 30.0 s** (`len_range` in day.json).
+
+| # | Metric | Pass when | How it is measured |
+|---|---|---|---|
+| Q21 | Ask beat | the question is typed on camera in the app (>= 1.2 s) and the real answer is on screen >= 2.5 s; every $ and % figure in the answer matches the portfolio's own figures recomputed from a second feed (either window convention: 7/30 days) | `facts.py --ask` on the answer text the UI test read off the screen; `timing.json` |
+| Q22 | Portfolio-insight beat | a line over Home (total value, Today, All time) carries a figure from the cross-checked portfolio facts (today / week / month / all time / a holding's gain); positive only when true | `facts.json` (app vs Nasdaq recompute; a disagreement drops the figure) |
+| Q23 | 3-5 market items | 3 to 5 voiced items, each WHY and READ backed by >= 2 independent sources (two publishers AND two different headlines; a syndicated copy is one source) | `research.json`, judge pass |
+| Q24 | Duration | 20.0 to 30.0 s | ffprobe |
+| Q25 | Edition-correct timing words | the script uses the edition's words (pre-open: this morning / before the bell / premarket / futures / today; midday: so far / midday / this afternoon; close: closed / today / after the bell) and none of another edition's | regex over the final script |
+| Q26 | Upload copy | `-upload.mp4` <= 9.9 MB and SSIM >= 0.995 against the master (a copy when the master already fits) | ffmpeg `ssim` |
+| Q27 | Metadata | title <= 70 chars; description carries "Portfolio shown is illustrative. Not financial advice.", https://apps.apple.com/app/id6811739789 and https://hodlerss.github.io/assetly/about.html; hashtags include #Shorts; no "demo" | `youtube-metadata.json` |
+| Q28 | Whisper round trip | faster-whisper small.en on the FINAL mix returns the script word for word (a figure may differ only in format: "1.8%" vs "one point eight percent") | `asr-transcript.txt` |
+| Q29 | No loading frame | the phone screen at the middle of every beat has real detail (edge density), so no grey skeleton or blank page is on screen | `proof/beat*.png` |
+
+Market-figure rule (v1.0): a price move is spoken only when the CNBC quote service and the Nasdaq quote API agree (within
+0.05 points; 0.35 mid-session); after-hours and premarket directions need BOTH feeds' extended quotes; a strong verb
+("jumped", "surged", "sank", "plunged") needs a 2%+ move on both feeds. A disagreement drops the figure or the item.
+
 **Q13 word list** (case-insensitive, whole words): buy, sell, should, must-own, recommend, guaranteed,
 skyrocket, soar, soars, soaring, explode, moon, crush, crushed, massive, insane, huge, don't miss, act now,
 best stock, secret, bagger, to the moon, YOLO, alpha, beta, EPS, P/E, guidance, bps, basis points, multiple,
-catalyst, thesis, tripwire, setup, capex, TAM. Also no em dashes and no emoji.
+catalyst, thesis, tripwire, setup, capex, TAM. v1.0 adds (owner, 9/30): tape, book, print, demo. Also no em dashes and no emoji.
 
 **Why these.** A Short is seen muted, on a phone, under the platform's own chrome: the subtitles have
 to carry the story by themselves (Q8, Q9), and anything in the bottom fifth or the right edge is covered

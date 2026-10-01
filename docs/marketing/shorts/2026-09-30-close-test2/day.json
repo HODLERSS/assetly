@@ -1,0 +1,211 @@
+{
+ "date": "2026-09-30",
+ "slug": "2026-09-30-close",
+ "demo": 0,
+ "edition": "close",
+ "hook": "[Hewlett Packard] record.|[Intel] rallies.|[Micron] beats.",
+ "hook_kicker": "MARKET CLOSE · SEP 30",
+ "hook_foot": "Assetly",
+ "hook_dur": 1.5,
+ "script": "Hewlett Packard Enterprise rose on a $1.2 billion order. Shares closed at a record. Intel rose 3.71% as chips climbed. Shares outperformed competitors. Micron beat estimates on data center growth. Shares barely moved after hours. My portfolio closed up 0.8%. How did I do this week and this month? Up 0.3% this week, 5.3% this month.",
+ "grid": 0.3,
+ "card": 1.8,
+ "len_range": [
+  20,
+  30
+ ],
+ "motion": {
+  "to": 1.3,
+  "in": 0.7,
+  "out": 0.6
+ },
+ "lines": [
+  {
+   "voice": "marin",
+   "say": "Hewlett Packard Enterprise rose on a $1.2 billion order. Shares closed at a record.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "HEWLETT PACKARD · RECORD",
+     "show": [
+      "Hewlett",
+      "Packard",
+      "Enterprise",
+      "rose",
+      "on",
+      "a",
+      "$1.2",
+      "billion",
+      "order."
+     ]
+    },
+    {
+     "eyebrow": "HEWLETT PACKARD · THE READ",
+     "show": [
+      "Shares",
+      "closed",
+      "at",
+      "a",
+      "record."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "cedar",
+   "say": "Intel rose 3.71% as chips climbed. Shares outperformed competitors.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "INTEL · CHIP RALLY",
+     "show": [
+      "Intel",
+      "rose",
+      "3.71%",
+      "as",
+      "chips",
+      "climbed."
+     ]
+    },
+    {
+     "eyebrow": "INTEL · THE READ",
+     "show": [
+      "Shares",
+      "outperformed",
+      "competitors."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "marin",
+   "say": "Micron beat estimates on data center growth. Shares barely moved after hours.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "MICRON · AFTER HOURS",
+     "show": [
+      "Micron",
+      "beat",
+      "estimates",
+      "on",
+      "data",
+      "center",
+      "growth."
+     ]
+    },
+    {
+     "eyebrow": "MICRON · THE READ",
+     "show": [
+      "Shares",
+      "barely",
+      "moved",
+      "after",
+      "hours."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "minjae",
+   "say": "My portfolio closed up 0.8%.",
+   "tempo": 1.06,
+   "cues": [
+    {
+     "eyebrow": "MY PORTFOLIO",
+     "show": [
+      "My",
+      "portfolio",
+      "closed",
+      "up",
+      "0.8%."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "cedar",
+   "say": "How did I do this week and this month?",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "ASK ASSETLY",
+     "show": [
+      "How",
+      "did",
+      "I",
+      "do",
+      "this",
+      "week",
+      "and",
+      "this",
+      "month?"
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "minjae",
+   "say": "Up 0.3% this week, 5.3% this month.",
+   "tempo": 1.06,
+   "cues": [
+    {
+     "eyebrow": "THE ANSWER",
+     "show": [
+      "Up",
+      "0.3%",
+      "this",
+      "week,",
+      "5.3%",
+      "this",
+      "month."
+     ]
+    }
+   ]
+  }
+ ],
+ "beats": [
+  {
+   "take": "take60.mp4",
+   "start": 102.85,
+   "focus_src": 640,
+   "note": "HPE page, chart then scroll",
+   "to_cue": 2
+  },
+  {
+   "take": "take60.mp4",
+   "start": 124.84,
+   "focus_src": 640,
+   "note": "INTC page, chart then scroll",
+   "to_cue": 4
+  },
+  {
+   "take": "take60.mp4",
+   "start": 171.63,
+   "focus_src": 640,
+   "note": "MU page, chart then scroll",
+   "to_cue": 6
+  },
+  {
+   "take": "take60.mp4",
+   "start": 64.22,
+   "focus_src": 620,
+   "to_cue": 7,
+   "note": "Home: total value, Today, All time, scrolling to the movers"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 195.21,
+   "focus_src": 1450,
+   "to_cue": 8,
+   "note": "Ask: the question typed"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 210.68,
+   "focus_src": 900,
+   "tail": 1.0,
+   "note": "Ask: the real answer, held into the card"
+  }
+ ]
+}
