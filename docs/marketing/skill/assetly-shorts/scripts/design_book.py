@@ -15,7 +15,8 @@ the expected day P&L at the latest prices, which item each story holding serves)
 """
 import json, os, random, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from lib import Stage, _num, cnbc, get, jdump, jload, log
+from lib import Stage, _num, cnbc, get, jdump, jload, log, rest as sb_rest
+import kr as KRM
 
 W = sys.argv[1]
 SEED = int(sys.argv[sys.argv.index("--seed") + 1]) if "--seed" in sys.argv else None
@@ -25,6 +26,12 @@ NO_HOLD: set = set()     # stories told without holding the name (none by defaul
 
 
 def range52(sym):
+    if KRM.is_kr(sym):                                   # KRX: the year's closes (Yahoo, the app's source), in won
+        try:
+            c = list(KRM.yahoo_chart(sym, "1y", "1d")[1].values())
+            return (min(c), max(c)) if c else (None, None)
+        except Exception:                                # noqa: BLE001
+            return None, None
     try:
         d = json.loads(get(f"https://api.nasdaq.com/api/quote/{sym}/info?assetclass=stocks", tries=2))["data"]
         lo, hi = [_num(x) for x in d["keyStats"]["fiftyTwoWeekHighLow"]["value"].split(" - ")]
@@ -49,10 +56,24 @@ def main():
                     story.append(s)
         story = story[:4]
         hot = [s for s in res.get("hot", []) if s not in story][:2]
-        q = cnbc(list(dict.fromkeys(story + hot + CORE)))
+        core_list = CORE
+        fx = 1.0
+        if res.get("edition") in KRM.KR_EDITIONS:
+            # Korea editions (v1.1.0): a US investor's AI book that also holds Korea's memory leaders. SK hynix and Samsung
+            # are always held (the Ask asks about memory / AI chip exposure), the US chip names they move with are the core
+            for k in ("000660.KS", "005930.KS"):
+                if k not in story and k not in hot: hot.append(k)
+            hot = hot[:3]
+            core_list = ["NVDA", "MU", "AVGO", "TSM", "AMD", "MSFT", "GOOGL", "AMZN"]
+            fx = float(next(r["price"] for r in sb_rest(W, "prices?select=symbol,price&symbol=eq.USDKRW")))
+        q = cnbc([s for s in dict.fromkeys(story + hot + core_list) if not KRM.is_kr(s)])
+        rows = {r["symbol"]: r for r in jload(os.path.join(W, "research-data.json")).get("candidates", [])}
+        for s in story + hot:
+            if KRM.is_kr(s) and s in rows and rows[s].get("last"):
+                q[s] = {"last": rows[s]["last"] / fx, "pct": rows[s].get("pct_feed1"), "krw": rows[s]["last"]}   # USD for sizing
         day = lambda s: (q.get(s) or {}).get("pct") or 0.0
         # core: 4-5 leaders, preferring the day's gainers among them so the day reads true and, when the day allows, positive
-        core = sorted([s for s in CORE if s not in story + hot and (q.get(s) or {}).get("last")], key=lambda s: -day(s))
+        core = sorted([s for s in core_list if s not in story + hot and (q.get(s) or {}).get("last")], key=lambda s: -day(s))
         n_core = 5 if len(story) <= 3 else 4
         picks = core[:max(2, n_core - 1)] + [rng.choice(core[max(2, n_core - 1):])] if len(core) > n_core else core
         names = list(dict.fromkeys(story + hot + picks))[:11]
@@ -81,11 +102,13 @@ def main():
             px = (q.get(s) or {}).get("last")
             if not px: continue
             qty = nice_qty(total * w[s], px)
+            lp = (q.get(s) or {}).get("krw") or px              # the cost basis in the stock's own currency (won for KRX)
             lo, hi = range52(s)
-            lo = lo or px * 0.55; hi = hi or px
-            top = min(px * 0.92, hi)
+            lo = lo or lp * 0.55; hi = hi or lp
+            top = min(lp * 0.92, hi)
             cost = round(rng.uniform(lo, max(lo, top)) if top > lo else lo, 2)
-            book.append({"symbol": s, "qty": qty, "cost": cost})
+            if KRM.is_kr(s): cost = float(round(cost, -2))      # whole won, rounded like a KRX tick
+            book.append({"symbol": s, "qty": qty, "cost": cost, **({"name": KRM.KR_NAMES[s]} if s in KRM.KR_NAMES else {})})
             plan.append({"symbol": s, "qty": qty, "price": px, "value": round(qty * px), "day_pct": day(s), "cost": cost,
                          "range52": [lo, hi], "role": "story" if s in story else "hot" if s in hot else "core"})
         book.append({"symbol": "$CASH", "qty": cash, "cost": 1, "account": "bank"})

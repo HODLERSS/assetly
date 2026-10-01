@@ -13,6 +13,7 @@ Writes quality-report.md, sources.md, script.md, the upload copy and beat proof 
 import difflib, glob, json, os, re, shutil, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import Stage, jdump, jload, log
+import kr as KRM
 
 ED, DATE, W, ST, DST = sys.argv[1:6]
 B = os.path.join(W, "build")
@@ -81,7 +82,7 @@ def main():
         d = meta["description"]
         from datetime import date as _dq
         _dd = _dq.fromisoformat(DATE) if "DATE" in globals() else None
-        okm = (len(meta["title"]) <= 50 and not re.search(r"\b(midday|after the bell|before the bell|pre-?open)\b|\|\s*\w{3} \d", meta["title"], re.I) and "Portfolio shown is illustrative. Not financial advice." in d and "https://apps.apple.com/app/id6811739789" in d
+        okm = (len(meta["title"]) <= 50 and not re.search(r"\b(midday|after the bell|before the bell|pre-?open|seoul open|seoul close)\b|\|\s*\w{3} \d", meta["title"], re.I) and "Portfolio shown is illustrative. Not financial advice." in d and "https://apps.apple.com/app/id6811739789" in d
                and "https://hodlerss.github.io/assetly/about.html" in d and "#Shorts" in meta["hashtags"] and not re.search(r"\bdemo\b", json.dumps(meta), re.I))
         okm = okm and d.splitlines()[0] == day.get("stamp", {}).get("line", "") and bool(meta.get("tags"))
         row("Q27", "Metadata: first line 'Data as of ...', title <= 70, illustrative line, App Store + about links, #Shorts, tags, no 'demo'", okm,
@@ -159,7 +160,7 @@ def main():
         # Q32 / Q33 (owner, 10/1): read the finished frames below the subtitle strip (Vision text recognition): every figure
         # spoken over a beat must be readable in that beat (the app's screen or the beat's labelled chip), and the spoken
         # answer must be a recorded answer line that is on screen and outlined while it is said
-        from screen import ocr, figures as figs_of, shows, shown_times, day_move, direction
+        from screen import ocr, figures as figs_of, shows, shown_times, day_move, direction, range_move, range_move_rows
         from PIL import Image
         t, shots = tm["hook"], []
         for i, bt in enumerate(tm["beats"]):
@@ -173,7 +174,8 @@ def main():
         # what the viewer reads apart from our own words: the phone (below the subtitle strip) and the top-right corner block
         # (a chip or a time tag); the subtitles, the stamp and the disclaimer are not evidence
         keep = lambda r: r[2] >= 470 or (r[1] >= 700 and r[4] <= 260)
-        seen = [[r[0] for p in ps for r in next(it) if keep(r)] for ps in shots]
+        rows_b = [[next(it) for _ in ps] for ps in shots]          # per beat, per frame: the OCR rows with their boxes
+        seen = [[r[0] for fr in rb for r in fr if keep(r)] for rb in rows_b]
         lines_d = day.get("lines", [])
         miss33, det33 = [], []
         for i, ln in enumerate(lines_d[:len(shots)]):
@@ -188,8 +190,15 @@ def main():
             beat = (day.get("beats") or [{}] * len(lines_d))[i]
             if i < n_items and " page" in beat.get("note", ""):      # a holding's own page (not the brief / News)
                 mv = day_move(seen[i]); has_chip = bool((beat.get("chip") or {}).get("label"))
+                rg, rmv = range_move_rows(rows_b[i])
+                if rmv is None: rg, rmv = range_move(seen[i])
                 for sent in re.split(r"(?<=[.!?])\s+", disp):
                     dv = direction(sent)
+                    wf = KRM.window_field(sent) if ED in KRM.KR_EDITIONS else None
+                    if wf:                      # a Korea window sentence agrees with the page's own range change
+                        if dv and (rg != {"m1": "1M", "m3": "3M", "ytd": "YTD"}[wf] or rmv is None or (rmv > 0) != (dv > 0)):
+                            bad.append(f"window {wf} {'up' if dv > 0 else 'down'} vs page {rg} {rmv}")
+                        continue
                     if dv and not (has_chip and re.search(r"premarket|pre-market|after hours|after-hours", sent, re.I)) and \
                             (mv is None or abs(mv) < 0.05 or (mv > 0) != (dv > 0)):
                         bad.append(f"direction {'up' if dv > 0 else 'down'} vs screen {mv}")
@@ -282,7 +291,8 @@ def main():
         hero = day.get("hero")
         if hero:
             lab_ok = hero["label"] in ({"preopen": ("PRE-MARKET",), "midday": ("SO FAR TODAY", "PRE-MARKET"),
-                                        "close": ("TODAY", "AFTER HOURS")}[ED])
+                                        "close": ("TODAY", "AFTER HOURS"), "korea-open": ("PAST MONTH",),
+                                        "korea-close": ("PAST 3 MONTHS",)}[ED])
             fig_a = hero["fig"].replace("\u2212", "-")
             in_beat = 0 <= hero["beat"] < len(seen) and shows(fig_a, figs_of(seen[hero["beat"]]))
             cov = [r for r in r0 if shows(fig_a, figs_of([r[0].replace("\u2212", "-")])) and re.search(r"\d", r[0])]
@@ -301,7 +311,7 @@ def main():
         fw = set(re.findall(r"[a-z]+", fol.lower()))
         hit = lambda rr: bool(fw) and len(fw & set(re.findall(r"[a-z]+", " ".join(r[0] for r in rr).lower()))) >= 0.8 * len(fw)
         beg = re.search(r"\b(like and subscribe|smash|hit (the )?like|subscribe now)\b", " ".join(r[0] for r in r1 + r2), re.I)
-        ok39 = fol in ("Follow for the open, midday and close",) and hit(r1) and hit(r2) and not beg
+        ok39 = fol in ("Follow for the open, midday and close", "Follow for Korea's chips, twice a day") and hit(r1) and hit(r2) and not beg
         row("Q39", "End card: the one follow line (true: three editions every trading day) readable for >= 1 s, no like/subscribe begging",
             ok39, f"\"{fol}\" at {L - 1.05:.2f}s {'read' if hit(r1) else 'NOT read'}, at {L - 0.05:.2f}s {'read' if hit(r2) else 'NOT read'}"
                   + (f"; BEGGING '{beg.group(0)}'" if beg else ""))
@@ -330,7 +340,7 @@ def main():
             delta = abs((shown - datetime.strptime(snap, "%Y-%m-%d %H:%M ET")).total_seconds()) / 60
         except ValueError:
             delta = 1e9
-        label_ok = st.get("edition") == {"preopen": "Pre-open", "midday": "Midday", "close": "Close"}[ED]
+        label_ok = st.get("edition") == {"preopen": "Pre-open", "midday": "Midday", "close": "Close", "korea-open": "Seoul open", "korea-close": "Seoul close"}[ED]
         from PIL import Image
         import numpy as np
         sp = os.path.join(B, "stamp.png"); fails, n = [], 0
@@ -398,7 +408,12 @@ def main():
 def write_sources(ST, res, facts, askc, story, byid):
     L = [f"# Sources: {DATE} {ED}\n", "Every claim is on two independent publishers (Google News RSS, publisher and time as listed); every price figure on two",
          "quote feeds (CNBC quote service and the Nasdaq quote API; after-hours and premarket on both feeds' extended quotes). A figure the",
-         "sources disagree on is dropped, not guessed.\n", "## Market items (spoken)\n"]
+         "sources disagree on is dropped, not guessed.\n"]
+    if ED in KRM.KR_EDITIONS:
+        L += ["KRX figures (v1.1.0): Yahoo (the app's own price source) and Daum Finance's KRX official daily rows (Daum's live quote during",
+              "the session); 1M / 3M / YTD windows on Yahoo's and Daum's (KRX) or Nasdaq's (US) histories; won converted at the app's USDKRW and",
+              "CNBC's KRW=. Naver is not used: its evening price is the Nextrade after-market one, not the KRX close.\n"]
+    L += ["## Market items (spoken)\n"]
     for it in story["items"]:
         r = res["items"][it["n"]]
         L.append(f"### {r['cover']}\n- **Why:** {r['why']}")

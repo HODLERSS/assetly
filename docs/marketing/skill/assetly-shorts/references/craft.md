@@ -74,3 +74,19 @@ reviews. Every rule here is enforced by code where code can enforce it; the rest
 - Edition tense: pre-open "this morning / before the bell / futures"; midday "so far / this afternoon"; close
   "closed / today / after the bell".
 - About 55-60 spoken words in total (the Short must end by 30.0 s including the 2 s card).
+
+## The Korea editions (v1.1.0, owner 10/1)
+
+- Audience: US retail investors (25-45) with AI-heavy portfolios; Korean-American viewers second. The question each Short
+  answers: what Korea's AI-chip names (SK hynix, Samsung Electronics, Hanmi Semiconductor and peers) say about the AI
+  chip trade they already own, over weeks and months. Never day to day, never what to do, never a call on the US open.
+- Lead with the window the page shows (korea-open: "this month" on the 1M chart; korea-close: "over three months" on the
+  3M chart) and its cause; the Seoul session move is the second fact ("closed up 3.2% in Seoul"). A US name's move is
+  its last New York session.
+- Names in full, as the voice says them: "SK hynix" (SK is spoken as letters), "Samsung Electronics", "Hanmi
+  Semiconductor"; the cover brackets the whole name ("[SK hynix] ...").
+- The portfolio line is the all-time gain Home shows: Home's "Today" sums only the markets whose session is today on
+  their own calendar, so it mixes New York and Seoul and is never said.
+- The Ask is about exposure / concentration (memory chips, AI chips): the answer's bucket figures are checked as running
+  sums of the holdings it lists, each holding's value verified on two feeds.
+- The end card: "Follow for Korea's chips, twice a day" (true on every KRX trading day).

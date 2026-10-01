@@ -21,11 +21,13 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import (CT, ET, Stage, agree, cnbc, get, jdump, jload, llm, log, nasdaq, nasdaq_pre, rest)
+import kr as KRM
 
 ED, DATE, W = sys.argv[1], sys.argv[2], sys.argv[3]
 REVERIFY = "--reverify" in sys.argv
 EXCL = set(sys.argv[sys.argv.index("--exclude") + 1].split(",")) if "--exclude" in sys.argv else set()
 os.makedirs(W, exist_ok=True)
+KR = ED in KRM.KR_EDITIONS                   # v1.1.0: the Seoul editions (Korean AI-chip names, long windows)
 
 UNIVERSE = """NVDA MSFT AAPL GOOGL AMZN META TSLA AVGO ORCL AMD TSM MU INTC QCOM ARM ASML SMCI DELL HPE ANET CRWV NBIS
 PLTR SNOW CRM ADBE NOW IBM CSCO MRVL LRCX AMAT KLAC TXN CEG VST NRG GEV ETN VRT OKLO SMR IREN APLD CIFR WULF MARA
@@ -70,11 +72,100 @@ def gnews(q, hours):
     return out
 
 
+window_field = KRM.window_field
+
+
+def kr_data(now):
+    """Korea editions: the KRX AI-chip universe on two KRX feeds (Yahoo, the app's own source; Daum's official days)
+    and the US chip names on CNBC + Nasdaq, each with 1M / 3M / YTD windows on two histories (kr.py); KOSPI on
+    Yahoo + Naver, the SOX on CNBC + Nasdaq; English headlines from Google News."""
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import date as _date
+    today_kr = _date.fromisoformat(DATE)
+    cq = cnbc(KRM.US_CHIPS + [".SOX"])
+    us_today = datetime.now(ET).date() if datetime.now(ET).hour * 60 + datetime.now(ET).minute >= 570 else datetime.now(ET).date() - timedelta(days=1)
+    while us_today.weekday() >= 5: us_today -= timedelta(days=1)
+
+    def kr_row(s):
+        q = KRM.kr_quote(s, DATE)
+        a, b = q.get("pct"), q.get("pct2")
+        w = KRM.windows(s, today_kr, q.get("last"), q.get("last2"))
+        return {"symbol": s, "name": KRM.KR_NAMES.get(s, s), "market": "KR", "last": q.get("last"), "currency": "KRW",
+                "pct_feed1": a, "pct_feed2": b, "feeds_agree": agree(a, b, 0.35 if q.get("live") else 0.06),
+                "session": "live" if q.get("live") else "regular", "regular_pct": a, "ext1": None, "ext2": None, "win": w,
+                "feeds": "Yahoo (the app's source) + Daum (KRX days)"}
+
+    def us_row(s):
+        c, n = cq.get(s) or {}, nasdaq(s) or {}
+        w = KRM.windows(s, us_today, c.get("last"), n.get("last"))
+        return {"symbol": s, "name": NAMES.get(s, c.get("name") or s), "market": "US", "last": c.get("last"), "currency": "USD",
+                "pct_feed1": c.get("pct"), "pct_feed2": n.get("pct"), "feeds_agree": agree(c.get("pct"), n.get("pct"), 0.06),
+                "session": f"US {us_today:%a} close", "regular_pct": c.get("pct"), "ext1": None, "ext2": None, "win": w,
+                "feeds": "CNBC + Nasdaq"}
+    with ThreadPoolExecutor(6) as ex:
+        rows = list(ex.map(kr_row, KRM.KR_UNIVERSE)) + list(ex.map(us_row, [s for s in KRM.US_CHIPS if s not in EXCL]))
+    for r in rows:
+        r["window_moves"] = {f: v["a"] for f, v in r["win"].items() if v["ok"]}
+    macro = {}
+    try:
+        _, ks = KRM.yahoo_chart("^KS11", "5d", "1d"); kk = sorted(ks)
+        nv = json.loads(get("https://m.stock.naver.com/api/index/KOSPI/basic", tries=2))
+        a = round(100 * (ks[kk[-1]] / ks[kk[-2]] - 1), 2) if len(kk) >= 2 and kk[-1] == DATE else None
+        b = float(nv["fluctuationsRatio"]) * (-1 if nv.get("compareToPreviousPrice", {}).get("name") == "FALLING" else 1)
+        macro["^KS11"] = {"name": "KOSPI", "last": ks[kk[-1]] if kk else None, "pct": a, "app_pct": b, "feeds_agree": agree(a, b, 0.06 if not KRM.krx_open_now() else 0.35)}
+    except Exception as e:                                       # noqa: BLE001
+        log(f"KOSPI quote failed: {str(e)[:80]}")
+    sox, soxn = cq.get(".SOX") or {}, nasdaq("SOX", "index") or {}
+    macro[".SOX"] = {"name": "Philadelphia semiconductor index", "last": sox.get("last"), "pct": sox.get("pct"), "app_pct": soxn.get("pct"),
+                     "feeds_agree": agree(sox.get("pct"), soxn.get("pct"), 0.06)}
+    hours = {"korea-open": 60, "korea-close": 96}[ED]
+    queries = [("000660.KS", '"SK hynix"'), ("000660.KS", '"SK hynix" shares'), ("005930.KS", '"Samsung Electronics" shares'),
+               ("005930.KS", '"Samsung Electronics" chip'), ("042700.KS", '"Hanmi Semiconductor"'), ("MU", '"Micron" stock'),
+               ("NVDA", '"Nvidia" stock'), ("MACRO", "Kospi chip stocks"), ("MACRO", "HBM memory demand"), ("MACRO", "memory chip prices"),
+               ("MACRO", "Korea stocks foreign investors"), ("MACRO", "AI chip stocks")]
+    movers = sorted([r for r in rows if r["market"] == "US" and r["window_moves"].get(KRM.RANGE_FIELD[KRM.RANGE[ED]]) is not None],
+                    key=lambda r: -abs(r["window_moves"][KRM.RANGE_FIELD[KRM.RANGE[ED]]]))[:3]
+    queries += [(r["symbol"], f'"{r["name"]}" stock') for r in movers if r["symbol"] not in ("MU", "NVDA")]
+    with ThreadPoolExecutor(8) as ex:
+        got = list(ex.map(lambda tq: (tq[0], gnews(tq[1], hours)), queries))
+    heads, hid = [], 0
+    for tag, items in got:
+        for t, pub, when, link in items[:16]:
+            hid += 1
+            heads.append({"id": f"h{hid}", "tag": tag, "title": t, "publisher": pub, "utc": when.strftime("%Y-%m-%d %H:%M"),
+                          "et": when.astimezone(ET).strftime("%a %-I:%M %p ET"), "link": link})
+    seen, dedup = set(), []
+    for h in heads:
+        k = (h["title"].lower()[:80], h["publisher"])
+        if k not in seen: seen.add(k); dedup.append(h)
+    return rows, macro, dedup
+
+
+US_PICK = """Pick the 6 most useful things a general retail investor should know for this edition: AI-focused but not only AI (macro, Fed,
+    big earnings, sector moves, other hot stocks). Prefer stories with a clear WHY and a visible market or analyst reaction."""
+KR_PICK = """Pick the 6 most useful things a US retail investor with an AI-heavy portfolio should know from Korea's chip market for this
+    edition: at least 3 items about Korean names (SK hynix, Samsung Electronics, Hanmi Semiconductor or a peer in QUOTES), the rest the
+    US chip names they move with or the KOSPI. Lead with the multi-week trend and its cause, not the day's noise. Each QUOTES row has
+    "win": {"m1"|"m3"|"ytd": {"a": pct, "b": pct, "ok": both histories agree}}; use a window only where ok is true. Upcoming events
+    (earnings, a results date) only when a headline states the date. Never a price target, never what to do."""
+FIG_FIELDS = ("pct = the session move; for the long view use field \"" + KRM.RANGE_FIELD[KRM.RANGE[ED]] + "\" (the app pages show the "
+              + KRM.RANGE[ED] + " change) with the value from win." + KRM.RANGE_FIELD[KRM.RANGE[ED]] + ".a; no other window field") if KR else \
+    "pct of the session for this edition"
+
+
 def main():
     now = datetime.now(ET)
     if REVERIFY:          # re-check the stored items against the current rules (no new data, no new pick)
         data = jload(os.path.join(W, "research-data.json")); cand_rows, macro = data["candidates"], data["macro"]
         pick = jload(os.path.join(W, "research-pick.json")); pick["items"] = jload(os.path.join(W, "research.json"))["items"]
+    elif KR:
+        with Stage(W, "research.data"):
+            cand_rows, macro, heads = kr_data(now)
+            data = {"edition": ED, "date": DATE, "asof_et": now.strftime("%Y-%m-%d %H:%M ET"), "candidates": cand_rows, "macro": macro,
+                    "econ": [], "econ_asof": None, "earnings_today": [], "earnings_next": [], "headlines": heads,
+                    "range": KRM.RANGE[ED], "asof_kst": KRM.kst_now().strftime("%Y-%m-%d %H:%M KST")}
+            jdump(data, os.path.join(W, "research-data.json"))
+            log(f"{len(cand_rows)} candidates (KR + US chips), {len(heads)} headlines")
     else:
         with Stage(W, "research.data"):
             # 1a. quotes, two feeds
@@ -192,6 +283,8 @@ def main():
             jdump(data, os.path.join(W, "research-data.json"))
             log(f"{len(cand_rows)} candidates, {len(heads)} headlines, {len(econ)} econ events, {len(earn)} earnings")
 
+    if not REVERIFY:
+        econ, econ_asof, earn, earn_next = data["econ"], data["econ_asof"], data["earnings_today"], data["earnings_next"]
         with Stage(W, "research.llm"):
             frame = {"preopen": "BEFORE THE US OPEN (the Short posts ~9:00 AM ET). Items: what moved overnight and in the premarket (futures, "
                                 "premarket movers and why), and today's calendar (US economic data with ET times, Fed speakers, big earnings). "
@@ -199,7 +292,23 @@ def main():
                      "midday": "MIDDAY (the Short posts ~1:00 PM ET, the market is OPEN). Items: what is moving so far today and why. "
                                "Tense: 'so far', 'this afternoon', 'midday'. Never 'closed' for today.",
                      "close": "AFTER THE CLOSE (the Short posts ~4:20 PM ET). Items: what moved in today's session and why, plus a big "
-                              "after-the-bell report if one is out. Tense: past, 'today', 'closed'."}[ED]
+                              "after-the-bell report if one is out. Tense: past, 'today', 'closed'.",
+                     # v1.1.0 (owner, 10/1): Korea's AI-chip names for US investors, mid-to-long term, never day-to-day
+                     "korea-open": "SEOUL OPEN (the Short posts ~8:00 PM CT, about 35 minutes into the KRX session in Seoul; US investors "
+                                   "watch it the evening before the next US session). MID-TO-LONG TERM, not day to day: Korea's AI memory "
+                                   "and chip-equipment names (SK hynix, Samsung Electronics, Hanmi Semiconductor and peers) in the context "
+                                   "of their PAST-MONTH move (field m1, the window the app's pages show tonight), WHY (HBM and AI memory "
+                                   "demand, memory prices, earnings dates, foreign investors), and what it means as context for the US AI "
+                                   "chip names a US investor holds (Micron, Nvidia): context only, never a call on the US open. The KRX "
+                                   "session move (field pct) may be mentioned with 'so far' or 'in Seoul'. Tense: 'in Seoul', 'so far', "
+                                   "'this month', 'over the past month'.",
+                     "korea-close": "SEOUL CLOSE, THE LONG VIEW (the Short posts ~2:15 AM CT, after the KRX close at 3:30 PM KST; US "
+                                    "investors read it in their morning). MID-TO-LONG TERM: the THREE-MONTH trend (field m3, the window the "
+                                    "app's pages show) of Korea's AI chip names and the US chip names they move with, WHY over that "
+                                    "horizon (HBM supply and demand, memory prices, AI spending, earnings dates), upcoming dated events "
+                                    "(only with the date a headline states), and the read-through for an AI-heavy portfolio's "
+                                    "concentration. The KRX session move (field pct) may lead an item ('closed up 3.2% in Seoul'). "
+                                    "Tense: 'closed', 'over three months', 'in Seoul'."}[ED]
             compact_heads = "\n".join(f'{h["id"]} [{h["tag"]}] {h["publisher"]} ({h["et"]}): {h["title"]}' for h in data["headlines"])
             prompt = f"""Edition: {frame}
     Date: {DATE}. Data as of {data['asof_et']}.
@@ -213,8 +322,7 @@ def main():
     HEADLINES (id [query] publisher (time): title):
     {compact_heads}
 
-    Pick the 6 most useful things a general retail investor should know for this edition: AI-focused but not only AI (macro, Fed,
-    big earnings, sector moves, other hot stocks). Prefer stories with a clear WHY and a visible market or analyst reaction.
+    {KR_PICK if KR else US_PICK}
     For each item:
     - "kind": "stock" | "macro" | "earnings" | "calendar"
     - "symbols": the tickers it is about ([] for pure macro)
@@ -225,8 +333,7 @@ def main():
       "Investors ...") OR the market's reaction ("Shares barely moved after hours."). It must be something at least TWO different
       publishers' headlines say; if only one says it, choose a reaction that two of them do state.
     - "sentiment_ids": ids from AT LEAST TWO DIFFERENT publishers whose headline states that read or reaction
-    - "figures": [{{"symbol": "MU", "field": "pct", "value": -1.84}}] every number the item needs, copied from QUOTES/MACRO (pct of the
-      session for this edition); [] if none
+    - "figures": [{{"symbol": "MU", "field": "pct", "value": -1.84}}] every number the item needs, copied from QUOTES/MACRO ({FIG_FIELDS}); [] if none
     Rules: plain English, no jargon (never: thesis, tape, book, print, catalyst, guidance, capex, EPS, beta, multiple, bps),
     no advice or hype words (buy, sell, should, soar, skyrocket, massive, huge, crush), no em dashes, no figure that is not in QUOTES/MACRO,
     no claim that is not in the cited headlines. Also return "hot": up to 4 tickers from QUOTES that are big, liquid, and in today's
@@ -293,9 +400,14 @@ def direction_conflicts(it, rowsym):
             continue
         for clause in re.split(r"[.;]|, (?:then|but|and) ", text):
             ext = re.search(r"after[- ]hours|after the bell|late trading|extended trading|premarket|pre-market|before the bell", clause, re.I)
-            if not (ext or re.search(r"\b(shares|stock|closed|trading)\b", clause, re.I)):
+            if not (ext or re.search(r"\b(shares|stock|stocks|closed|trading)\b", clause, re.I) or (KR and window_field(clause))):
                 continue                                    # "revenue jumped 11-fold" is not a price claim
-            if ext and ED != "preopen":
+            wf = window_field(clause) if KR else None
+            if wf:                                          # "down 28% over three months": the window's two histories
+                w = (r.get("win") or {}).get(wf) or {}
+                a, b = (w.get("a"), w.get("b")) if w.get("ok") else (None, None)
+                if a is None: bad.append(f"{s}: a {wf} claim without two agreeing histories"); continue
+            elif ext and ED != "preopen":
                 a, b = r.get("ext1"), r.get("ext2")
             else:
                 a, b = (r["pct_feed1"], r["pct_feed2"])
@@ -328,8 +440,15 @@ def verify(items, byid, rowsym, macro):
         for f in it.get("figures", []):
             s, v = f.get("symbol"), f.get("value")
             r = rowsym.get(s); m = macro.get(s)
-            if r:
-                ok = r["feeds_agree"] and agree(v, r["pct_feed1"], 0.051 if ED != "preopen" else 0.15) and agree(v, r["pct_feed2"], {"close": 0.051, "midday": 0.35, "preopen": 0.2}[ED])
+            fld = f.get("field") or "pct"
+            if r and fld in ("m1", "m3", "ytd"):
+                # a long window (Korea editions): both histories agree and the value is theirs (the app page shows feed a)
+                w = (r.get("win") or {}).get(fld) or {}
+                ok = bool(w.get("ok")) and agree(v, w.get("a"), 0.06) and (not KR or fld == KRM.RANGE_FIELD[KRM.RANGE[ED]])
+                figs.append({**f, "feed1": w.get("a"), "feed2": w.get("b"), "ok": ok})
+            elif r:
+                live = {"close": 0.051, "midday": 0.35, "preopen": 0.2, "korea-close": 0.051, "korea-open": 0.35}[ED]
+                ok = r["feeds_agree"] and agree(v, r["pct_feed1"], 0.051 if ED != "preopen" else 0.15) and agree(v, r["pct_feed2"], live)
                 figs.append({**f, "feed1": r["pct_feed1"], "feed2": r["pct_feed2"], "ok": ok})
             elif m:
                 ok = bool(m["feeds_agree"]) and agree(v, m["pct"], 0.051)

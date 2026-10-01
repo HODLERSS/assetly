@@ -82,15 +82,17 @@ if (existing) {
 for (let i = 0; i < 10 && !(await rest(`profiles?select=id&id=eq.${uid}`)).length; i++) await new Promise((r) => setTimeout(r, 500));
 await rest(`profiles?id=eq.${uid}`, { method: "PATCH", body: JSON.stringify({
   display_name: NAME, base_currency: "USD", display_us: "USD", display_kr: "KRW",
-  markets: ["US"], onboarded_at: new Date().toISOString(),
+  markets: BOOK.some((b) => /\.(KS|KQ)$/.test(b.symbol)) ? ["US", "KR"] : ["US"], onboarded_at: new Date().toISOString(),
   investor: { styles: ["growth", "ai_tech"], purpose: ["build"], horizon: ["3-10y"], target: ["12-20%"], risk: ["hold"], level: ["intermediate"], defaulted: [] },
 }) });
 
 // ---- the book ----------------------------------------------------------------------------------
-for (const { symbol } of BOOK) {
+for (const { symbol, name } of BOOK) {
   if (symbol.startsWith("$")) continue;
   if ((await rest(`symbols?select=symbol&symbol=eq.${symbol}`)).length) continue;
-  await fn("symbol-search", { ensure: { symbol, name: symbol, exchange: "NASDAQ", currency: "USD", kind: "equity", yahoo: symbol } });
+  // a KRX name (the Korea Shorts) is listed in won on KRX, so the app converts it and dates it on Seoul's calendar
+  const krx = /\.(KS|KQ)$/.test(symbol);
+  await fn("symbol-search", { ensure: { symbol, name: name ?? symbol, exchange: krx ? "KRX" : "NASDAQ", currency: krx ? "KRW" : "USD", kind: "equity", yahoo: symbol } });
 }
 if (process.argv.includes("--reset")) {
   const old = await rest(`holdings?select=id&user_id=eq.${uid}`);

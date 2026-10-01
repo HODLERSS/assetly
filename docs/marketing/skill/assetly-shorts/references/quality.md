@@ -53,3 +53,10 @@ Verification rules worth remembering:
 - After-hours / premarket direction needs both feeds' extended quotes; a strong verb (jumped, surged, sank) needs 2%+.
 - Portfolio figures: the app's `portfolio` view vs a Nasdaq recompute; any disagreement drops the figure.
 - Ask: every $ and % in the on-screen answer must match a cross-checked figure (7- or 30-day windows, either feed).
+
+Korea editions (v1.1.0) read the same rows with these differences: Q25 uses the Seoul timing words ("in Seoul", "so far",
+"this month" / "three months", "closed"); Q31 labels "Seoul open" / "Seoul close" (the stamp stays ET wall time); Q33 checks
+a window sentence ("fell 28.4% over three months") against the page's own chart header ("Price · 3M" and its change, read by
+box on the same line) instead of the session move; Q38's hero is that header change (PAST MONTH / PAST 3 MONTHS); Q39 the
+Korea follow line. KRX figures come from Yahoo and Daum's KRX days (kr.py), windows from both histories, won from the app's
+USDKRW and CNBC's KRW= (facts refuses when the two rates differ by more than 0.4%).

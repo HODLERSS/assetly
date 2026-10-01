@@ -2,9 +2,9 @@
 # One entry per edition: research -> portfolio -> account + brief -> facts -> take (with Ask) -> Ask check -> storyline
 # -> edit plan -> build (voices, edit, mix) -> QA gate -> deliver. Refuses (exit 1, nothing in docs/) if any metric fails.
 #
-#   run.sh preopen|midday|close [--date YYYY-MM-DD] [--test] [--account N] [--seed N] [--from STAGE] [--work DIR]
+#   run.sh preopen|midday|close|korea-open|korea-close [--date YYYY-MM-DD] [--test] [--account N] [--seed N] [--from STAGE] [--work DIR]
 #
-#   --date     the market date (default: today in New York)
+#   --date     the market date (default: today in New York; the Korea editions: today in Seoul, the KRX session's date)
 #   --test     allowed off-hours / off-calendar; delivers to docs/marketing/shorts/<date>-<edition>-test<k>/
 #   --from     resume an existing --work dir at a stage: research book account facts record ask story compose build qa
 #   --seed     the portfolio design's random seed (a different seed = a different believable book)
@@ -23,18 +23,20 @@ if [ -z "${SHORTS_FROZEN:-}" ]; then
   cp "$(cd "$(dirname "$0")/.." && pwd)/SKILL.md" "$F/SKILL.md" 2>/dev/null || true    # the version this run is
   SHORTS_FROZEN="$F" exec bash "$F/run.sh" "$@"
 fi
-ED="${1:?usage: run.sh preopen|midday|close [--date D] [--test]}"; shift
-case "$ED" in preopen|midday|close) ;; *) echo "edition must be preopen, midday or close"; exit 2 ;; esac
-DATE=$(TZ=America/New_York date +%F); TEST=0; ACCT=""; SEED="$RANDOM"; FROM=""; W=""; UPLOAD=0
+ED="${1:?usage: run.sh preopen|midday|close|korea-open|korea-close [--date D] [--test]}"; shift
+case "$ED" in preopen|midday|close) MKT=US; DATE=$(TZ=America/New_York date +%F) ;;
+  korea-open|korea-close) MKT=KR; DATE=$(TZ=Asia/Seoul date +%F) ;;          # v1.1.0: the KRX session, dated in Seoul
+  *) echo "edition must be preopen, midday, close, korea-open or korea-close"; exit 2 ;; esac
+TEST=0; ACCT=""; SEED="$RANDOM"; FROM=""; W=""; UPLOAD=0
 while [ $# -gt 0 ]; do case "$1" in
   --date) DATE="$2"; shift 2 ;; --test) TEST=1; shift ;; --account) ACCT="--account $2"; shift 2 ;;
   --seed) SEED="$2"; shift 2 ;; --upload) UPLOAD=1; shift ;; --dest) DSTO="$2"; shift 2 ;; --from) FROM="$2"; shift 2 ;; --work) W="$2"; shift 2 ;; *) echo "unknown $1"; exit 2 ;; esac; done
 SK="$(cd "$(dirname "$0")" && pwd)"; APP="${ASSETLY_APP:-/Users/minjaelee/Documents/_Claude/AI/stockAnalysis/app}"
 export PATH="$HOME/.pyenv/shims:/opt/homebrew/bin:/usr/local/bin:$PATH" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
-# trading days only (the app's own calendar); a --test run may go anyway
-TRADING=$(cd "$SK" && python3 -c "from lib import calendar_check; print(calendar_check('$DATE')[0])")
-if [ "$TRADING" != "True" ] && [ "$TEST" != 1 ]; then echo "$DATE is not a US trading day: no $ED Short"; exit 0; fi
+# trading days only (the app's own calendar: US, or the KRX one with its holidays and substitute days); a --test run may go anyway
+TRADING=$(cd "$SK" && python3 -c "from lib import calendar_check; print(calendar_check('$DATE', '$MKT')[0])")
+if [ "$TRADING" != "True" ] && [ "$TEST" != 1 ]; then echo "$DATE is not a $MKT trading day: no $ED Short"; exit 0; fi
 
 if [ -z "$W" ]; then W="/tmp/assetly-shorts/$DATE-$ED$([ $TEST = 1 ] && echo -test)-$(date +%H%M%S)"; fi
 mkdir -p "$W/build" "$W/stage"; chmod 700 "$W"; W="$(cd "$W" && pwd)"; ST="$W/stage"
@@ -71,7 +73,7 @@ if want ask; then
     # takes 1-2 also want clean wording (no desk jargon, no pre-open "today" for yesterday); take 3 accepts it if the figures pass
     # mid-session the book moves between the facts stage and the take (10/1 midday: facts $4,368, Home +$3,965 13 min
     # later): re-verify the portfolio figures against the account at take time, so what Home shows is checkable
-    if [ "$ED" = midday ]; then python3 facts.py "$ED" "$W" || echo "WARN: the take-time facts refresh failed (network?); keeping the earlier facts"; fi
+    if [ "$ED" = midday ] || [ "$ED" = korea-open ]; then python3 facts.py "$ED" "$W" || echo "WARN: the take-time facts refresh failed (network?); keeping the earlier facts"; fi
     if SHORTS_ASK_STRICT=$([ $take -lt 3 ] && echo 1 || echo 0) python3 facts.py "$ED" "$W" --ask; then ok=1; break; fi
     [ $take -lt 3 ] && { echo "Ask answer failed its check: take $((take + 1))"; python3 record.py "$ED" "$W"; }
   done
@@ -89,17 +91,25 @@ if want build; then
   # the duck under the first cue depends on where that line pauses (10/1 v4: -5.6 dB, the check wants -12..-6): one rebuild on
   # the same voices with the sidechain level moved toward the range
   if [ ! -s "$ST/qa-auto.md" ]; then
-    D=$(grep -o "duck [-+][0-9.]* dB out of range" "$W/run.log" | tail -1 | awk '{print $2}')
+    # "|| true": no duck line is the usual case, and a failing grep inside $( ) under pipefail + set -e ended the run
+    # right here instead of reaching the over-30-s rewrite below (10/1 korea-close test: 31.9 s, exit 1)
+    D=$(grep -o "duck [-+][0-9.]* dB out of range" "$W/run.log" | tail -1 | awk '{print $2}' || true)
+    # a too-shallow duck gets a stronger key, step by step (10/1 korea-open test: 0.7 -> -4.6 dB, 1.0 -> -5.8 dB, still out)
     if [ -n "$D" ]; then
-      SC=$(python3 -c "print(1.0 if $D > -9 else 0.5)")
-      echo "duck $D dB out of range: rebuild on the same voices with DUCK_SC=$SC"
-      REUSE_VO=1 DUCK_SC=$SC "$APP/web/ios/App/marketing/shorts/make-short.sh" "$ST/day.json" "$W/build" "$ST" || true
+      for SC in $(python3 -c "print('1.0 1.6 2.4' if $D > -9 else '0.5 0.35')"); do
+        echo "duck out of range: rebuild on the same voices with DUCK_SC=$SC"
+        REUSE_VO=1 DUCK_SC=$SC "$APP/web/ios/App/marketing/shorts/make-short.sh" "$ST/day.json" "$W/build" "$ST" || true
+        [ -s "$ST/qa-auto.md" ] && break
+        grep -q "dB out of range" <(tail -5 "$W/run.log") || break
+      done
     fi
   fi
   # over 30 s (10/1 midday: 31.0 s): rewrite the script with a smaller word budget on the same take, then rebuild (twice max)
-  for tight in "50 61" "46 56"; do
+  TIGHT="50 61|46 56"; [ "$MKT" = KR ] && TIGHT="49 55|46 52"          # the Korea editions start at 52 words, 58 voiced (storyline.py)
+  IFS='|' read -r T1 T2 <<< "$TIGHT"
+  for tight in "$T1" "$T2"; do
     [ -s "$ST/qa-auto.md" ] && break
-    tail -40 "$W/run.log" | grep -q "tighten the script" || break
+    grep -q "tighten the script" <(tail -40 "$W/run.log") || break
     set -- $tight; echo "too long: storyline again with budget $1 words ($2 voiced), same take"
     SHORTS_BUDGET=$1 SHORTS_SPOKEN_MAX=$2 python3 storyline.py "$ED" "$W" && python3 compose.py "$ED" "$DATE" "$W" "$ST" && \
       { timed build "$APP/web/ios/App/marketing/shorts/make-short.sh" "$ST/day.json" "$W/build" "$ST" || true; }

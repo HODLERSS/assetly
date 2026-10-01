@@ -14,6 +14,7 @@ the end card. One camera language: the same 1.3x push on every beat, cuts on the
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import Stage, jdump, jload, log, rest
+import kr as KRM
 
 UP = r"\b(rose|rises|climbed|jumped|gained|rallied|advanced|popped|higher|lifted|boosted)\b"
 DOWN = r"\b(fell|falls|dropped|drops|slid|slides|sank|sinks|slipped|declined|tumbled|lower|dragged|selloff|sell-off)\b"
@@ -42,7 +43,8 @@ def card_conflicts(sym, row):
     return bad
 
 ED, DATE, W, OUT = sys.argv[1:5]
-LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE"}
+LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE", "korea-open": "SEOUL OPEN", "korea-close": "SEOUL CLOSE"}
+KR = ED in KRM.KR_EDITIONS
 MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 FOCUS = {"pos": 640, "home": 620, "brief": 1000, "news": 1000, "ask_q": 1450, "ask_a": 900}
 EXT_RE = {"PRE-MARKET": r"\b(premarket|pre-market)\b", "AFTER HOURS": r"\b(after hours|after-hours)\b"}
@@ -89,7 +91,7 @@ def facts_name(sym, text):
     """The chip's name: the name the line says (IBM, Rocket Lab), else the ticker's short name."""
     names = (jload(os.path.join(W, "facts.json"), {}) or {}).get("names", {})
     n = names.get(sym, sym)
-    first = re.match(r"^(?:[A-Z][\w&'.-]*)(?: [A-Z][\w&'.-]*)?", re.sub(r"^(Before the bell|At the close|At midday|Premarket|Midday|Today),\s*", "", text))
+    first = re.match(r"^(?:[A-Z][\w&'.-]*)(?: [A-Z][\w&'.-]*)?", re.sub(r"^(Before the bell|At the close|At midday|Premarket|Midday|Today|In Seoul),\s*", "", text))
     return first.group(0) if first and first.group(0).split()[0].lower() in n.lower() + " " + sym.lower() else re.sub(r",?\s+(Inc\.?|Corporation|Corp\.?)$", "", n)
 
 
@@ -124,6 +126,8 @@ def first_visible(take, t0, t1, pattern, step=0.1):
 # it near the old pace (~2.55-2.8 w/s). SHORTS_VOICE=mixed restores 1.12 for the gpt-audio items and the question.
 T_GPT = 1.12 if os.environ.get("SHORTS_VOICE", "minjae") == "mixed" else 1.06
 FOLLOW = "Follow for the open, midday and close"     # the end card's one CTA: true (three editions every trading day)
+FOLLOW_KR = "Follow for Korea's chips, twice a day"   # v1.1.0: the Seoul editions run twice every KRX trading day
+if KR: FOLLOW = FOLLOW_KR
 HERO_MIN = 1.0                                       # a smaller move is not a thumbnail hook: the headline cover stays
 BAIT = {"#viral", "#fyp", "#foryou", "#foryoupage", "#trending", "#explore", "#viralshorts", "#shortsfeed"}
 
@@ -138,11 +142,19 @@ def cover_hero(story, res, beats, ext):
     for i, it in enumerate(story["items"]):
         if i >= len(beats): break
         ref, b = res["items"][it["n"]], beats[i]
-        m = re.match(r"^(\w+) page", b.get("note", ""))
+        m = re.match(r"^(\S+) page", b.get("note", ""))   # "000660.KS page" (v1.1.0)
         if not m: continue
         sym = m.group(1)
         ch = b.get("chip") or {}
-        if ch.get("label") and sym in ext:
+        if KR:
+            # Korea editions: the page is filmed on the 1M / 3M chart, so the hero is that window's change as the page's own
+            # header reads it, and both histories agree with it (research figure of the same field)
+            sc = scr.get(f"pos_{sym}") or {}
+            v, fld = sc.get("range_move"), KRM.RANGE_FIELD.get(sc.get("range") or "")
+            fig = next((f for f in ref.get("figures", []) if f.get("symbol") == sym and f.get("field") == fld and f.get("ok")), None)
+            if v is None or not fig or (v > 0) != (fig["value"] > 0) or abs(v - fig["value"]) > (0.6 if ED == "korea-open" else 0.06): continue
+            label, src = {"m1": "PAST MONTH", "m3": "PAST 3 MONTHS", "ytd": "THIS YEAR"}[fld], f"{sym} page {sc.get('range')} {v:+.2f}% vs histories {fig['feed1']:+.2f}/{fig['feed2']:+.2f}"
+        elif ch.get("label") and sym in ext:
             v, label, src = float(ext[sym]["pct"]), ch["label"], f"{ch['label'].lower()} chip ({sym}, two feeds)"
         elif ED != "preopen":
             v = (scr.get(f"pos_{sym}") or {}).get("day_move")
@@ -175,7 +187,8 @@ def reach_tags(story, res, hashtags):
     """YouTube's hidden tags: what the post is (its companies, '<name> stock'), the niche, the brand; no bait."""
     names = [re.search(r"\[([^\]]+)\]", c).group(1) for c in story.get("cover", []) if re.search(r"\[([^\]]+)\]", c)]
     post = [x for n in names for x in (n, f"{n} stock")]
-    niche = ["stock market today", "stock market news", "AI stocks", "investing", "stocks"]
+    niche = (["Korea stocks", "AI chip stocks", "HBM", "semiconductor stocks", "KOSPI"] if KR else
+             ["stock market today", "stock market news", "AI stocks", "investing", "stocks"])
     out = []
     for t in post + niche + [h.lstrip("#") for h in hashtags if h.lower() != "#shorts"] + ["Assetly", "Shorts"]:
         if t.lower() not in {o.lower() for o in out} and "#" + t.lower() not in BAIT: out.append(t)
@@ -303,7 +316,7 @@ def main():
         from datetime import timedelta
         snap = day0 + timedelta(minutes=max(mins))
         hm = snap.strftime("%-I:%M %p")
-        stamp = {"edition": {"preopen": "Pre-open", "midday": "Midday", "close": "Close"}[ED],
+        stamp = {"edition": {"preopen": "Pre-open", "midday": "Midday", "close": "Close", "korea-open": "Seoul open", "korea-close": "Seoul close"}[ED],
                  "text": f"{snap.strftime('%b %-d')} · {hm} ET", "asof": snap.strftime("%Y-%m-%d %H:%M"),
                  "line": f"Data as of {snap.strftime('%b %-d, %Y')} {hm} ET", "sources": src}
         hero = cover_hero(story, res, beats, ext)
@@ -323,7 +336,7 @@ def main():
         desc = (stamp["line"] + "\n" + story["description"].strip() + "\nPortfolio shown is illustrative. Not financial advice.\n\n"
                 "Assetly on the App Store: https://apps.apple.com/app/id6811739789\nMore: https://hodlerss.github.io/assetly/about.html")
         # owner, 10/1 pm: the title is the hook only, no edition label and no date (the description carries "Data as of")
-        story["title"] = re.sub(r"^\s*(before the bell|pre-?open|midday|after the bell|at the close|close)\s*[:|·-]\s*", "", story["title"], flags=re.I)
+        story["title"] = re.sub(r"^\s*(before the bell|pre-?open|midday|after the bell|at the close|close|seoul open|seoul close)\s*[:|·-]\s*", "", story["title"], flags=re.I)
         story["title"] = re.sub(r"\s*[|·-]?\s*\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(, \d{4})?\s*$", "", story["title"]).strip(" |·-")
         story["title"] = re.sub(r"\s*#\w+", "", story["title"]).strip()      # hashtags never in the title (they go in the description)
         meta = {"title": story["title"], "description": desc, "hashtags": tags.split(), "data_as_of_et": stamp["asof"],

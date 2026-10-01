@@ -94,6 +94,41 @@ def day_move(texts):
     return None
 
 
+RANGEHEAD = re.compile(r"\bPrice\s*[·•.\-]?\s*(1W|1M|3M|6M|YTD|1Y|2Y|5Y)\b")
+
+
+def range_move(texts):
+    """(range, move) the position page's chart header shows ("Price · 3M" then "-28.40%"), or (None, None). The header
+    reads left to right, so the figure is the next % after the label in OCR order (same text or the one after)."""
+    # Vision reads the chip's "M" as Cyrillic "М" now and then ("Price • 3М", 10/1 test): fold look-alikes first; the first
+    # header OCR'd is often the loading one (no change yet), so every header occurrence is tried
+    texts = [t.translate(str.maketrans("МТУОАВЕКРСХ", "MTYOABEKPCX")) for t in texts]
+    for i, t in enumerate(texts):
+        m = RANGEHEAD.search(t)
+        if not m: continue
+        for u in [t[m.end():]] + list(texts[i + 1:i + 3]):
+            f = re.search(r"([+\-\u2212])\s?(\d+(?:\.\d+)?)%", u.replace("\u2212", "-"))
+            if f: return m.group(1), float(f.group(2)) * (-1 if f.group(1) in "-\u2212" else 1)
+    return None, None
+
+
+def range_move_rows(frames_rows):
+    """range_move from OCR rows with boxes ([[text, x0, y0, x1, y1, conf], ...] per frame): the % figure on the SAME line
+    as the "Price · 3M" header (vertical centres within 0.6 of the label's height), right of it. Vision does not always
+    list the header's change next to it (10/1 test: Samsung's "-12.24%" came out of order), the box does."""
+    fold = str.maketrans("МТУОАВЕКРСХ", "MTYOABEKPCX")
+    for rows in frames_rows:
+        for r in rows:
+            m = RANGEHEAD.search(r[0].translate(fold))
+            if not m: continue
+            cy, h = (r[2] + r[4]) / 2, max(1, r[4] - r[2])
+            for q in rows:
+                if q is r or q[1] <= r[3] or abs((q[2] + q[4]) / 2 - cy) > 0.6 * h: continue
+                f = re.fullmatch(r"\s*([+\-\u2212])\s?(\d+(?:\.\d+)?)%\s*", q[0])
+                if f: return m.group(1), float(f.group(2)) * (-1 if f.group(1) in "-\u2212" else 1)
+    return None, None
+
+
 def direction(text):
     """+1 / -1 when a sentence states a price direction, 0 when it does not."""
     text = re.sub(r"(?:n't|\bnot|\bnever)\s+(?:\w+\s+){0,2}?\w+(?:ing|ed)?\b", " ", text, flags=re.I)   # "isn't lifting" says no direction
@@ -132,7 +167,7 @@ def ask_take(W):
 def ext_quotes(ed, syms):
     """Fresh extended-hours moves on both feeds (pre-open: PRE_MKT; close: POST_MKT). Kept only when the feeds agree."""
     from lib import cnbc, nasdaq, nasdaq_pre, agree, now_et
-    if ed == "midday" or not syms: return {}
+    if ed in ("midday", "korea-open", "korea-close") or not syms: return {}   # KRX: no extended-hours chip (v1.1.0)
     kind, label = ("pre", "PRE-MARKET") if ed == "preopen" else ("post", "AFTER HOURS")
     cq, out = cnbc(list(syms)), {}
     for s in syms:
@@ -159,8 +194,10 @@ def main():
     flat = [p for v in shots.values() for p in v]; rows = ocr(flat); by = dict(zip(flat, rows))
     for k, (a, b) in win.items():
         texts = list(dict.fromkeys(r[0] for p in shots[k] for r in by.get(p, []) if r[5] >= 0.3))
+        rg, rm = range_move_rows([[r for r in by.get(p, []) if r[5] >= 0.3] for p in shots[k]])
+        if rm is None: rg, rm = range_move(texts)
         out["windows"][k] = {"t": [round(a, 2), round(b, 2)], "texts": texts, "figures": list(dict.fromkeys(figures(texts))),
-                             "times": shown_times(texts), "day_move": day_move(texts)}
+                             "times": shown_times(texts), "day_move": day_move(texts), "range": rg, "range_move": rm}
     jdump(out, os.path.join(W, "screen.json"))
     log("screen: " + "; ".join(f"{k}: {v['figures'][:8]}" for k, v in out["windows"].items()))
     if os.environ.get("SHORTS_KEEP_EXT") == "1" and os.path.exists(os.path.join(W, "ext.json")):   # tests: a fixed quote set

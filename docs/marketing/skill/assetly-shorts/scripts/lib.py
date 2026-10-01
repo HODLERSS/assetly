@@ -13,7 +13,8 @@ APP = os.environ.get("ASSETLY_APP", "/Users/minjaelee/Documents/_Claude/AI/stock
 SB = "https://hhdpthrfmsdmxdrfckxq.supabase.co"; REF = "hhdpthrfmsdmxdrfckxq"
 SKILL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
-EDITIONS = {"preopen": "morning", "midday": "midday", "close": "close"}     # skill edition -> app brief edition
+EDITIONS = {"preopen": "morning", "midday": "midday", "close": "close",     # skill edition -> app brief edition
+            "korea-open": "kr_open", "korea-close": "kr_close"}            # v1.1.0: the Seoul editions (kr.py)
 
 
 def log(*a):
@@ -224,10 +225,11 @@ def agree(a, b, tol):
 
 
 # ---- the trading calendar (the app's own: supabase/functions/_shared/calendar.ts) -----------------------
-def calendar_check(ymd):
-    """Asks the app's calendar whether ymd is a US trading day. Returns (trading: bool, why: str)."""
+def calendar_check(ymd, mkt="US"):
+    """Asks the app's calendar whether ymd is a trading day on mkt ("US" or "KR", the KRX holiday table incl. the
+    substitute days, e.g. 2026-10-05 for Gaecheonjeol on a Saturday). Returns (trading: bool, why: str)."""
     ts = f"""import {{ isTradingDay }} from "{APP}/supabase/functions/_shared/calendar.ts";
-console.log(JSON.stringify({{ trading: isTradingDay("US", "{ymd}") }}));"""
+console.log(JSON.stringify({{ trading: isTradingDay("{mkt}", "{ymd}") }}));"""
     p = f"/tmp/assetly-shorts-cal-{os.getpid()}.ts"; open(p, "w").write(ts)
     r = subprocess.run(["npx", "-y", "deno@2", "run", "-A", p], capture_output=True, text=True, timeout=120)
     os.remove(p)

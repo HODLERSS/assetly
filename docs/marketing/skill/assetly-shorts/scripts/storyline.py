@@ -17,8 +17,10 @@ import copy, json, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import Stage, jdump, jload, llm, log
 from screen import direction, fval, shows
+import kr as KRM
 
 ED, W = sys.argv[1], sys.argv[2]
+KR = ED in KRM.KR_EDITIONS
 BAN = re.compile(r"\b(buy|sell|should|must-own|recommend|guaranteed|skyrocket\w*|soar\w*|explod\w*|moon|crush\w*|massive|insane|huge|"
                  r"don't miss|act now|best stock|secret|bagger|yolo|alpha|beta|eps|p/e|guidance|bps|basis points|multiples?|catalysts?|"
                  r"thesis|tape|tripwire|setup|capex|tam|book|print|prints|demo|demonstration|swing factors?|narratives?|cost curves?)\b", re.I)
@@ -27,17 +29,24 @@ TIMING = {"preopen": {"need": r"\b(before the bell|premarket|pre-market|futures|
           "midday": {"need": r"\b(so far|midday|this afternoon|right now|today)\b",
                      "never": r"\b(closed (?:up|down|at|higher|lower)|today's close|before the bell|this morning's open|futures point)\b"},
           "close": {"need": r"\b(closed|today|after the bell|after hours|on the day|at the close)\b",
-                    "never": r"\b(so far today|this morning|before the bell|futures point|this afternoon|right now)\b"}}
+                    "never": r"\b(so far today|this morning|before the bell|futures point|this afternoon|right now)\b"},
+          # v1.1.0, the Seoul editions: the KRX session is "in Seoul"; the long window is the point
+          "korea-open": {"need": r"\b(in Seoul|Seoul|so far|this month|past month|a month)\b",
+                         "never": r"\b(after the bell|before the bell|premarket|pre-market|today's close|futures point|after hours)\b"},
+          "korea-close": {"need": r"\b(in Seoul|Seoul|three months|closed)\b",
+                          "never": r"\b(so far today|this morning|before the bell|premarket|pre-market|futures point|right now|after hours)\b"}}
 # names and terms said as letters or as a word: = narrate/ear.ts SPOKEN_CAPS (earAudit's allowlist) + AT&T
 SPOKEN_CAPS = {"AI", "US", "UK", "EU", "CEO", "CFO", "ETF", "ETFs", "VIX", "AMD", "IBM", "HP", "NASA", "FDA", "SEC", "FTC", "DOJ",
                "GDP", "CPI", "PCE", "PPI", "IPO", "EV", "EVs", "OPEC", "NATO", "OK", "TV", "NVIDIA", "SK", "AM", "PM", "IBK", "KOSPI"}
-LEAD = {"preopen": "Before the bell,", "midday": "At midday,", "close": "At the close,"}   # the fallback's timing phrase
-LEAD_SHORT = {"preopen": "Premarket,", "midday": "Midday,", "close": "Today,"}           # ... when the budget is tight
+LEAD = {"preopen": "Before the bell,", "midday": "At midday,", "close": "At the close,",   # the fallback's timing phrase
+        "korea-open": "In Seoul,", "korea-close": "In Seoul,"}
+LEAD_SHORT = {"preopen": "Premarket,", "midday": "Midday,", "close": "Today,", "korea-open": "In Seoul,", "korea-close": "In Seoul,"}
 STORY_CAP_S, STORY_ROUNDS = 360, 8                     # storyline rounds: at most 8, inside 6 minutes
 # SHORTS_BUDGET / SHORTS_SPOKEN_MAX: run.sh lowers both when a build measures over 30 s (10/1 midday: 31.0 s)
-BUDGET = int(os.environ.get("SHORTS_BUDGET", 56))
-SPOKEN_MAX = int(os.environ.get("SHORTS_SPOKEN_MAX", 68))                                        # words as voiced (speakable): 66-68 made 26-27 s, 73 made 30.3 s
-LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE"}
+_KRB = sys.argv[1:2] and sys.argv[1].startswith("korea")              # Korea lines carry longer names and window phrases:
+BUDGET = int(os.environ.get("SHORTS_BUDGET", 52 if _KRB else 56))      # 10/1 korea-close tests: 56 words 31.9 s, 52 words 30.8 s, 50 fit; 49 never converged
+SPOKEN_MAX = int(os.environ.get("SHORTS_SPOKEN_MAX", 58 if _KRB else 68))                                        # words as voiced (speakable): 66-68 made 26-27 s, 73 made 30.3 s
+LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE", "korea-open": "SEOUL OPEN", "korea-close": "SEOUL CLOSE"}
 
 
 def nums(text):
@@ -62,10 +71,22 @@ def allowed_figures(res, facts, askc):
     for v in ctx()["ext"].values(): add_pct(v["pct"])
     # Home moves while the take records (10/1 midday: facts 2.3%, Home +1.99% minutes later): a figure Home shows counts as
     # verified when a cross-checked facts figure of the same kind is within the live tolerance, so the voice says the screen
-    tol = {"midday": 0.35, "close": 0.06, "preopen": 0.06}[ED]
+    tol = {"midday": 0.35, "close": 0.06, "preopen": 0.06, "korea-open": 0.35, "korea-close": 0.06}[ED]
     fv = [fval(v) for v in facts.get("figures", {}).values()] + [fval(v) for v in (facts.get("portfolio") or {}).values() if isinstance(v, str)]
     fv = [x for x in fv if x]
     tot = next((x[0] for x in [fval((facts.get("portfolio") or {}).get("total", ""))] if x), 0)
+    # Korea, live session (korea-open): the page's 1M change moves with the price between research and the take; a page
+    # change within 0.6 pt of the verified window figure of the same name is the figure the viewer reads, so it is the one said
+    if KR:
+        for it in res["items"]:
+            for f in it.get("figures", []):
+                if not f.get("ok"): continue
+                if (f.get("field") or "pct") == "pct":            # the live session move the page header shows
+                    pd = ctx()["screen"].get(f"pos_{f.get('symbol')}", {}).get("day_move")
+                    if ED == "korea-open" and pd is not None and abs(pd - float(f["value"])) <= 0.35: add_pct(pd)
+                    continue
+                pm = ctx()["screen"].get(f"pos_{f.get('symbol')}", {}).get("range_move")
+                if pm is not None and abs(pm - float(f["value"])) <= (0.6 if ED == "korea-open" else 0.06): add_pct(pm)
     for f in ctx()["screen"].get("home", {}).get("figures", []):
         a = fval(f)
         if not a or not a[1]: continue
@@ -88,7 +109,8 @@ amid despite following because when what which where why will would could more m
 rose rise rises rising fell fall falls falling gained gains gaining slipped slips slid slides dropped drops declined declines
 jumped jumps climbed climbs edged eased ended ending finished moved higher lower
 little reaction movement muted cautious steady quiet flat barely calm unmoved
-premarket pre-market overnight futures midday morning yesterday bell open opening ahead""".split())
+premarket pre-market overnight futures midday morning yesterday bell open opening ahead
+seoul korea korean kospi months""".split())
 
 
 # generic reaction and framing words (10/1 preopen refused on "cheer", "credit", "liked", "purchase"): they carry no
@@ -187,7 +209,8 @@ def plain_line(t):
     t = re.sub(r"\s*\(\s*([+\-\u2212]?)(\d+(?:\.\d+)?)%\s*\)", lambda m: " " + ("down" if m.group(1) in ("-", "\u2212") else "up") + f" {float(m.group(2)):.1f}%", t)
     t = re.sub(r"\+(?=\$?\d)", "up ", t); t = re.sub(r"[\u2212-](?=\$?\d)", "down ", t)
     t = re.sub(r"(\d+\.\d)\d+%", r"\1%", t)
-    return re.sub(r"\s+", " ", t).strip(" .;:") + "."
+    t = re.sub(r"\s+([,.;:])", r"\1", t)              # "$151,900 , roughly" as the app spaced it (10/1 korea-close)
+    return re.sub(r"\s+", " ", t).strip(" .;:,") + "."
 
 
 def short_name(n):
@@ -262,8 +285,12 @@ def check(story, res, facts, askc):
             if h["tag"] in r.get("symbols", []) or (not r.get("symbols") and h["tag"] == "MACRO"):
                 for w in re.findall(r"[A-Za-z][A-Za-z'-]+", h["title"]): pubs_by_stem.setdefault(stem(w), set()).add(h["publisher"])
         corpus += " " + " ".join(k for k, v in pubs_by_stem.items() if len(v) >= 2)
-        sign = next((f["value"] for f in r.get("figures", []) if f.get("symbol") in r.get("symbols", [])), None)
+        sign0 = next((f["value"] for f in r.get("figures", []) if f.get("symbol") in r.get("symbols", []) and (f.get("field") or "pct") == "pct"), None)
         for x in it["sentences"]:
+            # a Korea line about a long window ("fell 28% over three months") is checked against that window's figure
+            wf = KRM.window_field(x["text"]) if KR else None
+            sign = next((f["value"] for f in r.get("figures", []) if f.get("symbol") in r.get("symbols", []) and f.get("field") == wf), None) if wf else \
+                (sign0 if KR else next((f["value"] for f in r.get("figures", []) if f.get("symbol") in r.get("symbols", [])), None))
             m_t = NEWS_WHEN.search(x["text"])
             if m_t and not when_supported(m_t.group(0), [heads[h] for h in r.get("why_ids", []) if h in heads]):
                 errs.append(f"item {i + 1}: '{m_t.group(0)}' says when the news happened, but its sources' times do not show it "
@@ -289,6 +316,16 @@ def check(story, res, facts, askc):
             # a price direction about the holding agrees with what its page shows in the shot (owner, 10/1: "Shares rise."
             # over "-0.03% since last close"), unless the sentence is the labelled extended-hours move on a chip
             dv = direction(x["text"]); mv = ctx()["screen"].get(shot, {}).get("day_move") if sym else None
+            if wf and sym:
+                # the page is filmed on the edition's range (1M / 3M): a window claim must be THAT window and agree with it
+                pr, pm = ctx()["screen"].get(shot, {}).get("range"), ctx()["screen"].get(shot, {}).get("range_move")
+                want = {"m1": "1M", "m3": "3M", "ytd": "YTD"}[wf]
+                if pr != want:
+                    errs.append(f"item {i + 1}: {x['text']!r} speaks about the {want} window but the page shows the {pr or '?'} change "
+                                f"-> use the {KRM.RANGE[ED]} window ('{'over three months' if KRM.RANGE[ED] == '3M' else 'this month'}')")
+                elif dv and (pm is None or (pm > 0) != (dv > 0)):
+                    errs.append(f"item {i + 1}: {x['text']!r} gives a direction the page's {pr} change ({pm}) does not show")
+                mv = None; dv = 0                         # the session check below does not apply to a window sentence
             if dv and sym and not (says_ext and ex):
                 if mv is None or abs(mv) < 0.05 or (mv > 0) != (dv > 0):
                     errs.append(f"item {i + 1}: {x['text']!r} says the stock went {'up' if dv > 0 else 'down'} but its page shows "
@@ -302,6 +339,16 @@ def check(story, res, facts, askc):
             if names or len(miss) > 1 or (miss and len(x["text"].split()) < 5):
                 errs.append(f"item {i + 1}: words the verified sources never say: {names + miss} in {x['text']!r} "
                             f"-> rewrite it with the item's own wording (WHY: {r['why']!r}; READ: {r['sentiment']!r})")
+    if KR:
+        # the long view is the point (owner, 10/1): a Korea item whose page shows a verified window change says it
+        fld = KRM.RANGE_FIELD[KRM.RANGE[ED]]
+        for i, it in enumerate(story["items"]):
+            try: r = res["items"][it["n"]]
+            except (IndexError, KeyError, TypeError): continue
+            f = next((f for f in r.get("figures", []) if f.get("field") == fld and f.get("ok") and KRM.is_kr(f.get("symbol", ""))), None)
+            if f and not any(nums(x["text"]) for x in it["sentences"]):
+                errs.append(f"item {i + 1}: say its {KRM.RANGE[ED]} move in sentence 1 (the page shows it: {abs(f['value']):.1f}% "
+                            f"{'over three months' if fld == 'm3' else 'this month'}); trim other words to stay in budget")
     allowed = allowed_figures(res, facts, askc)
     sents = [(f"item {i + 1}", s["text"]) for i, it in enumerate(story["items"]) for s in it["sentences"]]
     sents += [("portfolio", story["portfolio"]["text"]), ("ask answer", story["ask"]["answer_text"])]
@@ -390,14 +437,14 @@ def check(story, res, facts, askc):
         have = {stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]+", lt_said)} | {"your", "port"}
         if aw and sum(w in have for w in aw) / len(aw) < 0.6:
             errs.append(f"ask answer: {at!r} does not follow answer line {k} ({lt!r}) -> quote it or paraphrase it closely")
-    if len(at.split()) < 4 or (ED != "preopen" and not re.search(r"\b(up|down|flat|gained|lost|rose|fell)\b", at, re.I)):
+    if len(at.split()) < 4 or (ED in ("midday", "close") and not re.search(r"\b(up|down|flat|gained|lost|rose|fell)\b", at, re.I)):
         errs.append(f"ask answer: a full spoken sentence with the direction words (up / down / flat), got {at!r} -> "
                     f"e.g. 'Up 3.8% this month and 31% over the year.' (4-13 words, verified figures only)")
     for where, t in sents:
         for m in re.finditer(r"\d+\.\d{2,}%", t): errs.append(f"{where}: {m.group(0)}: one decimal for percentages")
     # owner, 10/1: short and catchy, no edition label ("Midday:", "After the bell") and no date
     if len(story["title"]) > 50: errs.append(f"title is {len(story['title'])} chars (max 50): make it shorter and punchier")
-    if re.search(r"\b(before the bell|pre-?open|midday|after the bell|at the close|close:)|\|\s*\w{3} \d", story["title"], re.I):
+    if re.search(r"\b(before the bell|pre-?open|midday|after the bell|at the close|close:|seoul open|seoul close)|\|\s*\w{3} \d", story["title"], re.I):
         errs.append("title: no edition label or date -> just the hook, e.g. 'Micron pops, Boeing lands $20B'")
     if len(story["cover"]) != 3: errs.append("cover needs exactly 3 lines")
     # covers, title and description state no price direction the screen contradicts (owner, 10/1: "IBM rallies." over a
@@ -413,6 +460,8 @@ def check(story, res, facts, askc):
             shot_, _, sym_ = item_shot(r_)
             if not sym_: continue
             dv_ = _dir(seg); mv_ = ctx()["screen"].get(shot_, {}).get("day_move")
+            rm_ = ctx()["screen"].get(shot_, {}).get("range_move") if KR else None
+            if KR and dv_ and rm_ is not None and abs(rm_) >= 0.05 and (rm_ > 0) == (dv_ > 0): continue   # the page's 1M / 3M change shows it
             if dv_ and sym_ not in ctx()["ext"] and (mv_ is None or abs(mv_) < 0.05 or (mv_ > 0) != (dv_ > 0)): return sym_, mv_
         return None
     for where, t in [("cover", c) for c in story["cover"]] + [("title", story["title"]), ("description", story["description"])]:
@@ -424,7 +473,10 @@ def check(story, res, facts, askc):
     # the accent bracket is code's job: the leading name (one word, or two when the second is capitalised)
     story["cover"] = [re.sub(r"\s*:\s*", " ", c.replace("[", "").replace("]", "")).strip() for c in story["cover"]]
     story["cover"] = [c if c.endswith(".") else c + "." for c in story["cover"]]
-    story["cover"] = [re.sub(r"^((?:[A-Z][\w&'.-]*)(?: [A-Z][\w&'.-]*)?)", r"[\1]", c, count=1) for c in story["cover"]]
+    # names whose second word is lowercase or that are three words ("SK hynix", "Samsung Electronics") bracket whole
+    MULTI = r"SK hynix|Samsung Electro-Mechanics|Samsung Electronics|Hanmi Semiconductor|EO Technics|Wonik IPS|DB HiTek|Leeno Industrial"
+    story["cover"] = [re.sub(rf"^({MULTI})\b", r"[\1]", c, count=1) if re.match(rf"^({MULTI})\b", c) else
+                      re.sub(r"^((?:[A-Z][\w&'.-]*)(?: [A-Z][\w&'.-]*)?)", r"[\1]", c, count=1) for c in story["cover"]]
     for c in story["cover"]:
         if len(c) > 30 or " " not in c: errs.append(f"cover line {c!r}: 'Name verb.' with a short name, <= 28 chars")
     # a bare "Stocks slipped" (10/1 midday) contradicted "US stocks today +2.00%" in the Ask on screen: a whole-market line
@@ -433,7 +485,7 @@ def check(story, res, facts, askc):
         for snt in (it.get("sentences") or []) if isinstance(it, dict) else []:
             t = snt.get("text", "") if isinstance(snt, dict) else ""
             if re.search(r"\b(Stocks|Markets|The market|Wall Street|U\.?S\. stocks)\b[^.]*\b(slipped|slid|fell|dropped|rose|climbed|gained|rallied|jumped|sank|dipped)\b", t) \
-               and not re.search(r"S&P|Nasdaq|Dow|Russell", t):
+               and not re.search(r"S&P|Nasdaq|Dow|Russell|KOSPI|Kospi", t):
                 errs.append(f"item {k + 1}: a whole-market line must name its index (S&P 500 / Nasdaq / Dow) -> rewrite '{t}' with the index and its verified figure, or drop the market line")
     return errs, words
 
@@ -503,7 +555,7 @@ def fallback(story, res, facts, askc):
         # the day's gain exactly as Home shows it, when it is within the live tolerance of the cross-checked one
         allowed = allowed_figures(res, facts, askc)
         for f in home:
-            if f.startswith(("+$", "-$", "\u2212$")) and norm(f) in allowed and ED != "preopen":
+            if f.startswith(("+$", "-$", "\u2212$")) and norm(f) in allowed and ED in ("midday", "close"):
                 d = "up" if f.startswith("+") else "down"
                 amt = f.lstrip("+-\u2212")
                 opts_p.append({"midday": f"Your portfolio is {d} {amt} so far today.", "close": f"Your portfolio closed {d} {amt} today."}[ED])
@@ -512,10 +564,15 @@ def fallback(story, res, facts, askc):
         if ok_p: story["portfolio"]["text"] = ok_p[0]
     if any(e.startswith("ask answer") for e in errs):
         # the shortest visible answer line that carries a figure, quoted as it reads
-        cands = sorted([(len(plain_line(r["text"]).split()), k) for k, r in enumerate(ctx()["lines"]) if nums(r["text"])
-                        and 4 <= len(plain_line(r["text"]).split()) <= 12 and not re.search(r"\b(my|I|I'm)\b", r["text"])])
-        for _, k in cands:                         # the first that passes its own checks
-            said = plain_line(ctx()["lines"][k]["text"])
+        # a whole visible line, or (v1.1.0: long Ask bullets, 10/1 korea-close "Core AI chip stocks (...) total about
+        # $151,900, roughly 58% of your $260,524 portfolio") its leading clauses up to a comma, each still the line's own words
+        def quotes(t):
+            p_ = plain_line(t); out = [p_]; parts = p_.rstrip(".").split(", ")
+            for j in range(1, len(parts)): out.append(", ".join(parts[:j]) + ".")
+            return [q for q in out if nums(q) and 4 <= len(q.split()) <= 13]
+        cands = sorted([(len(q.split()), k, q) for k, r in enumerate(ctx()["lines"]) for q in quotes(r["text"])
+                        if not re.search(r"\b(my|I|I'm)\b", r["text"])])
+        for _, k, said in cands:                   # the first that passes its own checks
             for sym, nm in sorted(say_names(facts).items(), key=lambda x: -len(x[0])): said = re.sub(rf"\b{re.escape(sym)}\b", nm, said)
             story["ask"] = {"line": k, "answer_text": said}
             if not [e for e in check(copy.deepcopy(story), res, facts, askc)[0] if e.startswith("ask answer")]: break
@@ -557,6 +614,19 @@ def fallback(story, res, facts, askc):
     return story, errs, words
 
 
+KR_GUIDE = ("" if not KR else f"""THE KOREA EDITION (v1.1.0, owner 10/1): for US investors with an AI-heavy portfolio, MID-TO-LONG TERM, never day to day.
+  Each story page is filmed on the app's {KRM.RANGE[ED]} chart: its header reads "Price · {KRM.RANGE[ED]}" and the {KRM.RANGE[ED]} change. Lead
+  each Korean item with that window ('{"over three months" if KRM.RANGE[ED] == "3M" else "this month"}') and its WHY; the session move in
+  Seoul is secondary ('{"closed up 3.2% in Seoul" if ED == "korea-close" else "is up 1.1% so far in Seoul"}'). A US name's move is its last
+  New York session. Say the names in full ("SK hynix", "Samsung Electronics", "Hanmi Semiconductor"). The portfolio line is the
+  all-time gain Home shows ("Your portfolio is up 18% all time."): never a 'today' figure (Home's Today mixes the US and Korean
+  sessions). Never what to do, never a forecast for the US open: context ("Investors watch Micron's memory read-through.").
+  Examples of the density wanted:
+    "SK hynix fell 28.4% over three months as foreign funds sold Korean chips. Investors see sustained foreign selling."
+    "Micron posted record revenue on AI memory demand. Analysts say the demand stays strong."
+""")
+
+
 def main():
     res = jload(os.path.join(W, "research.json")); facts = jload(os.path.join(W, "facts.json")); askc = jload(os.path.join(W, "ask-check.json"))
     n_items = 3                     # three items fit 30 s with the portfolio and Ask beats at a natural pace
@@ -583,6 +653,7 @@ THE ASK BEAT: the question typed on camera: {askc['question']!r}. The answer lin
 {json.dumps({i: r["text"] for i, r in enumerate(ctx()["lines"])}, indent=0)}
 The spoken answer quotes ONE of these lines or paraphrases it closely, with exactly its figures; the edit highlights it.
 
+{KR_GUIDE if KR else ""}
 THE APPROVED STYLE (the 9/30 Short; match its density and tone, not its facts):
   "Micron beat on AI memory demand, yet barely moved after hours. Commentators say it was priced in."
   "Google's Gemini 4 beat rivals on most tests, but few can use it yet. Shares jumped over 3%, then closed up 0.9%."
@@ -625,6 +696,15 @@ No advice or hype words, no jargon (thesis, tape, book, print, catalyst, guidanc
 sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashes, no tickers, never "demo"."""
         budget = BUDGET - len(askc["question"].split())
         prompt = base.replace("{budget}", str(budget))
+        # a tighten pass (run.sh after a build over 30 s) starts from the story that passed every check: cutting a few words
+        # from it converges in a round, a fresh draft at a lower budget often did not (10/1 korea-close test: 8 rounds, refused)
+        prev = jload(os.path.join(W, "story.json"), {}) or {}
+        if os.environ.get("SHORTS_BUDGET") and prev.get("items") and not prev.get("_errors"):
+            pw = prev.get("_words") or 0
+            prompt += ("\n\nYOUR LAST DRAFT (it passed every check, but the video ran over 30 seconds):\n" +
+                       json.dumps({k: v for k, v in prev.items() if not k.startswith("_")}) +
+                       f"\nCUT IT to at most {budget} spoken words (it has {pw}): shorten the longest sentences, drop a clause or a "
+                       "figure; keep every remaining fact and figure exactly; change nothing else.")
         story, errs, words, best = None, ["not run"], 0, None
         t0, rounds = time.time(), int(os.environ.get("SHORTS_STORY_ROUNDS", STORY_ROUNDS))
         for rnd in range(rounds):
@@ -636,6 +716,9 @@ sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashe
                             prefer=os.environ.get("SHORTS_STORY_MODEL", "openrouter"))   # M3 reasons long: 8000 truncated its JSON
             except RuntimeError as e:
                 log(f"storyline round {rnd + 1}: no draft ({str(e)[:120]})"); continue
+            if "items" not in story:                     # a reply wrapped in one key ({"story": {...}}, seen on tighten rounds)
+                inner = [v for v in story.values() if isinstance(v, dict) and "items" in v]
+                if inner: story = {**inner[0], "_model": story.get("_model")}
             story["_budget"] = BUDGET
             try:
                 errs, words = check(story, res, facts, askc)

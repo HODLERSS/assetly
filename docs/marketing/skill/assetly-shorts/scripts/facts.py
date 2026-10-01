@@ -17,12 +17,17 @@ import json, os, re, sys
 from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import ET, Stage, _num, agree, get, jdump, jload, log, nasdaq, rest
+import kr as KRM
 
 ED, W = sys.argv[1], sys.argv[2]
+KR = ED in KRM.KR_EDITIONS
+FX = {}                       # Korea editions: won per dollar, "app" (the app's USDKRW row) and "two" (CNBC KRW=)
 
 
 def history(sym, days=40):
-    """Nasdaq daily closes {YYYY-MM-DD: close}."""
+    """Nasdaq daily closes {YYYY-MM-DD: close}; a KRX name: Daum's KRX official closes in dollars at the second rate."""
+    if KRM.is_kr(sym):
+        return {k: v[0] / FX["two"] for k, v in KRM.daum_days(sym, 2).items()}
     to = datetime.now(ET).date(); fr = to - timedelta(days=days)
     try:
         d = json.loads(get(f"https://api.nasdaq.com/api/quote/{sym}/historical?assetclass=stocks&fromdate={fr}&todate={to}&limit=400", tries=2))
@@ -43,21 +48,39 @@ def short_name(n):
     """The name people say: "AppLovin Corporation" -> "AppLovin" (Whisper heard the long form as "app love inc")."""
     n = re.sub(r"\s*(?:Common Stock|Class [A-C]( Common Stock)?|Ordinary Shares|American Depositary Shares)\b.*$", "", str(n or ""))
     for _ in range(2):
-        n = re.sub(r",?\s+(?:Inc\.?|Incorporated|Corporation|Corp\.?|Holdings?|Co\.?|Company|Ltd\.?|Limited|plc|PLC|N\.V\.|S\.A\.|Group|Technologies|Technology|Platforms)$", "", n.strip())
-    return n.strip()
+        n = re.sub(r",?\s+(?:Inc\.?|Incorporated|Corporation|Corp\.?|Holdings?|Co\.?|Company|Ltd\.?|Limited|plc|PLC|N\.V\.|S\.A\.|Group|Technologies|Technology|Platforms)$", "", n.strip().rstrip(","))
+    return n.strip().rstrip(",")
 
 
 def main_facts():
     acct = jload(os.path.join(W, "account.json")); uid = acct["uid"]
     with Stage(W, "facts.portfolio"):
-        rows = rest(W, f"portfolio?select=symbol,name,kind,qty,price,value,change_pct,avg_cost,total_gl&user_id=eq.{uid}")
+        rows = rest(W, f"portfolio?select=symbol,name,kind,qty,price,value,change_pct,avg_cost,total_gl,currency&user_id=eq.{uid}")
+        mdate0 = jload(os.path.join(W, "research-data.json"))["date"]
+        if any(r.get("currency") == "KRW" for r in rows):
+            # Home converts won holdings at the app's USDKRW (format.ts convertCcy); the recompute uses CNBC's rate and
+            # Daum's KRX price, so a figure only stands when both conversions agree
+            FX["app"], FX["two"] = KRM.fx_pair(rest(W, "prices?select=symbol,price&symbol=eq.USDKRW"))
+            if not FX["app"] or not FX["two"] or abs(FX["app"] / FX["two"] - 1) > 0.004:
+                sys.exit(f"REFUSE: the won rate disagrees or is missing (app {FX.get('app')}, CNBC {FX.get('two')})")
+            for r in rows:
+                if r.get("currency") == "KRW":
+                    r["price_krw"] = r["price"]
+                    for k in ("price", "value", "avg_cost", "total_gl"):
+                        if r.get(k) is not None: r[k] = float(r[k]) / FX["app"]
         eq = [r for r in rows if not str(r["symbol"]).startswith("$")]
         cash = sum(float(r["value"] or 0) for r in rows if str(r["symbol"]).startswith("$"))
         app_total = sum(float(r["value"] or 0) for r in rows)
         app_day = sum(float(r["value"]) * float(r["change_pct"] or 0) / (100 + float(r["change_pct"] or 0)) for r in eq)
         cost = sum(float(r["qty"]) * float(r["avg_cost"]) for r in eq)
         app_gl = sum(float(r["total_gl"] or 0) for r in eq)
-        nq = {r["symbol"]: nasdaq(r["symbol"]) or {} for r in eq}
+        def second(r):
+            if r.get("currency") != "KRW": return nasdaq(r["symbol"]) or {}
+            q = KRM.kr_quote(r["symbol"], mdate0)
+            if not q.get("last2"): return {}
+            prev = q["last2"] / (1 + q["pct2"] / 100)
+            return {"last": q["last2"] / FX["two"], "pct": q["pct2"], "chg": (q["last2"] - prev) / FX["two"]}
+        nq = {r["symbol"]: second(r) for r in eq}
         n_total = cash + sum(float(r["qty"]) * (nq[r["symbol"]].get("last") or 0) for r in eq)
         n_day = sum(float(r["qty"]) * (nq[r["symbol"]].get("chg") or 0) for r in eq)
         n_gl = sum(float(r["qty"]) * ((nq[r["symbol"]].get("last") or 0) - float(r["avg_cost"])) for r in eq)
@@ -67,10 +90,14 @@ def main_facts():
         def keep(name, a, b, tol, fmt):
             ok = agree(a, b, tol); checks.append({"figure": name, "app": round(a, 4), "nasdaq": round(b, 4), "ok": ok})
             if ok: figs[name] = fmt(a)
-        keep("total", app_total, n_total, app_total * 0.001, money)
-        keep("day_usd", app_day, n_day, max(25, abs(app_day) * 0.05), money)
-        keep("day_pct", app_day_pct, n_day_pct, 0.03, lambda v: f"{abs(v):.2f}%")
-        keep("day_pct_1", app_day_pct, n_day_pct, 0.03, lambda v: f"{abs(v):.1f}%")
+        live_kr = KR and KRM.krx_open_now()
+        keep("total", app_total, n_total, app_total * (0.003 if live_kr else 0.0015 if KR else 0.001), money)
+        if not KR:
+            # Korea editions say no "today" figure: Home's Today sums only the markets whose session is today on their own
+            # calendar (portfolio.ts dayGroups), US and KRX sessions cross midnight there, so the voice keeps to all time
+            keep("day_usd", app_day, n_day, max(25, abs(app_day) * 0.05), money)
+            keep("day_pct", app_day_pct, n_day_pct, 0.03, lambda v: f"{abs(v):.2f}%")
+            keep("day_pct_1", app_day_pct, n_day_pct, 0.03, lambda v: f"{abs(v):.1f}%")
         keep("alltime_usd", app_gl, n_gl, max(50, abs(app_gl) * 0.003), money)
         keep("alltime_pct", 100 * app_gl / cost, 100 * n_gl / cost, 0.1, lambda v: f"{abs(v):.2f}%")
         keep("alltime_pct_0", 100 * app_gl / cost, 100 * n_gl / cost, 0.1, lambda v: f"{abs(v):.0f}%")
@@ -79,7 +106,7 @@ def main_facts():
         # differ (a run after midnight ET: 9/30 clean run 1 computed "the week" from Oct 1 and the app's Ask from Sep 30)
         import calendar as _c
         win = {}
-        mdate = datetime.strptime(jload(os.path.join(W, "research-data.json"))["date"], "%Y-%m-%d").date()
+        mdate = datetime.strptime(mdate0, "%Y-%m-%d").date()
         # ...and the LAST SESSION: before the open (and through the night) the app's Ask counts its windows from the previous
         # trading day's close (10/1 4 AM pre-open: "1W -$393" is Sep 30 back to Sep 23)
         def prev_session(d):
@@ -106,6 +133,7 @@ def main_facts():
                 ymd = str(dt)
                 ph = rest(W, f"price_history?select=ts,price&symbol=eq.{s}&ts=lte.{ymd}T23:59:59Z&order=ts.desc&limit=1")
                 a = float(ph[0]["price"]) if ph else None
+                if a is not None and r.get("currency") == "KRW": a /= FX["app"]
                 b = base_at(h, ymd)
                 win.setdefault(s, {})[lab] = {"app_base": a, "nasdaq_base": b}
         port = {}
@@ -124,7 +152,8 @@ def main_facts():
         holdings = []
         for r in eq:
             s = r["symbol"]; n = nq[s]
-            hrow = {"symbol": s, "name": r.get("name") or s, "value": round(float(r["value"])), "day_pct": float(r["change_pct"] or 0),
+            hrow = {"symbol": s, "name": r.get("name") or s, "value": round(float(r["value"])), "value_n": round(float(r["qty"]) * (n.get("last") or 0)),
+                    "day_pct": float(r["change_pct"] or 0),
                     "day_pct_nasdaq": n.get("pct"), "gain_usd": round(float(r["total_gl"] or 0)),
                     "gain_pct": 100 * float(r["total_gl"] or 0) / (float(r["qty"]) * float(r["avg_cost"])), "weight": 100 * float(r["value"]) / app_total}
             for lab, _ in CUTS:
@@ -144,6 +173,15 @@ def main_facts():
                                "positions": len(eq)},
                  "figures": figs, "checks": checks, "holdings": holdings, "windows": port,
                  "names": {h["symbol"]: short_name(h["name"]) for h in holdings}}
+        # group weights the Ask may state ("memory chips are 31% of your portfolio"): a fixed taxonomy (kr.py), never
+        # arbitrary sums, each as a share of assets (the Ask's own base, ask/index.ts weight())
+        groups = {}
+        for g, members in (("memory", KRM.MEMORY), ("chips", KRM.CHIPS), ("chips_no_samsung", KRM.CHIPS - {"005930.KS"}),
+                           ("korea", {h["symbol"] for h in holdings if KRM.is_kr(h["symbol"])}),
+                           ("memory_kr", {"000660.KS", "005930.KS"}), ("us", {h["symbol"] for h in holdings if not KRM.is_kr(h["symbol"])})):
+            hs = [h for h in holdings if h["symbol"] in members]
+            if hs: groups[g] = round(sum(h["weight"] for h in hs), 2)
+        facts["groups"] = groups
         facts["figures"]["best_gain"] = money(best["gain_usd"]); facts["figures"]["best_gain_pct"] = f"{best['gain_pct']:.0f}%"
         jdump(facts, os.path.join(W, "facts.json"))
         log("portfolio facts: " + json.dumps(facts["portfolio"]))
@@ -175,10 +213,18 @@ def main_ask():
                     cands_pct += [abs(v), abs(h[k[:-4] + "_nasdaq"])]
         for c in f["checks"]:
             if c["figure"] == "total": cands_usd += [c["app"], c["nasdaq"]]
+        cands_pct += list((f.get("groups") or {}).values())
+        # ... and the same groups in dollars ("$203,822 of $260,486" in AI chips): app values and the recompute's
+        for g, members in (("memory", KRM.MEMORY), ("chips", KRM.CHIPS), ("chips_no_samsung", KRM.CHIPS - {"005930.KS"}),
+                           ("korea", {h["symbol"] for h in f["holdings"] if KRM.is_kr(h["symbol"])}), ("memory_kr", {"000660.KS", "005930.KS"})):
+            hs = [h for h in f["holdings"] if h["symbol"] in members]
+            if not hs: continue
+            a = sum(h["value"] for h in hs); b = sum(h.get("value_n") or h["value"] for h in hs)
+            if abs(a - b) <= max(50, 0.004 * a): cands_usd += [a, b]
         # dividends ("~$3.30 to your 22 shares"): the Nasdaq dividend history x the shares held, a second source for the app's math
         qty = {r["symbol"]: float(r["qty"]) for r in rest(W, f"portfolio?select=symbol,qty&user_id=eq.{jload(os.path.join(W, 'account.json'))['uid']}")}
         for sym, q in qty.items():
-            if sym.startswith("$"): continue
+            if sym.startswith("$") or KRM.is_kr(sym): continue
             try:
                 dv = json.loads(get(f"https://api.nasdaq.com/api/quote/{sym}/dividends?assetclass=stocks", tries=1))["data"]
                 rows = ((dv.get("dividends") or {}).get("rows") or [])[:1]
@@ -189,6 +235,20 @@ def main_ask():
             except Exception:                            # noqa: BLE001
                 pass
         ans = ask["answer"]
+        if KR:
+            # a bucket the answer builds from names it lists ("AI chip bucket ~58% ($151,873): NVDA, AMD, TSM, MU, SK hynix",
+            # then "Samsung raises it to ~68%"): the app picks the members, so the check follows the answer's own order:
+            # running sums of the listed holdings' values (each verified on two feeds) in order of first mention
+            tot = next((c["app"] for c in f["checks"] if c["figure"] == "total"), None)
+            pos = []
+            for h in f["holdings"]:
+                keys = {h["symbol"], h["symbol"].split(".")[0], (f.get("names") or {}).get(h["symbol"], ""), KRM.KR_NAMES.get(h["symbol"], "")}
+                hits = [m.start() for k in keys if k and len(k) >= 2 for m in re.finditer(r"(?<![A-Za-z])" + re.escape(k) + r"(?![a-z])", ans)]
+                if hits: pos.append((min(hits), h))
+            run_a = run_b = 0.0
+            for _, h in sorted(pos, key=lambda x: x[0]):
+                run_a += h["value"]; run_b += h.get("value_n") or h["value"]
+                if tot: cands_usd += [run_a, run_b]; cands_pct += [100 * run_a / tot, 100 * run_b / tot]
         heads = [{"publisher": h["publisher"], "title": h["title"]} for h in jload(os.path.join(W, "research-data.json"))["headlines"]]
         # plus the app's own stored news for the holdings (title + summary, many publishers): the same pool Ask read
         syms = ",".join(h["symbol"] for h in f["holdings"])

@@ -1,9 +1,9 @@
 ---
 name: assetly-shorts
-description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, commentary in Minjae's voice, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day; uploads only with --upload (YouTube private; TikTok via API or the queue).
+description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, commentary in Minjae's voice, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day plus two Korea AI-chip editions per KRX trading day (korea-open, korea-close); uploads only with --upload (YouTube private; TikTok via API or the queue).
 ---
 
-# Assetly market Shorts, v1.0.7
+# Assetly market Shorts, v1.1.0
 
 Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratch every run:
 
@@ -15,6 +15,21 @@ Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratc
 
 Weekends and US market holidays: skip (the app's own calendar, `supabase/functions/_shared/calendar.ts`).
 
+**Korea editions (v1.1.0, owner 10/1):** two more Shorts per KRX trading day for US investors with AI-heavy portfolios,
+mid-to-long term (never day to day): Korea's AI-chip names (SK hynix, Samsung Electronics, Hanmi Semiconductor and peers)
+and the US chip names they move with (Micron, Nvidia ...).
+
+| Edition | Ready by | Covers | App brief | Pages on | Ask on camera |
+|---|---|---|---|---|---|
+| `korea-open` | ~8:00 PM CT (9:32 AM KST start, the evening before the US session) | the past-month move of Korea's AI-chip names and why, the session so far in Seoul, the read-through for US chip names as context | kr_open | 1M | "How exposed is my portfolio to memory chips?" |
+| `korea-close` | ~2:10 AM CT (3:45 PM KST start, read in the US morning) | the long view: three-month trend and why, dated upcoming events, what it means for an AI-heavy portfolio's concentration | kr_close | 3M | "What's my AI chip concentration?" |
+
+Accounts `minjae.m.lee+daily015` (korea-open) and `+daily016` (korea-close), same funnel exclusion. KRX holidays skip
+(the KR calendar). Quotes: Yahoo (the app's source) + Daum's KRX official days (`scripts/kr.py`; Naver is not a KRX feed in
+the evening: Nextrade after-market); windows on both histories; won at the app's USDKRW and CNBC's KRW=. No "today"
+portfolio figure (Home's Today mixes US and KRX sessions): the portfolio line is the all-time gain. Times and the DST-proof
+launchd setup: `references/schedule.md`.
+
 ## One command
 
 ```bash
@@ -22,6 +37,7 @@ Weekends and US market holidays: skip (the app's own calendar, `supabase/functio
 ~/.claude/skills/assetly-shorts/scripts/run.sh preopen --date 2026-10-01 --test --seed 4
 ~/.claude/skills/assetly-shorts/scripts/run.sh close --work /tmp/assetly-shorts/<run> --from story   # resume at a stage
 ~/.claude/skills/assetly-shorts/scripts/run.sh close --upload        # + private upload after the gate passes (never with --test)
+~/.claude/skills/assetly-shorts/scripts/run.sh korea-close --date 2026-10-01 --test   # a Korea edition (date = the KST session)
 ```
 
 Every frame carries the data time-stamp in the top-left corner (edition eyebrow over "Sep 30 · 4:05 PM ET": the time the

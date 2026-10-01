@@ -14,15 +14,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import APP, EDITIONS, ET, Stage, jdump, jload, log, now_et, rest, srk
 
 ED, W = sys.argv[1], sys.argv[2]
-N = int(sys.argv[sys.argv.index("--account") + 1]) if "--account" in sys.argv else {"close": 11, "preopen": 12, "midday": 13}[ED]
+N = int(sys.argv[sys.argv.index("--account") + 1]) if "--account" in sys.argv else {"close": 11, "preopen": 12, "midday": 13, "korea-open": 15, "korea-close": 16}[ED]
 BRIEF = EDITIONS[ED]
 JARGON = re.compile(r"\b(thesis|theses|tape|tapes|catalysts?|tripwire|setup|book(?! value)|bps|basis points|capex|EPS|beta|alpha)\b|\bprints?\b(?=\s|[.,])|\bdemo\b|—", re.I)
 WRONG = {"close": re.compile(r"\bthis morning\b|\bso far today\b|\bbefore the bell\b|\bfutures point\b", re.I),
          "morning": re.compile(r"\bclosed (?:up|down|at) .{0,20}\btoday\b|\btoday's close\b", re.I),
-         "midday": re.compile(r"\btoday's close\b|\bclosed (?:up|down) .{0,12}today\b", re.I)}
+         "midday": re.compile(r"\btoday's close\b|\bclosed (?:up|down) .{0,12}today\b", re.I),
+         # the Korea briefs (kr_open 9:20 AM KST, kr_close after 3:30 PM KST): Seoul's session words
+         "kr_open": re.compile(r"\btoday's close\b|\bKRX closed\b|\bafter the (?:Seoul |KRX )?close\b", re.I),
+         "kr_close": re.compile(r"\bso far today\b|\bthis morning in Seoul\b|\bat the open\b(?! in New York)", re.I)}
 
 
 def in_window():
+    if BRIEF in ("kr_open", "kr_close"):                 # the KST clock (calendar.ts briefWindow): 8:00-15:30 / after 15:30
+        from kr import kst_now
+        k = kst_now(); km = k.hour * 60 + k.minute
+        return 480 <= km < 930 if BRIEF == "kr_open" else km >= 930
     z = now_et(); m = z.hour * 60 + z.minute
     return {"morning": 8 * 60 <= m < 570, "midday": 570 <= m < 960, "close": m >= 960}[BRIEF]
 

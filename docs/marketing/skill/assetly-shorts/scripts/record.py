@@ -13,12 +13,25 @@ own "Recording started" stamp, refined by matching every tap mark to the screen 
 import glob, json, os, re, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import APP, Stage, jdump, jload, log
+import kr as KRM
 
 ED, W = sys.argv[1], sys.argv[2]
 UDID = sys.argv[sys.argv.index("--udid") + 1] if "--udid" in sys.argv else os.environ.get("SHORTS_UDID", "43B3BBEF-E13F-47E8-ADFA-2E8FB829E217")
 ASKQ = {"preopen": "What's ahead for my portfolio today?", "midday": "What's moving my portfolio today?",
-        "close": "How did I do this week and this month?"}
+        "close": "How did I do this week and this month?", **KRM.ASKQ}
 os.environ["DEVELOPER_DIR"] = "/Applications/Xcode.app/Contents/Developer"
+
+
+def row_label(sym):
+    """What the UI test matches a Home row by (its label starts with this + " "): the ticker for a US name; for a KRX
+    name the company name the row shows first (format.ts labelParts: the name, "Co., Ltd." / "Inc." dropped)."""
+    if not KRM.is_kr(sym): return sym
+    from lib import rest
+    try:
+        nm = (rest(W, f"symbols?select=name&symbol=eq.{sym}") or [{}])[0].get("name") or KRM.KR_NAMES.get(sym, sym)
+    except Exception:                                    # noqa: BLE001
+        nm = KRM.KR_NAMES.get(sym, sym)
+    return re.sub(r"\s*(Co\.?,?\s*Ltd\.?|Inc\.?|Corp(?:oration)?\.?|Company|Ltd\.?)\s*$", "", nm, flags=re.I).strip()
 
 
 def scene_changes(mov):
@@ -58,8 +71,8 @@ def main():
 def _main_take_and_align(acct, res, syms, q):
     if "--align-only" not in sys.argv:          # re-map an existing take (no new recording)
         with Stage(W, "record.take"):
-            env = dict(os.environ, THEME="dark", CRED=acct["cred"], DAILY_SYMBOLS=",".join(syms[:4]),
-                       DAILY_RANGE="1W" if ED == "preopen" else "1D", HERO_TEST="testGshort", ASK_QUESTION=q,
+            env = dict(os.environ, THEME="dark", CRED=acct["cred"], DAILY_SYMBOLS=",".join(row_label(s) for s in syms[:4]),
+                       DAILY_RANGE=KRM.RANGE.get(ED) or ("1W" if ED == "preopen" else "1D"), HERO_TEST="testGshort", ASK_QUESTION=q,
                        SIM_VIDEO=os.path.join(W, "disp.mov"), OUT=os.path.join(W, "raw.mp4"),
                        XCRESULT=os.path.join(W, "take.xcresult"), DERIVED="/tmp/assetly-shorts/dd", ATT_DIR=os.path.join(W, "att"),
                        XCLOG=os.path.join(W, "xcodebuild.log"))
@@ -125,6 +138,11 @@ def _main_take_and_align(acct, res, syms, q):
         off = sorted(lags)[len(lags) // 2] if lags else 0.0
         best = (max(lags) - min(lags) if lags else 0.0, off)
         marks = {k: round(mapped(v), 3) for k, v in rel.items()}
+        # a KRX row was found by its Home label ("SK hynix"): its marks go back under the symbol the rest of the run uses
+        for s in syms:
+            lab = row_label(s)
+            if lab != s:
+                marks = {k.replace(f"_{lab}_", f"_{s}_"): v for k, v in marks.items()}
         log(f"anchors {[(round(t, 1), round(l, 2)) for t, l in anchors]}")
         log(f"clock: median lag {off:+.2f}s, spread {best[0]:.2f}s over {len(lags)} anchors; marks: " + ", ".join(f"{k}={v}" for k, v in marks.items()))
         jdump({"offset": off, "fit_error": best[0], "marks": marks, "cuts": cuts}, os.path.join(W, "marks.json"))

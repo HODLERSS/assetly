@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.1.0 (2026-10-01, owner: track Korean semiconductor stocks, two Korea Shorts a day, mid-to-long term)
+
+- Two new editions, `korea-open` (9:32 AM KST = ~7:32 PM CT the evening before, pages on 1M, Ask "How exposed is my
+  portfolio to memory chips?") and `korea-close` (3:45 PM KST = ~1:45 AM CT, the long view, pages on 3M, Ask "What's my
+  AI chip concentration?"), for US investors with AI-heavy portfolios: Korea's AI-chip names (SK hynix, Samsung
+  Electronics, Hanmi Semiconductor and peers) and the US chip names they move with, the multi-week trend and its cause,
+  dated upcoming events, context only (never a call on the US open, never advice). Accounts `+daily015` / `+daily016`.
+- `scripts/kr.py`: KRX quotes from Yahoo (the app's own source; a bare "Mozilla/5.0" UA, the Chrome UA gets 429) and Daum
+  Finance (KRX official `days` rows; the live `quotes` only during the session). Naver was rejected as a KRX feed: in the
+  evening its price is the Nextrade after-market one (SK hynix 10/1: 1,828,000 vs the KRX close 1,833,000). 1M / 3M / YTD
+  windows on both histories (Yahoo vs Daum for KRX, Yahoo vs Nasdaq for US), anchored like the app's chartRange.ts.
+  KOSPI on Yahoo + Naver (an index has no after-market), the SOX on CNBC + Nasdaq. Won: the app's USDKRW and CNBC KRW=.
+- research: the Korea universe (9 KRX names + 17 US chip names), English headlines (Google News: SK hynix, Samsung,
+  Hanmi, HBM, memory prices, Kospi), the long-view framing, figures with a `field` (pct / m1 / m3 / ytd; only the
+  edition's page window may be spoken), window claims checked against both histories.
+- book: SK hynix and Samsung always held, US chip core, KRX lots in won (cost inside the year's KRX range). seed: KRX
+  names ensured as KRX / KRW with their names, `markets` = US + KR.
+- account: kr_open / kr_close briefs on the KST window, Seoul timing words. facts: KRX rows converted at the app's rate and
+  recomputed with Daum + CNBC's rate (the run refuses when the two rates differ > 0.4%); no "today" figure (Home's Today
+  mixes the US and KRX sessions); group weights for the Ask (memory, chips, Korea) from a fixed taxonomy.
+- record: KRX rows are found by their Home label ("SK hynix"), marks mapped back to the symbol; DAILY_RANGE 1M / 3M.
+  screen: the page's chart header ("Price · 3M" and its change) is read as `range` / `range_move`.
+- storyline / compose / qa: Seoul timing words (Q25), "In Seoul," as the fallback lead, a window sentence must be the
+  page's window and agree with its change (storyline + Q33), the cover hero = the page's 1M / 3M change (PAST MONTH /
+  PAST 3 MONTHS, Q38), stamp label "Seoul open" / "Seoul close" (Q31, still ET wall time), end card "Follow for Korea's
+  chips, twice a day" (Q39), KRX feeds named in sources.md, Korea niche tags.
+- Schedule: launchd `com.hodlerss.assetly-shorts.korea-open` (Sun-Thu 18:30 CT) and `.korea-close` (Mon-Fri 00:40 CT);
+  the gate waits for 9:32 / 15:45 KST (Seoul has no DST, Chicago does) and checks "already delivered" on the Seoul date.
+
 ## v1.0.7 (2026-10-01, owner: Shorts reach best practices, keep the core principles)
 
 - Source: "If your shorts get under 1,000 views... do this" (youtube.com/watch?v=Jc_-IPaW2pg; transcript, chapters read)
