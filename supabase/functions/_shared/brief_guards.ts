@@ -102,7 +102,11 @@ export function fixNoteWeight(note: string, own: WeightFact | undefined, facts: 
       const before = s.slice(Math.max(0, at - 30), at);
       if (MOVE_BEFORE.test(before) || GROUP_BEFORE.test(before) || /\b(?:top|two|combined|together)\b[^.%\d]{0,30}$/i.test(before)) return m;
       return Math.abs(Number(num) - own.weight) <= tolFor(num, tol) ? m : m.replace(num, own.weight.toFixed(1));
-    });
+    })
+      // 10/1 round 2: the figure after the noun ("The Korean anchor at 29.6%", "a stake of 29.6%"); "at" / "of" only, so a
+      // move ("the position rose 3%") is never read as a weight
+      .replace(/\b((?:(?:Korean|US|AI|crypto|chip|memory|core|biggest|largest|single-name)[- ]?\s*)?(?:weight|weighting|stake|position|holding|anchor|bet|allocation)\s+(?:at|of|sits at|stands at)\s+)(\d+(?:\.\d+)?)\s?%(?!\s*(?:of (?:the |your )?(?:Korean|US|crypto|tech)|(?:this|a|the) (?:year|week|month)))/gi,
+        (m: string, head: string, num: string) => Math.abs(Number(num) - own.weight) <= tolFor(num, tol) ? m : `${head}${own.weight.toFixed(1)}%`);
     if (x !== s) changed = true;
     return x;
   });

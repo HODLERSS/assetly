@@ -110,3 +110,22 @@ Deno.test("note weights: a bare weight in a holding's own note is that holding's
   // another holding named, a group share, or a move: left alone
   for (const t of ["Together with MARA, a 55.1% weight rides two bets.", "Korean stocks are a 29.5% weight.", "It rose 3.2% stake-free.", "Up 35.0% this year."]) assertEquals(fixNoteWeight(t, hynix, BOOK), t);
 });
+
+Deno.test("note weights: a group share hung on one holding (10/1 owner's morning, round 2)", () => {
+  const hynix = BOOK[1];
+  // the Korean holdings' 29.6% on SK hynix (21.4% here), figure before or after the noun
+  assertEquals(fixNoteWeight("The 29.6% Korean anchor added 3.2% in Thursday's Korean session for $9,100.", hynix, BOOK),
+    "The 21.4% Korean anchor added 3.2% in Thursday's Korean session for $9,100.");
+  assertEquals(fixNoteWeight("The Korean anchor at 29.6% added 3.2% today.", hynix, BOOK), "The Korean anchor at 21.4% added 3.2% today.");
+  assertEquals(fixNoteWeight("A stake of 29.6% rides on HBM demand.", hynix, BOOK), "A stake of 21.4% rides on HBM demand.");
+  // its own weight, a group share stated as one, a move and another holding's sentence are left alone
+  for (const t of ["The Korean anchor at 21.4% added 3.2% today.", "Korean stocks are a 29.6% weight.", "The position rose 29.6% this year.",
+    "With MARA, the anchor at 55.1% is a two-name bet."]) assertEquals(fixNoteWeight(t, hynix, BOOK), t);
+});
+
+Deno.test("plain words: \"lives or dies on\" reads as \"depends heavily on\" (10/1 owner's morning lede)", () => {
+  const s = (t: string) => plainScrub(t, PORTFOLIO_PLAIN);
+  assertEquals(s("The 54.6% combined weight means the portfolio lives or dies on their next reports."),
+    "The 54.6% combined weight means the portfolio depends heavily on their next reports.");
+  assertEquals(s("Two holdings you live or die by."), "Two holdings you depend heavily on.");
+});

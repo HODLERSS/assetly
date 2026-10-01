@@ -328,7 +328,7 @@ function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: numbe
  *  script and audio were cleared, so the caller can have them re-narrated. */
 // deno-lint-ignore no-explicit-any
 type RepairCtx = { facts: { symbol: string; names: string[]; weight: number; pct: number | null; yieldPct?: number | null; kind?: string; theme?: string }[]; yields: number[]; ground?: string; wins?: { names: string[]; windows: Record<number, number | null> }[] };
-async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctxIn?: RepairCtx | (() => Promise<RepairCtx | undefined>)): Promise<{ edition: string; date: string }[]> {
+async function repairToday(admin: any, uid: string, rows: { symbol: string; kind: string; nickname?: string | null; name?: string | null }[], briefDate: string, live: string[], ctxIn?: RepairCtx | (() => Promise<RepairCtx | undefined>), opt: { force?: boolean; editions?: string[] } = {}): Promise<{ edition: string; date: string }[]> {
   // Round 9 designer: the rows a reader SEES are the latest ones, not only today's. Over a weekend (or before the first
   // edition of a day) Home shows the last trading day's rows, and a repair keyed to today's date never reached them: the
   // App Review showcase still read "(as of 7:31 PM ET)" and "META -3.3%" after GEN 10 shipped. Each user's latest brief
@@ -347,8 +347,9 @@ async function repairToday(admin: any, uid: string, rows: { symbol: string; kind
   if (stranded.length) all = all.filter((o) => !stranded.includes(o));
   // r11 P3: today's live edition gets the text-only repair too; regeneration is gated on its window, and the Sep 25
   // close kept "the week's biggest loser" and "Nasdaq futures sit at…" all night because it was excluded here
+  // 10/1 round 2: an operator repair (`repair_now`) runs the current guards over current-GEN rows too, in place
   const stale = all.filter((o) => (o.brief_date === briefDate || o.brief_date === latestPast)
-    && Number(o.gen_version ?? 0) < GEN_VERSION && validSections(o.sections));
+    && (opt.force || Number(o.gen_version ?? 0) < GEN_VERSION) && (!opt.editions || opt.editions.includes(o.edition)) && validSections(o.sections));
   if (!stale.length) return [];
   // r10 load: the repair context (dividends, weights) is read only for a user with rows to repair
   const ctx: RepairCtx | undefined = typeof ctxIn === "function" ? await ctxIn().catch(() => undefined) : ctxIn;
@@ -437,7 +438,11 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     const kept = parts.filter((p) => !bad.has(p) && ![...bad].some((b) => b.includes(p) || p.includes(b)));
     return kept.length ? kept.join(" ") : x;
   };
-  const s: Sections = { ...src, lede: dropWrong(src.lede), overnight: dropWrong(src.overnight), desk_view: dropWrong(src.desk_view) };
+  // 10/1 round 2: stored rows get the weight guards fresh briefs get ("The 29.6% Korean anchor" on SK hynix at 21.5%: the
+  // Korean holdings' share hung on one holding survived the 16:10 repair, which never ran fixNoteWeight)
+  const wf: WeightFact[] = (ctx?.facts ?? []).map((f) => ({ names: f.names, weight: f.weight }));
+  const named = (t: string) => wf.length ? fixNamedWeights(t, wf) : t;
+  const s: Sections = { ...src, lede: named(dropWrong(src.lede)), overnight: named(dropWrong(src.overnight)), desk_view: named(dropWrong(src.desk_view)) };
   if (src.horizon) s.horizon = dropWrong(src.horizon);
   s.positions = (src.positions ?? []).map((p) => {
     const canon = canonicalCalendar([p.watch], ests, "", today);
@@ -451,7 +456,7 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
     // r13 brief: "The 0.7% yield adds meaningful income to your portfolio" names no holding, so the named check missed it:
     // each note is held to its own position's yield
     const own0 = ctx?.facts.find((f) => f.names.some((n) => n && n.toLowerCase() === String(p.name ?? "").toLowerCase()));
-    const n0 = dropWrong(p.note);
+    const n0 = wf.length ? fixNoteWeight(named(dropWrong(p.note)), wf.find((f) => f.names.some((n) => n && n.toLowerCase() === String(p.name ?? "").toLowerCase())), wf) : dropWrong(p.note);
     const lowY = own0 && typeof own0.yieldPct === "number" ? new Set(lowYieldIncomeClaims(n0, own0.yieldPct)) : new Set<string>();
     const note1 = tidyClauseEndings(lowY.size ? splitSentences(n0).filter((x) => !lowY.has(x)).join(" ") || n0 : n0);
     // e2e P04-2: a stored assessment note whose risk line listed strengths (dropped above) gets the kind's code risk
@@ -512,6 +517,16 @@ Deno.serve(async (req) => {
   if (clockResolved && clockEd === null) repairOnlyReason = "between edition windows (ET)";
   let edition: Edition = validEd(edRaw) ? edRaw : (clockEd ?? "weekend");
   if (clockResolved && edition === "weekend" && zonedParts(new Date(), TZ.US).minutes < 9 * 60) repairOnlyReason = "weekend read waits for 9 AM ET";
+  // 10/1 round 2: an operator repair of one user's stored rows, in place (no model, no regeneration, no push): the current
+  // code guards over today's rows whatever their GEN, then re-narration of any row whose text changed. Internal token only.
+  let repairNow = false;
+  if (body.repair_now === true) {
+    let t = Deno.env.get("INTERNAL_TOKEN") ?? "";
+    if (!t) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); t = data ?? ""; }
+    if (!t || (req.headers.get("x-internal-token") ?? "") !== t) return json({ ok: false, error: "repair_now needs the internal token" }, 403);
+    if (!onlyUserId) return json({ ok: false, error: "repair_now needs user_id" }, 400);
+    repairNow = true;
+  }
   {
     const w = editionWindow(edition);
     let overrideOk = false;
@@ -520,7 +535,7 @@ Deno.serve(async (req) => {
       if (!t) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); t = data ?? ""; }
       overrideOk = !!t && (req.headers.get("x-internal-token") ?? "") === t;
     }
-    if (!w.ok && !fixture && !overrideOk && !repairOnlyReason) return json({ ok: true, users: 0, wrote: 0, reason: w.reason });
+    if (!w.ok && !fixture && !overrideOk && !repairOnlyReason && !repairNow) return json({ ok: true, users: 0, wrote: 0, reason: w.reason });
   }
   // Korea editions ride the KRX clock, not the US one: written on KRX trading days (KST) for users holding Korean
   // names. A Sunday 8 PM Central for the reader is Monday 10 AM in Korea, and their Korean sleeve is already moving.
@@ -649,6 +664,12 @@ Deno.serve(async (req) => {
   const loopIds = new Set(userIds.slice(0, 10));
   let dispatched = 0, renarrated = 0, repairedRows = 0;
   const repairedUsers = new Set<string>();
+  if (repairNow) {
+    const eds = Array.isArray(body.repair_editions) ? (body.repair_editions as unknown[]).map(String) : undefined;
+    const patched = await repairToday(admin, onlyUserId!, byUser.get(onlyUserId!) ?? [], briefDate, live, () => repairCtxOf(onlyUserId!), { force: true, editions: eds });
+    if (!noAudio) for (const pt of patched) await handOff("narrate", { user_id: onlyUserId, brief_date: pt.date, edition: pt.edition });
+    return json({ ok: true, repaired: patched, briefDate });
+  }
   if (!isRegen) {
     const repairStart = Date.now();
     const { data: staleU } = await admin.from("daily_briefs").select("user_id, generated_at").lt("gen_version", GEN_VERSION).gte("brief_date", ymdShift(briefDate, -7))

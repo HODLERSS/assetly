@@ -1,6 +1,6 @@
 // 10/1 round 2: "US stocks today: … US stocks today: …" in Ask. Run: deno test -A supabase/functions/_shared/lead_echo_test.ts
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1";
-import { dropLeadEchoes, statesLead } from "./intel.ts";
+import { dropLeadEchoes, fixOrphanShares, labelWholeBookPct, statesLead } from "./intel.ts";
 
 const LEAD = "• US stocks today: +$3,157 (+1.72%).";
 const NAMES = ["Accenture", "ACN", "NVDA", "Nvidia"];
@@ -40,4 +40,29 @@ Deno.test("dropLeadEchoes: a leading whole-book clause with the lead's figure go
   const lead = "• US stocks today: +$3,205 (+1.74%).";
   const a = `${lead}\n• Portfolio up $3,205 (+1.71%); ACN surged 18.3% on its AI-deal rally.\n• Portfolio up $9,999 today, led by ACN.`;
   assertEquals(dropLeadEchoes(a, lead, ["ACN"]), `${lead}\n• ACN surged 18.3% on its AI-deal rally.\n• Portfolio up $9,999 today, led by ACN.`);
+});
+
+Deno.test("labelWholeBookPct: a whole-portfolio % next to the lead's dollars names its basis (one % per figure)", () => {
+  const lead = "• US stocks today: +$3,209 (+1.74%).";
+  assertEquals(labelWholeBookPct(`${lead}\n• Portfolio up $3,209 (+1.71%) driven by Accenture's 18.5% jump.`, lead),
+    `${lead}\n• Portfolio up $3,209 (+1.71% of the whole portfolio) driven by Accenture's 18.5% jump.`);
+  // the lead's own %, an already-labelled one, another dollar figure, no lead in the text: unchanged
+  for (const t of [`${lead}\n• Portfolio up $3,209 (+1.74%) on ACN.`, `${lead}\n• Portfolio up $3,209 (+1.71% of the whole portfolio).`,
+    `${lead}\n• Portfolio up $9,000 (+4.0%) this month.`, "• Portfolio up $3,209 (+1.71%) driven by ACN."]) assertEquals(labelWholeBookPct(t, lead), t);
+  assertEquals(labelWholeBookPct("• 미국, 오늘: +$3,209 (+1.74%).\n• 포트폴리오 +$3,209 (+1.71%) 상승.", "• 미국, 오늘: +$3,209 (+1.74%).", true),
+    "• 미국, 오늘: +$3,209 (+1.74%).\n• 포트폴리오 +$3,209 (+1.71% 전체 기준) 상승.");
+});
+
+Deno.test("fixOrphanShares: a subjectless \"Your 75 shares added ~$X\" is attached to its holding or dropped", () => {
+  const H = [{ names: ["Accenture", "ACN"], qty: 75 }, { names: ["IBM"], qty: 40 }, { names: ["NVDA", "Nvidia"], qty: 40 }];
+  assertEquals(fixOrphanShares("• US stocks today: +$2,764 (+1.50%).\n• Your 75 shares added ~$2,475.\n• IBM +2.7%.", H),
+    "• US stocks today: +$2,764 (+1.50%).\n• Your 75 Accenture shares added ~$2,475.\n• IBM +2.7%.");
+  // the stray bold from the dropped sentence goes with it
+  assertEquals(fixOrphanShares("• **Your 75 shares added ~$2,470.\n• IBM +2.7%.", H), "• Your 75 Accenture shares added ~$2,470.\n• IBM +2.7%.");
+  // 40 shares matches two holdings, 12 none: dropped
+  assertEquals(fixOrphanShares("• Your 40 shares added $300.\n• IBM +2.7%.", H), "• IBM +2.7%.");
+  assertEquals(fixOrphanShares("• Your 12 shares added $300. IBM +2.7%.", H), "• IBM +2.7%.");
+  // the holding is named in the sentence before, or in the sentence itself: unchanged
+  for (const t of ["• ACN jumped 18%. Your 75 shares added ~$2,475.", "• Your 75 ACN shares added ~$2,475.", "• Your portfolio is up today."])
+    assertEquals(fixOrphanShares(t, H), t);
 });

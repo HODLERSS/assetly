@@ -52,7 +52,7 @@ Deno.serve({ port: SN_PORT, onListen: () => {} }, async (req) => {
   if (snMode === "echo") {
     const m = /TODAY \([^)]*\): ([+-]\$[\d,]+) \(([+-]?[\d.]+)%\)/.exec(user);
     const usd = m?.[1] ?? "+$0", pct = Number(m?.[2] ?? 0);
-    answer = `• US stocks today: ${usd} (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%).\n• Portfolio up ${usd.replace(/^[+-]/, "")} (${pct.toFixed(2)}%) today.\n• NVDA is up 0.5% today.`;
+    answer = `• US stocks today: ${usd} (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%).\n• Portfolio up ${usd.replace(/^[+-]/, "")} (${pct.toFixed(2)}%) today.\n• NVDA is up 0.5% today.\n• **Your 100 shares added about $90.`;
   }
   return Response.json({ choices: [{ message: { content: judge ? '{"flag": []}' : JSON.stringify({ answer, followups: ["Why is NVDA up today?"] }) }, finish_reason: "stop" }] });
 });
@@ -128,6 +128,8 @@ Deno.test({ name: "the code lead is not repeated by the model's own copy of it",
     assert((a.match(/US stocks|US \+ crypto/g) ?? []).length === 1, `one lead:\n${a}`);
     assert(!/Portfolio up/.test(a), a);
     assert(/NVDA/.test(a), a);
+    // round 2: the subjectless follow-on gets its holding (NVDA is the 100-share holding), and the stray bold goes
+    assert(/Your 100 (?:NVIDIA|NVDA) shares added about \$90\./.test(a) && !/\*\*/.test(a), a);
   } finally { snMode = "ok"; }
 } });
 

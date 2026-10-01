@@ -1033,6 +1033,9 @@ export const PORTFOLIO_PLAIN: [RegExp, string][] = [
   [/\b(?:an?\s+)?rounding errors?\b/gi, "too small to matter"],
   [/\b(?:the |a )?multiple compression\b/g, "a lower price relative to earnings"], [/\b(?:The |A )?Multiple compression\b/g, "A lower price relative to earnings"],
   [/\b(?:the |a )?multiple expansion\b/g, "a higher price relative to earnings"], [/\b(?:The |A )?Multiple expansion\b/g, "A higher price relative to earnings"],
+  // 10/1 owner's morning: "the portfolio lives or dies on their next reports" is drama, not information
+  [/\blives or dies (?:on|by|with)\b/gi, "depends heavily on"], [/\blive or die (?:on|by|with)\b/gi, "depend heavily on"],
+  [/\blived or died (?:on|by|with)\b/gi, "depended heavily on"], [/\bliving or dying (?:on|by|with)\b/gi, "depending heavily on"],
   [/\ba yellow flag\b/gi, "a warning sign"], [/\byellow flags\b/gi, "warning signs"], [/\byellow flag\b/gi, "warning sign"],
   // "sleeve" (a slice of the portfolio): "Korean holdings", with the verb made plural ("the Korean sleeve now accounts"
   // -> "the Korean holdings now account") and the possessive moved ("sleeve's" -> "holdings'")
@@ -2818,6 +2821,68 @@ export function dropLeadEchoes(text: string, lead: string | null, holdingNames: 
     const kept = perLine(line, (body) => splitSentences(body).filter((sen) => !isEcho(sen)).map(trimClause).join(" "));
     return kept.trim() ? kept : null;
   }).filter((l): l is string => l !== null).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** 10/1 round 2: one day % per dollar figure. The code lead's day line is on its own holdings ("US stocks today: +$3,209
+ *  (+1.74%)", Home's split) while a model sentence about the whole portfolio carries the same dollars on the whole-book
+ *  base, cash included ("Portfolio up $3,209 (+1.71%)"). Both are true; unlabelled, they read as two answers. A whole-
+ *  portfolio sentence with a lead dollar figure and a percent that is not the lead's gets its basis named. */
+export function labelWholeBookPct(text: string, lead: string | null, ko = false): string {
+  const src = String(text ?? "");
+  if (!lead) return src;
+  const leadLines = lead.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!leadLines.some((l) => src.includes(l))) return src;
+  const dollars = [...lead.matchAll(/\$\s?(\d{1,3}(?:,\d{3})+|\d+)/g)].map((m) => Number(m[1].replace(/,/g, "")));
+  const leadPcts = [...lead.matchAll(/(\d+(?:\.\d+)?)%/g)].map((m) => Number(m[1]));
+  const WHOLE = /\b(?:portfolio|book|account|overall|in total|altogether)\b|포트폴리오|전체/i;
+  const tag = ko ? " 전체 기준" : " of the whole portfolio";
+  return src.split("\n").map((line) => leadLines.includes(line.trim()) ? line : perLine(line, (body) => splitSentences(body).map((sen) => {
+    if (!WHOLE.test(sen) || /whole portfolio|전체 기준/.test(sen)) return sen;
+    const ds = [...sen.matchAll(/\$\s?(\d{1,3}(?:,\d{3})+|\d+)/g)].map((m) => Number(m[1].replace(/,/g, "")));
+    if (!ds.some((d) => dollars.some((x) => Math.abs(x - d) <= 1))) return sen;
+    return sen.replace(/([+−-]?\d+(?:\.\d+)?)%(?!\s*(?:of|on|in)\b)/, (m: string, n: string) => {
+      const v = Math.abs(Number(n.replace("−", "-"))), dp = (n.split(".")[1] ?? "").length;
+      // the lead's own figure at the sentence's precision ("+1.7%" for +1.74%) needs no label
+      return leadPcts.some((p) => Math.abs(p - v) <= 0.5 * 10 ** -dp + 1e-9) ? m : `${m}${tag}`;
+    });
+  }).join(" "))).join("\n");
+}
+
+/** 10/1 round 2: "• Your 75 shares added ~$2,475." A guard dropped the sentence that named the holding and left its
+ *  follow-on with no subject. A "your N shares / your stake / your position" sentence that opens its line (or follows a
+ *  sentence naming no holding) is attached to the one holding with that share count, or dropped when none or several
+ *  match. A line left with an unbalanced "**" loses it. */
+export function fixOrphanShares(text: string, holdings: { names: string[]; qty: number | null }[], ko = false): string {
+  const src = String(text ?? "");
+  const ORPHAN = /^(\**)\s*(your)\s+(\d[\d,]*(?:\.\d+)?)\s+shares\b/i;
+  const VAGUE = /^\**\s*your\s+(?:stake|position|holding|shares)\b/i;
+  const names = (h: { names: string[] }) => h.names.filter((n) => n && n.length >= 2);
+  const namesHolding = (t: string) => holdings.some((h) => names(h).some((n) => nameIn(t, n)));
+  if (ko) return src;
+  return src.split("\n").map((line) => {
+    if (!line.trim()) return line;
+    const out = perLine(line, (body) => {
+      const sens = splitSentences(body);
+      const kept: string[] = [];
+      for (const sen of sens) {
+        const prevNamed = kept.length > 0 && namesHolding(kept[kept.length - 1]);
+        if (prevNamed || namesHolding(sen)) { kept.push(sen); continue; }
+        const m = ORPHAN.exec(sen);
+        if (m) {
+          const n = Number(m[3].replace(/,/g, ""));
+          const hits = holdings.filter((h) => h.qty !== null && Math.abs(Number(h.qty) - n) < 1e-6);
+          if (hits.length === 1 && names(hits[0])[0]) { kept.push(sen.replace(ORPHAN, (_x, b: string, y: string, q: string) => `${b}${y} ${q} ${names(hits[0])[0]} shares`)); continue; }
+          continue;   // no holding to hang it on: the sentence goes
+        }
+        if (VAGUE.test(sen) && !kept.length) continue;
+        kept.push(sen);
+      }
+      return kept.join(" ");
+    });
+    if (!out.trim()) return null;
+    // a "**" whose partner went with a dropped sentence
+    return ((out.match(/\*\*/g) ?? []).length % 2) ? out.replace(/\*\*(?![\s\S]*\*\*)/, "") : out;
+  }).filter((l): l is string => l !== null).join("\n");
 }
 
 /** A dollar move stated for a holding over a window that is not that holding's (round 9: "Biggest 1M losers: TSLA
