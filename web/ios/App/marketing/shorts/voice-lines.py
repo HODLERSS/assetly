@@ -142,5 +142,5 @@ for i, ln in enumerate(day["lines"]):
     print(f"line {i} {v:6} {at:6.2f}-{at + D:6.2f}  {ln['say']}")
     last = at + times[-1][1] - 0.0
     at = round(at + D + GAP, 2)
-json.dump({"size": 50, "cues": subs}, open("subs.json", "w"), ensure_ascii=False, indent=1)
+json.dump({"size": 60, "cues": subs}, open("subs.json", "w"), ensure_ascii=False, indent=1)
 json.dump({"cues": mix, "starts": starts, "last": round(last, 3)}, open("voice.json", "w"), indent=1)

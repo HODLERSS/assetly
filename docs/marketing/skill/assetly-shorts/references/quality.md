@@ -37,6 +37,7 @@ The canonical list is `app/docs/marketing/SHORTS_QUALITY.md` (Q1-Q20 from the 9/
 | Q34 | one moment per Short: every chip's quote time and every time readable in an untagged beat <= the corner stamp (the stamp is the latest data time shown); a pre-open Short shows no "live" intraday quote; an Ask re-recorded later carries its own "ASK RECORDED h:mm" tag | day.json chips/tags + OCR |
 | Q35 | every chip / time tag sits in the top-right corner block (x 700-950, above y 450): never over the phone screen or the top texts | alpha bbox of each beat's chip png |
 | Q36 | the portfolio beat outlines the Home row its line names ("up 28% all time" -> the All time row; "today" -> Today), and the outline goes off before Home scrolls (`highlight.until`) | day.json beat `highlight`, compose OCR of the take |
+| Q37 | framing: the phone's top edge on one row in every beat (+-8 px) and the gap from the subtitles' last line to the phone constant (+-8 px) | final frames at 50/90% of each beat: left rim traced up from y 1500, top = rim start - 11.8% of the body width; text bottom in y 198-500 |
 | Q29 | no loading skeleton / blank screen mid-beat | saturation (home screen) and edge density (blank) on proof/beat*.png at 25/50/90% |
 
 Verification rules worth remembering:

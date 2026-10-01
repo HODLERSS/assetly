@@ -241,7 +241,7 @@ def main():
         day = {"date": DATE, "slug": f"{DATE}-{ED}", "demo": 0, "edition": ED,
                "hook": "|".join(story["cover"]), "hook_kicker": f"{LABEL[ED]} · {MON[int(m) - 1]} {int(d)}", "hook_foot": "Assetly",
                "hook_dur": 1.5, "stamp": stamp, "script": " ".join(ln["say"] for ln in lines), "grid": 0.3, "card": 1.8, "len_range": [20, 30],
-               "motion": {"to": 1.3, "in": 0.7, "out": 0.6}, "lines": lines, "beats": beats}
+               "motion": {"to": 1.15, "in": 0.7, "out": 0.6}, "lines": lines, "beats": beats}
         os.makedirs(OUT, exist_ok=True)
         jdump(day, os.path.join(OUT, "day.json"))
         tags = " ".join(story.get("hashtags", [])) or "#Shorts #stockmarket"

@@ -89,6 +89,9 @@ def layout(tokens):
     gap = int(spec.get("size", 42) * 0.3); total = sum(hs) + gap * (len(lines) - 1)
     y = (H - total) // 2 + int(os.environ.get("CAP_SHIFT", "8")) + EYE_DROP   # the shared optical centre, dropped under the eyebrow
     if EYE_DROP: y = int(os.environ.get("SUB_TOP", "82"))                       # with an eyebrow: fixed rows, same as the captions
+    # SUB_BOTTOM (owner, 10/1): the text's LAST line ends on a fixed row, so the gap down to the phone is the same for
+    # one, two or three lines; the eyebrow then sits a fixed gap above the first line (layout returns its row)
+    if os.environ.get("SUB_BOTTOM"): y = int(os.environ["SUB_BOTTOM"]) - total
     boxes = []                                            # (x0, x1, y, line-height) per token
     for line, hh in zip(lines, hs):
         s = " ".join(line); l, t, r, b = d.textbbox((0, 0), s, font=font); x = (W - (r - l)) / 2 - l
@@ -97,7 +100,7 @@ def layout(tokens):
             x0 = x + d.textlength(pre, font=font); x1 = x0 + d.textlength(tok, font=font)
             boxes.append((x0, x1, y - t, hh + t))
         y += hh + gap
-    return lines, boxes
+    return lines, boxes, ((min(b[2] for b in boxes) if boxes else 0) - int(os.environ.get("SUB_EYE_GAP", "16")) - 26)
 
 cues = []
 for c in spec["cues"]:
@@ -110,8 +113,9 @@ for c in spec["cues"]:
     else:
         wt = word_times(env, dt, dur, c["words"])
     toks = [w for w, _ in c["words"]]
-    lines, boxes = layout(toks)
-    cues.append({"at": c["at"], "dur": dur, "toks": toks, "wt": wt, "lines": lines, "boxes": boxes, "eyebrow": c.get("eyebrow")})
+    lines, boxes, eye_y = layout(toks)
+    cues.append({"at": c["at"], "dur": dur, "toks": toks, "wt": wt, "lines": lines, "boxes": boxes, "eyebrow": c.get("eyebrow"),
+                 "eye_y": eye_y if os.environ.get("SUB_BOTTOM") else None})
     print(f"cue at {c['at']}s ({dur:.2f}s):")
     for (w, _), (s, e) in zip(c["words"], wt): print(f"   {c['at']+s:6.2f}-{c['at']+e:6.2f}  {w}")
 
@@ -129,7 +133,7 @@ for fi in range(n):
         if c.get("eyebrow"):                       # tracked accent label above the sentence, same fade
             eb = c["eyebrow"]; track = 3
             ew = sum(d.textlength(ch, font=EYEF) for ch in eb) + track * (len(eb) - 1)
-            x = (W - ew) / 2; ytop = int(os.environ.get("CAP_EYE_TOP", "50"))
+            x = (W - ew) / 2; ytop = c["eye_y"] if c.get("eye_y") is not None else int(os.environ.get("CAP_EYE_TOP", "50"))
             for ch in eb:
                 d.text((x, ytop), ch, font=EYEF, fill=ACCENT + (int(255 * a),)); x += d.textlength(ch, font=EYEF) + track
         # base layer: whole sentence, muted

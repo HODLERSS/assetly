@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.0.5 (2026-10-01, owner framing review of preopen-v4 + Shorts craft)
+
+- Framing (owner): a bigger phone (860 px body, was 663) whose TOP edge never moves: the push grows it from the top
+  (make-spot.py `zoom_anchor: "top"`, `phone_w`), 1.15x (was 1.3x). The old focus-point push moved the phone between
+  y 478 and 739, so the gap to the subtitles changed every beat.
+- Subtitles end on a fixed row (`SUB_BOTTOM`, y 468), 40 px above the phone, for one, two or three lines; the eyebrow
+  sits 16 px above the first line. Type 60 px (was 50), 840 px max width (Shorts caption guidance: 60-75 px).
+- Q37: the phone's top on one row in every beat and the subtitle-to-phone gap constant (+-8 px), measured on the final
+  frames.
+- references/shorts-craft.md: the Shorts guidance applied and what it never overrides.
+- A delivered Short whose takes are gone can be re-framed frame by frame (preopen-v5: measure2.py + relayout.py).
+
 ## v1.0.4 (2026-10-01, owner review of preopen-v3 highlights)
 
 - The Ask answer beat starts where the recording actually SHOWS the quoted line (compose OCRs the take from the

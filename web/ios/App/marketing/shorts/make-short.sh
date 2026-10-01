@@ -128,7 +128,9 @@ python3 -c "import json;p=json.load(open('$HERE/music-short.json'));p['len']=$LE
 DUCK_SC="${DUCK_SC:-0.7}" VO_OUT="$W/vo-track.wav" "$M/mix-spot-audio.sh" music.wav mix.wav "$LEN" $(cat mixcues.txt)
 
 # 4. picture: subtitles, pills, disclaimer, beats, card
-rm -rf fill spk; SUB_TOP=98 SUB_MAXW=820 SUB_MAX_LINES=3 python3 "$M/make-fill-subtitles.py" subs.json fill 1080 300 60 "$LEN_PRODUCT" >/dev/null
+# owner, 10/1: subtitles end on a fixed row (SUB_BOTTOM) 40 px above the phone whatever their line count, the eyebrow 16 px
+# above the first line; 60 px type (Shorts caption guidance: 60-75 px at 1080x1920), centred, kept left of the action rail
+rm -rf fill spk; SUB_TOP=98 SUB_BOTTOM=318 SUB_EYE_GAP=16 SUB_MAXW=840 SUB_MAX_LINES=3 python3 "$M/make-fill-subtitles.py" subs.json fill 1080 330 60 "$LEN_PRODUCT" >/dev/null
 if [ "$LINES" = 1 ]; then
   ffmpeg -v error -y -i vo-track.wav -ac 1 -c:a pcm_s16le vo16.wav; python3 "$M/make-speaking.py" vo16.wav spk 60 dark
 fi
@@ -144,7 +146,8 @@ for b in tm["beats"]:
     if ch and ch.get("png"): chips.append({"png": ch["png"], "x": 0, "y": 0, "start": round(t + 0.12, 3), "end": round(t + b["dur"] - 0.05, 3)})
     t += b["dur"]
 plan = {"w": 1080, "h": 1920, "len": L, "theme": "dark", "fps": 60, "xfade": 0.6, "crf": 15,
-        "captions": "top", "cap_top": 150, "cap_h": 300, "bottom": 40, "slide": 0.4,
+        "captions": "top", "cap_top": 150, "cap_h": 330, "bottom": 40, "slide": 0.4,
+        "phone_w": 860, "zoom_anchor": "top",      # owner, 10/1: a bigger phone whose top edge never moves (constant gap)
         "hook": {"lines": d.get("hook", "AI stocks today|" + d["date"]), "dur": tm["hook"], "static": True,
                  "kicker": d.get("hook_kicker", ""), "foot": d.get("hook_foot", "")},
         "beats": beats, "card": {"icon": f"{m}/../App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"},

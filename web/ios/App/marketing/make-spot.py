@@ -53,6 +53,9 @@ s0 = probe(srcs[0]); SRC_W, SRC_H = s0["width"], s0["height"]
 aspect = SRC_H / SRC_W
 body_h = H - TOP - CAP_H - BOTTOM if not CAPTIONS_TOP else H - TOP - BOTTOM
 screen_w = int(round(body_h / (aspect + 0.054) / 2)) * 2
+# "phone_w" (owner, 10/1): a bigger phone, its body this many px wide; it runs past the bottom edge (the platform UI
+# covers the bottom of a Short anyway) instead of shrinking to fit the height
+if plan.get("phone_w"): screen_w = int(round(plan["phone_w"] / 1.054 / 2)) * 2
 screen_h = int(round(screen_w * aspect / 2)) * 2
 bez = max(6, int(round(screen_w * 0.027)))
 body_w = screen_w + 2 * bez
@@ -101,7 +104,12 @@ def phone_chain(dur, zoom=None, freeze=False, highlight=False, enter=None, hl_un
         # is one straight, settling move. Overlay position o(E) = f + E(t-f) - f*s(E) = E*((t-f) - f(S-1)):
         # zero at rest, so cuts carry no jump. crop's offsets are evaluated once; overlay's every frame.
         E = ease_expr(zoom); S = zoom["to"]
-        if "view_top_src" in zoom:                       # frame the view from this source row downward
+        anchor = zoom.get("anchor", plan.get("zoom_anchor"))
+        if anchor == "top":
+            # owner, 10/1: the push grows the phone from its TOP edge, which never moves: the gap between the subtitles and
+            # the phone stays the same through every beat (a focus-point push moved the phone up and down)
+            fy = ty = TOP
+        elif "view_top_src" in zoom:                       # frame the view from this source row downward
             _, fy = cv(0, zoom["view_top_src"]); ty = TOP + 12
         elif "focus_src" in zoom: _, fy = cv(0, zoom["focus_src"]); ty = zoom.get("target_y", STAGE_CY)
         else: fy = zoom["focus"][1]; ty = zoom.get("target_y", STAGE_CY)

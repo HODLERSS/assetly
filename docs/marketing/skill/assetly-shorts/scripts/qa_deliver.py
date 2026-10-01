@@ -241,6 +241,33 @@ def main():
         names_win = bool(re.search(r"all time|overall|today", pl, re.I))
         row("Q36", "Portfolio beat: the Home row the line names (All time / Today) is outlined while Home holds still",
             (not names_win) or bool((pb.get("highlight") or {}).get("src_box")), f"line {pl!r}; highlight {(pb.get('highlight') or {}).get('src_box')}")
+        # Q37 owner, 10/1 (framing): a bigger phone whose top edge sits on ONE row in every beat, and the subtitles' last line
+        # on one row 40 px above it, whatever the line count. Measured on the final frames: the phone's left rim is traced
+        # up from y 1500, its top is 11.8% of its width above where the rim straightens; the text bottom is the lowest row
+        # in 198..500 with two or more pixels brighter than the ground.
+        import numpy as _np
+        from PIL import Image as _Img
+        tops, gaps, det37 = [], [], []
+        t = tm["hook"]
+        for i, bt in enumerate(tm["beats"]):
+            for frac in (0.5, 0.9):
+                at = t + bt["dur"] * frac; png = os.path.join(B, f"q37_b{i + 1}_{frac}.png")
+                run("ffmpeg", "-v", "error", "-y", "-ss", f"{at:.2f}", "-i", final, "-frames:v", "1", png)
+                if not os.path.exists(png): continue
+                a = _np.asarray(_Img.open(png).convert("RGB")).astype(_np.int16).sum(2)
+                br = _np.where(a[1500] > 250)[0]
+                if not len(br): continue
+                xl, xr = int(br[0]), int(br[-1]); rim = a[:, xl:xl + 4].max(1) > 200; y = 1500
+                while y > 200 and (rim[y - 1] or rim[y - 2]): y -= 1
+                top = y - 0.118 * (xr - xl); g = int(a[1000, 3])
+                rows = _np.where((a[198:500] > g + 40).sum(1) >= 2)[0]
+                tb = 198 + int(rows.max()) if len(rows) else None
+                tops.append(top); det37.append(f"b{i + 1}@{frac}: top {top:.0f}" + (f", text {tb}" if tb else ""))
+                if tb: gaps.append(top - tb)
+            t += bt["dur"]
+        ok37 = bool(tops) and max(tops) - min(tops) <= 16 and (not gaps or max(gaps) - min(gaps) <= 16)
+        row("Q37", "Framing: the phone's top edge on one row in every beat (+-8 px) and the subtitle-to-phone gap the same (+-8 px)",
+            ok37, "; ".join(det37))
         # Q30 the data time-stamp: on EVERY frame in the same top-left spot (cover, every beat, the end card), its text is the
         # snapshot the figures come from (research quotes, within 5 min), and the edition label is this edition's
         st = day.get("stamp") or {}
