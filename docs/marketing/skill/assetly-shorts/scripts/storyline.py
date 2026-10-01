@@ -487,6 +487,19 @@ def check(story, res, facts, askc):
             if re.search(r"\b(Stocks|Markets|The market|Wall Street|U\.?S\. stocks)\b[^.]*\b(slipped|slid|fell|dropped|rose|climbed|gained|rallied|jumped|sank|dipped)\b", t) \
                and not re.search(r"S&P|Nasdaq|Dow|Russell|KOSPI|Kospi", t):
                 errs.append(f"item {k + 1}: a whole-market line must name its index (S&P 500 / Nasdaq / Dow) -> rewrite '{t}' with the index and its verified figure, or drop the market line")
+    # owner, 10/1 close: "The Boeing won Navy's fighter." -- no article before a company name, and no "<Org>'s <noun>."
+    # ending that drops what was won (a possessive whose object is one bare word at the end of the sentence)
+    cos = {v.split()[0] for v in say_names(facts).values() if v} | {re.sub(r"\s+\w+\.?$", "", it.get("cover", "")).strip().split(" ")[0]
+                                                                       for it in res.get("items", []) if it.get("cover")}
+    cos = {c for c in cos if c and c[0].isupper() and c not in ("The", "Fed")}
+    spoken = [(f"item {k + 1}", snt.get("text", "")) for k, it in enumerate(story.get("items", [])) if isinstance(it, dict)
+              for snt in (it.get("sentences") or []) if isinstance(snt, dict)]
+    spoken += [("portfolio", (story.get("portfolio") or {}).get("text", "")), ("ask answer", (story.get("ask") or {}).get("answer_text", ""))]
+    for where, t in spoken:
+        m_a = re.search(r"\b[Tt]he (" + "|".join(map(re.escape, sorted(cos))) + r")\b", t) if cos else None
+        if m_a: errs.append(f"{where}: 'the {m_a.group(1)}' -> drop the article before a company name ('{m_a.group(1)} ...')")
+        if re.search(r"\b(won|beat|signed|landed|took|lost)\s+[A-Z][\w&.-]*'s\s+\w+\.\s*$", t):
+            errs.append(f"{where}: '{t}' drops what the possessive refers to -> say it in full ('won a $20B Navy fighter contract')")
     return errs, words
 
 

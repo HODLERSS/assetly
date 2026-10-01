@@ -2,6 +2,9 @@
 
 ## v1.1.0 (2026-10-01, owner: track Korean semiconductor stocks, two Korea Shorts a day, mid-to-long term)
 
+- Storyline refuses an article before a company name ("The Boeing ...") and a possessive that drops its object
+  ("won Navy's fighter."): the 10/1 close's first line. Re-checked on that story (caught) and the passing scripts.
+
 - Two new editions, `korea-open` (9:32 AM KST = ~7:32 PM CT the evening before, pages on 1M, Ask "How exposed is my
   portfolio to memory chips?") and `korea-close` (3:45 PM KST = ~1:45 AM CT, the long view, pages on 3M, Ask "What's my
   AI chip concentration?"), for US investors with AI-heavy portfolios: Korea's AI-chip names (SK hynix, Samsung
