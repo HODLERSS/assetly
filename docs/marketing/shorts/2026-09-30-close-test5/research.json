@@ -1,0 +1,193 @@
+{
+ "edition": "close",
+ "date": "2026-09-30",
+ "asof_et": "2026-10-01 05:43 ET",
+ "context": "Stocks ended September mixed as the S&P 500 slipped and Nasdaq edged higher, with Treasury yields surging and Micron's strong earnings report failing to lift shares after hours.",
+ "hot": [
+  "NVDA",
+  "AAPL",
+  "MSFT",
+  "META"
+ ],
+ "items": [
+  {
+   "kind": "stock",
+   "symbols": [
+    "JBL"
+   ],
+   "cover": "Jabil drops 10%.",
+   "why": "Jabil beat Q4 earnings but its fiscal 2027 outlook worried investors.",
+   "why_ids": [
+    "h1",
+    "h5"
+   ],
+   "sentiment": "Shares fell 10%.",
+   "sentiment_ids": [
+    "h1",
+    "h5"
+   ],
+   "figures": [
+    {
+     "symbol": "JBL",
+     "field": "pct",
+     "value": -10.03,
+     "feed1": -10.03,
+     "feed2": -10.03,
+     "ok": true
+    }
+   ],
+   "judge_note": "h1 attributes retreat to fiscal 2027 outlook; h5 confirms Q4 beat and share drop."
+  },
+  {
+   "kind": "earnings",
+   "symbols": [
+    "MU"
+   ],
+   "cover": "Micron beats.",
+   "why": "Micron beat Q4 estimates and issued strong Q1 outlook on AI demand.",
+   "why_ids": [
+    "h113",
+    "h114"
+   ],
+   "sentiment": "Shares barely moved after hours despite the beat.",
+   "sentiment_ids": [
+    "h111",
+    "h118"
+   ],
+   "figures": [
+    {
+     "symbol": "MU",
+     "field": "pct",
+     "value": 0.0,
+     "feed1": 0.0,
+     "feed2": 0.0,
+     "ok": true
+    }
+   ],
+   "judge_note": "h113 ties strong guidance to data center (AI) revenue jump; h114 confirms Q4 beat and strong Q1 outlook. h111/h118 both indicate stock barely budged."
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "APP"
+   ],
+   "cover": "AppLovin at low.",
+   "why": "Wells Fargo called AppLovin's Pixel install spike a false start.",
+   "why_ids": [
+    "h21",
+    "h160"
+   ],
+   "sentiment": "Shares fell to a fresh 52-week low.",
+   "sentiment_ids": [
+    "h20",
+    "h21"
+   ],
+   "figures": [
+    {
+     "symbol": "APP",
+     "field": "pct",
+     "value": -4.98,
+     "feed1": -4.98,
+     "feed2": -4.98,
+     "ok": true
+    }
+   ],
+   "judge_note": "h21 directly quotes 'false start'; h160 says Wells Fargo 'flags pixel hype' implying same. Both h20 and h21 confirm fresh 52-week low."
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "CEG"
+   ],
+   "cover": "Constellation, Amazon deal.",
+   "why": "Constellation signed a 20-year nuclear power deal with Amazon for 190 megawatts.",
+   "why_ids": [
+    "h39",
+    "h46"
+   ],
+   "sentiment": "Shares fell in the regular session, then rose overnight.",
+   "sentiment_ids": [
+    "h37",
+    "h43"
+   ],
+   "figures": [
+    {
+     "symbol": "CEG",
+     "field": "pct",
+     "value": -3.99,
+     "feed1": -3.99,
+     "feed2": -3.99,
+     "ok": true
+    }
+   ],
+   "judge_note": "Both headlines confirm 20-year Amazon nuclear PPA at 190 MW. h37 shows regular-session fall; h43 shows overnight rise."
+  },
+  {
+   "kind": "macro",
+   "symbols": [],
+   "cover": "Yields surge, Fed hawkish.",
+   "why": "The 10-year Treasury yield hit a 24-year high and Kashkari flagged another rate hike.",
+   "why_ids": [
+    "h212",
+    "h234"
+   ],
+   "sentiment": "Stocks ended mixed; S&P down, Nasdaq up.",
+   "sentiment_ids": [
+    "h215",
+    "h216"
+   ],
+   "figures": [
+    {
+     "symbol": "^GSPC",
+     "field": "pct",
+     "value": -0.25,
+     "feed1": -0.25,
+     "feed2": -0.251602,
+     "ok": true
+    },
+    {
+     "symbol": "^IXIC",
+     "field": "pct",
+     "value": 0.24,
+     "feed1": 0.24,
+     "feed2": 0.24,
+     "ok": true
+    }
+   ],
+   "judge_note": "h212 confirms 24-year high in 10-year yield; h234 confirms Kashkari flagged another rate hike. h215 and h216 both show S&P down/Nasdaq up."
+  }
+ ],
+ "dropped": [
+  {
+   "kind": "stock",
+   "symbols": [
+    "HPE"
+   ],
+   "cover": "HPE hits record.",
+   "why": "Hewlett Packard Enterprise raised its AI networking outlook and landed a $1.2 billion order.",
+   "why_ids": [
+    "h51",
+    "h55"
+   ],
+   "sentiment": "Shares jumped to a fresh record high.",
+   "sentiment_ids": [
+    "h51",
+    "h55"
+   ],
+   "figures": [
+    {
+     "symbol": "HPE",
+     "field": "pct",
+     "value": 3.9,
+     "feed1": 3.9,
+     "feed2": 3.9,
+     "ok": true
+    }
+   ],
+   "drop": [
+    "judge: Headlines mention 'raised revenue targets' and 'growing networking orders' plus $1.2B deal, but neither explicitly states an 'AI networking outlook' was raised."
+   ]
+  }
+ ],
+ "model": "mara/MiniMax-M3"
+}

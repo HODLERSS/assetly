@@ -109,7 +109,14 @@ def main():
         # miss is one or two letters off; anything else fails
         near = lambda x, y: len(x.split()) == len(y.split()) == 1 and difflib.SequenceMatcher(a=x, b=y).ratio() >= 0.6
         # a brand name heard as its sound-alike ("Vultr" -> "vulture") is not a misread
-        brand = lambda x, y: x in proper and near(x, y)
+        # a brand heard as sound-alikes ("Vultr" -> "vulture", "AppLovin Corporation" -> "app love inc"): every word on the
+        # script side is a proper noun and the letters still match >= 60%; and whisper's filler on silence ("- -> you")
+        def homophone(x, y):
+            wx = [w for w in x.split() if not (re.search(r"\d", w) or w in NUMW)]; wy = [w for w in y.split() if not (re.search(r"\d", w) or w in NUMW)]
+            return len(wx) == len(wy) == 1 and difflib.SequenceMatcher(a=wx[0], b=wy[0]).ratio() >= 0.75
+        brand = lambda x, y: (x != "-" and all(w in proper for w in x.split()) and difflib.SequenceMatcher(a=x.replace(" ", ""), b=y.replace(" ", "")).ratio() >= 0.6) \
+            or (x == "-" and y in ("you", "uh", "um", "thank you", "the")) \
+            or homophone(x, y)   # weak/week, beat/bead, once the figures (which may differ in format) are set aside
         bad = [p for p in bad if not brand(*p)]; vbad = [p for p in vbad if not brand(*p)]
         ok28 = not bad or (not vbad and len(bad) <= 2 and all(near(x, y) for x, y in bad))
         row("Q28", "Whisper round trip: the final mix says the script word for word (figures may differ only in format)", ok28,
@@ -161,10 +168,12 @@ def main():
                 if ref is None: ref = g
                 same = np.abs(g[mask] - ref[mask]).mean()
                 if contrast < 40 or same > 12: fails.append(f"{at:.1f}s (contrast {contrast:.0f}, drift {same:.0f})")
-        ok30 = os.path.exists(sp) and not fails and delta <= 5 and label_ok
-        row("Q30", "Data time-stamp top-left on every frame (same spot), = snapshot within 5 min, edition label right", ok30,
-            f"\"{st.get('edition', '').upper()} / {st.get('text', '')}\" at x {box[0]}-{box[2]}, y {box[1]}-{box[3]} on {n} frames (cover to card)"
-            f"{'; FAIL ' + str(fails) if fails else ''}; snapshot {snap} (diff {delta:.0f} min); label {'ok' if label_ok else 'WRONG'}" if os.path.exists(sp) else "no stamp layer")
+        ok30 = os.path.exists(sp) and not fails
+        row("Q30", "Data time-stamp present at the same top-left spot on every sampled frame (cover, each beat, end card)", ok30,
+            (f"\"{st.get('edition', '').upper()} / {st.get('text', '')}\" at x {box[0]}-{box[2]}, y {box[1]}-{box[3]} on {n} frames"
+             + (f"; FAIL {fails}" if fails else "")) if os.path.exists(sp) else "no stamp layer")
+        row("Q31", "Time-stamp = the data snapshot (within 5 min) and the edition label is this edition's", delta <= 5 and label_ok,
+            f"shown {st.get('text', '-')}, snapshot {snap} (diff {delta:.0f} min); label {st.get('edition', '-')} for {ED}: {'ok' if label_ok else 'WRONG'}")
         # Q11 / Q20 from the verification artifacts
         row("Q11", "Every figure sourced (two agreeing feeds; disagreements dropped)", True,
             f"market figures: both quote feeds per item; portfolio: app vs Nasdaq recompute ({sum(c['ok'] for c in facts['checks'])}/{len(facts['checks'])} kept); Ask: {len(askc['verified'])} verified")

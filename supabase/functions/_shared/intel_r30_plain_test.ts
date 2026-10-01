@@ -87,3 +87,11 @@ Deno.test("r30: verdict detectors still catch the scrubbed wording", () => {
   assertEquals(valuationHits(scrub("The dividend hike gives KO a clear near-term catalyst.")).length, 1);
   assertEquals(valuationHits(scrub("Whether the thesis holds depends on the next delivery report.")), []);
 });
+
+Deno.test("r30b: an amount before 'book', capex and tripwire read plainly", () => {
+  assertEquals(plainScrub("Wednesday's session added $529 to a $208,400 (as of the 4:00 PM ET close) book.", PORTFOLIO_PLAIN),
+    "Wednesday's session added $529 to a $208,400 (as of the 4:00 PM ET close) portfolio.");
+  assertEquals(plainScrub("Heavier capex guidance weighed. AI capex keeps rising.", PORTFOLIO_PLAIN), "Heavier spending guidance weighed. AI spending keeps rising.");
+  assertEquals(plainScrub("The tripwire is a miss on data-center growth.", PORTFOLIO_PLAIN), "The warning sign is a miss on data-center growth.");
+  assertEquals(plainScrub("Its book value rose to $40 book value.", PORTFOLIO_PLAIN), "Its book value rose to $40 book value.");
+});

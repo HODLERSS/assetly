@@ -39,6 +39,14 @@ def base_at(hist, ymd):
 def money(x): return f"${abs(round(x)):,}"
 
 
+def short_name(n):
+    """The name people say: "AppLovin Corporation" -> "AppLovin" (Whisper heard the long form as "app love inc")."""
+    n = re.sub(r"\s*(?:Common Stock|Class [A-C]( Common Stock)?|Ordinary Shares|American Depositary Shares)\b.*$", "", str(n or ""))
+    for _ in range(2):
+        n = re.sub(r",?\s+(?:Inc\.?|Incorporated|Corporation|Corp\.?|Holdings?|Co\.?|Company|Ltd\.?|Limited|plc|PLC|N\.V\.|S\.A\.|Group|Technologies|Technology|Platforms)$", "", n.strip())
+    return n.strip()
+
+
 def main_facts():
     acct = jload(os.path.join(W, "account.json")); uid = acct["uid"]
     with Stage(W, "facts.portfolio"):
@@ -67,18 +75,31 @@ def main_facts():
         keep("alltime_pct", 100 * app_gl / cost, 100 * n_gl / cost, 0.1, lambda v: f"{abs(v):.2f}%")
         keep("alltime_pct_0", 100 * app_gl / cost, 100 * n_gl / cost, 0.1, lambda v: f"{abs(v):.0f}%")
         # windows: the app's price history and Nasdaq daily closes, both conventions the app uses (7 and 30 days back)
-        today = datetime.now(ET).date()
+        # Window anchors: the run's market date (the session the figures belong to) AND the wall-clock ET date when they
+        # differ (a run after midnight ET: 9/30 clean run 1 computed "the week" from Oct 1 and the app's Ask from Sep 30)
+        import calendar as _c
         win = {}
-        def months_back(n):
+        mdate = datetime.strptime(jload(os.path.join(W, "research-data.json"))["date"], "%Y-%m-%d").date()
+        # ...and the LAST SESSION: before the open (and through the night) the app's Ask counts its windows from the previous
+        # trading day's close (10/1 4 AM pre-open: "1W -$393" is Sep 30 back to Sep 23)
+        def prev_session(d):
+            d = d - timedelta(days=1)
+            while d.weekday() >= 5: d -= timedelta(days=1)
+            return d
+        wall = datetime.now(ET).date(); seen, anchors = set(), []
+        for sfx, d in (("", mdate), ("_w", wall), ("_p", prev_session(mdate)), ("_pw", prev_session(wall))):
+            if d not in seen: seen.add(d); anchors.append((sfx, d))
+        def months_back(today, n):
             y, m = today.year, today.month - n
             while m <= 0: m += 12; y -= 1
-            import calendar as _c
             return today.replace(year=y, month=m, day=min(today.day, _c.monthrange(y, m)[1]))
         # "week"/"month" are what a line may say; the rest only verify an Ask answer (1M calendar, 3M, 1Y, YTD)
         # the app's Ask labels 1M as the same date a month back (9/30: base Aug 28 close, +3.8%), so "month" means that
-        CUTS = [("week", today - timedelta(days=7)), ("month", months_back(1)), ("d30", today - timedelta(days=30)),
-                ("m3", today - timedelta(days=90)), ("m3cal", months_back(3)), ("y1", today - timedelta(days=365)),
-                ("ytd", today.replace(month=1, day=1) - timedelta(days=1))]
+        CUTS = []
+        for sfx, today in anchors:
+            CUTS += [("week" + sfx, today - timedelta(days=7)), ("month" + sfx, months_back(today, 1)), ("d30" + sfx, today - timedelta(days=30)),
+                     ("m3" + sfx, today - timedelta(days=90)), ("m3cal" + sfx, months_back(today, 3)), ("y1" + sfx, today - timedelta(days=365)),
+                     ("ytd" + sfx, today.replace(month=1, day=1) - timedelta(days=1))]
         for r in eq:
             s = r["symbol"]; h = history(s, 400)
             for lab, dt in CUTS:
@@ -108,6 +129,9 @@ def main_facts():
                     "gain_pct": 100 * float(r["total_gl"] or 0) / (float(r["qty"]) * float(r["avg_cost"])), "weight": 100 * float(r["value"]) / app_total}
             for lab, _ in CUTS:
                 w = win[s][lab]; hrow[f"{lab}_app"] = 100 * (float(r["price"]) / w["app_base"] - 1) if w["app_base"] else None
+                # the holding's own dollar change over the window ("HPE +$468 this week"), both feeds
+                hrow[f"{lab}_usdA"] = float(r["qty"]) * (float(r["price"]) - w["app_base"]) if w["app_base"] else None
+                hrow[f"{lab}_usdN"] = float(r["qty"]) * ((n.get("last") or 0) - w["nasdaq_base"]) if w["nasdaq_base"] and n.get("last") else None
                 hrow[f"{lab}_nasdaq"] = 100 * ((n.get("last") or 0) / w["nasdaq_base"] - 1) if w["nasdaq_base"] and n.get("last") else None
             holdings.append(hrow)
         best = max(holdings, key=lambda h: h["gain_usd"])
@@ -119,7 +143,7 @@ def main_facts():
                                "biggest_gain": {"name": best["name"], "gain": money(best["gain_usd"]), "pct": f"{best['gain_pct']:.0f}%"},
                                "positions": len(eq)},
                  "figures": figs, "checks": checks, "holdings": holdings, "windows": port,
-                 "names": {h["symbol"]: h["name"] for h in holdings}}
+                 "names": {h["symbol"]: short_name(h["name"]) for h in holdings}}
         facts["figures"]["best_gain"] = money(best["gain_usd"]); facts["figures"]["best_gain_pct"] = f"{best['gain_pct']:.0f}%"
         jdump(facts, os.path.join(W, "facts.json"))
         log("portfolio facts: " + json.dumps(facts["portfolio"]))
@@ -145,21 +169,51 @@ def main_ask():
             cands_usd += [h["value"], abs(h["gain_usd"])]
             cands_pct += [abs(x) for x in (h["day_pct"], h["day_pct_nasdaq"], h["gain_pct"], h["weight"]) if x is not None]
             for k, v in h.items():
+                if k.endswith("_usdA") and v is not None and h.get(k[:-1] + "N") is not None and abs(v - h[k[:-1] + "N"]) <= max(3, 0.01 * abs(v)):
+                    cands_usd += [abs(v), abs(h[k[:-1] + "N"])]
                 if k.endswith("_app") and v is not None and h.get(k[:-4] + "_nasdaq") is not None and agree(v, h[k[:-4] + "_nasdaq"], 0.15):
                     cands_pct += [abs(v), abs(h[k[:-4] + "_nasdaq"])]
         for c in f["checks"]:
             if c["figure"] == "total": cands_usd += [c["app"], c["nasdaq"]]
+        # dividends ("~$3.30 to your 22 shares"): the Nasdaq dividend history x the shares held, a second source for the app's math
+        qty = {r["symbol"]: float(r["qty"]) for r in rest(W, f"portfolio?select=symbol,qty&user_id=eq.{jload(os.path.join(W, 'account.json'))['uid']}")}
+        for sym, q in qty.items():
+            if sym.startswith("$"): continue
+            try:
+                dv = json.loads(get(f"https://api.nasdaq.com/api/quote/{sym}/dividends?assetclass=stocks", tries=1))["data"]
+                rows = ((dv.get("dividends") or {}).get("rows") or [])[:1]
+                for amt in [_num(rows[0].get("amount"))] if rows else []:
+                    if amt: cands_usd += [amt, amt * q]
+                ann = _num(dv.get("annualizedDividend"))
+                if ann: cands_usd += [ann, ann * q]
+            except Exception:                            # noqa: BLE001
+                pass
         ans = ask["answer"]
+        heads = [{"publisher": h["publisher"], "title": h["title"]} for h in jload(os.path.join(W, "research-data.json"))["headlines"]]
+        # plus the app's own stored news for the holdings (title + summary, many publishers): the same pool Ask read
+        syms = ",".join(h["symbol"] for h in f["holdings"])
+        try:
+            heads += [{"publisher": n.get("source") or "?", "title": f"{n.get('title') or ''} {n.get('summary') or ''}"}
+                      for n in rest(W, f"news?select=source,title,summary&symbol=in.({syms})&order=published_at.desc&limit=400")]
+        except Exception:                                # noqa: BLE001
+            pass
         found, verified, unverified = [], [], []
         for m in re.finditer(r"([+\-−]?\$[\d,]+(?:\.\d+)?(?:\s?[kKmMbB]\b)?)|([+\-−]?\d+(?:\.\d+)?%)", ans):
             tok = m.group(0); found.append(tok)
             v = float(re.sub(r"[^\d.]", "", tok.split()[0]) or 0)
             if tok.endswith("%"):
-                ok = any(abs(v - c) <= 0.15 for c in cands_pct)
+                # tolerance follows the shown precision: "+31%" covers 30.5-31.5, "+3.8%" 3.75-3.85 (+0.1 feed slack)
+                dec = len(tok.rstrip("%").split(".")[1]) if "." in tok else 0
+                ok = any(abs(v - c) <= 0.5 * 10 ** -dec + 0.1 for c in cands_pct)
             else:
                 mult = 1e3 if re.search(r"[kK]$", tok) else 1e6 if re.search(r"[mM]$", tok) else 1e9 if re.search(r"[bB]$", tok) else 1
                 v *= mult
                 ok = any(abs(v - c) <= max(3, 0.006 * c) for c in cands_usd)
+            if not ok:
+                # a company figure, not a portfolio one ("Micron guided ~$61.5B"): two publishers' headlines must carry it
+                core = re.sub(r"[^\d.]", "", tok.split()[0])
+                pubs = {h["publisher"] for h in heads if core and re.search(r"(?<![\d.])" + re.escape(core) + r"(?![\d])", h["title"])}
+                ok = len(pubs) >= 2
             (verified if ok else unverified).append(tok)
         res = {"question": ask["question"], "answer": ans, "figures": found, "verified": verified, "unverified": unverified}
         jdump(res, os.path.join(W, "ask-check.json"))

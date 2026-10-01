@@ -105,15 +105,26 @@ def main():
             def move(s):
                 q = cq.get(s) or {}
                 if ED == "preopen":
-                    return q.get("ext_pct") if q.get("ext_type") in ("PRE_MKT", "POST_MKT") else None
+                    return q.get("ext_pct") if q.get("ext_type") else None   # PRE_MKT, POST_MKT, POST_MKT_PREV
                 return q.get("pct")
             ranked = sorted([s for s in uni if move(s) is not None], key=lambda s: -abs(move(s)))
             cands = list(dict.fromkeys(ranked[:14] + [e["symbol"] for e in earn][:6] + ["NVDA", "MSFT", "GOOGL", "META", "AMZN", "AAPL"]))
             # second feed for every candidate
             def second(s):
                 n = nasdaq(s)
-                if ED == "preopen": n = dict(n or {}, pre=nasdaq_pre(s, "pre") or nasdaq_pre(s, "post"))
-                elif ED == "close": n = dict(n or {}, post=nasdaq_pre(s, "post"))
+                if ED == "preopen":
+                    # compare like with like: the session CNBC's extended quote is in (PRE_MKT in the morning; POST_MKT for a
+                    # night-time test, when Nasdaq's "pre" table still holds the previous morning: 1 Oct 01:30, JBL -9.08 vs +0.97)
+                    kind = "post" if "POST" in str((cq.get(s) or {}).get("ext_type") or "") else "pre"   # POST_MKT or POST_MKT_PREV
+                    n = dict(n or {}, pre=nasdaq_pre(s, kind))
+                    # Nasdaq's stated extended % can be against the day BEFORE (JBL at 2 AM: -9.08% = the regular -10% plus
+                    # after-hours); measure it against Nasdaq's own last regular close instead
+                    if n.get("pre") and n["pre"].get("last") and n.get("last"):
+                        n["pre"]["pct"] = round(100 * (n["pre"]["last"] / n["last"] - 1), 2)
+                elif ED == "close":
+                    n = dict(n or {}, post=nasdaq_pre(s, "post"))
+                    if n.get("post") and n["post"].get("last") and n.get("last"):
+                        n["post"]["pct"] = round(100 * (n["post"]["last"] / n["last"] - 1), 2)
                 return s, n
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(6) as ex:
@@ -127,7 +138,8 @@ def main():
                     session = (c.get("ext_type") or "").lower() or "none"
                 else:
                     a, b, session = c.get("pct"), n.get("pct"), "regular" if ED == "close" else "live"
-                ok = agree(a, b, 0.06 if ED != "midday" else 0.35)   # live quotes are seconds apart mid-session
+                # live quotes are seconds apart mid-session; extended-hours lasts differ by venue (JBL 9/30 night: 0.97 vs 1.05)
+                ok = agree(a, b, {"close": 0.06, "midday": 0.35, "preopen": 0.2}[ED])
                 cand_rows.append({"symbol": s, "name": NAMES.get(s, c.get("name") or s), "last": c.get("last"),
                                   "pct_feed1": a, "pct_feed2": b, "feeds_agree": ok, "session": session,
                                   "regular_pct": c.get("pct"), "high": c.get("high"), "low": c.get("low"), "prev": c.get("prev"),
@@ -244,6 +256,17 @@ def main():
             have = {tuple(i.get("symbols", [])) for i in kept}
             kept += [i for i in k2 if tuple(i.get("symbols", [])) not in have]
             dropped = d2 + [d for d in dropped if tuple(d.get("symbols", [])) not in {tuple(i.get("symbols", [])) for i in k2}]
+    if len(kept) < 3 and not REVERIFY:
+        # one fresh pick before refusing: other stories, or the same ones told only with what two publishers state
+        with Stage(W, "research.second_pick"):
+            note = ("\n\nA first pick kept only these items: " + "; ".join(i["cover"] for i in kept) + ". These FAILED verification "
+                    "(do not repeat them as written): " + "; ".join(f"{d.get('cover')} ({'; '.join(d.get('drop', []))[:160]})" for d in dropped)
+                    + ". Pick 6 items again; each WHY and READ must be stated by two different publishers' headlines, word for word close.")
+            pick2 = llm(W, "You are a careful markets editor for a 25-second video. You only state what the cited headlines and quotes support.", prompt + note)
+            k2, d2 = verify(pick2.get("items", []), byid, rowsym, macro)
+            have = {tuple(i.get("symbols", [])) or (i["cover"],) for i in kept}
+            kept += [i for i in k2 if (tuple(i.get("symbols", [])) or (i["cover"],)) not in have]
+            dropped += d2
     for d in dropped: log("DROP", d.get("cover"), d.get("drop"))
     res = {"edition": ED, "date": DATE, "asof_et": data["asof_et"], "context": pick.get("context", ""),
            "hot": [s for s in pick.get("hot", []) if s in {r["symbol"] for r in cand_rows if r["feeds_agree"]}],
@@ -306,7 +329,7 @@ def verify(items, byid, rowsym, macro):
             s, v = f.get("symbol"), f.get("value")
             r = rowsym.get(s); m = macro.get(s)
             if r:
-                ok = r["feeds_agree"] and agree(v, r["pct_feed1"], 0.051) and agree(v, r["pct_feed2"], 0.051 if ED != "midday" else 0.35)
+                ok = r["feeds_agree"] and agree(v, r["pct_feed1"], 0.051 if ED != "preopen" else 0.15) and agree(v, r["pct_feed2"], {"close": 0.051, "midday": 0.35, "preopen": 0.2}[ED])
                 figs.append({**f, "feed1": r["pct_feed1"], "feed2": r["pct_feed2"], "ok": ok})
             elif m:
                 ok = bool(m["feeds_agree"]) and agree(v, m["pct"], 0.051)

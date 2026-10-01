@@ -15,6 +15,13 @@
 # never printed. Needs: the Supabase CLI logged in, Xcode, ffmpeg, python3 (numpy, Pillow, faster-whisper), node, and
 # ~/.private_keys/openrouter.txt.
 set -euo pipefail
+# Run from a frozen copy: bash reads a script as it executes, so editing the skill mid-run broke a run (9/30,
+# "line 50: 0: command not found"). The scripts are copied once and the copy is what executes.
+if [ -z "${SHORTS_FROZEN:-}" ]; then
+  mkdir -p /tmp/assetly-shorts; F="$(mktemp -d /tmp/assetly-shorts/frozen.XXXXXX)"
+  cp -R "$(cd "$(dirname "$0")" && pwd)/." "$F/"; rm -rf "$F/__pycache__"
+  SHORTS_FROZEN="$F" exec bash "$F/run.sh" "$@"
+fi
 ED="${1:?usage: run.sh preopen|midday|close [--date D] [--test]}"; shift
 case "$ED" in preopen|midday|close) ;; *) echo "edition must be preopen, midday or close"; exit 2 ;; esac
 DATE=$(TZ=America/New_York date +%F); TEST=0; ACCT=""; SEED="$RANDOM"; FROM=""; W=""; UPLOAD=0
@@ -35,7 +42,8 @@ if [ "$TEST" = 1 ]; then
 else DST="$APP/docs/marketing/shorts/$DATE-$ED"; fi
 [ -n "${DSTO:-}" ] && DST="$DSTO"                       # --dest: rebuild into an existing delivery folder
 exec > >(tee -a "$W/run.log") 2>&1
-echo "assetly-shorts v1.0: $ED $DATE test=$TEST seed=$SEED work=$W -> $DST"
+echo "assetly-shorts v1.0: $ED $DATE test=$TEST seed=$SEED work=$W -> $DST (code frozen at $SHORTS_FROZEN)"
+START_TS=$(date +%s); trap 'rc=$?; echo "exit $rc after $(( $(date +%s) - START_TS ))s"' EXIT
 
 STAGES="research book account facts record ask story compose build qa"; on=0; [ -z "$FROM" ] && on=1
 want() { [ "$on" = 1 ] || { [ "$1" = "$FROM" ] && on=1; }; [ "$on" = 1 ]; }
@@ -55,9 +63,13 @@ want account  && python3 account.py "$ED" "$W" $ACCT
 want facts    && python3 facts.py "$ED" "$W"
 if want record; then python3 record.py "$ED" "$W"; fi
 if want ask; then
-  if ! python3 facts.py "$ED" "$W" --ask; then
-    echo "Ask answer failed its check: one more take"; python3 record.py "$ED" "$W"; python3 facts.py "$ED" "$W" --ask
-  fi
+  # the on-screen answer is the app's own words: a figure only one source carries fails it, and a fresh take usually
+  # answers without it. Up to three takes, then refuse.
+  ok=0; for take in 1 2 3; do
+    if python3 facts.py "$ED" "$W" --ask; then ok=1; break; fi
+    [ $take -lt 3 ] && { echo "Ask answer failed its check: take $((take + 1))"; python3 record.py "$ED" "$W"; }
+  done
+  [ $ok = 1 ] || { echo "REFUSE: three takes, and every Ask answer showed an unconfirmed figure"; exit 1; }
 fi
 want story    && python3 storyline.py "$ED" "$W"
 want compose  && python3 compose.py "$ED" "$DATE" "$W" "$ST"
@@ -68,7 +80,19 @@ if want build; then
   timed build "$APP/web/ios/App/marketing/shorts/make-short.sh" "$ST/day.json" "$W/build" "$ST" || true
   [ -s "$ST/qa-auto.md" ] || { echo "REFUSE: the build did not finish (see $W/run.log)"; exit 1; }
 fi
-want qa && python3 qa_deliver.py "$ED" "$DATE" "$W" "$ST" "$DST"
+if want qa; then
+  if ! python3 qa_deliver.py "$ED" "$DATE" "$W" "$ST" "$DST"; then
+    # One automatic remedy: a word the dry voice says cleanly but the MIX masks (Q28 alone) gets a deeper duck, same voices
+    if grep -q "failing Q28\. " "$ST/quality-report.md" && grep "| Q28 |" "$ST/quality-report.md" | grep -q "dry voice track mismatches: none"; then
+      echo "Q28 only, the dry voice is clean: remix with a deeper duck (DUCK_SC=1.0) and grade again"
+      rm -f "$ST/qa-auto.md" "$ST/quality-report.md"
+      REUSE_VO=1 DUCK_SC=1.0 "$APP/web/ios/App/marketing/shorts/make-short.sh" "$ST/day.json" "$W/build" "$ST" || true
+      python3 qa_deliver.py "$ED" "$DATE" "$W" "$ST" "$DST"
+    else
+      exit 1
+    fi
+  fi
+fi
 echo "done: $DST"
 if [ "$UPLOAD" = 1 ]; then
   if [ "$TEST" = 1 ]; then echo "--upload ignored on a --test run"; exit 0; fi

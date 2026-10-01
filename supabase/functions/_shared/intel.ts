@@ -996,6 +996,11 @@ export const PORTFOLIO_PLAIN: [RegExp, string][] = [
   [/\bartificial[- ]intelligence\b/gi, "AI"],
   [/\b(your|the|this|whole|entire|overall|a|their|my)\s+book(?!\s+(?:value|values|of business|to bill|ratio|keeping))\b/gi, "$1 portfolio"],
   [/\bbook-level\b/gi, "portfolio-level"], [/\bbook-wide\b/gi, "portfolio-wide"],
+  // 10/1 close card: "added $529 to a $208,400 (as of the 4:00 PM ET close) book": an amount in front of "book"
+  [/(\$[\d,.]+[kKmMbB]?(?:\s*\([^)]*\))?)\s+book\b(?!\s+value)/g, "$1 portfolio"],
+  // 10/1 brief checks: "capex" and "tripwire" on the cards (the spoken script already says them plainly)
+  [/\bAI[- ]capex\b/gi, "AI spending"], [/\bcapex\b/g, "spending"], [/\bCapex\b/g, "Spending"],
+  [/\btripwires?\b/g, "warning sign"], [/\bTripwires?\b/g, "Warning sign"],
   // r30 (2026-09-30 close brief: "the AI buildout thesis held up despite a mixed tape"): every "tape" is the market,
   // whatever adjective it carries ("a mixed tape", "the live tape", "risk-on tape", "flat BTC tape"); look-alikes stay
   // ("red tape", "duct tape", "ticker tape", "tape measure"), and so does the shared card's "tape bid" (CARD_PLAIN

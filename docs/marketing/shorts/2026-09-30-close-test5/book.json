@@ -1,0 +1,58 @@
+[
+ {
+  "symbol": "JBL",
+  "qty": 25,
+  "cost": 252.45
+ },
+ {
+  "symbol": "MU",
+  "qty": 18,
+  "cost": 323.67
+ },
+ {
+  "symbol": "APP",
+  "qty": 20,
+  "cost": 297.5
+ },
+ {
+  "symbol": "CEG",
+  "qty": 30,
+  "cost": 230.51
+ },
+ {
+  "symbol": "NVDA",
+  "qty": 55,
+  "cost": 208.21
+ },
+ {
+  "symbol": "AAPL",
+  "qty": 25,
+  "cost": 296.75
+ },
+ {
+  "symbol": "AMZN",
+  "qty": 220,
+  "cost": 206.36
+ },
+ {
+  "symbol": "GOOGL",
+  "qty": 85,
+  "cost": 259.29
+ },
+ {
+  "symbol": "MSFT",
+  "qty": 63,
+  "cost": 424.4
+ },
+ {
+  "symbol": "TSM",
+  "qty": 57,
+  "cost": 395.64
+ },
+ {
+  "symbol": "$CASH",
+  "qty": 7500,
+  "cost": 1,
+  "account": "bank"
+ }
+]

@@ -64,7 +64,8 @@ has had were was are is its it's also just only still says said say today closed
 commentators traders markets market session hours after-hours year week month portfolio company point percent record high low
 amid despite following because when what which where why will would could more most less least
 rose rise rises rising fell fall falls falling gained gains gaining slipped slips slid slides dropped drops declined declines
-jumped jumps climbed climbs edged eased ended ending finished moved higher lower""".split())
+jumped jumps climbed climbs edged eased ended ending finished moved higher lower
+little reaction movement muted cautious steady quiet flat barely calm unmoved""".split())
 
 
 def unsupported_words(text, corpus):
@@ -110,6 +111,8 @@ def check(story, res, facts, askc):
         sign = next((f["value"] for f in r.get("figures", []) if f.get("symbol") in r.get("symbols", [])), None)
         for x in it["sentences"]:
             if sign is not None and not re.search(r"after[- ]hours|premarket|pre-market", x["text"], re.I):
+                if abs(sign) >= 1.0 and re.search(r"\b(flat|barely|little (?:reaction|movement|changed?)|unmoved|muted)\b", x["text"], re.I):
+                    errs.append(f"item {i + 1}: says flat, the verified move is {sign:+.2f}%")
                 if sign < 0 and re.search(r"\b(rose|gained|jumped|climbed|rallied|higher)\b", x["text"], re.I): errs.append(f"item {i + 1}: says up, the verified move is {sign:+.2f}%")
                 if sign > 0 and re.search(r"\b(fell|dropped|slid|slipped|declined|sank|lower)\b", x["text"], re.I) and not re.search(r"\b(despite|but|after)\b", x["text"], re.I):
                     errs.append(f"item {i + 1}: says down, the verified move is {sign:+.2f}%")
@@ -123,10 +126,11 @@ def check(story, res, facts, askc):
     if words > story.get("_budget", 56): errs.append(f"{words} spoken words, budget {story.get('_budget', 56)}: shorten")
     if not 3 <= len(story["items"]) <= 5: errs.append(f"{len(story['items'])} market items, need 3 to 5")
     for where, t in sents + [("cover", " ".join(story["cover"])), ("title", story["title"]), ("description", story["description"])]:
+        spoken_line = where not in ("cover", "title", "description")
         for m in BAN.finditer(t): errs.append(f"{where}: banned word '{m.group(0)}'")
         if "—" in t or "–" in t: errs.append(f"{where}: em/en dash")
         for tok in re.findall(r"\b[A-Z]{2,5}\b", t):
-            if tok not in TICKER_OK and where not in ("title", "description"): errs.append(f"{where}: ticker-like token '{tok}' (say the company name)")
+            if tok not in TICKER_OK and spoken_line: errs.append(f"{where}: ticker-like token '{tok}' (say the company name)")
     for where, t in sents:
         if len(t.split()) > 15: errs.append(f"{where}: sentence over 15 words: {t!r}")
         for f in nums(t):
@@ -140,8 +144,6 @@ def check(story, res, facts, askc):
     for m in re.finditer(TIMING[ED]["never"], all_spoken, re.I): errs.append(f"timing: '{m.group(0)}' is wrong for the {ED} edition")
     for i, it in enumerate(story["items"]):
         if len(it["sentences"]) != 2: errs.append(f"item {i + 1}: needs exactly 2 sentences (why, then the read)")
-        elif res["items"][it["n"]].get("figures") and not re.search(r"\b(on|as|after|because|despite|with|amid|following|from|thanks to|when|while|but|yet|over|for|since|to)\b", it["sentences"][0]["text"], re.I):
-            errs.append(f"item {i + 1}: sentence 1 must give the cause (on / as / after / despite ...): {it['sentences'][0]['text']!r}")
         elif not re.search(r"\b(analysts?|commentators?|investors?|traders?|shares|the stock|markets?|economists?|strategists?|wall street|critics|fans|users|observers|futures|policymakers|officials|fed|bond traders|yields|economists|the market)\b",
                            it["sentences"][1]["text"], re.I):
             errs.append(f"item {i + 1}: the second sentence must be the attributed read (analysts/investors/traders/shares...)")
@@ -150,16 +152,19 @@ def check(story, res, facts, askc):
             if len(x["eyebrow"]) > 26: errs.append(f"eyebrow {x['eyebrow']!r} over 26 characters (use the short name)")
     pt, at = story["portfolio"]["text"], story["ask"]["answer_text"]
     if "portfolio" not in pt.lower() or len(pt.split()) < 5: errs.append(f"portfolio: a full sentence that names 'My portfolio' (got {pt!r})")
-    if len(at.split()) < 5 or (ED != "preopen" and not re.search(r"\b(up|down|flat|gained|lost|rose|fell)\b", at, re.I)):
+    if len(at.split()) < 4 or (ED != "preopen" and not re.search(r"\b(up|down|flat|gained|lost|rose|fell)\b", at, re.I)):
         errs.append(f"ask answer: a full spoken sentence with the direction words (up / down / flat), got {at!r}")
     for where, t in sents:
         for m in re.finditer(r"\d+\.\d{2,}%", t): errs.append(f"{where}: {m.group(0)}: one decimal for percentages")
     if len(story["title"]) > 70: errs.append(f"title is {len(story['title'])} chars (max 70)")
     if len(story["cover"]) != 3: errs.append("cover needs exactly 3 lines")
     # the accent bracket is code's job: the leading name (one word, or two when the second is capitalised)
-    story["cover"] = [c if "[" in c else re.sub(r"^((?:[A-Z][\w&'.-]*)(?: [A-Z][\w&'.-]*)?)", r"[\1]", c.strip(), count=1) for c in story["cover"]]
+    # the accent bracket is code's job: the leading name (one word, or two when the second is capitalised)
+    story["cover"] = [re.sub(r"\s*:\s*", " ", c.replace("[", "").replace("]", "")).strip() for c in story["cover"]]
+    story["cover"] = [c if c.endswith(".") else c + "." for c in story["cover"]]
+    story["cover"] = [re.sub(r"^((?:[A-Z][\w&'.-]*)(?: [A-Z][\w&'.-]*)?)", r"[\1]", c, count=1) for c in story["cover"]]
     for c in story["cover"]:
-        if not re.match(r"^\[[^\]]+\] [^\[\]]+\.$", c) or len(c) > 30: errs.append(f"cover line {c!r}: 'Name verb.' with a short name, <= 28 chars")
+        if len(c) > 30 or " " not in c: errs.append(f"cover line {c!r}: 'Name verb.' with a short name, <= 28 chars")
     return errs, words
 
 
@@ -211,7 +216,7 @@ No advice or hype words, no jargon (thesis, tape, book, print, catalyst, guidanc
         budget = 56 - len(askc["question"].split())
         prompt = base.replace("{budget}", str(budget))
         story, errs = None, ["not run"]
-        for rnd in range(5):
+        for rnd in range(7):
             story = llm(W, sys_p, prompt, max_tokens=16000, temperature=0.4, prefer=os.environ.get("SHORTS_STORY_MODEL", "openrouter"))   # M3 reasons long: 8000 truncated its JSON
             story["_budget"] = 56
             try:

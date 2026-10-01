@@ -1,0 +1,58 @@
+[
+ {
+  "symbol": "GOOGL",
+  "qty": 55,
+  "cost": 283.48
+ },
+ {
+  "symbol": "CEG",
+  "qty": 50,
+  "cost": 233.58
+ },
+ {
+  "symbol": "NKE",
+  "qty": 220,
+  "cost": 35.22
+ },
+ {
+  "symbol": "NVDA",
+  "qty": 55,
+  "cost": 209.48
+ },
+ {
+  "symbol": "AMZN",
+  "qty": 60,
+  "cost": 223.66
+ },
+ {
+  "symbol": "AAPL",
+  "qty": 135,
+  "cost": 250.11
+ },
+ {
+  "symbol": "MSFT",
+  "qty": 78,
+  "cost": 391.98
+ },
+ {
+  "symbol": "AMD",
+  "qty": 43,
+  "cost": 252.66
+ },
+ {
+  "symbol": "TSM",
+  "qty": 58,
+  "cost": 386.06
+ },
+ {
+  "symbol": "META",
+  "qty": 28,
+  "cost": 548.49
+ },
+ {
+  "symbol": "$CASH",
+  "qty": 6000,
+  "cost": 1,
+  "account": "bank"
+ }
+]

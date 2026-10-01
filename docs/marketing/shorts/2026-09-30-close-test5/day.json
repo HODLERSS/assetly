@@ -1,0 +1,217 @@
+{
+ "date": "2026-09-30",
+ "slug": "2026-09-30-close",
+ "demo": 0,
+ "edition": "close",
+ "hook": "[Jabil] drops 10%.|[Micron] beats.|[Constellation] falls 4.0%.",
+ "hook_kicker": "MARKET CLOSE · SEP 30",
+ "hook_foot": "Assetly",
+ "hook_dur": 1.5,
+ "stamp": {
+  "edition": "Close",
+  "text": "Oct 1 · 5:43 AM ET",
+  "asof": "2026-10-01 05:43",
+  "line": "Data as of Oct 1, 2026 5:43 AM ET"
+ },
+ "script": "Jabil beat earnings, but its outlook worried investors. Shares fell 10%. Micron beat estimates on AI demand. Shares barely moved after hours. Constellation Energy signed a 20-year Amazon.com nuclear deal. Shares fell 4.0%. My portfolio is up 26% overall. How did I do this week and this month? Up 0.2% this week, down 0.1% this month.",
+ "grid": 0.3,
+ "card": 1.8,
+ "len_range": [
+  20,
+  30
+ ],
+ "motion": {
+  "to": 1.3,
+  "in": 0.7,
+  "out": 0.6
+ },
+ "lines": [
+  {
+   "voice": "marin",
+   "say": "Jabil beat earnings, but its outlook worried investors. Shares fell 10%.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "JABIL · THE DROP",
+     "show": [
+      "Jabil",
+      "beat",
+      "earnings,",
+      "but",
+      "its",
+      "outlook",
+      "worried",
+      "investors."
+     ]
+    },
+    {
+     "eyebrow": "JABIL · THE READ",
+     "show": [
+      "Shares",
+      "fell",
+      "10%."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "cedar",
+   "say": "Micron beat estimates on AI demand. Shares barely moved after hours.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "MICRON · AFTER HOURS",
+     "show": [
+      "Micron",
+      "beat",
+      "estimates",
+      "on",
+      "AI",
+      "demand."
+     ]
+    },
+    {
+     "eyebrow": "MICRON · THE READ",
+     "show": [
+      "Shares",
+      "barely",
+      "moved",
+      "after",
+      "hours."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "marin",
+   "say": "Constellation Energy signed a 20-year Amazon.com nuclear deal. Shares fell 4.0%.",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "CONSTELLATION · AMAZON",
+     "show": [
+      "Constellation",
+      "Energy",
+      "signed",
+      "a",
+      "20-year",
+      "Amazon.com",
+      "nuclear",
+      "deal."
+     ]
+    },
+    {
+     "eyebrow": "CONSTELLATION · THE READ",
+     "show": [
+      "Shares",
+      "fell",
+      "4.0%."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "minjae",
+   "say": "My portfolio is up 26% overall.",
+   "tempo": 1.06,
+   "cues": [
+    {
+     "eyebrow": "MY PORTFOLIO",
+     "show": [
+      "My",
+      "portfolio",
+      "is",
+      "up",
+      "26%",
+      "overall."
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "cedar",
+   "say": "How did I do this week and this month?",
+   "tempo": 1.12,
+   "cues": [
+    {
+     "eyebrow": "ASK ASSETLY",
+     "show": [
+      "How",
+      "did",
+      "I",
+      "do",
+      "this",
+      "week",
+      "and",
+      "this",
+      "month?"
+     ]
+    }
+   ]
+  },
+  {
+   "voice": "minjae",
+   "say": "Up 0.2% this week, down 0.1% this month.",
+   "tempo": 1.06,
+   "cues": [
+    {
+     "eyebrow": "THE ANSWER",
+     "show": [
+      "Up",
+      "0.2%",
+      "this",
+      "week,",
+      "down",
+      "0.1%",
+      "this",
+      "month."
+     ]
+    }
+   ]
+  }
+ ],
+ "beats": [
+  {
+   "take": "take60.mp4",
+   "start": 110.6,
+   "focus_src": 640,
+   "note": "JBL page, chart then scroll",
+   "to_cue": 2
+  },
+  {
+   "take": "take60.mp4",
+   "start": 135.53,
+   "focus_src": 640,
+   "note": "MU page, chart then scroll",
+   "to_cue": 4
+  },
+  {
+   "take": "take60.mp4",
+   "start": 189.99,
+   "focus_src": 640,
+   "note": "CEG page, chart then scroll",
+   "to_cue": 6
+  },
+  {
+   "take": "take60.mp4",
+   "start": 65.97,
+   "focus_src": 620,
+   "to_cue": 7,
+   "note": "Home: total value, Today, All time, scrolling to the movers"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 213.62,
+   "focus_src": 1450,
+   "to_cue": 8,
+   "note": "Ask: the question typed"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 231.11,
+   "focus_src": 900,
+   "tail": 1.0,
+   "note": "Ask: the real answer, held into the card"
+  }
+ ]
+}

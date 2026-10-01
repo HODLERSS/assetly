@@ -1,0 +1,167 @@
+{
+ "edition": "preopen",
+ "date": "2026-10-01",
+ "asof_et": "2026-10-01 05:23 ET",
+ "context": "Tech futures lead a higher open as Micron's AI outlook and Google's Gemini 4 lift sentiment, with PCE inflation data ahead.",
+ "hot": [
+  "NVDA",
+  "GOOGL",
+  "AMZN",
+  "MSFT"
+ ],
+ "items": [
+  {
+   "kind": "stock",
+   "symbols": [
+    "GOOGL"
+   ],
+   "cover": "Google jumps on Gemini.",
+   "why": "Google unveils its new Gemini 4 Argon AI model.",
+   "why_ids": [
+    "h80",
+    "h81",
+    "h87",
+    "h90"
+   ],
+   "sentiment": "Stock rises on the new AI model release.",
+   "sentiment_ids": [
+    "h80",
+    "h81",
+    "h87",
+    "h91"
+   ],
+   "figures": [
+    {
+     "symbol": "GOOGL",
+     "field": "pct",
+     "value": 2.16,
+     "feed1": 2.16,
+     "feed2": 2.14,
+     "ok": true
+    }
+   ],
+   "judge_note": "Multiple publishers (Barron's, IBD, TradingView, Yahoo, Benzinga) confirm both the unveiling and the stock rise."
+  },
+  {
+   "kind": "macro",
+   "symbols": [],
+   "cover": "Futures point higher.",
+   "why": "Nasdaq futures rise as Micron's strong earnings boost tech stocks.",
+   "why_ids": [
+    "h303",
+    "h330"
+   ],
+   "sentiment": "Tech leads the market higher before the bell.",
+   "sentiment_ids": [
+    "h303",
+    "h328",
+    "h330"
+   ],
+   "figures": [
+    {
+     "symbol": "ES=F",
+     "field": "pct",
+     "value": 0.15,
+     "feed1": 0.15,
+     "feed2": 0.155531,
+     "ok": true
+    },
+    {
+     "symbol": "NQ=F",
+     "field": "pct",
+     "value": 0.57,
+     "feed1": 0.57,
+     "feed2": 0.573313,
+     "ok": true
+    }
+   ],
+   "judge_note": "Investing.com and Bloomberg together link Nasdaq futures / tech stocks rising to Micron's strong earnings."
+  },
+  {
+   "kind": "stock",
+   "symbols": [
+    "CEG"
+   ],
+   "cover": "Constellation Energy rises.",
+   "why": "Amazon signs a nuclear power deal with Constellation Energy.",
+   "why_ids": [
+    "h1",
+    "h6",
+    "h12"
+   ],
+   "sentiment": "Stock rises on the Amazon nuclear deal.",
+   "sentiment_ids": [
+    "h1",
+    "h4",
+    "h6",
+    "h13"
+   ],
+   "figures": [
+    {
+     "symbol": "CEG",
+     "field": "pct",
+     "value": 3.24,
+     "feed1": 3.24,
+     "feed2": 3.24,
+     "ok": true
+    }
+   ],
+   "judge_note": "Multiple publishers (Investing.com, TradingView, AD HOC NEWS, Barron's) confirm Amazon-Constellation nuclear deal and stock rising on it."
+  },
+  {
+   "kind": "earnings",
+   "symbols": [
+    "NKE"
+   ],
+   "cover": "Nike reports tonight.",
+   "why": "Nike reports Q1 earnings today.",
+   "why_ids": [
+    "h168",
+    "h174"
+   ],
+   "sentiment": "Stock sits near a 52-week low before results.",
+   "sentiment_ids": [
+    "h168",
+    "h171"
+   ],
+   "figures": [],
+   "judge_note": "h168 (Stocks Down Under) explicitly says 'Earnings Today'; h174 (Investing.com India) says 'Nike to report' in a same-day market wrap. h167 does not mention 52-week low, so excluded from sentiment support."
+  }
+ ],
+ "dropped": [
+  {
+   "kind": "stock",
+   "symbols": [
+    "RKLB"
+   ],
+   "cover": "Rocket Lab climbs.",
+   "why": "NASA awards Rocket Lab two new missions and an Air Force contract.",
+   "why_ids": [
+    "h18",
+    "h19",
+    "h20"
+   ],
+   "sentiment": "Stock rises on multiple new space deals.",
+   "sentiment_ids": [
+    "h15",
+    "h18",
+    "h19",
+    "h20"
+   ],
+   "figures": [
+    {
+     "symbol": "RKLB",
+     "field": "pct",
+     "value": 3.16,
+     "feed1": 3.16,
+     "feed2": 3.11,
+     "ok": true
+    }
+   ],
+   "drop": [
+    "judge: h18 (NASA missions) and h20 (Air Force contract) are both Stocktwits — same publisher — so the combined claim lacks two distinct publishers."
+   ]
+  }
+ ],
+ "model": "mara/MiniMax-M3"
+}

@@ -30,7 +30,8 @@ The canonical list is `app/docs/marketing/SHORTS_QUALITY.md` (Q1-Q20 from the 9/
 | Q26 | upload copy <= 9.9 MB, SSIM >= 0.995 | ffmpeg ssim |
 | Q27 | metadata (first line "Data as of ...", tags, title <= 70, illustrative line, two links, #Shorts, no "demo") | youtube-metadata.json |
 | Q28 | Whisper round trip word for word | faster-whisper small.en on the final file |
-| Q30 | data time-stamp top-left on every frame, = snapshot within 5 min, edition label right | stamp box contrast + drift on cover/beats/card |
+| Q30 | data time-stamp top-left, same spot, on every sampled frame | stamp box contrast + drift on cover/beats/card |
+| Q31 | stamp = snapshot within 5 min, edition label right | day.json stamp vs research asof |
 | Q29 | no loading skeleton / blank screen mid-beat | saturation (home screen) and edge density (blank) on proof/beat*.png at 25/50/90% |
 
 Verification rules worth remembering:

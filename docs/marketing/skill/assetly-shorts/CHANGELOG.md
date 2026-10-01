@@ -2,6 +2,22 @@
 
 ## v1.0 (2026-09-30, revised the same night)
 
+Repeatability (main-session review, 10/1 night): two clean single-invocation runs on frozen code (close --seed 8,
+preopen --seed 9), both exit 0, 31/31. Fixes found on the way:
+- run.sh executes a frozen copy of the scripts (editing the skill mid-run had broken a run); prints "exit N after Ss".
+- Q30 split into Q30 (stamp present, same spot, every sampled frame) and Q31 (= snapshot within 5 min, label right).
+- Ask verification: window anchors on the market date, the wall date and the last session; per-holding window dollars;
+  shown-precision tolerance ("+31%"); dividends from Nasdaq x shares; company figures on two publishers (headlines +
+  the app's stored news); up to three takes before refusing.
+- Research: a second fresh pick before refusing; extended-hours % measured against each feed's own close and matched by
+  session (POST_MKT_PREV at night), venue tolerance 0.2 pt pre-open.
+- Storyline converges (cover normalised in code, cause rule left to the research judge, neutral read words, 7 rounds).
+- Subtitles: a later sentence snaps to the first onset after the previous word; fuzzy whisper alignment instead of
+  length timing; Q28 tolerates brand sound-alikes and homophones (week/weak), and a mix-only miss gets one remix with
+  a deeper duck. Company names spoken short ("AppLovin", not "AppLovin Corporation").
+- Brief scrub: "$208,400 book" -> portfolio, capex -> spending, tripwire -> warning sign (daily-brief, insights-sync
+  redeployed, booted).
+
 Owner additions after the first test runs:
 - The data time-stamp: top-left corner on every frame (cover, beats, end card), edition eyebrow + "Mon D · h:mm AM/PM ET"
   from the research quote snapshot; description opens with "Data as of ..."; QA Q30 (and Q27 checks the first line).

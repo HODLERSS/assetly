@@ -19,7 +19,7 @@ Writes: line<i>.wav (trimmed, what the mixer places), subs.json (make-fill-subti
 times), voice.json ({"cues": ["<at>:<file>:0:0:0:0:<onset>", ...], "starts": [first-word time per cue],
 "last": end of the last word}).
 """
-import json, os, re, subprocess, sys
+import difflib, json, os, re, subprocess, sys
 day, W = json.load(open(sys.argv[1])), sys.argv[2]
 HERE = os.path.dirname(os.path.abspath(__file__)); M = os.path.dirname(HERE)
 os.chdir(W)
@@ -72,7 +72,11 @@ for i, ln in enumerate(day["lines"]):
                 if op != "equal" and not all(re.search(r"\d", w) or w in NUMW for w in said[a:b] + heard[c:d])]
         # a brand name heard as its sound-alike ("Vultr" -> "vulture") is not a misread: no retake for that
         caps = {re.sub(r"[^a-z0-9]", "", w.lower()) for w in re.findall(r"\b[A-Z][A-Za-z]+\b", ln["say"])}
-        miss = [(a, b) for a, b in miss if not (len(b) == 1 and any(w in caps for w in a) and difflib.SequenceMatcher(a=a[-1], b=b[0]).ratio() >= 0.6)]
+        # nor is a homophone ("weak" / "week", "beat" / "bead"): one word for one word, a letter or so apart
+        def hom(a, b):
+            wa = [w for w in a if not (re.search(r"\d", w) or w in NUMW)]; wb = [w for w in b if not (re.search(r"\d", w) or w in NUMW)]
+            return len(wa) == len(wb) == 1 and difflib.SequenceMatcher(a=wa[0], b=wb[0]).ratio() >= 0.75
+        miss = [(a, b) for a, b in miss if not (len(b) == 1 and any(w in caps for w in a) and difflib.SequenceMatcher(a=a[-1], b=b[0]).ratio() >= 0.6) and not hom(a, b)]
         if not miss: break
         print(f"line {i} take {take + 1}: whisper heard {miss}", file=sys.stderr)
     # match display tokens to recognised words by their letters/digits
@@ -90,10 +94,25 @@ for i, ln in enumerate(day["lines"]):
         times.append([s0, e0])
     if not ok or len(times) != len(toks):
         # fall back: spread the tokens across the speech by their length
-        print(f"line {i}: recognised {' '.join(w for w, _, _ in words)!r} does not follow the display tokens; timing by length", file=sys.stderr)
-        tot = sum(len(t) + 1 for t in toks); cur = 0.0; times = []
-        for t in toks:
-            d = D * (len(t) + 1) / tot; times.append([cur, cur + d]); cur += d
+        # fuzzy alignment: every display token whisper did hear keeps its own time ("Jabil" heard "JBill", "2027" folded
+        # into one word); the rest are spread between their heard neighbours by length (10/1: pure length timing put a
+        # sentence 450 ms late)
+        print(f"line {i}: recognised {' '.join(w for w, _, _ in words)!r} does not follow the display tokens; fuzzy timing", file=sys.stderr)
+        A = [norm(t) for t in toks]; Bw = [norm(w) for w, _, _ in words]
+        tt = [None] * len(toks)
+        for blk in difflib.SequenceMatcher(a=A, b=Bw, autojunk=False).get_matching_blocks():
+            for k in range(blk.size): tt[blk.a + k] = [words[blk.b + k][1], words[blk.b + k][2]]
+        k = 0
+        while k < len(toks):
+            if tt[k] is not None: k += 1; continue
+            e = k
+            while e < len(toks) and tt[e] is None: e += 1
+            t0 = tt[k - 1][1] if k > 0 else 0.0; t1 = tt[e][0] if e < len(toks) else D
+            tot = sum(len(t) + 1 for t in toks[k:e]); cur = t0
+            for m in range(k, e):
+                dd = (t1 - t0) * (len(toks[m]) + 1) / tot; tt[m] = [cur, cur + dd]; cur += dd
+            k = e
+        times = tt
     times[-1][1] = max(times[-1][1], D - 0.03)          # whisper folds a tail word ("dollars") into the last token
     # whisper's word starts can run ~150 ms late after a pause: snap each cue's first word to the audio's
     # own onset (first 10 ms frame above -35 dBFS after >= 150 ms below it, the QA rule) within 450 ms either side (340 ms seen 9/30 after a mid-line pause)
@@ -104,7 +123,12 @@ for i, ln in enumerate(day["lines"]):
     for c in ln["cues"]:
         s = times[j][0]; lo = max(0, int((s - 0.7) * 100)); hi = int((s + 0.7) * 100) + 1
         ons = [f for f in range(lo, min(hi, len(db))) if db[f] > -35 and (f == 0 or (db[max(0, f - 15):f] < -35).all())]
-        if ons: times[j][0] = min(ons, key=lambda f: abs(f / 100 - s)) / 100     # whisper runs early or late by up to ~150 ms
+        if ons and j > 0:
+            # a sentence starts at the FIRST onset after the previous word ended (10/1: whisper put "Shares hit a record"
+            # 550 ms late and the nearest onset was a later syllable)
+            after = [f for f in ons if f / 100 >= times[j - 1][1] - 0.02]
+            times[j][0] = (after[0] if after else min(ons, key=lambda f: abs(f / 100 - s))) / 100
+        elif ons: times[j][0] = min(ons, key=lambda f: abs(f / 100 - s)) / 100     # whisper runs early or late by up to ~150 ms
         times[j][1] = max(times[j][1], times[j][0] + 0.05)
         j += len(c["show"])
     j = 0
