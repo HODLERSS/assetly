@@ -41,6 +41,10 @@ asr = WhisperModel("small.en", device="cpu", compute_type="int8")
 subs, mix, starts, at = [], [], [], LEAD
 for i, ln in enumerate(day["lines"]):
     v = ln["voice"]; raw = f"line{i}_raw.wav"
+    # owner, 10/1: every line in Minjae's ElevenLabs voice; OpenRouter gpt-audio (the line's own voice) only as the backup
+    # when ElevenLabs fails. SHORTS_VOICE=mixed restores the old marin/cedar/minjae casting.
+    alt = v if v != "minjae" else "cedar"
+    if os.environ.get("SHORTS_VOICE", "minjae") == "minjae": v = "minjae"
     # Whisper word-for-word (owner rule): a take whose recognised words differ from the line in anything but a figure's
     # format is rendered again, up to three takes; the last take is kept and the miss is reported (QA Q28 then decides)
     for take in range(1 if ln.get("reuse") else 3):
@@ -48,7 +52,11 @@ for i, ln in enumerate(day["lines"]):
             r = ln["reuse"]; run("ffmpeg", "-v", "error", "-y", "-i", r["file"], "-af", f"atrim={r['from']}:{r['to']},asetpts=PTS-STARTPTS", raw)
         elif v == "minjae":
             open(f"line{i}.txt", "w").write(ln["say"])
-            run("python3", f"{HERE}/tts.py", f"line{i}.txt", f"line{i}_el"); run("ffmpeg", "-v", "error", "-y", "-i", f"line{i}_el.mp3", raw)
+            try:
+                run("python3", f"{HERE}/tts.py", f"line{i}.txt", f"line{i}_el"); run("ffmpeg", "-v", "error", "-y", "-i", f"line{i}_el.mp3", raw)
+            except subprocess.CalledProcessError:
+                print(f"line {i}: ElevenLabs failed; OpenRouter gpt-audio {alt} reads it (backup)", file=sys.stderr)
+                v = alt; run("python3", f"{M}/make-voiceover.py", raw, v, env=dict(os.environ, VO_LINE=ln["say"], VO_PACE=ln.get("pace", PACE)))
         else:
             r0 = subprocess.run(["python3", f"{M}/make-voiceover.py", raw, v], env=dict(os.environ, VO_LINE=ln["say"], VO_PACE=ln.get("pace", PACE)))
             if r0.returncode:

@@ -125,7 +125,10 @@ def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, pr
         for attempt in range(2):
             t0 = time.time()
             try:
-                body = {"model": model, "temperature": temperature, "max_tokens": max_tokens,
+                # OpenRouter reserves credit for max_tokens up front: 16000 got a 402 on a low balance (10/1 close) while
+                # a storyline reply is ~1-2k tokens; Sonnet does not need the reasoning headroom M3 does
+                mt = min(max_tokens, 4000) if name == "openrouter" else max_tokens
+                body = {"model": model, "temperature": temperature, "max_tokens": mt,
                         "response_format": {"type": "json_object"},
                         "messages": [{"role": "system", "content": system + " Respond with ONE JSON object only, first character '{'."},
                                      {"role": "user", "content": prompt}]}

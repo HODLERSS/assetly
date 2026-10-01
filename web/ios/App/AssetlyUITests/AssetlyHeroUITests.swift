@@ -445,15 +445,19 @@ final class AssetlyHeroUITests: XCTestCase {
         // The dots give way to "Still thinking..." on a slow answer (10/1 pre-open: the take ended on it, the answer arrived
         // after the hold), so the answer is in only when neither shows and the answer's own foot is on screen
         let thinking = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Thinking'")).firstMatch
-        let still = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Still thinking'")).firstMatch
-        let foot = app.staticTexts.matching(NSPredicate(format: "label == 'Not financial advice'")).firstMatch
+        // 10/1 close: "Still thinking..." lives in the web view (not a staticText) and a "Not financial advice" foot already
+        // exists elsewhere in the hierarchy (other tabs' cards), so the old wait ended at once and three takes recorded only
+        // the spinner. Any element type, case-insensitive, and the foot must be a NEW one (count grows past the pre-answer count).
+        let still = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'still thinking'")).firstMatch
+        let feet = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Not financial advice'"))
+        let feet0 = feet.count
         _ = thinking.waitForExistence(timeout: 5)
         let t0 = Date()
-        while (thinking.exists || still.exists || !foot.exists) && Date().timeIntervalSince(t0) < 90 { beat(0.25) }
-        beat(0.6)                                 // the answer settles (layout, fade-in)
+        while (thinking.exists || still.exists || feet.count <= feet0) && Date().timeIntervalSince(t0) < 90 { beat(0.25) }
+        beat(1.5)                                 // the answer settles (layout, fade-in) and the display catches up
         // held, not scrolled: the answer is the last beat and holds into the end card (a drag here sent the app to the
         // home screen in one 9/30 take)
-        mark("ask_answer"); beat(7.5)
+        mark("ask_answer"); beat(9.0)
         mark("ask_end")
     }
 }
