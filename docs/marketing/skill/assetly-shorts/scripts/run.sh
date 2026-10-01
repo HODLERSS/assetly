@@ -69,10 +69,13 @@ if want ask; then
   # answers without it. Up to three takes, then refuse.
   ok=0; for take in 1 2 3; do
     # takes 1-2 also want clean wording (no desk jargon, no pre-open "today" for yesterday); take 3 accepts it if the figures pass
+    # mid-session the book moves between the facts stage and the take (10/1 midday: facts $4,368, Home +$3,965 13 min
+    # later): re-verify the portfolio figures against the account at take time, so what Home shows is checkable
+    [ "$ED" = midday ] && python3 facts.py "$ED" "$W"
     if SHORTS_ASK_STRICT=$([ $take -lt 3 ] && echo 1 || echo 0) python3 facts.py "$ED" "$W" --ask; then ok=1; break; fi
     [ $take -lt 3 ] && { echo "Ask answer failed its check: take $((take + 1))"; python3 record.py "$ED" "$W"; }
   done
-  [ $ok = 1 ] || { echo "REFUSE: three takes, and every Ask answer showed an unconfirmed figure"; exit 1; }
+  [ $ok = 1 ] || { echo "REFUSE: three takes, and no Ask answer passed (unconfirmed figure, the app's error message, or nothing visible)"; exit 1; }
 fi
 # what the take shows (OCR per beat) and fresh extended-hours quotes for the chips, then the words
 want story    && python3 screen.py "$ED" "$W" && python3 storyline.py "$ED" "$W"

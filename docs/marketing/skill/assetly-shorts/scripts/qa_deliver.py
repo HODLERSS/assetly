@@ -120,7 +120,8 @@ def main():
             return len(x.split()) == 1 and x in proper and y.isdigit() and any(x.startswith(w) and len(x) > len(w) and int(y) == v for w, v in NUMV.items())
         # a compound heard split or joined ("premarket" -> "pre market", "rollout" -> "roll out"), figures set aside
         words_of = lambda z: "".join(w for w in z.split() if not (re.search(r"\d", w) or w in NUMW))
-        joined = lambda x, y: bool(words_of(x)) and words_of(x) == words_of(y)
+        exn = lambda z: re.sub(r"(^|\s)x(?=\s|dividend|$)", r"\1ex", z)           # "ex-dividend" heard as "x dividend"
+        joined = lambda x, y: bool(words_of(x)) and words_of(exn(x)) == words_of(exn(y))
         brand = lambda x, y: (x != "-" and all(w in proper for w in x.split()) and difflib.SequenceMatcher(a=x.replace(" ", ""), b=y.replace(" ", "")).ratio() >= 0.6) \
             or (x == "-" and y in ("you", "uh", "um", "thank you", "the")) \
             or homophone(x, y) \
@@ -152,7 +153,7 @@ def main():
         # Q32 / Q33 (owner, 10/1): read the finished frames below the subtitle strip (Vision text recognition): every figure
         # spoken over a beat must be readable in that beat (the app's screen or the beat's labelled chip), and the spoken
         # answer must be a recorded answer line that is on screen and outlined while it is said
-        from screen import ocr, figures as figs_of, shows
+        from screen import ocr, figures as figs_of, shows, shown_times, day_move, direction
         from PIL import Image
         t, shots = tm["hook"], []
         for i, bt in enumerate(tm["beats"]):
@@ -174,6 +175,16 @@ def main():
             have = figs_of(seen[i])
             bad = [f for f in spoken if not shows(f, have)]
             det33.append(f"beat {i + 1}: {spoken or '-'}" + (f" NOT SEEN {bad}" if bad else ""))
+            # a price direction about a holding agrees with the day move its page shows in the beat (a chip line is exempt)
+            n_items = len(lines_d) - 3
+            beat = (day.get("beats") or [{}] * len(lines_d))[i]
+            if i < n_items and " page" in beat.get("note", ""):      # a holding's own page (not the brief / News)
+                mv = day_move(seen[i]); has_chip = bool((beat.get("chip") or {}).get("label"))
+                for sent in re.split(r"(?<=[.!?])\s+", disp):
+                    dv = direction(sent)
+                    if dv and not (has_chip and re.search(r"premarket|pre-market|after hours|after-hours", sent, re.I)) and \
+                            (mv is None or abs(mv) < 0.05 or (mv > 0) != (dv > 0)):
+                        bad.append(f"direction {'up' if dv > 0 else 'down'} vs screen {mv}")
             if bad: miss33.append(i + 1)
         row("Q33", "Every figure spoken over a beat is readable in that beat (app screen or labelled chip)", not miss33, "; ".join(det33))
         # Q34 one moment per Short (owner, 10/1): no chip time later than the corner stamp, and a pre-open Short shows no
@@ -181,6 +192,11 @@ def main():
         st34 = (day.get("stamp") or {}).get("asof", "")
         late = [c["asof_iso"] for c in (b.get("chip") or {} for b in day.get("beats", [])) if c.get("asof_iso") and c["asof_iso"] > st34]
         live = [f"beat {i + 1}: {t!r}" for i, ts in enumerate(seen) for t in ts if ED == "preopen" and re.search(r"\blive\b", t, re.I)]
+        # every time the viewer can read in an untagged beat is no later than the corner stamp
+        tagged = {i for i, b in enumerate(day.get("beats", [])) if b.get("tag")}
+        st_m = int(st34[11:13]) * 60 + int(st34[14:16]) if len(st34) >= 16 else 0
+        later = [f"beat {i + 1}: {m // 60}:{m % 60:02d}" for i, ts in enumerate(seen) if i not in tagged for m in shown_times(ts) if m > st_m]
+        late += later
         tags = [b["tag"]["text"] for b in day.get("beats", []) if b.get("tag")]
         row("Q34", "One moment: chip times <= the corner stamp; pre-open shows no live intraday quote (an Ask re-recorded later carries its own time tag)",
             not late and not live, f"stamp {st34}; chips {[c for c in (b.get('chip', {}).get('asof_iso') for b in day.get('beats', [])) if c] or '-'}"
@@ -205,9 +221,11 @@ def main():
         st = day.get("stamp") or {}
         snap = jload(os.path.join(W, "research-data.json"))["asof_et"]
         from datetime import datetime
-        chip_t = [b["chip"]["asof_iso"] for b in day.get("beats", []) if (b.get("chip") or {}).get("asof_iso")]
-        if chip_t:                                      # the stamp is the latest data time shown: research snapshot or a chip quote
-            snap = max([snap] + [datetime.strptime(c, "%Y-%m-%d %H:%M").strftime("%Y-%m-%d %H:%M ET") for c in chip_t])
+        # the stamp is the latest time in the Short: research snapshot, main take, app-shown times, chip quotes (compose's sources)
+        srcs = (day.get("stamp") or {}).get("sources") or {}
+        cand = [srcs.get("research"), srcs.get("take")] + srcs.get("app", []) + srcs.get("chips", [])
+        cand = [c for c in cand if c]
+        if cand: snap = f"{snap[:10]} {max(cand)} ET"
         try:
             shown = datetime.strptime(f"{DATE[:4]} {st.get('text', '')}", "%Y %b %d · %I:%M %p ET")
             delta = abs((shown - datetime.strptime(snap, "%Y-%m-%d %H:%M ET")).total_seconds()) / 60

@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.0.2 (2026-10-01, after the official midday refused and the owner's review of preopen-v2)
+
+- Direction agrees with the screen: a price direction about a holding (rise / fell / jumped / higher ...) must match the
+  day move its page shows in that beat ("Shares rise." over "-0.03% since last close" is refused), unless the sentence
+  is the labelled extended-hours move on a chip; negated phrases ("isn't lifting") carry no direction. Before the open
+  with no fresh quote the line says the news without a direction, or the close figure on screen. Storyline check + Q33.
+- The corner stamp is the latest time anywhere in the Short: the research snapshot, the main take's end, any time the
+  app shows in a story beat ("Written at 8:42 AM ET", read by OCR), any chip quote. A beat with its own time tag (an Ask
+  re-recorded later) is labelled separately. day.json `stamp.sources`; Q31 checks it, Q34 reads the final frames' times.
+- The app's Ask failure message is not an answer (midday 10:40 refused on "Couldn't finish that answer. Please ask
+  again in a moment."): facts --ask retakes on it, or when no visible point carries a figure.
+- Live drift: a figure Home shows counts as verified when a cross-checked facts figure of the same kind is within the
+  live tolerance (0.35 pt / 0.35% of the book mid-session, 0.06 otherwise), so the portfolio line says what the screen
+  shows ("Your portfolio is up $3,965 today." where facts had $4,368 minutes earlier). Same for the fallback template.
+- "$7B" is one figure in the storyline (was read as "$7").
+
 ## v1.0.1 (2026-10-01; the first version the launchd gate allows)
 
 Why: the 7:32 AM pre-open run refused at the storyline after 31 min, and the Short rebuilt by hand that morning showed

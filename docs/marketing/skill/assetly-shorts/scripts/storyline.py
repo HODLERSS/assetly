@@ -16,7 +16,7 @@ Writes <work>/story.json.
 import copy, json, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import Stage, jdump, jload, llm, log
-from screen import fval, shows
+from screen import direction, fval, shows
 
 ED, W = sys.argv[1], sys.argv[2]
 BAN = re.compile(r"\b(buy|sell|should|must-own|recommend|guaranteed|skyrocket\w*|soar\w*|explod\w*|moon|crush\w*|massive|insane|huge|"
@@ -41,7 +41,7 @@ LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOS
 def nums(text):
     """Figures a viewer reads: 1.8%, $1,234, 3.9, 52-week (ignored), Q4 (ignored), 11-fold (kept as 11)."""
     t = re.sub(r"\b(?:52|fifty-two)-week\b|\bQ[1-4]\b|\b(?:19|20)\d{2}\b|\bS&P 500\b|\bNasdaq 100\b|\bGemini \d\b|\b\d{1,2}:\d{2}\b", " ", text)
-    return [m.group(0) for m in re.finditer(r"[$]?\d[\d,]*(?:\.\d+)?(?:%| ?(?:billion|million|trillion))?", t)]
+    return [m.group(0) for m in re.finditer(r"[$]?\d[\d,]*(?:\.\d+)?(?:%| ?(?:billion|million|trillion)|[BMT]\b)?", t)]
 
 
 def allowed_figures(res, facts, askc):
@@ -53,11 +53,23 @@ def allowed_figures(res, facts, askc):
             out.add(s.rstrip("0").rstrip(".") if "." in s else s)
     for it in res["items"]:
         for f in it.get("figures", []): add_pct(f.get("value"))
-        for m in re.finditer(r"\$?\d[\d,]*(?:\.\d+)?(?: ?(?:billion|million))?", it.get("why", "") + " " + it.get("sentiment", "")):
+        for m in re.finditer(r"\$?\d[\d,]*(?:\.\d+)?(?: ?(?:billion|million)|[BM]\b)?", it.get("why", "") + " " + it.get("sentiment", "")):
             out.add(norm(m.group(0)))          # a figure the two cited headlines state ("$1.2 billion", "11-fold")
     for k, v in facts.get("figures", {}).items(): out.add(norm(v))
     for v in askc.get("verified", []): out.add(norm(v))
     for v in ctx()["ext"].values(): add_pct(v["pct"])
+    # Home moves while the take records (10/1 midday: facts 2.3%, Home +1.99% minutes later): a figure Home shows counts as
+    # verified when a cross-checked facts figure of the same kind is within the live tolerance, so the voice says the screen
+    tol = {"midday": 0.35, "close": 0.06, "preopen": 0.06}[ED]
+    fv = [fval(v) for v in facts.get("figures", {}).values()] + [fval(v) for v in (facts.get("portfolio") or {}).values() if isinstance(v, str)]
+    fv = [x for x in fv if x]
+    tot = next((x[0] for x in [fval((facts.get("portfolio") or {}).get("total", ""))] if x), 0)
+    for f in ctx()["screen"].get("home", {}).get("figures", []):
+        a = fval(f)
+        if not a or not a[1]: continue
+        lim = tol if a[1] == "%" else max(1.0, tol / 100 * tot)
+        if any(b[1] == a[1] and abs(abs(b[0]) - a[0]) <= lim for b in fv):
+            add_pct(a[0]) if a[1] == "%" else out.add(norm(f))
     return out
 
 
@@ -246,6 +258,14 @@ def check(story, res, facts, askc):
                     alt = (f"the fresh {ex['label'].lower()} move {abs(ex['pct']):.1f}% with the word '{ex['label'].lower()}'" if ex else "no figure")
                     errs.append(f"item {i + 1}: '{f}' is not on screen during its shot ({shot} shows {[g for g in figs if '%' in g or '$' in g][:6]}) "
                                 f"-> use one of those, {alt}, or drop it")
+            # a price direction about the holding agrees with what its page shows in the shot (owner, 10/1: "Shares rise."
+            # over "-0.03% since last close"), unless the sentence is the labelled extended-hours move on a chip
+            dv = direction(x["text"]); mv = ctx()["screen"].get(shot, {}).get("day_move") if sym else None
+            if dv and sym and not (says_ext and ex):
+                if mv is None or abs(mv) < 0.05 or (mv > 0) != (dv > 0):
+                    errs.append(f"item {i + 1}: {x['text']!r} says the stock went {'up' if dv > 0 else 'down'} but its page shows "
+                                f"{'no day move' if mv is None else f'{mv:+.2f}%'} -> say what happened without a price direction"
+                                + (f", or use the move the page shows ({mv:+.1f}%)" if mv is not None and abs(mv) >= 0.05 else ""))
             if says_ext and not ex:
                 errs.append(f"item {i + 1}: says extended hours in {x['text']!r} but there is no fresh two-feed quote for a chip -> "
                             f"say what the app shows instead")
@@ -403,6 +423,14 @@ def fallback(story, res, facts, askc):
             opts_p.append({"preopen": f"Your portfolio {moved} yesterday.", "midday": f"Your portfolio is {pf['today']} so far today.",
                            "close": f"Your portfolio closed {pf['today']} today."}[ED])
         if pf.get("all_time"): opts_p.append(f"Your portfolio is up {pf['all_time']} all time.")
+        # the day's gain exactly as Home shows it, when it is within the live tolerance of the cross-checked one
+        allowed = allowed_figures(res, facts, askc)
+        for f in home:
+            if f.startswith(("+$", "-$", "\u2212$")) and norm(f) in allowed and ED != "preopen":
+                d = "up" if f.startswith("+") else "down"
+                amt = f.lstrip("+-\u2212")
+                opts_p.append({"midday": f"Your portfolio is {d} {amt} so far today.", "close": f"Your portfolio closed {d} {amt} today."}[ED])
+                break
         ok_p = [t for t in opts_p if all(shows(f, home) for f in nums(t))] or opts_p
         if ok_p: story["portfolio"]["text"] = ok_p[0]
     if any(e.startswith("ask answer") for e in errs):

@@ -230,6 +230,11 @@ def main_ask():
         if rects is not None and not any(r.get("visible") for r in rects):
             # the answer must be on screen in the held shot (10/1: the take ended on "Still thinking...")
             print("RETAKE: no answer line is visible in the held shot"); sys.exit(3)
+        # the app's own failure message is not an answer (10/1 midday: "Couldn't finish that answer. Please ask again in a
+        # moment."), and an answer with no figure on a visible point gives the voice nothing to quote
+        if re.search(r"couldn.t finish|please (?:ask|try) again|something went wrong|try again in a moment", ans, re.I) or \
+                (rects is not None and not any(r.get("visible") and re.search(r"\d", r.get("text", "")) for r in rects)):
+            print("RETAKE: the Ask answer is an error message or carries no figure on screen"); sys.exit(3)
         if quality:
             log(f"ask wording: {quality}")
             # only jargon earns a retake: the pre-open "today" label comes from the app's Ask answer itself and never

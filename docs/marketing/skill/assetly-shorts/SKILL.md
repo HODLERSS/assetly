@@ -3,7 +3,7 @@ name: assetly-shorts
 description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, two-voice commentary, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day; never uploads.
 ---
 
-# Assetly market Shorts, v1.0.1
+# Assetly market Shorts, v1.0.2
 
 Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratch every run:
 

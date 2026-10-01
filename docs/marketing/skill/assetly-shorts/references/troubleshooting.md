@@ -41,3 +41,8 @@
   answer lines with their boxes, and facts --ask retakes when none is visible. Q32 reads the final frames.
 - **OCR.** `scripts/ocr.swift` (Vision, accurate) is compiled once to `/tmp/assetly-shorts/ocr-<hash>`; ~0.3 s an image.
   The status-bar clock reads as "9", "41": matching only uses figures with % or $ for spoken lines.
+- **The Ask failed on camera (10/1 midday).** The app answered "Couldn't finish that answer. Please ask again in a
+  moment." and the old check passed it (no figures to fail). facts --ask now retakes on the failure message.
+- **Home drifts while the take records (10/1 midday).** Facts at 10:2x had the day at $4,368, Home in the take showed
+  +$3,965; with "spoken = on screen" AND "spoken = verified", nothing could pass. Home figures within the live tolerance
+  of a cross-checked figure now count as verified.

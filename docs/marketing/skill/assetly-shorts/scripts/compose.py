@@ -181,13 +181,26 @@ def main():
         # the data time-stamp: when the quotes behind every figure were captured (research.data), not the render time
         from datetime import datetime
         snap = datetime.strptime(jload(os.path.join(W, "research-data.json"))["asof_et"], "%Y-%m-%d %H:%M ET")
-        # the corner stamp is the LATEST data time on screen (owner, 10/1): a chip quoted after the research snapshot moves it
-        for b in beats:
-            if (b.get("chip") or {}).get("asof_iso"): snap = max(snap, datetime.strptime(b["chip"]["asof_iso"], "%Y-%m-%d %H:%M"))
+        # the corner stamp is the LATEST time anywhere in the Short (owner, 10/1): the research snapshot, the main take's end,
+        # any time the app shows in a story beat ("Written at 8:42 AM ET"), any chip quote. A beat with its own time tag (an
+        # Ask re-recorded later) is labelled separately and does not move it.
+        from screen import take_minutes
+        day0 = snap.replace(hour=0, minute=0)
+        src = {"research": snap.strftime("%H:%M")}
+        tk = take_minutes(W)
+        if tk is not None: src["take"] = f"{tk // 60:02d}:{tk % 60:02d}"
+        scr = (jload(os.path.join(W, "screen.json"), {}) or {}).get("windows", {})
+        app_t = sorted({m for k, v in scr.items() if k != "ask_a" for m in v.get("times", [])})
+        if app_t: src["app"] = [f"{m // 60:02d}:{m % 60:02d}" for m in app_t]
+        chips_t = [datetime.strptime(b["chip"]["asof_iso"], "%Y-%m-%d %H:%M") for b in beats if (b.get("chip") or {}).get("asof_iso")]
+        if chips_t: src["chips"] = [c.strftime("%H:%M") for c in chips_t]
+        mins = [snap.hour * 60 + snap.minute] + ([tk] if tk is not None else []) + app_t + [c.hour * 60 + c.minute for c in chips_t]
+        from datetime import timedelta
+        snap = day0 + timedelta(minutes=max(mins))
         hm = snap.strftime("%-I:%M %p")
         stamp = {"edition": {"preopen": "Pre-open", "midday": "Midday", "close": "Close"}[ED],
                  "text": f"{snap.strftime('%b %-d')} · {hm} ET", "asof": snap.strftime("%Y-%m-%d %H:%M"),
-                 "line": f"Data as of {snap.strftime('%b %-d, %Y')} {hm} ET"}
+                 "line": f"Data as of {snap.strftime('%b %-d, %Y')} {hm} ET", "sources": src}
         y, m, d = DATE.split("-")
         day = {"date": DATE, "slug": f"{DATE}-{ED}", "demo": 0, "edition": ED,
                "hook": "|".join(story["cover"]), "hook_kicker": f"{LABEL[ED]} · {MON[int(m) - 1]} {int(d)}", "hook_foot": "Assetly",

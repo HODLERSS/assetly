@@ -75,6 +75,42 @@ def shows(spoken, shown):
     return False
 
 
+TIME = re.compile(r"\b(1[0-2]|[1-9]):([0-5]\d)\s?(AM|PM)\s?ET\b", re.I)
+DAYMOVE = re.compile(r"([+\-\u2212])\s?(\d+(?:\.\d+)?)%\s*(?:today|since last close)", re.I)
+UPW = r"\b(rise|rises|rose|rising|gain|gains|gained|jump\w*|climb\w*|rall\w*|advanc\w*|surg\w*|soar\w*|higher|lift\w*|up \d)"
+DOWNW = r"\b(fall|falls|fell|falling|drop\w*|slid|slide\w*|sank|sink\w*|slip\w*|declin\w*|lower|tumbl\w*|down \d)"
+
+
+def shown_times(texts):
+    """App-shown clock times ('Written at 8:42 AM ET.') as minutes after midnight ET (the status bar's 9:41 has no ET)."""
+    return sorted({(int(h) % 12 + (12 if ap.upper() == "PM" else 0)) * 60 + int(m) for t in texts for h, m, ap in TIME.findall(t)})
+
+
+def day_move(texts):
+    """The holding's day move the page shows ('-0.03% since last close', '+4.68% today'), or None."""
+    for t in texts:
+        m = DAYMOVE.search(t.replace("\u2212", "-"))
+        if m: return float(m.group(2)) * (-1 if m.group(1) in "-\u2212" else 1)
+    return None
+
+
+def direction(text):
+    """+1 / -1 when a sentence states a price direction, 0 when it does not."""
+    text = re.sub(r"(?:n't|\bnot|\bnever)\s+(?:\w+\s+){0,2}?\w+(?:ing|ed)?\b", " ", text, flags=re.I)   # "isn't lifting" says no direction
+    u, d = re.search(UPW, text, re.I), re.search(DOWNW, text, re.I)
+    return 0 if bool(u) == bool(d) else (1 if u else -1)
+
+
+def take_minutes(W):
+    """The main take's end, minutes after midnight ET (latency.json record.take)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    t = (jload(os.path.join(W, "latency.json"), {}) or {}).get("record.take", {})
+    if not t.get("start"): return None
+    d = datetime.fromtimestamp(t["start"] + t.get("secs", 0), ZoneInfo("America/New_York"))
+    return d.hour * 60 + d.minute
+
+
 def windows(ed, mk, story_syms):
     """Beat windows in take60 seconds, matching compose.py's starts (a spoken line runs ~4-6 s)."""
     w = {}
@@ -123,7 +159,8 @@ def main():
     flat = [p for v in shots.values() for p in v]; rows = ocr(flat); by = dict(zip(flat, rows))
     for k, (a, b) in win.items():
         texts = list(dict.fromkeys(r[0] for p in shots[k] for r in by.get(p, []) if r[5] >= 0.3))
-        out["windows"][k] = {"t": [round(a, 2), round(b, 2)], "texts": texts, "figures": list(dict.fromkeys(figures(texts)))}
+        out["windows"][k] = {"t": [round(a, 2), round(b, 2)], "texts": texts, "figures": list(dict.fromkeys(figures(texts))),
+                             "times": shown_times(texts), "day_move": day_move(texts)}
     jdump(out, os.path.join(W, "screen.json"))
     log("screen: " + "; ".join(f"{k}: {v['figures'][:8]}" for k, v in out["windows"].items()))
     if os.environ.get("SHORTS_KEEP_EXT") == "1" and os.path.exists(os.path.join(W, "ext.json")):   # tests: a fixed quote set
