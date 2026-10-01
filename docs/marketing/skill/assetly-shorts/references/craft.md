@@ -44,11 +44,18 @@ reviews. Every rule here is enforced by code where code can enforce it; the rest
 
 ## Voices
 
-- Market items: OpenRouter `openai/gpt-audio`, `marin` and `cedar`, alternating, +10% pitch-preserving tempo, pauses
-  over 0.3 s shortened, read-verbatim transcript check.
-- The portfolio line and the Ask answer: the app's own brief voice (the Minjae ElevenLabs clone,
-  `wcVi1Dm6pTXH8UsICsKk`, eleven_v4 while the free window lasts, ~Oct 12).
-- The Ask question: the gpt-audio voice that did not read the last item, while the question is typed on screen.
+- Owner, 10/1: EVERY line (items, portfolio, the Ask question and the answer) in the app's own brief voice, the Minjae
+  ElevenLabs clone (`wcVi1Dm6pTXH8UsICsKk`, eleven_v4 while the free window lasts, ~Oct 12). voice-lines.py
+  `SHORTS_VOICE=minjae` is the default; `SHORTS_VOICE=mixed` restores the old casting below.
+- Backup only: when ElevenLabs fails on a line, OpenRouter `openai/gpt-audio` reads it in the line's own voice
+  (`marin` / `cedar` alternating by item; `cedar` for a minjae line), read-verbatim transcript check as before.
+- Tempo 1.06x pitch-preserving on every line: the clone's raw read is ~2.4-2.65 words/s against gpt-audio's ~1.9-2.15
+  (10/1 midday), so the old 1.12x item tempo would rush it to ~2.7-3.0 w/s. A Short that lands over 30 s is re-tightened
+  by make-short's render loop as before. Pauses over 0.3 s are shortened.
+- The old casting (`mixed`): items marin / cedar alternating at 1.12x, the question in the gpt-audio voice that did not
+  read the last item, portfolio and answer in Minjae's voice.
+- With one voice the speaking pills still show while the voice speaks; the eyebrows (MICRON · THE READ, YOUR PORTFOLIO, ASK
+  ASSETLY, THE ANSWER) carry the hand-offs a second voice used to.
 - Hand-offs touch, never overlap (0.17 s gap); the bed ducks by sidechain, -6 to -12 dB.
 
 ## Picture

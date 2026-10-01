@@ -4,10 +4,10 @@ viewer-facing metadata (checked by the QA scan before the build).
 
     compose.py <edition> <date> <work-dir> <out-dir>
 
-Voices: market items alternate marin / cedar (OpenRouter gpt-audio); the portfolio line and the Ask answer are the
-app's own brief voice (the Minjae ElevenLabs clone); the Ask question is read by the other gpt-audio voice while it is
-typed on screen. Beats: each item on its holding's position page (1D chart, then the scroll to the intelligence and
-the position), a macro item on the brief (then News), the portfolio line on Home (total value, Today, All time,
+Voices (owner, 10/1): every line in the app's own brief voice (the Minjae ElevenLabs clone), at 1.06x; each line's
+"voice" field (items marin / cedar alternating, the question the other one) is the OpenRouter gpt-audio backup that
+voice-lines.py uses only when ElevenLabs fails (SHORTS_VOICE=mixed restores that casting at 1.12x).
+Beats: each item on its holding's position page (1D chart, then the scroll to the intelligence and the position), a macro item on the brief (then News), the portfolio line on Home (total value, Today, All time,
 scrolling to the movers), the question on the Ask composer as it is typed, the answer on the real answer, held into
 the end card. One camera language: the same 1.3x push on every beat, cuts on the 0.3 s music grid.
 """
@@ -118,6 +118,11 @@ def first_visible(take, t0, t1, pattern, step=0.1):
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
+# owner, 10/1: every line in Minjae's ElevenLabs voice (voice-lines.py SHORTS_VOICE=minjae, the default; the line's
+# "voice" stays the gpt-audio backup if ElevenLabs fails). The clone's raw read is ~2.4-2.65 words/s against gpt-audio's
+# ~1.9-2.15 (10/1 midday takes), so the gpt-audio 1.12x would run it at ~2.7-3.0 w/s, rushed on figures; 1.06x keeps
+# it near the old pace (~2.55-2.8 w/s). SHORTS_VOICE=mixed restores 1.12 for the gpt-audio items and the question.
+T_GPT = 1.12 if os.environ.get("SHORTS_VOICE", "minjae") == "mixed" else 1.06
 FOLLOW = "Follow for the open, midday and close"     # the end card's one CTA: true (three editions every trading day)
 HERO_MIN = 1.0                                       # a smaller move is not a thumbnail hook: the headline cover stays
 BAIT = {"#viral", "#fyp", "#foryou", "#foryoupage", "#trending", "#explore", "#viralshorts", "#shortsfeed"}
@@ -195,7 +200,7 @@ def main():
         for i, it in enumerate(items):
             ref = res["items"][it["n"]]
             s1, s2 = it["sentences"]
-            lines.append({"voice": gpt[i % 2], "say": f"{s1['text']} {s2['text']}", "tempo": 1.12,
+            lines.append({"voice": gpt[i % 2], "say": f"{s1['text']} {s2['text']}", "tempo": T_GPT,
                           "cues": [{"eyebrow": s1["eyebrow"].upper(), "show": tokens(s1["text"])},
                                    {"eyebrow": s2["eyebrow"].upper(), "show": tokens(s2["text"])}]})
             sym = next((s for s in ref.get("symbols", []) if s in held and f"pos_{s}_chart" in mk), None)
@@ -247,7 +252,7 @@ def main():
         beats.append(hb)
         # Ask: the question typed on camera, then the real answer
         q = askc["question"]
-        lines.append({"voice": gpt[len(items) % 2], "say": q, "tempo": 1.12, "cues": [{"eyebrow": "ASK ASSETLY", "show": tokens(q)}]})
+        lines.append({"voice": gpt[len(items) % 2], "say": q, "tempo": T_GPT, "cues": [{"eyebrow": "ASK ASSETLY", "show": tokens(q)}]})
         cue += 1
         qb = {"take": atake, "start": round(amk["ask_typing"] - 0.3, 2), "focus_src": FOCUS["ask_q"], "to_cue": cue,
               "note": "Ask: the question typed"}

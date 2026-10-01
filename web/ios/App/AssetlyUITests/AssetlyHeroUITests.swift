@@ -1,4 +1,5 @@
 import XCTest
+import Vision
 
 /// The LinkedIn hero clip. `testAseed` signs in so the take opens on a lived-in app; `testBhero` is
 /// the footage. Both must run in ONE xcodebuild invocation — each invocation reinstalls the app and
@@ -357,6 +358,16 @@ final class AssetlyHeroUITests: XCTestCase {
     private var marks: [[String: Any]] = []
     private func mark(_ name: String) { marks.append(["name": name, "t": Date().timeIntervalSince1970]) }
 
+    /// What the display shows right now, read off a screenshot (Vision, fast): the camera's view, not the accessibility
+    /// tree's. 10/1 close (take60 171.3-180.5 s): the tree already held the whole answer while the display stayed frozen
+    /// on "Still thinking..." (dots stopped) until the test ended.
+    private func screenText() -> String {
+        guard let cg = XCUIScreen.main.screenshot().image.cgImage else { return "" }
+        let req = VNRecognizeTextRequest(); req.recognitionLevel = .fast; req.usesLanguageCorrection = false
+        try? VNImageRequestHandler(cgImage: cg, options: [:]).perform([req])
+        return (req.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+    }
+
     private func openPositionMarked(_ sym: String, range: String) {
         if app.buttons["Home"].exists { app.buttons["Home"].tap(); beat(0.8) }
         let close = button(startingWith: "Close the brief")
@@ -454,6 +465,16 @@ final class AssetlyHeroUITests: XCTestCase {
         _ = thinking.waitForExistence(timeout: 5)
         let t0 = Date()
         while (thinking.exists || still.exists || feet.count <= feet0) && Date().timeIntervalSince(t0) < 90 { beat(0.25) }
+        // ...and then the SCREEN must show it (screenshots only, no more tree queries): neither wait line visible and the answer's foot or a bullet line is. Only then does the hold start, so it
+        // films the answer; past 90 s the take is marked ask_timeout (compose refuses an answer that is not on screen)
+        var onScreen = false
+        while !onScreen && Date().timeIntervalSince(t0) < 90 {
+            let seen = screenText().lowercased()
+            if seen.isEmpty { onScreen = true; break }      // no OCR (Vision unavailable): never block a take on the guard
+            onScreen = !seen.contains("still thinking") && !seen.contains("taking longer") && (seen.contains("financial advice") || seen.contains("\u{2022}"))
+            if !onScreen { beat(0.4) }
+        }
+        if !onScreen { mark("ask_timeout") }
         beat(1.5)                                 // the answer settles (layout, fade-in) and the display catches up
         // held, not scrolled: the answer is the last beat and holds into the end card (a drag here sent the app to the
         // home screen in one 9/30 take)
