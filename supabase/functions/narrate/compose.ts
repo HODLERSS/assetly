@@ -3,6 +3,7 @@
 import { earWords, replaceTicker, roundPct, sayAs, speakable } from "./ear.ts";
 import { scriptProblems, sanitize, ungroundedEventSentences } from "../_shared/intel.ts";
 import { callJudge } from "../_shared/judge.ts";
+import { chat } from "../_shared/llm.ts";
 
 export type Sections = { lede: string; overnight: string; positions: { name: string; note: string; watch: string }[]; desk_view: string; calendar?: string[]; horizon?: string; ideas?: string[] };
 /** The text a script may be made from. daily-brief also stores its BASIS on the row (as_of, day_sign, day_pct,
@@ -20,18 +21,13 @@ export function parseJsonBlock(raw: string): Record<string, unknown> | null {
 }
 export let lastModelErr = "";
 async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs: number, model?: string): Promise<Record<string, unknown> | null> {
-  const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), timeoutMs);
-  const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
-    signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: model ?? Deno.env.get("MARA_MODEL") ?? "MiniMax-M3", temperature: 0.25, max_tokens: maxTokens, response_format: { type: "json_object" },
-      messages: [{ role: "system", content: system + " Respond with the JSON object ONLY, first character '{'." }, { role: "user", content: prompt }] }),
-  }).catch((e) => { lastModelErr = e instanceof DOMException && e.name === "AbortError" ? `timeout ${timeoutMs}ms` : "network"; return null; });
-  clearTimeout(timer);
-  if (!r) return null;
-  if (!r.ok) { lastModelErr = `http ${r.status} ${(await r.text().catch(() => "")).slice(0, 140)}`; return null; }
-  const out = await r.json().catch(() => null);
-  const c = out?.choices?.[0]?.message?.content;
-  if (!c) { lastModelErr = `empty content (finish ${out?.choices?.[0]?.finish_reason ?? "?"})`; return null; }
+  // shared client (10/1): MARA, then SambaNova on a provider failure (no hedge: narration is not interactive)
+  const res = await chat({ model: model ?? Deno.env.get("MARA_MODEL") ?? "MiniMax-M3", temperature: 0.25, max_tokens: maxTokens, response_format: { type: "json_object" },
+    messages: [{ role: "system", content: system + " Respond with the JSON object ONLY, first character '{'." }, { role: "user", content: prompt }] },
+    { caller: "narrate.compose", maraKey: key, timeoutMs });
+  if (!res.ok) { lastModelErr = res.reason === "timeout" ? `timeout ${timeoutMs}ms` : res.reason === "network" ? "network" : `${res.reason} ${res.status ?? ""} ${res.detail}`.slice(0, 160); return null; }
+  const c = res.content;
+  if (!c.trim()) { lastModelErr = `empty content (finish ${res.finish})`; return null; }
   const parsed = parseJsonBlock(String(c));
   if (!parsed) lastModelErr = `unparseable: ${String(c).slice(0, 80)}`;
   return parsed;

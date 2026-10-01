@@ -8,6 +8,7 @@ import { ensureHistory, hiLo, refreshDividends, windowReturns } from "../_shared
 import { adviceHits, aliasesFor, cardCopyHits, unsupportedCauses, dayMoveMismatches, EVIDENCE_LAW, fixArticles, isEarningsCallTitle, levelMismatches, type LiveFact, pctText, usableNews, sanitize
 } from "../_shared/intel.ts";
 import { dayTag, marketOf } from "../_shared/calendar.ts";
+import { chat } from "../_shared/llm.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -37,21 +38,17 @@ function parseGlance(raw: string): { bullets: string[]; windows: Record<string, 
 }
 
 async function askModel(key: string, prompt: string, maxTokens: number): Promise<string | null> {
-  const r = await fetch("https://api.cloud.mara.com/v1/chat/completions", {
-    method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M3",
-      messages: [
-        { role: "system", content: "You are a sharp buy-side equity analyst. Respond with the JSON object ONLY, first character '{'. Be fast and decisive, no deliberation. Never write analysis prose outside the JSON." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.2, max_tokens: maxTokens,
-      response_format: { type: "json_object" },
-    }),
-  });
-  if (!r.ok) return null;
-  const out = await r.json().catch(() => null);
-  return out?.choices?.[0]?.message?.content ?? null;
+  // shared client (10/1): MARA, then SambaNova on a provider failure. This call had no timeout at all; 60s now.
+  const res = await chat({
+    model: Deno.env.get("MARA_MODEL") ?? "MiniMax-M3",
+    messages: [
+      { role: "system", content: "You are a sharp buy-side equity analyst. Respond with the JSON object ONLY, first character '{'. Be fast and decisive, no deliberation. Never write analysis prose outside the JSON." },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.2, max_tokens: maxTokens,
+    response_format: { type: "json_object" },
+  }, { caller: "warmup", maraKey: key, timeoutMs: 60000 });
+  return res.ok && res.content.trim() ? res.content : null;
 }
 
 Deno.serve(async (req) => {

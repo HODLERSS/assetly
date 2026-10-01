@@ -2,6 +2,7 @@
 // against JUDGE_POLICY and returns the ones that give advice, name a product to buy, pass a verdict in the app's voice or
 // forecast. Returns the flagged 0-based indices, or null when it did not answer usably (the caller decides how to fail).
 import { JUDGE_POLICY } from "./intel.ts";
+import { chat } from "./llm.ts";
 
 export type JudgeResult = { flags: Set<number> | null; status: "ok" | "timeout" | "error" | "unparseable" | "skipped"; detail?: string };
 
@@ -15,22 +16,14 @@ export function parseJudge(txt: string, n: number): Set<number> | null {
   } catch { return null; }
 }
 
-export async function callJudge(key: string, items: string[], ms: number, model = "gpt-oss-120b"): Promise<JudgeResult> {
+export async function callJudge(key: string, items: string[], ms: number, model = "gpt-oss-120b", opts: { forceFallback?: boolean } = {}): Promise<JudgeResult> {
   if (!items.length) return { flags: new Set(), status: "ok" };
-  if (!key || ms < 1200) return { flags: null, status: "skipped" };
-  const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
-  let aborted = false;
-  const base = (Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com").replace(/\/+$/, "").replace(/\/v1$/, "");
-  const r = await fetch(`${base}/v1/chat/completions`, {
-    signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, temperature: 0, max_tokens: 2500, response_format: { type: "json_object" },
-      messages: [{ role: "system", content: `Reasoning: low\n\n${JUDGE_POLICY}` }, { role: "user", content: `Items:\n${items.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] }),
-  }).catch((e) => { aborted = e instanceof DOMException && e.name === "AbortError"; return null; });
-  if (!r || !r.ok) { clearTimeout(timer); const detail = r ? `http ${r.status} ${(await r.text().catch(() => "")).slice(0, 120)}` : "network"; return { flags: null, status: aborted ? "timeout" : "error", detail }; }
-  const out = await r.json().catch(() => null);
-  clearTimeout(timer);
-  if (!out) return { flags: null, status: "timeout" };
-  const msg = out?.choices?.[0]?.message ?? {};
-  const flags = parseJudge(String(msg.content || msg.reasoning_content || msg.reasoning || ""), items.length);
+  if (ms < 1200) return { flags: null, status: "skipped" };   // no MARA key: SambaNova alone still judges
+  // shared client (10/1): MARA with SambaNova as the hedged fallback; the whole body is read under the timer
+  const res = await chat({ model, temperature: 0, max_tokens: 2500, response_format: { type: "json_object" },
+    messages: [{ role: "system", content: `Reasoning: low\n\n${JUDGE_POLICY}` }, { role: "user", content: `Items:\n${items.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] },
+    { caller: "judge", maraKey: key, timeoutMs: ms, hedgeMs: Math.min(1500, ms / 2), acceptReasoning: true, forceFallback: opts.forceFallback });
+  if (!res.ok) return { flags: null, status: res.reason === "timeout" ? "timeout" : "error", detail: `${res.reason} ${res.status ?? ""} ${res.detail}`.slice(0, 160) };
+  const flags = parseJudge(res.content, items.length);
   return flags ? { flags, status: "ok" } : { flags: null, status: "unparseable" };
 }

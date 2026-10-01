@@ -13,6 +13,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { dayTag, isTradingDay, marketOf, marketState, weekdayOf } from "../_shared/calendar.ts";
 import { dividendLine, dividendRows, ensureHistory, refreshDividends, windowReturns, windowReturnsBatch } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
+import { breakerState, chat } from "../_shared/llm.ts";
 import { earningsFilings } from "../_shared/filings.ts";
 import {
   adviceHits, aliasesFor, booksKorean, chipInLanguage, cleanFollowups, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, isEarningsCallTitle, questionIsKorean,
@@ -230,6 +231,10 @@ async function handle(req: Request): Promise<Response> {
   const admin = adminClient ??= makeAdmin();
   const uid = await userIdFrom(admin, bearerOf(req));
   if (!uid) return json({ ok: false, error: "sign in required" }, 401);
+  // test only (10/1): with a valid x-internal-token, "x-llm-fallback: force" treats MARA as unreachable so the SambaNova
+  // path can be exercised on prod. A user's own request can never set it.
+  const itok = Deno.env.get("INTERNAL_TOKEN") ?? "";
+  const forceLlmFallback = req.headers.get("x-llm-fallback") === "force" && !!itok && req.headers.get("x-internal-token") === itok;
 
   const url = new URL(req.url);
   const fixture = url.searchParams.get("fixture") === "1";
@@ -815,19 +820,15 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // lines kept out of its input
   const JUDGE_MS = 4000;
   const room = () => left() - JUDGE_MS;
-  const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3") => {
+  const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3", signal?: AbortSignal) => {
     if (timeoutMs < 1500) return null;
-    const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), timeoutMs);
-    const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {   // base overridable for local fixture runs
-      signal: ac.signal,
-      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: msgs, temperature, max_tokens: 6000, response_format: { type: "json_object" } }),
-    }).catch(() => null);
-    // round 9 E: the body read stays under the timer (a slow body stream took two answers to 31.9s and 32.7s)
-    if (!r || !r.ok) { clearTimeout(timer); return null; }
-    const out = await r.json().catch(() => null);
-    clearTimeout(timer);
-    return parseAnswer(out?.choices?.[0]?.message?.content ?? "");
+    // 10/1: one shared client (_shared/llm.ts): failover to SambaNova on a router 5xx / timeout / empty reply, a per-isolate
+    // breaker, every body read under its timer (round 9 E). Hedging is per lane, from measured latencies on this prompt
+    // (10/1, daily013): MARA M3 4.5-7s but SambaNova M3 8.5-17s, so the M3 lane is NOT hedged (the gpt-oss lane is the
+    // hedge); MARA gpt-oss ~4.5s and SambaNova gpt-oss 5-7s, so the gpt-oss lane hedges at 4s.
+    const res = await chat({ model, messages: msgs, temperature, max_tokens: 6000, response_format: { type: "json_object" } },
+      { caller: model === FAST ? "ask.fast" : "ask.primary", maraKey: key, timeoutMs, hedgeMs: model === FAST ? 4000 : undefined, forceFallback: forceLlmFallback, signal });
+    return res.ok ? parseAnswer(res.content) : null;
   };
   const base = [{ role: "system", content: system }, { role: "user", content: prompt }];
   /** The compliance judge (round 9 A): the flagged item numbers, or null when it did not answer in time. */
@@ -840,31 +841,22 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     // at a fixed cap ~40% of judgements timed out while data answers had budget to spare
     const ms = Math.min(6000, left() - 300);
     if (ms < 1200) { judgeStatus = "timeout"; return null; }
-    const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
-    let aborted = false;
-    const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {
-      signal: ac.signal, method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: FAST, temperature: 0, max_tokens: 400, response_format: { type: "json_object" },
-        // gpt-oss reads its reasoning level from the system prompt ("Reasoning: low"); an unknown request field could
-        // be refused by the gateway, which would turn every judgement into a timeout
-        messages: [{ role: "system", content: `Reasoning: low\n\n${JUDGE_POLICY}` }, { role: "user", content: `Items:\n${list.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] }),
-    }).catch((e) => { aborted = e instanceof DOMException && e.name === "AbortError"; return null; });
-    if (!r || !r.ok) {
-      clearTimeout(timer);
-      judgeStatus = aborted ? "timeout" : "error";
-      if (r) console.error("ask: judge HTTP", r.status, (await r.text().catch(() => "")).slice(0, 200));
-      return null;
-    }
-    const out = await r.json().catch(() => null);
-    clearTimeout(timer);
-    if (!out) { judgeStatus = "timeout"; return null; }
+    // 10/1 OUTAGE ROOT CAUSE: this call read a 502's body AFTER clearing its timer; the MARA router sent the headers and
+    // stalled, and the request hung into the 28.5s hard deadline ("I couldn't finish this answer"). The shared client
+    // reads every body under its timer, hedges SambaNova in at 1.5s and fails over on a 5xx. max_tokens 400 -> 800:
+    // gpt-oss ran out mid-JSON at 400 (HTTP 400 "truncated", 12:53 UTC 10/1).
+    const res = await chat({ model: FAST, temperature: 0, max_tokens: 800, response_format: { type: "json_object" },
+      // gpt-oss reads its reasoning level from the system prompt ("Reasoning: low"); an unknown request field could
+      // be refused by the gateway, which would turn every judgement into a timeout
+      messages: [{ role: "system", content: `Reasoning: low\n\n${JUDGE_POLICY}` }, { role: "user", content: `Items:\n${list.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] },
+      { caller: "ask.judge", maraKey: key, timeoutMs: ms, hedgeMs: 2000, acceptReasoning: true, forceFallback: forceLlmFallback });
+    if (!res.ok) { judgeStatus = res.reason === "timeout" ? "timeout" : "error"; return null; }
     // gpt-oss may put its JSON in the content or (on some gateways) leave content empty with the text in reasoning
-    const msg = out?.choices?.[0]?.message ?? {};
-    const txt = String(msg.content || msg.reasoning_content || msg.reasoning || "");
+    const txt = res.content;
     try {
       const all = [...txt.matchAll(/\{[^{}]*"flag"\s*:\s*\[[^\]]*\][^{}]*\}/g)];
       const o = all.length ? JSON.parse(all[all.length - 1][0]) : null;
-      if (!o || !Array.isArray(o.flag)) { judgeStatus = "unparseable"; console.error("ask: judge unparseable", out?.choices?.[0]?.finish_reason, txt.slice(0, 200)); return null; }
+      if (!o || !Array.isArray(o.flag)) { judgeStatus = "unparseable"; console.error("ask: judge unparseable", res.finish, txt.slice(0, 200)); return null; }
       judgeStatus = "ok";
       return new Set((o.flag as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= list.length).map((n) => n - 1));
     } catch { judgeStatus = "unparseable"; console.error("ask: judge unparseable", txt.slice(0, 200)); return null; }
@@ -873,6 +865,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   type Ans = { answer: string; followups: string[] } | null;
   // round 9 E: the reads before the model are capped, but together they can eat the budget; a model call that cannot
   // finish before the deadline is not started (the code-built answer ships instead)
+  // the losing lane stops spending once an answer is chosen
+  const lanes = new AbortController();
   if (room() < (decisionQ ? 4000 : 6000)) parsedA = null;
   else parsedA = await new Promise<Ans>((resolve) => {
     let settled = false, fastStarted = false, open = 1;
@@ -885,13 +879,17 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     const startFast = () => {
       if (fastStarted || settled) return;
       fastStarted = true; open++;
-      ask(base, 0.3, Math.min(decisionQ ? 7000 : 20000, room() - 1500), FAST).then(finish, () => finish(null));
+      ask(base, 0.3, Math.min(decisionQ ? 7000 : 20000, room() - 1500), FAST, lanes.signal).then(finish, () => finish(null));
     };
-    ask(base, 0.2, Math.min(decisionQ ? 10000 : 20000, room() - 1500)).then(finish, () => finish(null));
-    setTimeout(startFast, decisionQ ? 3000 : 7000);
+    ask(base, 0.2, Math.min(decisionQ ? 10000 : 20000, room() - 1500), undefined, lanes.signal).then(finish, () => finish(null));
+    // 10/1: with MARA out (breaker open, or the internal test flag) M3 runs on SambaNova at 8.5-17s on this prompt, so the
+    // gpt-oss lane starts at once instead of waiting 7s for a primary that will be slow
+    const maraOut = forceLlmFallback || breakerState("mara") === "open";
+    setTimeout(startFast, maraOut ? 0 : decisionQ ? 3000 : 7000);
     if (decisionQ) setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, Math.max(0, room() - 1000));
     else setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, Math.max(0, room() - 500));
   });
+  lanes.abort();
   // round 9: "1M is –0.9%" became "1M is: 0.9%" (the en-dash minus flipped the sign). A dash right before a digit is a
   // minus sign; only a spaced dash between words is punctuation.
   const deDash = (v: string) => v.trim().replace(/([\s(:,]|^)[\u2013\u2014](?=\$?\d)/g, "$1\u2212").replace(/\s*\u2014\s*/g, ": ").replace(/\s+\u2013\s+/g, ": ");

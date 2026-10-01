@@ -14,6 +14,7 @@ import { dividendRows, ensureHistory, hiLo, refreshDividends, repairNames, windo
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
 import { callJudge } from "../_shared/judge.ts";
+import { chat } from "../_shared/llm.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -27,27 +28,19 @@ const WINDOWS: [string, number][] = [["d7", 7], ["d30", 30], ["d60", 60], ["ytd"
 
 
 async function askMara(key: string, model: string, prompt: string, maxTokens = 10000, timeoutMs = 75000): Promise<string | null> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
-  const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {   // base overridable for local fixture runs
-    signal: ac.signal,
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: "You are a sharp buy-side equity analyst writing for busy retail investors. Be specific, opinionated about what matters and why, and honest about uncertainty; never about whether to buy or sell. Plain language, no hedging filler, no disclaimers. Use concrete numbers from the provided data, exactly as given. Respond with the JSON object ONLY — your first character must be '{'. Never write analysis prose outside the JSON." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.3, max_tokens: maxTokens,
-      response_format: { type: "json_object" },
-    }),
-  }).finally(() => clearTimeout(timer));
-  if (!r.ok) throw new Error("mara api " + r.status + " " + (await r.text().catch(() => "")).slice(0, 120));
-  const body = await r.json().catch(() => null);
-  const c = body?.choices?.[0]?.message?.content;
-  if (!c) throw new Error("mara empty content, finish=" + body?.choices?.[0]?.finish_reason);
-  return c;
+  // shared client (10/1): MARA, then SambaNova on a provider failure; MARA_BASE_URL still overrides for fixtures
+  const res = await chat({
+    model,
+    messages: [
+      { role: "system", content: "You are a sharp buy-side equity analyst writing for busy retail investors. Be specific, opinionated about what matters and why, and honest about uncertainty; never about whether to buy or sell. Plain language, no hedging filler, no disclaimers. Use concrete numbers from the provided data, exactly as given. Respond with the JSON object ONLY — your first character must be '{'. Never write analysis prose outside the JSON." },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.3, max_tokens: maxTokens,
+    response_format: { type: "json_object" },
+  }, { caller: "insights", maraKey: key, timeoutMs });
+  if (!res.ok) throw new Error(`llm ${res.provider ?? "-"} ${res.reason} ${res.status ?? ""} ${res.detail}`.slice(0, 160));
+  if (!res.content.trim()) throw new Error("llm empty content, finish=" + res.finish);
+  return res.content;
 }
 
 // MiniMax-M2.7 (the model before M3, 2026-09-13) + json_object could exhaust its token budget on the longest prompt shapes and return

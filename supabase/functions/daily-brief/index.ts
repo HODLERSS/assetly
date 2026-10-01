@@ -10,6 +10,7 @@
 //   3 editor synthesis (memos + rebuttals + market context + yesterday's brief -> the note)
 //   4 fact-check       (every number verified against the deterministic stats, or cut)
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { chat } from "../_shared/llm.ts";
 import { fixGainAsDayMove, fixGrossAsNet, fixQuotedPrices } from "../_shared/prices.ts";
 import { fixNamedWeights, fixNoteWeight, fixRecoveryClaims, ledeFallback, PLAIN_WORDS_RULE, repairMangledFigures, type WeightFact } from "../_shared/brief_guards.ts";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
@@ -63,6 +64,8 @@ function parseJsonBlock(raw: string): Record<string, unknown> | null {
 }
 
 let lastMeta = "";   // finish_reason + content length of the most recent call (diagnostics)
+// test only, set per request from body.llm_force_fallback WITH a valid internal token: MARA is treated as unreachable
+let FORCE_LLM_FALLBACK = false;
 // FAST model for composition steps (editor, compact, fact-check) of the assessment: M2.7 burns its whole token
 // budget thinking on that prompt shape (HTTP 400 "truncated" after ~85s); gpt-oss-120b writes it validly in ~20s.
 const FAST_MODEL = "gpt-oss-120b";
@@ -120,27 +123,21 @@ function snap(stage: string, o: unknown) {
 }
 async function askModel(key: string, system: string, prompt: string, maxTokens: number, timeoutMs = 30000, model?: string): Promise<Record<string, unknown> | null> {
   if (!/^(Draft (brief|assessment):|This assessment is too thin)/.test(prompt)) SOURCES.push(prompt);
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
-  const r = await fetch(`${Deno.env.get("MARA_BASE_URL") ?? "https://api.cloud.mara.com"}/v1/chat/completions`, {   // base overridable for local fixture runs
-    signal: ac.signal,
-    method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: model ?? Deno.env.get("MARA_MODEL") ?? "MiniMax-M3",
-      messages: [
-        { role: "system", content: system + " Respond with the JSON object ONLY, first character '{'. Never write prose outside the JSON." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.25, max_tokens: maxTokens,
-      response_format: { type: "json_object" },
-    }),
-  }).catch(() => null);
-  clearTimeout(timer);
-  if (!r || !r.ok) { lastMeta = "http=" + (r ? r.status : "abort"); return null; }
-  const out = await r.json().catch(() => null);
-  const c = out?.choices?.[0]?.message?.content;
-  lastMeta = "fr=" + (out?.choices?.[0]?.finish_reason ?? "?") + " clen=" + String(c ?? "").length;
-  return c ? parseJsonBlock(String(c)) : null;
+  // shared client (10/1): MARA, then SambaNova on a provider failure (a 502 from the MARA router, a timeout, an empty
+  // reply), same model; MARA_BASE_URL still overrides for fixture runs. No hedge: the brief is not interactive.
+  const res = await chat({
+    model: model ?? Deno.env.get("MARA_MODEL") ?? "MiniMax-M3",
+    messages: [
+      { role: "system", content: system + " Respond with the JSON object ONLY, first character '{'. Never write prose outside the JSON." },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.25, max_tokens: maxTokens,
+    response_format: { type: "json_object" },
+  }, { caller: "daily-brief", maraKey: key, timeoutMs, forceFallback: FORCE_LLM_FALLBACK });
+  if (!res.ok) { lastMeta = res.reason === "timeout" ? "http=abort" : `http=${res.status ?? res.reason}`; return null; }
+  const c = res.content;
+  lastMeta = "fr=" + res.finish + " clen=" + c.length + (res.provider !== "mara" ? ` via=${res.provider}` : "");
+  return c ? parseJsonBlock(c) : null;
 }
 
 
@@ -599,6 +596,13 @@ Deno.serve(async (req) => {
   // after 9:30 ET takes the opening-read path); only older editions are patched, and those are re-narrated
   // because the patch clears the script.
   const isRegen = body.regen === true;   // a regeneration run never repairs or dispatches (no cascades)
+  // test only: an internal-token caller may force the LLM fallback path (MARA treated as unreachable) for this request
+  FORCE_LLM_FALLBACK = false;
+  if (body.llm_force_fallback === true) {
+    let t = Deno.env.get("INTERNAL_TOKEN") ?? "";
+    if (!t) { const { data } = await admin.rpc("get_secret", { secret_name: "internal_token" }); t = data ?? ""; }
+    FORCE_LLM_FALLBACK = !!t && (req.headers.get("x-internal-token") ?? "") === t;
+  }
   const usClock: Edition | null = clockEd;
   const live: string[] = [...new Set([...liveEditions(edition), ...(usClock ? liveEditions(usClock) : [])])];
   const svcKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
