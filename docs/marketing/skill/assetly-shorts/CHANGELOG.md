@@ -1,21 +1,11 @@
 # Changelog
 
-## v1.0.2 (2026-10-01, owner changes after the morning Shorts)
+## v1.0.1 (2026-10-01; the first version the launchd gate allows)
 
-- Second person: the narration says "Your portfolio" (eyebrow YOUR PORTFOLIO); first person in any spoken line, title or
-  description is refused. The typed Ask question stays in the user's words.
-- The Ask answer comes from the recording: testGshort waits for the real answer (not "Still thinking..."; the 7:32 Short
-  showed the dots), holds 7.5 s and logs each text's frame; the storyline quotes one numbered, visible answer line (same
-  figures, close wording) and the edit outlines that line (`highlight.src_box`) and pushes to it. Q32 checks all three
-  on the final frames by OCR. facts --ask retakes when no answer line is visible.
-- Voice and screen agree: `screen.py` reads every beat's window of the take (Vision OCR) and re-quotes extended-hours
-  moves on both feeds. A spoken figure must be readable in its shot, or be a fresh (<= 15 min before the take ends)
-  pre-market / after-hours move said with its label word, which compose draws on a labelled chip ("PRE-MARKET · 8:47 AM
-  ET / IBM +5.8%", the Short's own overlay, never app UI) for that beat. Q33 checks every beat on the final frames.
-- Repo: make-short.sh passes a beat's `chip` to make-spot.py as a timed overlay (`start`/`end` on an overlay png).
+Why: the 7:32 AM pre-open run refused at the storyline after 31 min, and the Short rebuilt by hand that morning showed
+"Still thinking..." on its Ask beat while the voice read an answer, and said premarket moves the app screen never showed.
 
-## v1.0.1 (2026-10-01, after the 7:32 AM preopen refused at the storyline)
-
+### Storyline convergence (the 7:32 refusal)
 - Acronyms: names said as letters or as a word (IBM, NASA, AMD, AI, ETF, CEO, FDA, SEC, NVIDIA, AT&T, HP; Fed is not
   caps) pass; the ticker rule now refuses only a ticker of a candidate/held company and names the company to say.
   narrate/ear.ts exports `SPOKEN_CAPS` (earAudit allowlist) and reads "AT and T"; storyline mirrors it. The prompt
@@ -39,6 +29,27 @@
 - Validated on the refused 7:32 work dir: `run.sh preopen --test --work ... --from story` storyline 2 rounds (29 s),
   build + QA 31/31, delivered to shorts/2026-10-01-preopen-test4 (exit 0 after 328 s). A close work dir converges in
   3-5 rounds (51-85 s); forced fallback passes at 55-56 words.
+
+### Owner changes A and B (voice, screen and moment agree)
+- Second person: the narration says "Your portfolio" (eyebrow YOUR PORTFOLIO); first person in any spoken line, title or
+  description is refused. The typed Ask question stays in the user's words.
+- The Ask answer comes from the recording: testGshort waits for the real answer (not "Still thinking..."; the 7:32 Short
+  showed the dots), holds 7.5 s and logs each text's frame; the storyline quotes one numbered, visible answer line (same
+  figures, close wording) and the edit outlines that line (`highlight.src_box`) and pushes to it. Q32 checks all three
+  on the final frames by OCR. facts --ask retakes when no answer line is visible.
+- Voice and screen agree: `screen.py` reads every beat's window of the take (Vision OCR) and re-quotes extended-hours
+  moves on both feeds. A spoken figure must be readable in its shot, or be a fresh (<= 15 min before the take ends)
+  pre-market / after-hours move said with its label word, which compose draws on a labelled chip ("PRE-MARKET · 8:47 AM
+  ET / IBM +5.8%", the Short's own overlay, never app UI) for that beat. Q33 checks every beat on the final frames.
+- Repo: make-short.sh passes a beat's `chip` to make-spot.py as a timed overlay (`start`/`end` on an overlay png).
+- One moment per Short: the corner stamp is the latest data time shown (a chip quote later than the research snapshot
+  moves it); a pre-open Short shows no live intraday quote; an Ask beat re-recorded later (a rebuild) carries its own
+  "ASK RECORDED h:mm AM ET" tag (`ask-take.json` + `takeask.mp4`). Q34.
+- Lessons: "Still thinking..." is not an answer (wait for the answer's own foot, and check the final frames, not the
+  DOM text); retake only what a retake can fix (jargon, an invisible answer), and log what it cannot (the app's pre-open
+  "today" label, a product-side fix).
+- run.sh prints the real version (from SKILL.md, frozen with the scripts). The launchd gate
+  (`~/.local/bin/assetly-shorts-gate.sh`, references/schedule.md) runs only versions >= ~/.config/assetly-shorts/min_version.
 
 ## v1.0 (2026-09-30, revised the same night)
 

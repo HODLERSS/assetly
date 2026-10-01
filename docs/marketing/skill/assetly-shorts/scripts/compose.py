@@ -136,7 +136,12 @@ def main():
             # the app shows only regular-session moves, so voice and screen must never disagree)
             xs = next((x for x in ref.get("symbols", []) if x in ext), None)
             if xs and re.search(EXT_RE[ext[xs]["label"]], s1["text"] + " " + s2["text"], re.I):
-                b["chip"] = chip_png(os.path.join(OUT, f"chip{i + 1}.png"), facts_name(xs, s1["text"]), ext[xs]["label"], ext[xs]["pct"], ext[xs]["asof"])
+                shown_t = ext[xs]["asof"]
+                if ext[xs].get("asof_ts"):                 # the chip prints the quote's own time (the same value the stamp uses)
+                    from datetime import datetime as _dt
+                    from zoneinfo import ZoneInfo
+                    shown_t = _dt.fromtimestamp(ext[xs]["asof_ts"], ZoneInfo("America/New_York")).strftime("%-I:%M %p ET")
+                b["chip"] = chip_png(os.path.join(OUT, f"chip{i + 1}.png"), facts_name(xs, s1["text"]), ext[xs]["label"], ext[xs]["pct"], shown_t)
                 b["chip"]["png"] = os.path.join(OUT, f"chip{i + 1}.png")
                 if ext[xs].get("asof_ts"):
                     from datetime import datetime as _dt

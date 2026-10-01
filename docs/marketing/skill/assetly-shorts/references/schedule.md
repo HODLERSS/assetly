@@ -65,3 +65,14 @@ preopen: Hour 7 Minute 32; midday: Hour 11 Minute 35; close: Hour 15 Minute 2 (C
 itself skips holidays. A refused run leaves its work dir under `/tmp/assetly-shorts/` and exits 1; the main session
 should check `~/Library/Logs/assetly-shorts.log` and the delivery folder before posting. The Mac must be awake
 (`pmset repeat wakeorpoweron MTWRF 07:25:00` covers the first run).
+
+## The version gate (since 10/1)
+
+launchd runs `~/.local/bin/assetly-shorts-gate.sh <edition> --upload` (owned by the main session), not run.sh directly.
+The gate polls every 60 s until the INSTALLED `~/.claude/skills/assetly-shorts/SKILL.md` heading
+("# Assetly market Shorts, vX.Y.Z") is >= `~/.config/assetly-shorts/min_version`, then execs run.sh; past the edition's
+deadline (preopen 8:45, midday 13:30, close 17:00 CT) it skips with exit 4 rather than run an old version.
+
+Releasing: develop in the repo mirror, validate with `--test` on a saved work dir, copy every file into the installed
+skill, and change the installed heading LAST (a waiting run starts the moment it reads the new version). Raise
+`min_version` only when older versions must be blocked. Do not install between 15:00 and ~15:35 CT (the close run).
