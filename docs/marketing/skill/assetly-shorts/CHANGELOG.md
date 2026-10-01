@@ -17,6 +17,17 @@
 - Metadata: 3-5 hashtags (#Shorts, up to three companies, one niche tag; never #viral / #fyp); hidden tags = companies,
   "<name> stock", niche phrases, brand; a stray "#" is stripped from the title. Q40. TikTok caption: 3-5 hashtags,
   cover = first frame.
+- Voice (owner, 10/1): every line in Minjae's ElevenLabs voice; OpenRouter gpt-audio (the line's marin / cedar) only as
+  the per-line backup when ElevenLabs fails (voice-lines.py `SHORTS_VOICE=minjae`, the default; `mixed` restores the
+  old casting). compose: items and the question at 1.06x (were 1.12x for gpt-audio): the clone reads ~2.4-2.65 words/s
+  raw against gpt-audio's ~1.9-2.15, so 1.12x would rush it to ~2.7-3.0 w/s; 1.12x only in `mixed`. Storyline keeps
+  Sonnet first (OpenRouter topped up).
+- Ask wait (testGshort), 10/1 close: the take's display froze on "Still thinking..." from 171.3 s to 180.5 s (dots
+  stopped, freezedetect) while the accessibility tree already held the whole answer: the old wait trusted the tree,
+  which is not what the camera films (staticText-only wait lines, any existing foot). Fix: any-type, case-insensitive wait lines, a NEW disclaimer foot (count
+  grows), a 1.5 s settle and a 9 s hold (16:00 close take: answer on screen at 181 s, ask_answer 182.4 s); then a
+  screen guard: OCR of a screenshot (Vision) must show no wait line and the answer before ask_answer is marked
+  (ask_timeout past 90 s).
 - Not applied (owner's call or a principle): a spoken CTA, cutting to <= 20 s, one upload a day, delete-and-reupload,
   bait tags, API thumbnail upload (token scope is youtube.upload only).
 
@@ -27,7 +38,7 @@
   checks it, the TikTok caption follows.
 - Research: "barely budged / muted / unmoved" count as a flat claim (10/1 close: Micron "barely budged" on a verified
   +3.03%). Storyline fallback with no spare item re-tells a direction-wrong item with the verified move.
-- TikTok posts are **Only me** (Chrome dropdown; API `SELF_ONLY`, override `TIKTOK_PRIVACY`): the owner switches each one to
+- TikTok posts were briefly **Only me** (10/1 afternoon), then made **Everyone** again the same evening (owner: "make all videos on tiktok public"). Was: Only me (Chrome dropdown; API `SELF_ONLY`, override `TIKTOK_PRIVACY`): the owner switches each one to
   Everyone by hand for about a week (~Oct 8), then the default is revisited. The 10/1 preopen and midday went out as Everyone.
 - Every delivered Short gets a TikTok package (tiktok_pack.py: < 10 MB tiktok.mp4, caption, tiktok.json). With --upload
   it posts through the TikTok Content Posting API (app/scripts/tiktok/post.py; AI-generated label, own-brand disclosure)

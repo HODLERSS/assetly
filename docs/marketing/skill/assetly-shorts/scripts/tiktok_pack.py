@@ -36,7 +36,7 @@ tj = os.path.join(D, "tiktok.json")
 if os.path.exists(tj) and json.load(open(tj)).get("status") in ("posted", "publish_complete"):
     print("already posted: tiktok.json kept"); sys.exit(0)
 json.dump({"status": "pending", "account": "@assetlyapp", "video": "tiktok.mp4", "bytes": size, "ssim": round(ssim, 4),
-           "settings": {"who_can_see": "Only me", "ai_generated_label": True, "disclose_post_content": "Your brand",
+           "settings": {"who_can_see": "Everyone", "ai_generated_label": True, "disclose_post_content": "Your brand",
                         "comments": True, "reuse": True, "cover": "first frame (0:00, the headline cover = thumbnail.png)", "automatic_checks_prompt": "Cancel (do not change account settings)"}},
           open(os.path.join(D, "tiktok.json"), "w"), indent=1)
 print(f"tiktok package: {size / 1e6:.1f} MB, SSIM {ssim:.4f}, caption {len(cap)} chars")

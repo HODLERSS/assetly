@@ -23,8 +23,8 @@ def main():
     tok = t["access_token"]
     ci = api("https://open.tiktokapis.com/v2/post/publish/creator_info/query/", tok=tok)["data"]
     opts = ci.get("privacy_level_options", [])
-    # owner, 10/1: post ONLY ME for now; the owner switches each post to Everyone by hand (review until ~10/8, then decide)
-    privacy = os.environ.get("TIKTOK_PRIVACY", "SELF_ONLY")
+    # owner, 10/1 evening: TikTok posts are public (Everyone); an unaudited app falls back to SELF_ONLY
+    privacy = os.environ.get("TIKTOK_PRIVACY", "PUBLIC_TO_EVERYONE")
     if privacy not in opts: privacy = "SELF_ONLY"
     vid = os.path.join(D, "tiktok.mp4"); size = os.path.getsize(vid)
     cap = open(os.path.join(D, "tiktok-caption.txt")).read()
