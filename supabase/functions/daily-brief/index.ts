@@ -10,7 +10,7 @@
 //   3 editor synthesis (memos + rebuttals + market context + yesterday's brief -> the note)
 //   4 fact-check       (every number verified against the deterministic stats, or cut)
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { fixQuotedPrices } from "../_shared/prices.ts";
+import { fixGainAsDayMove, fixGrossAsNet, fixQuotedPrices } from "../_shared/prices.ts";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
   superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, tidyClauseEndings, krxDollarTargets, taxRemarkClaims, bondValueClaims, isTaxAdvantaged, plainForBeginner, roundBookTotal, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
@@ -90,7 +90,7 @@ const FAST_MODEL = "gpt-oss-120b";
 // 18 (r13 M1): period figures relabelled to their true window (SOXL "347.4% this year" is its 1-year return)
 // 17 (r12 D): house-voice verdicts/forecasts ("A clean beat rerates the whole portfolio") and low-yield income claims
 //    dropped from stored rows; scripts re-made (card decimals, "~" / "(est)" in words, "Platforms'")
-const GEN_VERSION = 21;   // 4:
+const GEN_VERSION = 22;   // 22: net worth as the portfolio value; day $ beside day % (10/1)   // 4:
 const REPAIR_ROWS_PER_RUN = 12, REPAIR_ROWS_PER_USER = 6;   // r10 load: a GEN bump no longer rewrites every stored row in one run calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
@@ -715,6 +715,13 @@ Deno.serve(async (req) => {
       const assets = rows.filter((r) => r.kind !== "debt");
       const total = assets.reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
       if (total < 100) continue;
+      // 10/1 owner: "Portfolio sits at $1.37 M" while the app showed $1.25 M. The portfolio's VALUE is net worth (assets
+      // minus debt), what Home shows; total assets stays the base for weights ("% of assets").
+      const debtAll = rows.filter((r) => r.kind === "debt").reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0);
+      const netWorth = total - debtAll;
+      const bookTotalLine = debtAll > 0
+        ? `Portfolio value (net worth, what the app shows) $${Math.round(netWorth)}: total assets $${Math.round(total)} minus debt $${Math.round(debtAll)}. When you say what the portfolio is worth or where it "sits", use $${Math.round(netWorth)}, never the total-assets figure.`
+        : `Total assets $${Math.round(total)} (no debt: this is the portfolio's value).`;
       // Today's OTHER editions written by an older version are repaired in code (the pass above normally got them)
       if (!isRegen && !repairedUsers.has(uid)) await repairToday(admin, uid, rows, briefDate, live, () => repairCtxOf(uid)).catch(() => null);
       let backfillOnly: Sections | null = null;
@@ -776,7 +783,12 @@ Deno.serve(async (req) => {
         const pxT = px === null ? "n/a" : r.currency === "KRW" ? `₩${Math.round(Number(r.price)).toLocaleString("en-US")} (about $${Math.round(px).toLocaleString("en-US")})`
           : "$" + (px >= 1000 ? Math.round(px).toLocaleString("en-US") : px.toFixed(2));
         const chg = r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%";
-        return `${nm}: position value $${Math.round(v)} (${(v / total * 100).toFixed(1)}% of assets), share price ${pxT}, day ${chg} [${dayTag(marketOf(r.symbol, r.kind, r.currency))}], total G/L $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))}`;
+        // 10/1 owner: "MARA's -5.5% slide reduces portfolio value by $177,500" used the since-purchase loss as the day's
+        // move. The day's dollar change is stated beside the day %, and the lifetime figure is labelled as lifetime.
+        const cp = r.change_pct === null ? null : Number(r.change_pct) / 100;
+        const dayUsd = cp === null || cp <= -1 ? null : v - v / (1 + cp);
+        const dayUsdT = dayUsd === null ? "" : ` (${dayUsd >= 0 ? "+" : "-"}$${Math.round(Math.abs(dayUsd)).toLocaleString("en-US")} on the day)`;
+        return `${nm}: position value $${Math.round(v)} (${(v / total * 100).toFixed(1)}% of assets), share price ${pxT}, day ${chg}${dayUsdT} [${dayTag(marketOf(r.symbol, r.kind, r.currency))}], gain or loss SINCE PURCHASE $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))} (all-time, never a day's move)`;
       }).join("\n");
       // EXPOSURE by type, computed in code (round 5: a lede called VOO's 46.4% "US equity exposure"; US equity was
       // VOO + AAPL + KO = 69.2%). Every stated exposure figure is checked against these.
@@ -1168,7 +1180,7 @@ SESSIONS (deterministic; obey over any instinct):
 ${sessionLine("US")}${krHeldW ? "\n" + sessionLine("KR") : ""}
 
 PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
-Total assets $${Math.round(total)}.
+${bookTotalLine}
 ${statsNoDay}
 WEEK MOVES (deterministic; the ONLY move numbers allowed, and they are WEEK numbers):
 ${weekLines.join("\n") || "- none"}
@@ -1243,7 +1255,7 @@ LEADERS: ${leaderLines || "(none tracked)"}
 LEADER HEADLINES (24h):\n${leaderHeads || "- none"}
 
 PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
-Total assets $${Math.round(total)}.
+${bookTotalLine}
 ${statsLines}
 NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
 ${dateLaw}
@@ -1277,7 +1289,7 @@ BLUF LAW: every section opens with its CONCLUSION first; never a chain of ticker
           // graceful degradation for API slow waves: a compact editor beats no brief
           const compactPrompt = `Write today's ${briefDate} morning brief for ONE investor. Be dense; every word counts.
 MARKET: ${marketLines || "(none)"}
-PORTFOLIO (only source of numbers): Total $${Math.round(total)}.
+PORTFOLIO (only source of numbers): ${bookTotalLine}
 ${statsLines}
 TOP MEMOS:
 ${memosOut.slice(0, 3).map((m) => `- ${m.name}: ${m.changed}. ${m.bull}. ${m.bear}.`).join("\n")}
@@ -1342,7 +1354,7 @@ FRESH HEADLINES (8h):
 ${freshHeads || "- none"}
 
 PORTFOLIO (deterministic; the ONLY source of portfolio numbers):
-Total assets $${Math.round(total)}. ${pnlLine}
+${bookTotalLine} ${pnlLine}
 ${statsLines}
 
 NEXT EARNINGS ESTIMATES (the only allowed earnings dates): ${earnLine}
@@ -1416,7 +1428,7 @@ ${STYLE_RULES}\n${READER}`;
           // API slow-wave degradation: a compact intraday note beats no note
           const compact = `Write the ${briefDate} ${edition === "midday" ? "MIDDAY session pulse (11 AM Central)" : edition === "kr_open" ? "KOREA OPEN pulse (9:20 AM KST; Korean names first, US names past tense)" : edition === "kr_close" ? "KOREA CLOSING note (after the 3:30 PM KST close; Korean names first, US names past tense)" : "post-close note"} for ONE investor. Dense; every word counts.
 MARKET NOW: ${mktLive || "(none)"}
-PORTFOLIO (only source of numbers): Total $${Math.round(total)}. ${pnlLine}
+PORTFOLIO (only source of numbers): ${bookTotalLine} ${pnlLine}
 ${statsLines}
 DESK CONTEXT:
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.changed ?? ""}. watch: ${m.watch ?? ""}`).join("\n") || "- none"}
@@ -1428,7 +1440,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         if (!draft || !validSections(draft)) { errors.push(uid.slice(0, 8) + ": writer failed [" + lastMeta + "]"); continue; }
         const caps = edition === "midday" || edition === "kr_open" ? "lede 28, overnight 50, note 28, watch 10, desk_view 36" : "lede 30, overnight 55, note 30, watch 10, desk_view 40";
         const checked = elapsed() > 115 ? null : await askModel(key, "You are the fact-checker. You may only remove or correct, never add claims.",
-          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET NOW: ${mktLive}\nLEADERS: ${leaderLines}\nPORTFOLIO: Total $${Math.round(total)}. ${pnlLine}\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (${caps}) by tightening, not by losing substance. Also: replace any numeric KRX code with the company name; write won as \u20a9 never "KRW"; delete any calendar or watch item whose date is before today (${briefDate}) and any undated calendar item; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; overnight must keep at least three market numbers; delete any instruction to buy, sell, trim, add, reduce, or rotate a position and state the risk or setup instead; delete any figure credited to a company when the headline gives it to an industry, a market or another company (an industry-wide "$200 billion" is never one company's cut), and any claim that a story hits or helps a holding "directly" unless a headline names that holding; a day move tagged LIVE is today's, never "yesterday".`, 10000, 30000);
+          `Draft brief:\n${JSON.stringify(draft)}\n\nVerified data (the only allowed sources of numbers):\nMARKET NOW: ${mktLive}\nLEADERS: ${leaderLines}\nPORTFOLIO: ${bookTotalLine} ${pnlLine}\n${statsLines}\nMEMOS: ${JSON.stringify(memosOut)}\n\nReturn the SAME JSON shape. Fix any number that contradicts the data; delete any claim you cannot trace to it; enforce the word caps (${caps}) by tightening, not by losing substance. Also: replace any numeric KRX code with the company name; write won as \u20a9 never "KRW"; delete any calendar or watch item whose date is before today (${briefDate}) and any undated calendar item; delete filler phrases (investors should, keep an eye, monitor closely, time will tell, worth watching); rewrite any sentence that mentions internal process words (skeptic, memo, pushback, analyst notes) so only the conclusion remains; overnight must keep at least three market numbers; delete any instruction to buy, sell, trim, add, reduce, or rotate a position and state the risk or setup instead; delete any figure credited to a company when the headline gives it to an industry, a market or another company (an industry-wide "$200 billion" is never one company's cut), and any claim that a story hits or helps a holding "directly" unless a headline names that holding; a day move tagged LIVE is today's, never "yesterday".`, 10000, 30000);
         sections = (checked && validSections(checked)) ? checked as Sections : draft as Sections;
       }
       if (!sections || !validSections(sections)) { errors.push(uid.slice(0, 8) + ": invalid sections"); continue; }
@@ -1474,6 +1486,20 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         return { ...p, note: fixQuotedPrices(p.note, Number(h.price), h.currency ?? "USD", usd(Number(h.price), h.currency)) };
       });
       snap("priceFidelity", sections);
+      // money-figure fidelity backstop over every written field: net worth for the portfolio's value, and a holding's
+      // day $ wherever its since-purchase G/L was written as the day's move
+      if (sections) {
+        const moneyHolds = holdings.filter((r) => r.change_pct !== null && r.change_pct !== undefined).map((r) => {
+          const v = usd(Number(r.value ?? 0), r.currency), cp = Number(r.change_pct) / 100;
+          return { names: [krName(r.symbol, r.nickname, r.name), r.symbol, ...aliasesFor(r.symbol, r.name)].filter(Boolean) as string[],
+            dayUsd: cp <= -1 ? 0 : v - v / (1 + cp), totalGlUsd: usd(Number(r.total_gl ?? 0), r.currency) };
+        });
+        const fixMoney = (t: string) => fixGainAsDayMove(fixGrossAsNet(t, total, netWorth), moneyHolds);
+        const deep = (o: unknown): unknown => typeof o === "string" ? fixMoney(o) : Array.isArray(o) ? o.map(deep)
+          : o && typeof o === "object" ? Object.fromEntries(Object.entries(o as Record<string, unknown>).map(([k, v]) => [k, k === "name" ? v : deep(v)])) : o;
+        sections = deep(sections) as typeof sections;
+        snap("moneyFidelity", sections);
+      }
       // The diet runs AFTER the expansion loop that enforces the length floor, so an aggressive trim can
       // starve a brief back below it. Snapshot first and keep the trim only if the brief stays long enough.
       // A daily edition written on a day the US market did not trade (operator-forced, or a holiday tick): the
@@ -1934,7 +1960,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           const closed = edition === "close" || marketState("US").phase === "post" || marketState("US").phase === "closed";
           const lbl = closed ? "as of the 4:00 PM ET close" : `as of ${at} ET`;
           const stated = [...String(sections.lede ?? "").matchAll(/\b(?:gain(?:ed|s)?|los(?:s|t|es)|lifts?|lifted|up|down|adds?|added|to)\s+(?:about\s+|roughly\s+)?[+\-−]?\$(\d{1,3}(?:,\d{3})+|\d+)/gi)].map((m) => Number(m[1].replace(/,/g, "")));
-          const figsLive = [Math.round(dayUsd), Math.round(total), ...stated];
+          const figsLive = [Math.round(dayUsd), Math.round(total), Math.round(netWorth), ...stated];
           sections.lede = mergeParens(labelLiveFigures(sections.lede, figsLive, lbl)); sections.overnight = mergeParens(labelLiveFigures(sections.overnight, figsLive, lbl)); sections.desk_view = mergeParens(labelLiveFigures(sections.desk_view, figsLive, lbl));
         }
         // "The risk: net cash balance sheet." labels a strength as the risk (round 4): that clause goes, and the
@@ -2071,7 +2097,7 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         // concentration expanded; a sentence still carrying a jargon term dropped), and the body's total rounded the
         // way the header rounds it ($13,807 in the body beside $13,808 in the header)
         if (edition === "assessment") {
-          const pb = (t: string) => { const r = roundBookTotal(novice ? plainForBeginner(t) : t, total); return r.trim() ? r : t; };
+          const pb = (t: string) => { const r = roundBookTotal(roundBookTotal(novice ? plainForBeginner(t) : t, total), netWorth); return r.trim() ? r : t; };
           sections.lede = pb(sections.lede); sections.overnight = pb(sections.overnight); sections.desk_view = pb(sections.desk_view);
           if (sections.horizon) sections.horizon = pb(sections.horizon);
           sections.positions = sections.positions.map((p) => ({ ...p, note: pb(p.note), watch: novice ? plainForBeginner(p.watch) || p.watch : p.watch }));
