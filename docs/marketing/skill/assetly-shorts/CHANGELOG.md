@@ -2,6 +2,11 @@
 
 ## v1.0.6 (2026-10-01, owner: post every Short to TikTok too)
 
+- Titles (owner, 10/1 pm): <= 50 chars, short and catchy, the hook only: no edition label (Midday / After the bell) and no
+  date (the description's first line carries "Data as of"). Storyline prompt + check, compose strips any label/date, QA
+  checks it, the TikTok caption follows.
+- Research: "barely budged / muted / unmoved" count as a flat claim (10/1 close: Micron "barely budged" on a verified
+  +3.03%). Storyline fallback with no spare item re-tells a direction-wrong item with the verified move.
 - TikTok posts are **Only me** (Chrome dropdown; API `SELF_ONLY`, override `TIKTOK_PRIVACY`): the owner switches each one to
   Everyone by hand for about a week (~Oct 8), then the default is revisited. The 10/1 preopen and midday went out as Everyone.
 - Every delivered Short gets a TikTok package (tiktok_pack.py: < 10 MB tiktok.mp4, caption, tiktok.json). With --upload

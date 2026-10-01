@@ -279,7 +279,7 @@ def main():
 
 UP = r"(?:rose|rises|climbed|jumped|jumps|gained|rallied|advanced|popped|pops|higher|up)"
 DOWN = r"(?:fell|falls|dropped|drops|slid|slides|sank|sinks|slipped|slips|declined|tumbled|lower|down)"
-FLAT = r"(?:barely moved|flat|little changed|unchanged|isn't moving|is not moving)"
+FLAT = r"(?:barely (?:moved|moves|budged|budges|reacted)|\bbarely\b|flat|little changed|unchanged|muted|isn't moving|is not moving|unmoved)"   # 10/1 close: "barely budged" on +3.03% slipped through
 
 
 def direction_conflicts(it, rowsym):

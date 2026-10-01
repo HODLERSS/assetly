@@ -20,7 +20,7 @@ assert size < 10_000_000, f"tiktok.mp4 is {size} bytes (limit 10 MB)"
 assert ssim >= 0.99, f"tiktok.mp4 SSIM {ssim} < 0.99"
 m = json.load(open(os.path.join(D, "youtube-metadata.json")))
 d = date.fromisoformat(DATE); tag = f"{d.strftime('%b')} {d.day}"
-title = re.sub(r"\s*\|\s*[A-Z][a-z]{2} \d{1,2}$", "", m["title"]) + f" | {tag}"
+title = re.sub(r"\s*\|\s*[A-Z][a-z]{2} \d{1,2}$", "", m["title"])   # owner 10/1: hook only, no date
 body = m["description"].split("\n\nAssetly on the App Store")[0]
 first, _, rest = body.partition("\n")              # "Data as of ... ET" is a heading line: end it with a full stop
 body = (first.rstrip(".") + ". " + rest).strip() if rest else first

@@ -395,7 +395,10 @@ def check(story, res, facts, askc):
                     f"e.g. 'Up 3.8% this month and 31% over the year.' (4-13 words, verified figures only)")
     for where, t in sents:
         for m in re.finditer(r"\d+\.\d{2,}%", t): errs.append(f"{where}: {m.group(0)}: one decimal for percentages")
-    if len(story["title"]) > 70: errs.append(f"title is {len(story['title'])} chars (max 70)")
+    # owner, 10/1: short and catchy, no edition label ("Midday:", "After the bell") and no date
+    if len(story["title"]) > 50: errs.append(f"title is {len(story['title'])} chars (max 50): make it shorter and punchier")
+    if re.search(r"\b(before the bell|pre-?open|midday|after the bell|at the close|close:)|\|\s*\w{3} \d", story["title"], re.I):
+        errs.append("title: no edition label or date -> just the hook, e.g. 'Micron pops, Boeing lands $20B'")
     if len(story["cover"]) != 3: errs.append("cover needs exactly 3 lines")
     # covers, title and description state no price direction the screen contradicts (owner, 10/1: "IBM rallies." over a
     # page at -0.03%), unless a chip shows that move
@@ -435,6 +438,13 @@ def check(story, res, facts, askc):
     return errs, words
 
 
+def short_title(covers):
+    """The fallback title: the first two covers joined, <= 50 chars, no edition label, no date."""
+    cs = [c.rstrip(".") for c in covers if c]
+    t = ", ".join(cs[:2])
+    return t if len(t) <= 50 else cs[0][:50]
+
+
 def fallback(story, res, facts, askc):
     """Last resort, deterministic: lines that still fail are told with the item's verified WHY and READ (trimmed at a
     clause when the budget needs it), the edition's timing phrase leads item 1, and the portfolio / Ask lines fall back
@@ -445,14 +455,16 @@ def fallback(story, res, facts, askc):
     for k, v in (("portfolio", {"eyebrow": "MY PORTFOLIO", "text": ""}), ("ask", {"answer_text": ""})):
         if not isinstance(story.get(k), dict): story[k] = v
     story.setdefault("cover", [res["items"][it.get("n", 0)]["cover"] for it in story["items"][:3]])
-    story.setdefault("title", f"{LABEL[ED].title()}: " + ", ".join(res["items"][it.get("n", 0)]["cover"].rstrip(".") for it in story["items"][:3])[:60])
+    story.setdefault("title", short_title([res["items"][it.get("n", 0)]["cover"] for it in story["items"][:3]]))
     story.setdefault("description", " ".join(res["items"][it.get("n", 0)]["why"] for it in story["items"][:3]))
     story.setdefault("hashtags", ["#Shorts", "#stockmarket"]); story["_budget"] = BUDGET
 
     def trims(t):
         """The sentence, then shorter versions cut at a clause boundary (each still a verified claim, just less of it)."""
         t = t.strip().rstrip(".") ; out = [t]
-        for sep in (", ", " and ", " with ", " as ", " after ", " on "):
+        # " but " / " yet ": the contrast clause is often the stale price read ("... but the stock barely budged" while
+        # the verified move is +3.03%, 10/1 close); the head is still a verified claim
+        for sep in (" but ", " yet ", " though ", ", ", " and ", " with ", " as ", " after ", " on "):
             if sep in t:
                 head = t.split(sep)[0].strip()
                 if len(head.split()) >= 4 and head not in out: out.append(head)
@@ -538,7 +550,7 @@ def fallback(story, res, facts, askc):
     if any(e.startswith(("cover:", "title:", "description:")) for e in errs):
         nm = [re.sub(r"\s+\w+\.?$", "", res["items"][it["n"]]["cover"]).strip() for it in story["items"][:3]]
         story["cover"] = [f"{n} in focus." for n in nm]
-        story["title"] = f"{LABEL[ED].title()}: {', '.join(nm[:-1])} and {nm[-1]} in focus"[:70]
+        story["title"] = short_title([f"{n} in focus." for n in nm])
         story["description"] = " ".join(res["items"][it["n"]]["why"].rstrip(".") + "." for it in story["items"][:3]) + " " + story["portfolio"]["text"]
         errs, words = render()
     log(f"storyline fallback (verified wording for items {sorted(x + 1 for x in opts)}): {words} words, {len(errs)} problems {errs[:4]}")
@@ -589,7 +601,7 @@ Write JSON:
  "ask": {{"line": <the number of the visible answer line you quote>, "answer_text": "<<= 13 words: that line quoted or closely
          paraphrased in plain spoken words, its own figures only, no + or - signs, no 'I' / 'my'>"}},
  "cover": ["Micron beats.", "HPE hits a record.", "Stocks end mixed."]   (one per item, in order; short name first; <= 24 chars),
- "title": "<= 70 chars, e.g. '{LABEL[ED].title()}: Micron beats, HPE record, AppLovin slides | Sep 30'",
+ "title": "<= 50 chars, short and catchy, the hook only: NO edition label (Midday / After the bell) and NO date, e.g. 'Micron pops, Boeing lands $20B' or 'AI stocks rip as Accenture soars'",
  "description": "<two plain sentences with the verified figures, second person ('your portfolio'), no advice>",
  "hashtags": ["#Shorts", "#stockmarket", ...5-8 total, include the companies]}}
 Budget: at most {{budget}} spoken words in total (the question adds {len(askc['question'].split())} more).
@@ -643,6 +655,29 @@ sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashe
                 for _ in range(6):
                     bad = sorted({int(m.group(1)) - 1 for e in errs for m in [re.match(r"item (\d+):", e)] if m})
                     spare = [i for i in range(len(res["items"])) if i not in tried]
+                    if bad and not spare:
+                        # no spare item (10/1 close: research kept three, item 1 said "barely budged" on a verified +3.03%):
+                        # tell a direction-wrong item with the verified figure instead of refusing
+                        fixed = False
+                        for e in errs:
+                            m_d = re.match(r"item (\d+): says (?:flat|up|down), the verified move is ([+-][\d.]+)%", e)
+                            if not m_d: continue
+                            k, v = int(m_d.group(1)) - 1, float(m_d.group(2))
+                            it = story["items"][k]; r = res["items"][it.get("n", k)]
+                            s1 = re.split(r",? (?:but|yet|though|while)\b", r["why"].rstrip("."))[0].strip() + "."
+                            s2 = f"Shares {'rose' if v > 0 else 'fell'} {abs(v):.1f}% today."
+                            # the fallback re-tells failing items from the research wording: correct that wording itself
+                            r["why"], r["sentiment"] = s1, s2
+                            r["cover"] = re.sub(r"\s+\w+\.?$", "", r["cover"]).strip() + (" rises." if v > 0 else " falls.")
+                            ebs = it.get("sentences") or [{}, {}]
+                            it["sentences"] = [{"eyebrow": (ebs[0] or {}).get("eyebrow", r["cover"].rstrip(".").upper()[:26]), "text": s1},
+                                               {"eyebrow": (ebs[-1] or {}).get("eyebrow", "THE MOVE"), "text": s2}]
+                            fixed = True
+                        if fixed:
+                            for key in ("cover", "title", "description"): story.pop(key, None)
+                            story, errs, words = fallback(story, res, facts, askc)
+                            log(f"storyline fallback told direction-wrong item(s) with the verified move: {len(errs)} problems {errs[:4]}")
+                        break
                     if not bad or not spare: break
                     for k in bad:
                         if not spare or k >= len(story["items"]): continue

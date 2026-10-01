@@ -81,7 +81,7 @@ def main():
         d = meta["description"]
         from datetime import date as _dq
         _dd = _dq.fromisoformat(DATE) if "DATE" in globals() else None
-        okm = (len(meta["title"]) <= 70 and (_dd is None or meta["title"].endswith(f"| {_dd.strftime('%b')} {_dd.day}")) and "Portfolio shown is illustrative. Not financial advice." in d and "https://apps.apple.com/app/id6811739789" in d
+        okm = (len(meta["title"]) <= 50 and not re.search(r"\b(midday|after the bell|before the bell|pre-?open)\b|\|\s*\w{3} \d", meta["title"], re.I) and "Portfolio shown is illustrative. Not financial advice." in d and "https://apps.apple.com/app/id6811739789" in d
                and "https://hodlerss.github.io/assetly/about.html" in d and "#Shorts" in meta["hashtags"] and not re.search(r"\bdemo\b", json.dumps(meta), re.I))
         okm = okm and d.splitlines()[0] == day.get("stamp", {}).get("line", "") and bool(meta.get("tags"))
         row("Q27", "Metadata: first line 'Data as of ...', title <= 70, illustrative line, App Store + about links, #Shorts, tags, no 'demo'", okm,
