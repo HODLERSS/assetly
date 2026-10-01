@@ -133,7 +133,12 @@ async function askModel(key: string, system: string, prompt: string, maxTokens: 
     ],
     temperature: 0.25, max_tokens: maxTokens,
     response_format: { type: "json_object" },
-  }, { caller: "daily-brief", maraKey: key, timeoutMs, forceFallback: FORCE_LLM_FALLBACK });
+  }, { caller: "daily-brief", maraKey: key, timeoutMs, forceFallback: FORCE_LLM_FALLBACK,
+    // round 2 (10/1): during a long MARA outage every brief call lands on SambaNova (60 RPM per model, Developer tier).
+    // The sweep fans out to at most 6 users per run, so each isolate keeps to 10 RPM per model; a call over that, or a
+    // SambaNova 429 (queue_full / quota), moves to gpt-oss, and a gpt-oss 429 returns null so the brief's own fallbacks
+    // (compact draft, code-built sections) answer.
+    snRpm: 10, altModel: (model ?? "") === FAST_MODEL ? undefined : FAST_MODEL });
   if (!res.ok) { lastMeta = res.reason === "timeout" ? "http=abort" : `http=${res.status ?? res.reason}`; return null; }
   const c = res.content;
   lastMeta = "fr=" + res.finish + " clen=" + c.length + (res.provider !== "mara" ? ` via=${res.provider}` : "");

@@ -38,13 +38,23 @@ const server = Deno.serve({ port: PORT, onListen: () => {} }, async (req) => {
   return new Response("not mocked", { status: 404 });
 });
 
-// SambaNova stand-in: answers, and counts the calls
+// SambaNova stand-in: answers, and counts the calls. snMode "echo" answers like the 10/1 models did (the book's day line
+// restated from the prompt, rounded); "429" is the Developer tier's queue_full on every model.
 let snCalls = 0;
+let snMode: "ok" | "echo" | "429" = "ok";
 Deno.serve({ port: SN_PORT, onListen: () => {} }, async (req) => {
   snCalls++;
   const b = await req.json();
-  const judge = /Return ONLY \{"flag"/.test(String(b.messages?.[1]?.content ?? ""));
-  return Response.json({ choices: [{ message: { content: judge ? '{"flag": []}' : JSON.stringify({ answer: "• NVDA is up 0.5% today.", followups: ["Why is NVDA up today?"] }) }, finish_reason: "stop" }] });
+  const user = String(b.messages?.[1]?.content ?? "");
+  const judge = /Return ONLY \{"flag"/.test(user);
+  if (snMode === "429") return Response.json({ error: { message: "queue_full", type: "queue_full" } }, { status: 429 });
+  let answer = "• NVDA is up 0.5% today.";
+  if (snMode === "echo") {
+    const m = /TODAY \([^)]*\): ([+-]\$[\d,]+) \(([+-]?[\d.]+)%\)/.exec(user);
+    const usd = m?.[1] ?? "+$0", pct = Number(m?.[2] ?? 0);
+    answer = `• US stocks today: ${usd} (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%).\n• Portfolio up ${usd.replace(/^[+-]/, "")} (${pct.toFixed(2)}%) today.\n• NVDA is up 0.5% today.`;
+  }
+  return Response.json({ choices: [{ message: { content: judge ? '{"flag": []}' : JSON.stringify({ answer, followups: ["Why is NVDA up today?"] }) }, finish_reason: "stop" }] });
 });
 // MARA stand-in for the outage replay: the answer lane works, the judge gets a 502 whose body never ends
 Deno.serve({ port: MARA_PORT, onListen: () => {} }, async (req) => {
@@ -102,4 +112,33 @@ Deno.test({ name: "10/1 outage replay without any fallback: still no hard deadli
     assert(r.status === 200 && r.body.ok === true && !r.body.degraded, JSON.stringify(r.body).slice(0, 200));
     assert(r.ms < 27000, `${Math.round(r.ms)}ms`);
   } finally { Deno.env.set("MARA_BASE_URL", "http://127.0.0.1:9"); Deno.env.set("SAMBANOVA_BASE_URL", `http://localhost:${SN_PORT}`); }
+} });
+
+// round 2 (10/1): "US stocks today: … US stocks today: …". The model restated the book's day line (rounded) and the code
+// lead went on top of it. One copy of the lead, no echo of its dollar figure, the holdings line kept.
+Deno.test({ name: "the code lead is not repeated by the model's own copy of it", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  snMode = "echo";
+  try {
+    const r = await ask("What's moving my portfolio today?");
+    assert(r.status === 200 && r.body.ok === true, JSON.stringify(r.body).slice(0, 200));
+    const a: string = r.body.answer;
+    const usd = /\$[\d,]+/.exec(a.split("\n")[0])?.[0] ?? "";
+    assert(usd, a);
+    assert(a.split(usd).length - 1 === 1, `the day figure appears once:\n${a}`);
+    assert((a.match(/US stocks|US \+ crypto/g) ?? []).length === 1, `one lead:\n${a}`);
+    assert(!/Portfolio up/.test(a), a);
+    assert(/NVDA/.test(a), a);
+  } finally { snMode = "ok"; }
+} });
+
+// round 2 (10/1): MARA down and SambaNova out of queue (429) on both models: the code-built answer, fast, never the apology
+Deno.test({ name: "MARA down + SambaNova 429 everywhere: the code-built answer, inside a few seconds", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  snMode = "429";
+  try {
+    const r = await ask("What's moving my portfolio today?");
+    assert(r.status === 200 && r.body.ok === true, JSON.stringify(r.body).slice(0, 200));
+    assert(!/couldn't finish|unavailable/i.test(r.body.answer), r.body.answer);
+    assert(/\$[\d,]+/.test(r.body.answer), r.body.answer);
+    assert(r.ms < 4000, `${Math.round(r.ms)}ms`);
+  } finally { snMode = "ok"; }
 } });

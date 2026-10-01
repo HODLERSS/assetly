@@ -2771,11 +2771,53 @@ export function computedDataLead(q: string, rows: PerfRow[], mentionedNow: strin
   return named.map((r) => `• ${r.label}: ${ws.map((w) => `${wLabel(w, ko)} ${pctS(r.pct[w], ko, !!r.unknown)}`).join(", ")}.`).join("\n");
 }
 
-/** Does the answer already state the computed figures? (every percent of the lead appears in it) */
+/** Does the answer already state the computed figures? Every percent of the lead appears in it as the same number at the
+ *  answer's own precision ("+2.2%" states a lead's "+2.19%"; "2.74%" never states "1.74%"). 10/1 round 2: the old test
+ *  matched the substring "74%" (so "+1.74%" was "stated" by any "…74%"), and a model's rounded restatement of the lead
+ *  failed it, so the lead was prepended above the model's own copy ("US stocks today: … / Portfolio up $3,157 today"). */
 export function statesLead(answer: string, lead: string): boolean {
-  const figs = [...String(lead).matchAll(/[+−-]?(\d+(?:\.\d)?)%/g)].map((m) => m[1]);
-  const a = String(answer ?? "");
-  return figs.length > 0 && figs.every((f) => a.includes(f + "%"));
+  const figs = [...String(lead).matchAll(/(?<![\d.])(\d+(?:\.\d+)?)%/g)].map((m) => Number(m[1]));
+  const said = [...String(answer ?? "").matchAll(/(?<![\d.])(\d+(?:\.\d+)?)\s?%/g)].map((m) => ({ v: Number(m[1]), dp: (m[1].split(".")[1] ?? "").length }));
+  return figs.length > 0 && figs.every((f) => said.some((x) => Math.abs(x.v - f) <= 0.5 * 10 ** -x.dp + 1e-9 && (x.dp > 0 || f >= 10)));
+}
+
+/** 10/1 round 2: the model's own copy of a code lead line, once the lead itself is in the answer. A sentence (outside the
+ *  lead's lines) is an echo when it opens with a lead line's label ("US stocks today:") or is a whole-portfolio sentence
+ *  carrying one of the lead's dollar figures and naming no holding ("Portfolio up $3,157 (+1.68%) today.", next to
+ *  "• US stocks today: +$3,157 (+1.72%)."). Echoes are removed; a line they empty goes. */
+export function dropLeadEchoes(text: string, lead: string | null, holdingNames: string[]): string {
+  const src = String(text ?? "");
+  if (!lead) return src;
+  const leadLines = lead.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!leadLines.length || !leadLines.every((l) => src.includes(l))) return src;
+  const norm = (x: string) => x.replace(/^[\s•*\-–·]+/, "").replace(/\*\*/g, "").trim().toLowerCase();
+  const labels = leadLines.map((l) => /^([^:]{3,40}):/.exec(norm(l))?.[1]).filter((x): x is string => !!x);
+  const dollars = [...lead.matchAll(/\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g)].map((m) => Number(m[1].replace(/,/g, "")));
+  const BOOK = /\b(?:portfolio|book|account|holdings|us stocks|overall|in total|total)\b|포트폴리오|자산|미국/i;
+  const isEcho = (sen: string): boolean => {
+    const n = norm(sen);
+    if (labels.some((lb) => n.startsWith(lb + ":") || n.startsWith(lb + " "))) return true;
+    if (!BOOK.test(sen) || holdingNames.some((h) => h && nameIn(sen, h))) return false;
+    const ds = [...sen.matchAll(/\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g)].map((m) => Number(m[1].replace(/,/g, "")));
+    return ds.length > 0 && ds.every((d) => dollars.some((x) => Math.abs(x - d) <= 1));
+  };
+  const seen = new Set<string>();
+  return src.split("\n").map((line) => {
+    const t = line.trim();
+    // the first copy of each lead line stays; a second identical copy is an echo too
+    if (leadLines.includes(t)) { if (seen.has(t)) return null; seen.add(t); return line; }
+    if (!t) return line;
+    // a leading whole-book clause with the lead's figure goes too ("Portfolio up $3,205 (+1.71%); ACN surged 18.3%"); only
+    // before ";" or ":", where the rest stands alone ("Portfolio up $3,157 today, mostly Accenture" keeps its clause)
+    const trimClause = (sen: string): string => {
+      const m = /^((?:\*\*)?(?:your |the )?(?:portfolio|book|account|holdings|us stocks|overall)\b[^;:]{0,40}?)[;:]\s+(?=\S)/i.exec(sen);
+      if (!m || !isEcho(m[1].replace(/\*\*/g, "") + ".")) return sen;
+      const rest = sen.slice(m[0].length);
+      return rest.charAt(0).toUpperCase() + rest.slice(1);
+    };
+    const kept = perLine(line, (body) => splitSentences(body).filter((sen) => !isEcho(sen)).map(trimClause).join(" "));
+    return kept.trim() ? kept : null;
+  }).filter((l): l is string => l !== null).join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /** A dollar move stated for a holding over a window that is not that holding's (round 9: "Biggest 1M losers: TSLA

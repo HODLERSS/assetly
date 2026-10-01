@@ -39,10 +39,16 @@ These are from docs.sambanova.ai, read on 10/1.
 | Caller | Hedge | Why |
 | - | - | - |
 | `ask.primary` (M3) | none | SambaNova M3 is slower than Ask's own gpt-oss lane, which is the real hedge. |
-| `ask.fast` (gpt-oss) | 0s, both providers at once | The lane starts only when M3 is late (4s, was 7s) or MARA is out, so the router is already suspect. |
-| `ask.judge` | 2s, or 0s once the router is suspect | MARA's gpt-oss judge takes 0.9-2s. |
+| `ask.fast` (gpt-oss) | 0s, both providers at once | The lane starts only when M3 is late or MARA is out, so the router is already suspect. The start adapts per isolate: p80 of M3's Ask latency minus the gpt-oss lane's p50, clamped to 2.5-4s, 3s until 5 samples (it was a fixed 4s, 7s before that). |
+| `ask.judge` | 2s, or 0s once the router is suspect | MARA's gpt-oss judge takes 0.9-2s. The cap is 4.5s with one retry (it was 6s, which was the healthy-case p95 tail). |
 
 Batch callers (brief, insights, narrate, warmup) don't hedge; they fail over in sequence, so a healthy MARA costs nothing extra.
+
+**Rate limits and the other model.** A SambaNova 429 (`insufficient_quota` or `queue_full`) never fails over to SambaNova again. With `altModel` set, the call is retried once on that model (gpt-oss) on both providers, inside the same budget. Without it the 429 comes back fast and the caller's own fallback answers.
+- Ask: an M3 lane that gets a 429 starts the gpt-oss lane at once; if that 429s too, the code-built answer ships.
+- daily-brief: M3 calls carry `altModel: gpt-oss-120b` and `snRpm: 10`. That is a per-isolate token bucket per model (burst 4) in front of SambaNova. The sweep fans out to at most 6 users per run, so 6 isolates x 10 RPM stays inside 60 RPM per model. A call that can't get a token within 8s is a local 429 and takes the same path.
+
+**Budget vs timeout (batch callers).** `timeoutMs` caps MARA's attempt; `budgetMs` is the whole call. insights-sync's gpt-oss calls give MARA 45s of a 75s budget, and its 9s fact-check has an 18s budget. Before, budget equalled timeout, so a MARA timeout left SambaNova no time.
 
 **Hard deadline.** Ask ships the code-built answer it already has, never the apology, whenever the book was read before the deadline.
 
@@ -60,5 +66,6 @@ Batch callers (brief, insights, narrate, warmup) don't hedge; they fail over in 
 
 ## Watch
 
-- **Rate limits during a long MARA outage.** The breaker routes every call to SambaNova. A daily-brief sweep over many users could hit the 60 RPM per model limit; a 429 there has no further fallback.
+- **Rate limits during a long MARA outage.** The breaker routes every call to SambaNova. The daily-brief bucket is per isolate, not global: overlapping crons (the */30 backfill, brief-retry) can still add up past 60 RPM. A 429 then moves to gpt-oss, and a gpt-oss 429 falls to the brief's compact or code-built text.
+- **The adaptive lane start needs a warm isolate.** On 10/1 every measured Ask ran with the 3s default: prod spreads requests over isolates that each served fewer than 5 Asks.
 - **M3 is a SambaNova Preview model.** If it is withdrawn (410), M3 calls lose their fallback. gpt-oss is Production.

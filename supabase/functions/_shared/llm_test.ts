@@ -1,14 +1,15 @@
 // The shared LLM client against two local fake providers. Run: deno test -A supabase/functions/_shared/llm_test.ts
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { _resetBreakers, breakerState, chat } from "./llm.ts";
+import { _resetBreakers, _resetBuckets, breakerState, chat, laneStartMs, LatencyWindow, takeSnToken } from "./llm.ts";
 
-type Mode = { status?: number; delayMs?: number; content?: string | null; reasoning?: string; body?: string; stallBody?: boolean };
+type Mode = { status?: number; delayMs?: number; content?: string | null; reasoning?: string; body?: string; stallBody?: boolean; byModel?: Record<string, Mode> };
 const mk = (port: number) => {
   const st = { mode: {} as Mode, calls: 0, aborted: 0 };
   const server = Deno.serve({ port, onListen: () => {} }, async (req) => {
     st.calls++;
-    await req.text();
-    const m = st.mode;
+    const raw = await req.text();
+    let model = ""; try { model = JSON.parse(raw).model ?? ""; } catch { /* ignore */ }
+    const m = st.mode.byModel?.[model] ?? st.mode;
     if (m.delayMs) {
       const aborted = await new Promise<boolean>((r) => { const t = setTimeout(() => r(false), m.delayMs); req.signal.addEventListener("abort", () => { clearTimeout(t); r(true); }); });
       if (aborted) { st.aborted++; return new Response(null, { status: 499 }); }
@@ -25,7 +26,7 @@ Deno.env.set("MARA_BASE_URL", "http://localhost:54701");
 Deno.env.set("SAMBANOVA_BASE_URL", "http://localhost:54702");
 Deno.env.set("SAMBANOVA_API_KEY", "sn-test");
 const REQ = { model: "gpt-oss-120b", messages: [{ role: "user", content: "hi" }], max_tokens: 50 };
-const reset = (m: Mode, s: Mode) => { M.st.mode = m; S.st.mode = s; M.st.calls = S.st.calls = M.st.aborted = S.st.aborted = 0; _resetBreakers(); };
+const reset = (m: Mode, s: Mode) => { M.st.mode = m; S.st.mode = s; M.st.calls = S.st.calls = M.st.aborted = S.st.aborted = 0; _resetBreakers(); _resetBuckets(); };
 const T = (name: string, fn: () => Promise<void>) => Deno.test({ name, sanitizeOps: false, sanitizeResources: false, fn });
 
 T("healthy MARA answers; SambaNova is never called", async () => {
@@ -152,4 +153,67 @@ T("a MARA_BASE_URL fixture override never spills onto SambaNova unless its base 
   Deno.env.delete("SAMBANOVA_BASE_URL");
   try { const r = await chat(REQ, { caller: "t", maraKey: "k", timeoutMs: 2000 }); assert(!r.ok && r.provider === "mara", JSON.stringify(r)); }
   finally { Deno.env.set("SAMBANOVA_BASE_URL", "http://localhost:54702"); }
+});
+
+// ---- round 2 (10/1): SambaNova 429 / queue_full and the batch token bucket ----
+const M3 = { ...REQ, model: "MiniMax-M3" };
+T("MARA down + SambaNova 429 on M3: the call moves to gpt-oss (altModel) inside the budget", async () => {
+  reset({ status: 502 }, { byModel: { "MiniMax-M3": { status: 429 } } });
+  const t = Date.now();
+  const r = await chat(M3, { caller: "t", maraKey: "k", timeoutMs: 3000, altModel: "gpt-oss-120b" });
+  assert(r.ok && r.model === "gpt-oss-120b" && r.provider === "sambanova" && r.failover === "alt_model MiniMax-M3 429", JSON.stringify(r));
+  assert(Date.now() - t < 1500, `${Date.now() - t}ms`);
+});
+T("SambaNova 429 with no altModel: the 429 comes back fast (the caller's code-built answer takes over)", async () => {
+  reset({ status: 502 }, { status: 429 });
+  const t = Date.now();
+  const r = await chat(M3, { caller: "t", maraKey: "k", timeoutMs: 3000 });
+  assert(!r.ok && r.status === 429 && r.provider === "sambanova", JSON.stringify(r));
+  assert(Date.now() - t < 1000);
+});
+T("both models 429 on SambaNova: the original 429 is returned, no loop", async () => {
+  reset({ status: 502 }, { status: 429 });
+  const r = await chat(M3, { caller: "t", maraKey: "k", timeoutMs: 3000, altModel: "gpt-oss-120b" });
+  assert(!r.ok && r.status === 429 && r.model === "MiniMax-M3", JSON.stringify(r));
+  assertEquals(S.st.calls, 2);
+});
+T("a 400 on MARA is still not retried on another model", async () => {
+  reset({ status: 400 }, {});
+  const r = await chat(M3, { caller: "t", maraKey: "k", timeoutMs: 3000, altModel: "gpt-oss-120b" });
+  assert(!r.ok && r.reason === "client_error", JSON.stringify(r));
+  assertEquals(S.st.calls, 0);
+});
+T("token bucket: 10 rpm allows a burst of 4, then refuses without waiting past maxWait", async () => {
+  _resetBuckets();
+  let now = 1_000_000;
+  const clock = () => now;
+  for (let i = 0; i < 4; i++) assert(await takeSnToken("m", 10, 0, clock), `burst ${i}`);
+  assert(!await takeSnToken("m", 10, 0, clock), "5th in the same instant");
+  now += 6000;   // 10 rpm = one token per 6s
+  assert(await takeSnToken("m", 10, 0, clock));
+  assert(await takeSnToken("other-model", 10, 0, clock), "buckets are per model");
+});
+T("batch caller over its SambaNova rate gets a local 429 and moves to gpt-oss", async () => {
+  reset({ status: 502 }, {});
+  const opts = { caller: "t", maraKey: "k", timeoutMs: 3000, snRpm: 1, altModel: "gpt-oss-120b" };
+  const a = await chat(M3, opts);
+  assert(a.ok && a.model === "MiniMax-M3" && a.provider === "sambanova", JSON.stringify(a));
+  const b = await chat(M3, opts);   // the M3 bucket (1 rpm, burst 1) is empty: gpt-oss answers
+  assert(b.ok && b.model === "gpt-oss-120b" && b.failover === "alt_model MiniMax-M3 429", JSON.stringify(b));
+  const c = await chat(M3, { ...opts, altModel: undefined });   // both buckets empty and no alt: a fast local 429
+  assert(!c.ok && c.status === 429 && /local rate limit/.test(c.detail), JSON.stringify(c));
+});
+
+T("adaptive lane start: 3s until 5 samples, p80(M3) - p50(gpt-oss), clamped 2.5-4s", async () => {
+  const m3 = new LatencyWindow(), g = new LatencyWindow();
+  assertEquals(laneStartMs(m3, g), 3000);
+  for (const x of [6964, 13843, 5555, 6088, 6082, 7720, 4482, 5454, 3780, 8676]) m3.push(x);   // 10/1 prod, M3 on MARA
+  for (const x of [4684, 4224, 4212, 3532]) g.push(x);
+  assertEquals(laneStartMs(m3, g), 7720 - 4212);   // p80 7720 (8th of 10), p50 4212 (2nd of 4)
+  const fast = new LatencyWindow(); for (let i = 0; i < 10; i++) fast.push(2000);
+  assertEquals(laneStartMs(fast, g), 2500, "a fast MARA: the floor");
+  const slow = new LatencyWindow(); for (let i = 0; i < 10; i++) slow.push(20000);
+  assertEquals(laneStartMs(slow, g), 4000, "a slow MARA: the cap");
+  const w = new LatencyWindow(3); for (const x of [1, 2, 3, 4]) w.push(x);
+  assertEquals(w.size, 3);
 });

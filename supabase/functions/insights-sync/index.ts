@@ -27,8 +27,10 @@ const json = (body: unknown, status = 200) =>
 const WINDOWS: [string, number][] = [["d7", 7], ["d30", 30], ["d60", 60], ["ytd", YTD], ["y1", 365], ["y2", 730]];
 
 
-async function askMara(key: string, model: string, prompt: string, maxTokens = 10000, timeoutMs = 75000): Promise<string | null> {
-  // shared client (10/1): MARA, then SambaNova on a provider failure; MARA_BASE_URL still overrides for fixtures
+async function askMara(key: string, model: string, prompt: string, maxTokens = 10000, timeoutMs = 75000, budgetMs = timeoutMs): Promise<string | null> {
+  // shared client (10/1): MARA, then SambaNova on a provider failure; MARA_BASE_URL still overrides for fixtures.
+  // timeoutMs caps MARA's attempt; budgetMs is the whole call, so a MARA timeout still leaves SambaNova room (round 2,
+  // 10/1: a 9s fact-check timed out on MARA with budget == timeout and never failed over)
   const res = await chat({
     model,
     messages: [
@@ -37,7 +39,7 @@ async function askMara(key: string, model: string, prompt: string, maxTokens = 1
     ],
     temperature: 0.3, max_tokens: maxTokens,
     response_format: { type: "json_object" },
-  }, { caller: "insights", maraKey: key, timeoutMs });
+  }, { caller: "insights", maraKey: key, timeoutMs, budgetMs: Math.max(timeoutMs, budgetMs) });
   if (!res.ok) throw new Error(`llm ${res.provider ?? "-"} ${res.reason} ${res.status ?? ""} ${res.detail}`.slice(0, 160));
   if (!res.content.trim()) throw new Error("llm empty content, finish=" + res.finish);
   return res.content;
@@ -58,7 +60,8 @@ async function askMaraFb(key: string, model: string, prompt: string, maxTokens =
       console.log("insights: primary model failed, falling back to " + FAST_MODEL + ": " + String(e).slice(0, 140));
     }
   }
-  return await askMara(key, FAST_MODEL, prompt, maxTokens);
+  // gpt-oss usually answers in ~20s: MARA gets 45s of the 75s, so a MARA stall or timeout leaves SambaNova 30s
+  return await askMara(key, FAST_MODEL, prompt, maxTokens, 45000, 75000);
 }
 
 // ---- trading calendar: ../_shared/calendar.ts (shared with daily-brief and ask) ----
@@ -142,7 +145,7 @@ const cardScrub = (t: string) => sanitize(tidyNumbers(plainScrub(String(t ?? "")
  *  at least two bullets, and a failed or slow check changes nothing. */
 async function incoherent(key: string, lines: string[], source: string): Promise<Set<number>> {
   if (!key || lines.length < 3) return new Set();
-  const res = await askMara(key, FAST_MODEL, `SOURCE (the only facts available):\n${source.slice(0, 6000)}\n\nBULLETS:\n${lines.map((l, i) => `${i}. ${l}`).join("\n")}\n\nReturn STRICT JSON {"bad": [indexes]} listing only the bullets that are ungrammatical or garbled (a subject doing something that makes no sense, two stories merged into one), or that state a fact, number, date or historical comparison the SOURCE does not contain. Return {"bad": []} when all are fine.`, 800, 9000).catch(() => null);
+  const res = await askMara(key, FAST_MODEL, `SOURCE (the only facts available):\n${source.slice(0, 6000)}\n\nBULLETS:\n${lines.map((l, i) => `${i}. ${l}`).join("\n")}\n\nReturn STRICT JSON {"bad": [indexes]} listing only the bullets that are ungrammatical or garbled (a subject doing something that makes no sense, two stories merged into one), or that state a fact, number, date or historical comparison the SOURCE does not contain. Return {"bad": []} when all are fine.`, 800, 9000, 18000).catch(() => null);
   try {
     const o = JSON.parse(String(res ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").slice(String(res ?? "").indexOf("{")));
     const bad = new Set<number>((Array.isArray(o.bad) ? o.bad : []).map(Number).filter((n: number) => Number.isInteger(n) && n >= 0 && n < lines.length));

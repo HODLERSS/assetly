@@ -14,6 +14,11 @@
 //    calls do not (they fail over sequentially, so a healthy MARA costs nothing extra);
 //  - a per-isolate CIRCUIT BREAKER: after 3 consecutive failover-class failures MARA is skipped for 60s, then one
 //    request probes it (half-open) while the rest keep going to SambaNova;
+//  - SambaNova 429 (insufficient_quota or queue_full: the 60 RPM / model Developer tier) with `altModel` given: the call is
+//    retried once on the other model (gpt-oss), on either provider, inside the same budget (round 2, 10/1). Without it the
+//    429 is returned and the caller's own fallback (its code-built text) answers;
+//  - `snRpm`: a per-isolate token bucket per model in front of SambaNova, for batch sweeps, so a long MARA outage stays
+//    under the tier's per-model rate. A call that cannot get a token in time is a local 429 (and so takes `altModel`);
 //  - one log line per call: caller, provider, model, latency, outcome, failover reason. Never content, never keys.
 // Fixture runs keep their MARA_BASE_URL override; SambaNova is off under that override unless SAMBANOVA_BASE_URL is also
 // set explicitly, so a local fake never spills onto the real fallback.
@@ -37,6 +42,8 @@ export type ChatOpts = {
   acceptReasoning?: boolean;   // gpt-oss may leave content null and answer in message.reasoning (the judge accepts that)
   forceFallback?: boolean;     // test only (internal token): MARA is treated as unreachable
   signal?: AbortSignal;        // the caller gave up
+  altModel?: string;           // a SambaNova 429 retries once on this model (both providers), inside the budget
+  snRpm?: number;              // batch callers: per-isolate SambaNova requests per minute, per model (token bucket)
 };
 
 type ProviderCfg = { name: Provider; base: string; key: string };
@@ -72,6 +79,30 @@ function breakerResult(p: Provider, ok: boolean, probe: boolean) {
 }
 /** tests only */
 export function _resetBreakers() { breakers.clear(); }
+
+// ---- SambaNova token bucket (per isolate, per model; only for callers that pass snRpm) ----
+// Developer tier: 60 RPM per model. The daily-brief sweep fans out to at most 6 users per run, so its per-isolate share is
+// 60 / 6 = 10 RPM; a burst of BURST covers one brief's parallel memo calls.
+const BURST = 4;
+type Bucket = { tokens: number; at: number };
+const buckets = new Map<string, Bucket>();
+/** Take one SambaNova token for `model`, waiting up to `maxWaitMs`. true when taken. */
+export async function takeSnToken(model: string, rpm: number, maxWaitMs: number, now = () => Date.now()): Promise<boolean> {
+  const perMs = rpm / 60000, cap = Math.max(1, Math.min(BURST, rpm));
+  const stop = now() + Math.max(0, maxWaitMs);
+  for (;;) {
+    const b = buckets.get(model) ?? { tokens: cap, at: now() };
+    const t = now();
+    b.tokens = Math.min(cap, b.tokens + (t - b.at) * perMs); b.at = t;
+    buckets.set(model, b);
+    if (b.tokens >= 1) { b.tokens -= 1; return true; }
+    const wait = Math.ceil((1 - b.tokens) / perMs);
+    if (t + wait > stop) return false;
+    await new Promise((r) => setTimeout(r, wait));
+  }
+}
+/** tests only */
+export function _resetBuckets() { buckets.clear(); }
 
 const FAILOVER_STATUS = (s: number) => s === 408 || s === 429 || s >= 500;
 type Attempt = ChatResult & { failoverable: boolean };
@@ -120,8 +151,19 @@ async function attempt(p: ProviderCfg, req: ChatRequest, ms: number, outer?: Abo
 
 const usable = (a: Attempt, acceptReasoning: boolean): boolean => a.ok && (!!a.content.trim() || (acceptReasoning && !!a.reasoning.trim()));
 
-/** One chat completion with failover, hedging and the breaker. Never throws. */
+/** One chat completion with failover, hedging, the breaker and (on a SambaNova 429) the other model. Never throws. */
 export async function chat(req: ChatRequest, opts: ChatOpts): Promise<ChatResult> {
+  const t0 = Date.now();
+  const res = await chatOnce(req, opts);
+  // SambaNova is out of quota or queue for this model (a real 429 or our own bucket): the other model has its own limit
+  if (res.ok || res.status !== 429 || res.provider !== "sambanova" || !opts.altModel || opts.altModel === req.model) return res;
+  const left = (opts.budgetMs ?? opts.timeoutMs) - (Date.now() - t0);
+  if (left < 1500 || opts.signal?.aborted) return res;
+  const alt = await chatOnce({ ...req, model: opts.altModel }, { ...opts, caller: `${opts.caller}.alt`, timeoutMs: Math.min(opts.timeoutMs, left), budgetMs: left, hedgeMs: 0 });
+  return alt.ok ? { ...alt, failover: `alt_model ${req.model} 429` } : res;
+}
+
+async function chatOnce(req: ChatRequest, opts: ChatOpts): Promise<ChatResult> {
   const t0 = Date.now();
   const deadline = t0 + Math.max(0, opts.budgetMs ?? opts.timeoutMs);
   const left = () => deadline - Date.now();
@@ -150,12 +192,22 @@ export async function chat(req: ChatRequest, opts: ChatOpts): Promise<ChatResult
     return { ...rest, content, ...(failover ? { failover } : {}) };
   };
   const contentOk = (a: Attempt) => usable(a, acceptR);
+  // every SambaNova attempt takes a bucket token first when the caller rate-limits (batch sweeps)
+  const attemptSn = async (p: ProviderCfg, ms: () => number, signal?: AbortSignal): Promise<Attempt> => {
+    if (opts.snRpm) {
+      const t1 = Date.now();
+      if (!await takeSnToken(req.model, opts.snRpm, Math.min(8000, ms() - 1500))) {
+        return { ok: false, reason: "http", status: 429, detail: `local rate limit (${opts.snRpm} rpm)`, provider: p.name, model: req.model, ms: Date.now() - t1, failoverable: false };
+      }
+    }
+    return await attempt(p, req, ms(), signal);
+  };
   const asEmpty = (a: Attempt): Attempt => (a.ok && !contentOk(a)) ? { ok: false, reason: "empty", status: 200, detail: `finish=${a.finish} (reasoning only)`, provider: a.provider, model: a.model, ms: a.ms, failoverable: true } : a;
 
   // no usable primary: straight to the fallback
   if (!primary) {
     if (!sn) { const r: ChatFail = { ok: false, reason: "no_provider", status: null, detail: "MARA breaker open and no SambaNova", provider: null, model: req.model, ms: 0 }; log(r, { breaker: state }); return r; }
-    const a = asEmpty(await attempt(sn, req, left(), opts.signal));
+    const a = asEmpty(await attemptSn(sn, left, opts.signal));
     const res = toOk(a, mara ? "breaker_open" : "no_mara_key"); log(res, { breaker: state }); return res;
   }
 
@@ -181,7 +233,7 @@ export async function chat(req: ChatRequest, opts: ChatOpts): Promise<ChatResult
       if (fbStarted || done || !sn) return;
       if (left() < 500) return;
       fbStarted = true; pending++;
-      attempt(sn, req, left(), fAbort.signal).then((a0) => {
+      attemptSn(sn, left, fAbort.signal).then((a0) => {
         pending--;
         const a = asEmpty(a0);
         if (done) return;
@@ -206,6 +258,28 @@ export async function chat(req: ChatRequest, opts: ChatOpts): Promise<ChatResult
     });
     if (hedgeAt !== null) hedgeTimer = setTimeout(() => startFallback("hedge"), hedgeAt);
   });
+}
+
+// ---- adaptive hedge start (10/1 round 2: Ask's gpt-oss lane) ----
+/** A rolling window of latencies (ms), per isolate. */
+export class LatencyWindow {
+  private xs: number[] = [];
+  constructor(private n = 40) {}
+  push(ms: number) { if (Number.isFinite(ms) && ms >= 0) { this.xs.push(ms); if (this.xs.length > this.n) this.xs.shift(); } }
+  get size() { return this.xs.length; }
+  quantile(q: number): number | null {
+    if (!this.xs.length) return null;
+    const s = [...this.xs].sort((a, b) => a - b);
+    return s[Math.min(s.length - 1, Math.max(0, Math.ceil(q * s.length) - 1))];
+  }
+}
+/** When to start a second lane: when the primary would usually have answered by the time the second one does, i.e. the
+ *  primary's p80 minus the second lane's p50, clamped. Too few samples: the default. */
+export function laneStartMs(primary: LatencyWindow, second: LatencyWindow, o: { min?: number; max?: number; dflt?: number; secondDefault?: number; minSamples?: number } = {}): number {
+  const min = o.min ?? 2500, max = o.max ?? 4000, dflt = o.dflt ?? 3000;
+  if (primary.size < (o.minSamples ?? 5)) return dflt;
+  const g = second.size >= 3 ? second.quantile(0.5)! : (o.secondDefault ?? 4500);
+  return Math.round(Math.min(max, Math.max(min, primary.quantile(0.8)! - g)));
 }
 
 /** The first {...} object in a model's text (a <think> block stripped), or null. */

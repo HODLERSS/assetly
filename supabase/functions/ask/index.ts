@@ -13,7 +13,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { dayTag, isTradingDay, marketOf, marketState, weekdayOf } from "../_shared/calendar.ts";
 import { dividendLine, dividendRows, ensureHistory, refreshDividends, windowReturns, windowReturnsBatch } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
-import { breakerState, chat } from "../_shared/llm.ts";
+import { breakerState, chat, laneStartMs, LatencyWindow } from "../_shared/llm.ts";
 import { earningsFilings } from "../_shared/filings.ts";
 import {
   adviceHits, aliasesFor, booksKorean, chipInLanguage, cleanFollowups, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions, isEarningsCallTitle, questionIsKorean,
@@ -22,7 +22,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, stripHonestBlock, driversLead, krxDollarTargets, isDividendRankQuestion, dividendRankClaims, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, stripHonestBlock, driversLead, krxDollarTargets, isDividendRankQuestion, dividendRankClaims, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, dropLeadEchoes, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -203,6 +203,10 @@ const makeAdmin = () => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get
 let adminClient: ReturnType<typeof makeAdmin> | null = null;
 let keyCache = "";   // the model key, once read from the vault, for the life of the isolate
 const HARD_DEADLINE_MS = Number(Deno.env.get("ASK_HARD_DEADLINE_MS") ?? 28500);   // env override for local tests only
+// 10/1 round 2: the gpt-oss lane's start adapts to how MARA is doing in THIS isolate (_shared/llm.ts laneStartMs): the
+// rolling p80 of M3's Ask latency minus the gpt-oss lane's p50, clamped to 2.5-4s, 3s until 5 samples. Measured 10/1:
+// M3 p80 ~7.7s, gpt-oss p50 ~4.5s -> ~3.2s. An M3 call that lost to gpt-oss counts with the time it had run.
+const m3Lat = new LatencyWindow(), fastLat = new LatencyWindow();
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const peek = req.clone();
@@ -841,6 +845,11 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     // once (hedge 0) and takes the first answer.
     const res = await chat({ model, messages: msgs, temperature, max_tokens: 6000, response_format: { type: "json_object" } },
       { caller: model === FAST ? "ask.fast" : "ask.primary", maraKey: key, timeoutMs, hedgeMs: model === FAST ? 0 : undefined, forceFallback: forceLlmFallback, signal });
+    // the adaptive lane start learns from real traffic only (never a forced test call)
+    if (!forceLlmFallback && msgs === base) {
+      if (model !== FAST && res.provider === "mara" && res.ok) m3Lat.push(res.ms);
+      if (model === FAST && res.ok) fastLat.push(res.ms);
+    }
     return res.ok ? parseAnswer(res.content) : null;
   };
   const base = [{ role: "system", content: system }, { role: "user", content: prompt }];
@@ -852,7 +861,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     if (!list.length) { judgeStatus = "ok"; return new Set(); }
     // r11: the judge takes whatever is left before the deadline, up to 6s (JUDGE_MS is only what the answer stage reserves);
     // at a fixed cap ~40% of judgements timed out while data answers had budget to spare
-    const ms = Math.min(6000, left() - 300);
+    // 10/1 round 2: 6s -> 4.5s. With SambaNova hedged in at 2s a healthy judgement lands by ~3s; the 6s cap was the
+    // healthy-case p95 tail (16:48 UTC: M3 7.7s, a 6s judge timeout, then a 1.5s retry = 15.9s)
+    const ms = Math.min(4500, left() - 300);
     if (ms < 1200) { judgeStatus = "timeout"; return null; }
     // 10/1 OUTAGE ROOT CAUSE: this call read a 502's body AFTER clearing its timer; the MARA router sent the headers and
     // stalled, and the request hung into the 28.5s hard deadline ("I couldn't finish this answer"). The shared client
@@ -882,11 +893,18 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const lanes = new AbortController();
   // set when the primary was late or failed: the judge then also runs on both providers at once
   let routerSuspect = false;
+  let fastAt = -1;   // when the gpt-oss lane was scheduled (meta, for latency measurement)
+  const stageMs: Record<string, number> = {};   // ms since the request began: model race start, answer chosen, judged
   if (room() < (decisionQ ? 4000 : 6000)) parsedA = null;
   else parsedA = await new Promise<Ans>((resolve) => {
-    let settled = false, fastStarted = false, open = 1;
+    let settled = false, fastStarted = false, open = 1, primaryDone = false;
+    const tModel = Date.now();
+    stageMs.model = tModel - t0;
     const finish = (v: Ans) => {
       if (settled) return;
+      // gpt-oss won while M3 was still running: M3 took at least this long (the aborted call's own result never lands
+      // once the response is sent, so the lane start would otherwise learn only from M3's fast answers)
+      if (v && !primaryDone && !forceLlmFallback) m3Lat.push(Date.now() - tModel);
       if (v) { settled = true; resolve(v); return; }
       open--;
       if (!fastStarted) startFast(); else if (open <= 0) { settled = true; resolve(null); }
@@ -896,15 +914,17 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       fastStarted = true; open++; routerSuspect = true;
       ask(base, 0.3, Math.min(decisionQ ? 7000 : 20000, room() - 1500), FAST, lanes.signal).then(finish, () => finish(null));
     };
-    ask(base, 0.2, Math.min(decisionQ ? 10000 : 20000, room() - 1500), undefined, lanes.signal).then(finish, () => finish(null));
+    ask(base, 0.2, Math.min(decisionQ ? 10000 : 20000, room() - 1500), undefined, lanes.signal).then((v) => { primaryDone = true; finish(v); }, () => { primaryDone = true; finish(null); });
     // 10/1: with MARA out (breaker open, or the internal test flag) M3 runs on SambaNova at 8.5-17s on this prompt, so the
     // gpt-oss lane starts at once instead of waiting 7s for a primary that will be slow
     const maraOut = forceLlmFallback || breakerState("mara") === "open";
-    setTimeout(startFast, maraOut ? 0 : decisionQ ? 3000 : 4000);
+    fastAt = maraOut ? 0 : decisionQ ? Math.min(3000, laneStartMs(m3Lat, fastLat)) : laneStartMs(m3Lat, fastLat);
+    setTimeout(startFast, fastAt);
     if (decisionQ) setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, Math.max(0, room() - 1000));
     else setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, Math.max(0, room() - 500));
   });
   lanes.abort();
+  stageMs.answer = Date.now() - t0;
   // round 9: "1M is –0.9%" became "1M is: 0.9%" (the en-dash minus flipped the sign). A dash right before a digit is a
   // minus sign; only a spaced dash between words is punctuation.
   const deDash = (v: string) => v.trim().replace(/([\s(:,]|^)[\u2013\u2014](?=\$?\d)/g, "$1\u2212").replace(/\s*\u2014\s*/g, ": ").replace(/\s+\u2013\s+/g, ": ");
@@ -1013,7 +1033,9 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // second model reads the answer (and the model's chips) against a short policy and names the sentences that give
   // advice, name a product to buy, pass a verdict in the app's voice or forecast. Those sentences go. If the judge
   // does not answer in time, a decision question gets the code-built answer and any other keeps the regex result.
-  if (dataLead && guarded.trim() && !statesLead(guarded, dataLead)) guarded = `${dataLead}\n${guarded}`;
+  // 10/1 round 2: the lead goes first and the model's own copy of it goes ("US stocks today: … US stocks today: …")
+  const heldNames = held.flatMap((r) => [nameOf(r), ...aliasesFor(r.symbol, r.name), ...koNamesFor(r.symbol)]);
+  if (dataLead && guarded.trim() && !statesLead(guarded, dataLead)) guarded = dropLeadEchoes(`${dataLead}\n${guarded}`, dataLead, heldNames);
   let judgedChips: string[] | null = null;
   if (guarded.trim()) {
     const chips0 = (parsedA?.followups ?? []).map(deDash);
@@ -1023,6 +1045,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     let flags = await judge(items.list);
     // r13 M1(c): one retry when a timeout or gateway error left 3s or more (a fallback answers less than the model)
     if (flags === null && left() >= 3000) flags = await judge(items.list);
+    stageMs.judged = Date.now() - t0;
     // no verdict from the judge: the model's chips are not shown either (they asked for products in round 9)
     // round 9 v44: a verdict question whose judge did not answer leaked on the non-decision path; it goes to the husk too
     // r12 A: an answer the judge did not read is never shipped: a decision or verdict gets the code-built answer (husk),
@@ -1143,6 +1166,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     }
     guarded = ensureLeads(guarded, leads);
   }
+  // every path that puts the code lead in (above, the judge's rejoin, ensureLeads, the code-built answer) leaves one copy
+  guarded = dropLeadEchoes(guarded, dataLead, heldNames);
   // e2e F2 / p06 F1: the honest "couldn't answer" text is only ever the whole answer, never beside other content
   // (it trailed the 3M negatives in p02 and led the crypto breakdown in p06)
   guarded = stripHonestBlock(guarded);
@@ -1170,5 +1195,5 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const PRODUCT_CHIP = /\b(?:which|what)\b[^?]{0,20}\b(?:etfs?|funds?|bonds?|treasur(?:y|ies)|money[- ]market|index funds?)\b|\blowest fees\b|\b(?:candidates?|alternatives?) (?:worth|to)\b|채권 ?ETF|어떤 ETF|어떤 채권|어떤 펀드|후보/i;
   const modelChips = (builtInCode || !parsedA ? [] : (judgedChips ?? (parsedA?.followups ?? []).map(deDash))).filter((c) => !PRODUCT_CHIP.test(c) && !VERDICT_CHIP.test(c));
   const followups = cleanFollowups(modelChips.filter((f) => chipInLanguage(question, f)), fallbacks);
-  return json({ ok: true, answer, followups, mentioned, meta: { judge: judgeStatus } });
+  return json({ ok: true, answer, followups, mentioned, meta: { judge: judgeStatus, ms: Date.now() - t0, fast_at: fastAt, stages: stageMs } });
 }
