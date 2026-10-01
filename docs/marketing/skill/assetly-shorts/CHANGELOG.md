@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.0.1 (2026-10-01, after the 7:32 AM preopen refused at the storyline)
+
+- Acronyms: names said as letters or as a word (IBM, NASA, AMD, AI, ETF, CEO, FDA, SEC, NVIDIA, AT&T, HP; Fed is not
+  caps) pass; the ticker rule now refuses only a ticker of a candidate/held company and names the company to say.
+  narrate/ear.ts exports `SPOKEN_CAPS` (earAudit allowlist) and reads "AT and T"; storyline mirrors it. The prompt
+  gives "IBM" (not "International Business Machines") as the name to say.
+- "Words the sources never say" covers claim-carrying content only: a named entity no source names fails alone;
+  generic attributed-reaction words (liked, welcomed, cheered, credit, purchase, deal...) are free.
+- Convergence: every problem is an explicit rewrite instruction ("-> shorten item 2 ... first", "-> write 'Rocket
+  Lab' instead"); up to 8 rounds inside a 6-minute cap; the best draft (fewest problems) feeds the fallback.
+- Fallback: failing items told with their verified WHY / READ, trimmed at clause boundaries until the 56-word budget
+  and 15-word sentences fit; the edition's timing phrase leads item 1 when no timing word is spoken ("Premarket," /
+  "Midday," / "Today," when the long phrase does not fit); portfolio and Ask lines fall back to templates from the
+  cross-checked figures. Close edition's timing words now include "at the close".
+- Runtime: the pre-open "today" wording in the Ask answer no longer forces retakes (it cost ~11 of the 31 minutes on
+  10/1 and never cleared); jargon still does.
+- Validated on the refused work dir: storyline passes in round 1 (24 s); a close work dir converges in 5 rounds (78 s);
+  forced fallback passes at 55-56 words.
+
 ## v1.0 (2026-09-30, revised the same night)
 
 Writing quality (main-session review of preopen-test3, 10/1 5 AM; validated on the saved preopen-test3 and close-test5

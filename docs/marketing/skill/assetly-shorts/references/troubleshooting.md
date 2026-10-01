@@ -25,3 +25,12 @@
 - **Charts load ~3 s** after a position opens (a grey skeleton). Beats start 0.5 s after `pos_<SYM>_chart` (5 s after
   the tap); Q29 catches a skeleton that still slips through.
 - **Seeding takes ~5 min** (insights in threes ~3 min, the brief ~1.5 min). For the close edition, see schedule.md.
+- **Storyline refused on ordinary words (10/1 7:32 preopen, exit 1 after 31 min).** "IBM" and "NASA" were rejected as
+  tickers, "cheer / credit / liked / purchase" as unsourced words, and the verified-wording fallback ran over budget with
+  no timing word. Now: only a ticker of a candidate/held company is refused (`SPOKEN_CAPS` in storyline.py = narrate/ear.ts
+  `SPOKEN_CAPS`, the earAudit allowlist; add a name to both), the source check covers named entities and specific nouns,
+  every problem carries a "-> do this" instruction, and the fallback trims verified clauses to fit and leads with "Before
+  the bell," / "At midday," / "At the close,". If the voice still stumbles on a new all-caps name, add it to both lists.
+- **Pre-open Ask "today".** The app's Ask answer labels the previous session "today" before the open; retakes never
+  cleared it (three takes, ~11 min on 10/1), so it is now noted in ask-check.json, not retaken. The real fix is in the
+  app's Ask prompt. Jargon in the answer still earns a retake.

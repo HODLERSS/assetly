@@ -228,8 +228,11 @@ def main_ask():
             sys.exit(f"REFUSE: the Ask answer shows figures no second source confirms: {unverified}")
         if quality:
             log(f"ask wording: {quality}")
-            if os.environ.get("SHORTS_ASK_STRICT") == "1":
-                print(f"RETAKE: the answer's wording: {quality}"); sys.exit(3)
+            # only jargon earns a retake: the pre-open "today" label comes from the app's Ask answer itself and never
+            # cleared on a retake (10/1 7:32 run: three takes, ~11 minutes, same wording), so it is noted, not retaken
+            retake = [q for q in quality if q.startswith("jargon")]
+            if retake and os.environ.get("SHORTS_ASK_STRICT") == "1":
+                print(f"RETAKE: the answer's wording: {retake}"); sys.exit(3)
 
 
 if "--ask" in sys.argv:

@@ -13,7 +13,7 @@ back to the model with the reasons (3 rounds), then the stage fails.
 
 Writes <work>/story.json.
 """
-import json, os, re, sys
+import copy, json, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import Stage, jdump, jload, llm, log
 
@@ -25,9 +25,14 @@ TIMING = {"preopen": {"need": r"\b(this morning|before the bell|premarket|pre-ma
                       "never": r"\b(closed (?:up|down|at|higher|lower)|after the bell|today's close|so far today|this afternoon)\b"},
           "midday": {"need": r"\b(so far|midday|this afternoon|right now|today)\b",
                      "never": r"\b(closed (?:up|down|at|higher|lower)|today's close|before the bell|this morning's open|futures point)\b"},
-          "close": {"need": r"\b(closed|today|after the bell|after hours|on the day)\b",
+          "close": {"need": r"\b(closed|today|after the bell|after hours|on the day|at the close)\b",
                     "never": r"\b(so far today|this morning|before the bell|futures point|this afternoon|right now)\b"}}
-TICKER_OK = {"AI", "US", "UK", "EU", "CEO", "ETF", "VIX", "AMD", "OK", "TV", "NVIDIA", "SK", "AM", "PM", "KOSPI", "S&P", "AMD's"}   # = narrate/ear.ts earAudit allowlist
+# names and terms said as letters or as a word: = narrate/ear.ts SPOKEN_CAPS (earAudit's allowlist) + AT&T
+SPOKEN_CAPS = {"AI", "US", "UK", "EU", "CEO", "CFO", "ETF", "ETFs", "VIX", "AMD", "IBM", "HP", "NASA", "FDA", "SEC", "FTC", "DOJ",
+               "GDP", "CPI", "PCE", "PPI", "IPO", "EV", "EVs", "OPEC", "NATO", "OK", "TV", "NVIDIA", "SK", "AM", "PM", "IBK", "KOSPI"}
+LEAD = {"preopen": "Before the bell,", "midday": "At midday,", "close": "At the close,"}   # the fallback's timing phrase
+LEAD_SHORT = {"preopen": "Premarket,", "midday": "Midday,", "close": "Today,"}           # ... when the budget is tight
+STORY_CAP_S, STORY_ROUNDS = 360, 8                     # storyline rounds: at most 8, inside 6 minutes
 LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE"}
 
 
@@ -68,12 +73,34 @@ jumped jumps climbed climbs edged eased ended ending finished moved higher lower
 little reaction movement muted cautious steady quiet flat barely calm unmoved""".split())
 
 
+# generic reaction and framing words (10/1 preopen refused on "cheer", "credit", "liked", "purchase"): they carry no
+# claim of their own, so an attributed reaction ("Investors liked the deal.") never needs a source to use the same verb
+REACT = set("""like liked likes liking cheer cheered cheers welcome welcomed welcomes credit credited credits praise praised
+applaud applauded embrace embraced shrug shrugged react reacted reaction reactions cheerful upbeat cautious wary worried worry
+worries concern concerns concerned hopeful optimism optimistic skeptical skeptics doubt doubts nervous confident confidence
+view views viewed see sees seen think thinks expect expects expected hope hopes bet bets betting focus focused watch watching
+read reads note notes noted call calls called point points argue argues upside downside sign signs signal signals boost boosted
+lift lifted drive driving drove news move moves rollout launch launched deal deals purchase purchased buyout acquisition acquired
+announcement announced plan plans report reports reported results update updates step steps push pushed bigger biggest strong
+stronger weak weaker solid good well better best positive negative mixed welcome encouraging encouraged""".split())
+
+
 def unsupported_words(text, corpus):
-    """Content words of a spoken sentence the item's verified text and cited headlines never use (5-letter stems)."""
+    """Claim-carrying words of a spoken sentence that the item's verified text and cited headlines never use (5-letter
+    stems): named entities (capitalised past the first word) and specific nouns. Generic reaction wording is free."""
     stem = lambda w: re.sub(r"[^a-z]", "", w.lower())[:5]
     have = {stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]+", corpus)}
-    words = [w for w in re.findall(r"[A-Za-z][A-Za-z'-]+", text) if len(w) >= 4 and w.lower() not in STOP]
+    toks = re.findall(r"[A-Za-z][A-Za-z'&-]+", text)
+    words = [w for w in toks if len(w) >= 4 and w.lower() not in STOP and w.lower() not in REACT and w.lower().rstrip("s") not in REACT]
     return [w for w in words if stem(w) not in have]
+
+
+def unsupported_names(text, corpus):
+    """Named entities (a capitalised word past the sentence's first, or an all-caps name) no source names: one is enough to fail."""
+    have = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z'&-]+", corpus)}
+    toks = re.findall(r"[A-Za-z][A-Za-z'&-]+", text)
+    return [w for k, w in enumerate(toks) if (k > 0 and w[0].isupper() or w.isupper() and len(w) > 1)
+            and w.lower() not in have and w.lower().rstrip("'s") not in have and w not in SPOKEN_CAPS and w.lower() not in STOP]
 
 
 def ear_audit(lines):
@@ -108,9 +135,41 @@ def restates(s1, s2):
     return bool(w2) and all(w in w1 for w in w2)
 
 
+def short_name(n):
+    """The name people say (= facts.short_name): "Accenture PLC" -> "Accenture"."""
+    n = re.sub(r"\s*(?:Common Stock|Class [A-C]( Common Stock)?|Ordinary Shares|American Depositary Shares)\b.*$", "", str(n or ""))
+    for _ in range(2):
+        n = re.sub(r",?\s+(?:Inc\.?|Incorporated|Corporation|Corp\.?|Holdings?|Co\.?|Company|Ltd\.?|Limited|plc|PLC|N\.V\.|S\.A\.|Group|Technologies|Technology|Platforms)$", "", n.strip())
+    return n.strip()
+
+
+def say_names(facts):
+    """Ticker -> the name the voice says: the letters when people say them (IBM, AMD), else the short name."""
+    return {k: (k if k in SPOKEN_CAPS else short_name(v)) for k, v in facts.get("names", {}).items()}
+
+
+def ticker_names(res, facts):
+    """Ticker -> the name to say, for every candidate, held and story company (a ticker is never spoken)."""
+    names = dict(facts.get("names", {}))
+    data = jload(os.path.join(W, "research-data.json"))
+    for c in data.get("candidates", []):
+        sym = c.get("symbol") if isinstance(c, dict) else c
+        if sym: names.setdefault(sym, (c.get("name") if isinstance(c, dict) else None) or sym)
+    for it in res["items"]:
+        for sym in it.get("symbols", []): names.setdefault(sym, sym)
+    try:
+        book = jload(os.path.join(W, "book.json"))
+        for p in (book if isinstance(book, list) else book.get("positions", [])):
+            if isinstance(p, dict) and p.get("symbol"): names.setdefault(p["symbol"], p.get("name") or p["symbol"])
+    except Exception:                                    # noqa: BLE001
+        pass
+    return names
+
+
 def check(story, res, facts, askc):
     errs = []
     heads = {h["id"]: h for h in jload(os.path.join(W, "research-data.json"))["headlines"]}
+    tick = ticker_names(res, facts)
     for i, it in enumerate(story["items"]):
         try:
             r = res["items"][it["n"]]
@@ -133,36 +192,47 @@ def check(story, res, facts, askc):
                 if sign < 0 and re.search(r"\b(rose|gained|jumped|climbed|rallied|higher)\b", x["text"], re.I): errs.append(f"item {i + 1}: says up, the verified move is {sign:+.2f}%")
                 if sign > 0 and re.search(r"\b(fell|dropped|slid|slipped|declined|sank|lower)\b", x["text"], re.I) and not re.search(r"\b(despite|but|after)\b", x["text"], re.I):
                     errs.append(f"item {i + 1}: says down, the verified move is {sign:+.2f}%")
-            miss = unsupported_words(x["text"], corpus)
-            if len(miss) > 1 or (miss and len(x["text"].split()) < 5):
-                errs.append(f"item {i + 1}: words the verified sources never say: {miss} in {x['text']!r} (stay with the item's WHY and READ)")
+            names = unsupported_names(x["text"], corpus)
+            miss = [w for w in unsupported_words(x["text"], corpus) if w not in names]
+            if names or len(miss) > 1 or (miss and len(x["text"].split()) < 5):
+                errs.append(f"item {i + 1}: words the verified sources never say: {names + miss} in {x['text']!r} "
+                            f"-> rewrite it with the item's own wording (WHY: {r['why']!r}; READ: {r['sentiment']!r})")
     allowed = allowed_figures(res, facts, askc)
     sents = [(f"item {i + 1}", s["text"]) for i, it in enumerate(story["items"]) for s in it["sentences"]]
     sents += [("portfolio", story["portfolio"]["text"]), ("ask answer", story["ask"]["answer_text"])]
     words = sum(len(t.split()) for _, t in sents) + len(askc["question"].split())
-    if words > story.get("_budget", 56): errs.append(f"{words} spoken words, budget {story.get('_budget', 56)}: shorten")
+    if words > story.get("_budget", 56):
+        longest = max(sents, key=lambda x: len(x[1].split()))
+        errs.append(f"{words} spoken words, budget {story.get('_budget', 56)}: cut at least {words - story.get('_budget', 56)} words "
+                    f"-> shorten {longest[0]} ({len(longest[1].split())} words: {longest[1]!r}) first; keep every fact you keep exact")
     if not 3 <= len(story["items"]) <= 5: errs.append(f"{len(story['items'])} market items, need 3 to 5")
     for where, t in sents + [("cover", " ".join(story["cover"])), ("title", story["title"]), ("description", story["description"])]:
         spoken_line = where not in ("cover", "title", "description")
         for m in BAN.finditer(t): errs.append(f"{where}: banned word '{m.group(0)}'")
         if "—" in t or "–" in t: errs.append(f"{where}: em/en dash")
-        for tok in re.findall(r"\b[A-Z]{2,5}\b", t):
-            if tok not in TICKER_OK and spoken_line: errs.append(f"{where}: ticker-like token '{tok}' (say the company name)")
+        for tok in re.findall(r"\b[A-Z]{2,5}\b", re.sub(r"\bAT&T\b|\bS&P\b", " ", t)):
+            # a ticker of a candidate or held company is said as its name; names said as letters (IBM, AMD) are fine
+            if spoken_line and tok in tick and tok not in SPOKEN_CAPS:
+                errs.append(f"{where}: ticker '{tok}' -> write the company name {short_name(tick[tok])!r} instead")
     for where, t in sents:
         if len(t.split()) > 15: errs.append(f"{where}: sentence over 15 words: {t!r}")
         for f in nums(t):
             nf = norm(f)
             if nf not in allowed and not re.match(r"^\d+-fold$", f) and not any(a.startswith(nf) and a[len(nf):].isalpha() for a in allowed):
-                errs.append(f"{where}: figure {f!r} is not in the verified set")
+                errs.append(f"{where}: figure {f!r} is not in the verified set -> delete it (or use one of {sorted(allowed)[:12]})")
     for (where, t), a in zip(sents, ear_audit([t for _, t in sents])):
-        if a: errs.append(f"{where}: the voice would stumble on {a} in {t!r} (plain words, no acronyms)")
+        if a: errs.append(f"{where}: the voice would stumble on {a} in {t!r} -> use plain words; names said as letters "
+                          f"({', '.join(sorted(SPOKEN_CAPS)[:12])}...) are fine, other acronyms are not")
     all_spoken = " ".join(t for _, t in sents)
-    if not re.search(TIMING[ED]["need"], all_spoken, re.I): errs.append(f"timing: none of the {ED} words ({TIMING[ED]['need']}) appear")
+    if not re.search(TIMING[ED]["need"], all_spoken, re.I):
+        errs.append(f"timing: none of the {ED} words appear -> start item 1's first sentence with {LEAD[ED]!r}")
     for m in re.finditer(TIMING[ED]["never"], all_spoken, re.I): errs.append(f"timing: '{m.group(0)}' is wrong for the {ED} edition")
     for i, it in enumerate(story["items"]):
         if len(it["sentences"]) != 2: errs.append(f"item {i + 1}: needs exactly 2 sentences (why, then the read)")
         elif restates(it["sentences"][0]["text"], it["sentences"][1]["text"]):
-            errs.append(f"item {i + 1}: sentence 2 only restates sentence 1 ({it['sentences'][1]['text']!r}); give the read: who thinks what, or the reaction's meaning")
+            r = res["items"][it["n"]]
+            errs.append(f"item {i + 1}: sentence 2 only restates sentence 1 ({it['sentences'][1]['text']!r}) -> replace it with the "
+                        f"attributed read, e.g. {r['sentiment']!r} shortened")
         elif not re.search(r"\b(analysts?|commentators?|investors?|traders?|shares|the stock|markets?|economists?|strategists?|wall street|critics|fans|users|observers|futures|policymakers|officials|fed|bond traders|yields|economists|the market)\b",
                            it["sentences"][1]["text"], re.I):
             errs.append(f"item {i + 1}: the second sentence must be the attributed read (analysts/investors/traders/shares...)")
@@ -170,9 +240,11 @@ def check(story, res, facts, askc):
         for x in it["sentences"]:
             if len(x["eyebrow"]) > 26: errs.append(f"eyebrow {x['eyebrow']!r} over 26 characters (use the short name)")
     pt, at = story["portfolio"]["text"], story["ask"]["answer_text"]
-    if "portfolio" not in pt.lower() or len(pt.split()) < 5: errs.append(f"portfolio: a full sentence that names 'My portfolio' (got {pt!r})")
+    if "portfolio" not in pt.lower() or len(pt.split()) < 5: errs.append(f"portfolio: a full sentence that names 'My portfolio' (got {pt!r}) -> write it as "
+                                                                               f"'My portfolio <moved> <figure> <when>.' in 5-8 words, e.g. 'My portfolio closed up 0.8% today.'")
     if len(at.split()) < 4 or (ED != "preopen" and not re.search(r"\b(up|down|flat|gained|lost|rose|fell)\b", at, re.I)):
-        errs.append(f"ask answer: a full spoken sentence with the direction words (up / down / flat), got {at!r}")
+        errs.append(f"ask answer: a full spoken sentence with the direction words (up / down / flat), got {at!r} -> "
+                    f"e.g. 'Up 3.8% this month and 31% over the year.' (4-13 words, verified figures only)")
     for where, t in sents:
         for m in re.finditer(r"\d+\.\d{2,}%", t): errs.append(f"{where}: {m.group(0)}: one decimal for percentages")
     if len(story["title"]) > 70: errs.append(f"title is {len(story['title'])} chars (max 70)")
@@ -187,6 +259,86 @@ def check(story, res, facts, askc):
     return errs, words
 
 
+def fallback(story, res, facts, askc):
+    """Last resort, deterministic: lines that still fail are told with the item's verified WHY and READ (trimmed at a
+    clause when the budget needs it), the edition's timing phrase leads item 1, and the portfolio / Ask lines fall back
+    to templates from the cross-checked figures. Returns (story, errs, words); it can still fail, and then the run refuses."""
+    story = copy.deepcopy(story) if isinstance(story, dict) else {}
+    if not isinstance(story.get("items"), list) or len(story["items"]) < 3:
+        story["items"] = [{"n": i} for i in range(min(3, len(res["items"])))]
+    for k, v in (("portfolio", {"eyebrow": "MY PORTFOLIO", "text": ""}), ("ask", {"answer_text": ""})):
+        if not isinstance(story.get(k), dict): story[k] = v
+    story.setdefault("cover", [res["items"][it.get("n", 0)]["cover"] for it in story["items"][:3]])
+    story.setdefault("title", f"{LABEL[ED].title()}: " + ", ".join(res["items"][it.get("n", 0)]["cover"].rstrip(".") for it in story["items"][:3])[:60])
+    story.setdefault("description", " ".join(res["items"][it.get("n", 0)]["why"] for it in story["items"][:3]))
+    story.setdefault("hashtags", ["#Shorts", "#stockmarket"]); story["_budget"] = 56
+
+    def trims(t):
+        """The sentence, then shorter versions cut at a clause boundary (each still a verified claim, just less of it)."""
+        t = t.strip().rstrip(".") ; out = [t]
+        for sep in (", ", " and ", " with ", " as ", " after ", " on "):
+            if sep in t:
+                head = t.split(sep)[0].strip()
+                if len(head.split()) >= 4 and head not in out: out.append(head)
+        return [x + "." for x in sorted(out, key=lambda x: -len(x.split()))]
+
+    def item_errs(errs):
+        return {int(m.group(1)) - 1 for e in errs for m in [re.match(r"item (\d+):", e)] if m}
+
+    opts = {}
+    def verified(i):
+        it = story["items"][i] if isinstance(story["items"][i], dict) else {}
+        n = it.get("n", i) if isinstance(it.get("n"), int) and 0 <= it.get("n") < len(res["items"]) else i
+        r = res["items"][n]; eb = it.get("sentences") if len(it.get("sentences") or []) == 2 else [{}, {}]
+        story["items"][i] = {"n": n, "sentences": [
+            {"eyebrow": (eb[0].get("eyebrow") or r["cover"].rstrip(".")).upper()[:26], "text": r["why"]},
+            {"eyebrow": (eb[-1].get("eyebrow") or "THE READ").upper()[:26], "text": r["sentiment"]}]}
+        opts[i] = (trims(r["why"]), trims(r["sentiment"]))
+    for i, it in enumerate(story["items"]):
+        if not isinstance(it, dict) or not isinstance(it.get("n"), int) or len(it.get("sentences") or []) != 2: verified(i)
+    errs, words = check(story, res, facts, askc)
+    bad = item_errs(errs)
+    for i in bad - set(opts):
+        if i < len(story["items"]): verified(i)
+    pf = facts.get("portfolio", {})
+    if any(e.startswith("portfolio") for e in errs) and pf.get("today"):
+        moved = re.sub(r"^up\b", "rose", re.sub(r"^down\b", "fell", pf["today"]))
+        story["portfolio"]["text"] = {"preopen": f"My portfolio {moved} yesterday.", "midday": f"My portfolio is {pf['today']} so far today.",
+                                      "close": f"My portfolio closed {pf['today']} today."}[ED]
+    if any(e.startswith("ask answer") for e in errs):
+        win = next(((w, pf[w]) for w in ("month", "week") if pf.get(w)), None)
+        if win: story["ask"]["answer_text"] = f"{win[1][0].upper() + win[1][1:]} this {win[0]}."
+    # the edition's timing phrase leads item 1 when no timing word is spoken; then the budget and the 15-word sentence
+    # limit: cut the longest verified sentence at a clause until both fit
+    s0 = story["items"][0]["sentences"][0]
+    base0 = s0["text"]; lead = LEAD[ED] if not re.search(TIMING[ED]["need"], " ".join(
+        [x["text"] for it in story["items"] for x in it["sentences"]] + [story["portfolio"]["text"], story["ask"]["answer_text"]]), re.I) else ""
+    pick = {}
+    def render():
+        for i in opts: pick.setdefault(i, [0, 0])
+        for i, o in opts.items():
+            for j in (0, 1): story["items"][i]["sentences"][j]["text"] = o[j][pick[i][j]]
+        t = story["items"][0]["sentences"][0]["text"] if 0 in opts else base0
+        story["items"][0]["sentences"][0]["text"] = f"{lead} {t}" if lead else t
+        return check(story, res, facts, askc)
+    for _ in range(12):
+        errs, words = render()
+        long_ = [(len(o[j][pick[i][j]].split()), i, j) for i, o in opts.items() for j in (0, 1) if pick[i][j] < len(o[j]) - 1]
+        over = words > 56 or any("sentence over 15 words" in e for e in errs)
+        if not over: break
+        if not long_:                                    # only the model's own lines are left long: tell one with verified wording
+            ln = lambda k: sum(len(x["text"].split()) for x in story["items"][k]["sentences"])
+            short = lambda k: sum(len(x.split()) for x in (trims(res["items"][story["items"][k]["n"]]["why"])[-1], trims(res["items"][story["items"][k]["n"]]["sentiment"])[-1]))
+            rest = [i for i in range(len(story["items"])) if i not in opts and short(i) < ln(i) - (3 if i == 0 and lead else 0)]
+            if not rest: break
+            verified(max(rest, key=lambda k: ln(k) - short(k))); continue
+        _, i, j = max(long_); pick[i][j] += 1
+    if lead and words > 56:
+        lead = LEAD_SHORT[ED]; errs, words = render()
+    log(f"storyline fallback (verified wording for items {sorted(x + 1 for x in opts)}): {words} words, {len(errs)} problems {errs[:4]}")
+    return story, errs, words
+
+
 def main():
     res = jload(os.path.join(W, "research.json")); facts = jload(os.path.join(W, "facts.json")); askc = jload(os.path.join(W, "ask-check.json"))
     n_items = 3                     # three items fit 30 s with the portfolio and Ask beats at a natural pace
@@ -198,7 +350,7 @@ def main():
 VERIFIED MARKET ITEMS (ranked; each WHY and READ is already backed by two publishers; reuse their wording closely):
 {json.dumps([{"n": i, "kind": it["kind"], "symbols": it["symbols"], "cover": it["cover"], "why": it["why"], "read": it["sentiment"],
               "figures": [{"symbol": f["symbol"], "pct": f["value"]} for f in it.get("figures", [])]} for i, it in enumerate(res["items"])], indent=0)}
-Company names to say (never tickers): {json.dumps(facts.get("names", {}))}
+Company names to say (never tickers; letters only where shown, like IBM): {json.dumps(say_names(facts))}
 
 THE PORTFOLIO ON SCREEN (the app's own numbers; this is "My portfolio"): {json.dumps(facts["portfolio"])}
 {"BEFORE THE OPEN the portfolio's 'today' figure is the PREVIOUS session: say 'yesterday' (or the weekday), never 'today'." if ED == "preopen" else ""}
@@ -235,32 +387,36 @@ No advice or hype words, no jargon (thesis, tape, book, print, catalyst, guidanc
 sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashes, no tickers, never "demo"."""
         budget = 56 - len(askc["question"].split())
         prompt = base.replace("{budget}", str(budget))
-        story, errs = None, ["not run"]
-        for rnd in range(7):
-            story = llm(W, sys_p, prompt, max_tokens=16000, temperature=0.4, prefer=os.environ.get("SHORTS_STORY_MODEL", "openrouter"))   # M3 reasons long: 8000 truncated its JSON
+        story, errs, words, best = None, ["not run"], 0, None
+        t0, rounds = time.time(), int(os.environ.get("SHORTS_STORY_ROUNDS", STORY_ROUNDS))
+        for rnd in range(rounds):
+            left = STORY_CAP_S - (time.time() - t0)
+            if rnd and left < 50:                        # a round takes 20-45 s: do not start one the cap would cut off
+                log(f"storyline: {STORY_CAP_S}s cap reached after {rnd} rounds"); break
+            try:
+                story = llm(W, sys_p, prompt, max_tokens=16000, temperature=0.4, timeout=max(40, min(150, int(left))),
+                            prefer=os.environ.get("SHORTS_STORY_MODEL", "openrouter"))   # M3 reasons long: 8000 truncated its JSON
+            except RuntimeError as e:
+                log(f"storyline round {rnd + 1}: no draft ({str(e)[:120]})"); continue
             story["_budget"] = 56
             try:
                 errs, words = check(story, res, facts, askc)
             except Exception as e:                       # noqa: BLE001  (a malformed shape is a failed round)
                 errs, words = [f"malformed: {e}"], 0
-            log(f"storyline round {rnd + 1}: {words} words, {len(errs)} problems {errs[:6]}")
+            log(f"storyline round {rnd + 1} ({time.time() - t0:.0f}s): {words} words, {len(errs)} problems {errs[:6]}")
             if not errs:
                 break
+            if best is None or len(errs) <= len(best[1]) and not errs[0].startswith("malformed"):
+                best = (copy.deepcopy(story), errs)
             prompt = base.replace("{budget}", str(budget)) + "\n\nYOUR LAST DRAFT:\n" + json.dumps({k: v for k, v in story.items() if not k.startswith("_")}) + \
-                "\nFIX ALL OF THESE PROBLEMS:\n- " + "\n- ".join(errs)
-        if errs and story and isinstance(story.get("items"), list):
-            # last resort, deterministic: an item whose sentences fail is told with its verified WHY and READ verbatim
-            bad = {int(m.group(1)) - 1 for e in errs for m in [re.match(r"item (\d+):", e)] if m}
-            for i in bad:
-                if i < len(story["items"]) and isinstance(story["items"][i], dict) and "n" in story["items"][i]:
-                    r = res["items"][story["items"][i]["n"]]; eb = (story["items"][i].get("sentences") or [{}, {}])
-                    story["items"][i]["sentences"] = [{"eyebrow": (eb[0].get("eyebrow") or r["cover"]).upper()[:26], "text": r["why"]},
-                                                      {"eyebrow": (eb[-1].get("eyebrow") or "THE READ").upper()[:26], "text": r["sentiment"]}]
+                "\nREWRITE IT. Keep every line that is not named below word for word; change only these, exactly as instructed:\n- " + \
+                "\n- ".join(errs)
+        if errs:
+            if best: story = best[0]
             try:
-                errs, words = check(story, res, facts, askc)
+                story, errs, words = fallback(story, res, facts, askc)
             except Exception as e:                       # noqa: BLE001
-                errs = [f"malformed: {e}"]
-            log(f"storyline fallback (verified wording for items {sorted(x + 1 for x in bad)}): {len(errs)} problems {errs[:4]}")
+                errs = errs + [f"fallback failed: {e}"]; story = story if isinstance(story, dict) else {}
         story["_errors"] = errs; story["_words"] = words
         jdump(story, os.path.join(W, "story.json"))
         if errs:

@@ -22,13 +22,20 @@ Weekends and US market holidays: `run.sh` asks the app's calendar first and exit
 | facts | 51 | |
 | record (build + seed sign-in + take + align) | 240 | xcodebuild ~40 s, sign-in ~50 s, take ~150 s |
 | Ask check | 1 | |
-| storyline | 70 | 1-5 LLM rounds; M3, OpenRouter fallback |
+| storyline | 70 | 1-8 LLM rounds, 6 min cap (10/1: 192 s, 7 rounds, refused; after v1.0.1: 24-78 s) |
 | build (voices, edit, mix, proofs, Q1-Q19) | 313 | voices ~90 s (Whisper retakes add ~20 s each) |
 | qa (Q21-Q29, upload copy, Whisper) | 22 | |
 | **total** | **1218 s (20.3 min)** | test 1, sequential stages with two other runs on the same Mac |
 
 **Achievable close latency today: ~18-22 minutes after the 4:00 PM ET close** (ready ~4:20 PM ET), i.e. inside the
 15-25 minute target but not at "5 minutes after". Getting to ~10 minutes needs the pre-close warm-up below.
+
+### 10/1 7:32 preopen (refused at the storyline, 1905 s)
+
+research 125 s, book 27, account seed 378 (est ~180-300) + brief re-check 116 (regenerated for "book" / "prints"),
+facts 74, record 3 takes x (~220 take + ~85 align + ~25 ask check) = ~990 s (est 240: two retakes for the pre-open
+"today" wording, now removed), storyline 192 (7 rounds then fallback refusal, now fixed). Without the retakes and the
+refusal the same run is ~20 min; the seed (~6 min) is the next target.
 
 ## Getting closer to 5 minutes (not built in v1.0)
 

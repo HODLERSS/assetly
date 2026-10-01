@@ -15,6 +15,9 @@ export const earWords = (t: string) => String(t ?? "")
 /** What a voice engine reads badly or a listener stumbles on. The harness and the tests use it; the
  *  speakable() pass below exists to drive this list to empty. Each entry names the problem and the text. */
 export const EAR_PLAIN_WORDS = /\b(sleeve|dip|dips|drawdown|tilt|bleeding|book value|re-?rating|tape|unwind|canary|catalysts?|headwinds?|tailwinds?|bid|print|beta|alpha|EBITDA|FCF|EPS|capex|basis points|multiple compression|dry powder|megacap|cash drag|risk-off|risk-on|de-?risk|overweight|underweight|rotation|income book)\b/gi;
+/** All-caps words a voice reads correctly and a listener knows (the assetly-shorts storyline mirrors this list). */
+export const SPOKEN_CAPS = ["AI", "US", "UK", "EU", "CEO", "CFO", "ETF", "ETFs", "VIX", "AMD", "IBM", "HP", "NASA", "FDA", "SEC", "FTC", "DOJ",
+  "GDP", "CPI", "PCE", "PPI", "IPO", "EV", "EVs", "OPEC", "NATO", "OK", "TV", "NVIDIA", "SK", "AM", "PM", "IBK", "KOSPI", "P", "S", "O", "I"];
 export function earAudit(t: string): string[] {
   const x = String(t ?? "").replace(/<[^>]*>/g, " ");
   const out: string[] = [];
@@ -22,7 +25,8 @@ export function earAudit(t: string): string[] {
   hit("digits", /\d[\d,.:]*/g);
   hit("symbols", /[$₩%&~()\[\]{}#@*_/\\|]/g);
   hit("odd dash or quote", /[‐-―−‘’“”]/g);
-  hit("all-caps", /\b(?!AI\b|US\b|UK\b|EU\b|CEO\b|ETF\b|VIX\b|AMD\b|OK\b|TV\b|NVIDIA\b|SK\b|AM\b|PM\b|IBK\b|KOSPI\b|P\b|S\b|O\b|I\b)[A-Z]{2,}\b/g);
+  // names and terms people say as letters or as a word (IBM, NASA, FDA; AT&T arrives here as "AT and T")
+  hit("all-caps", new RegExp(String.raw`\b(?!(?:${SPOKEN_CAPS.join("|")})\b|AT\b(?= and T\b))[A-Z]{2,}\b`, "g"));
   hit("signed move", /\b(?:rose|fell|climbed|dropped|gained|slid|up|down|slipped)\s+(?:plus|minus)\b/gi);
   hit("jargon", EAR_PLAIN_WORDS);
   hit("doubled punctuation", /[.,]\s*[.,]/g);
