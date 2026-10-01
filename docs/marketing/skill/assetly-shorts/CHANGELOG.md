@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.4 (2026-10-01, owner review of preopen-v3 highlights)
+
+- The Ask answer beat starts where the recording actually SHOWS the quoted line (compose OCRs the take from the
+  ask_answer mark: v3 showed "Still thinking..." for 1.3 s after the mark, with the highlight outlining empty space while
+  the voice said the answer). The highlight therefore appears with the text. Q32 now also fails if any sampled frame of
+  the answer beat reads "Still thinking". A quoted line that never shows refuses the run.
+- The portfolio beat outlines the Home row its line names (All time / Today), same accent box as the Ask answer, and the
+  outline switches off before Home scrolls to the movers (make-spot.py `highlight.until`, render-time cut). New Q36.
+
 ## v1.0.3 (2026-10-01, owner review of preopen-v3)
 
 - A portfolio figure carries the window Home labels it with: "up 28% all time" over "All time +28.33%" (refused: "up

@@ -230,8 +230,17 @@ def main():
         ocr_ans = " ".join(seen[-1]) if seen else ""
         onscreen = bool(quote) and sum(w in set(ws(ocr_ans)) for w in ws(quote)) / max(1, len(ws(quote))) >= 0.6
         hl = bool((ab.get("highlight") or {}).get("src_box"))
-        row("Q32", "Ask: the spoken answer follows a recorded answer line that is on screen and outlined while it is said",
-            follow and onscreen and hl, f"line {quote!r}; said {said!r}; follows {follow}; visible in the beat {onscreen}; highlight {hl}")
+        # owner, 10/1 preopen-v3: the answer beat opened on "Still thinking..." with the outline around empty space while
+        # the voice already said the answer. The beat's first frame (3%) must already show the answer, never the spinner.
+        thinking = any(re.search(r"still thinking", x, re.I) for x in seen[-1]) if seen else True
+        row("Q32", "Ask: the spoken answer follows a recorded answer line that is on screen (from the beat's first frame, never 'Still thinking') and outlined while it is said",
+            follow and onscreen and hl and not thinking,
+            f"line {quote!r}; said {said!r}; follows {follow}; visible in the beat {onscreen}; highlight {hl}; still-thinking frames {thinking}")
+        # Q36 owner, 10/1: the portfolio line's figure is outlined on Home (the All time / Today row it names)
+        pb = (day.get("beats") or [{}] * 3)[-3]; pl = " ".join(w for c in (lines_d[-3].get("cues", []) if len(lines_d) >= 3 else []) for w in c.get("show", []))
+        names_win = bool(re.search(r"all time|overall|today", pl, re.I))
+        row("Q36", "Portfolio beat: the Home row the line names (All time / Today) is outlined while Home holds still",
+            (not names_win) or bool((pb.get("highlight") or {}).get("src_box")), f"line {pl!r}; highlight {(pb.get('highlight') or {}).get('src_box')}")
         # Q30 the data time-stamp: on EVERY frame in the same top-left spot (cover, every beat, the end card), its text is the
         # snapshot the figures come from (research quotes, within 5 min), and the edition label is this edition's
         st = day.get("stamp") or {}

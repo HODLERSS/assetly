@@ -86,12 +86,14 @@ def ease_expr(z, tvar="t"):
     u2 = f"clip(({tvar}-{c:.3f})/{max(d-c,1e-3):.3f},0,1)"
     return f"({ss(u1)}-{ss(u2)})"
 
-def phone_chain(dur, zoom=None, freeze=False, highlight=False, enter=None):
+def phone_chain(dur, zoom=None, freeze=False, highlight=False, enter=None, hl_until=None):
     src = "trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/(" + str(FPS) + "*TB)," if freeze else ""
     hl = ""
     if zoom and highlight:
         # the highlight rides the screen: laid on before the scale, opacity on the move's own curve
-        hl = (f"[4:v]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*{ease_expr(zoom, 'T')}'[hl];"
+        # hl_until (render time): the highlight goes off before the screen scrolls away from what it outlines (10/1 Home)
+        cut = ("*lt(T,%.3f)" % hl_until) if hl_until else ""
+        hl = (f"[4:v]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*{ease_expr(zoom, 'T')}{cut}'[hl];"
               f"[ph][hl]overlay=0:0:format=auto:shortest=1[ph2];")
     if zoom:
         # A push INTO a subject: the focus point f (canvas px) travels to the target t (stage centre by
@@ -228,7 +230,7 @@ for i, b in enumerate(plan["beats"]):
             if z.get("out"): zr["out"] = [z["out"][0] + head, z["out"][1] + head]
         en = dict(b["enter"], delay=head) if b.get("enter") else None
         ff("-ss", f"{b['start'] - head:.3f}", "-i", b["src"], "-i", f"{T}/mask.png", "-i", f"{T}/frame.png", "-framerate", str(FPS), "-loop", "1", "-t", f"{d_render:.3f}", "-i", f"{T}/scrim.png", *hl_in,
-           "-filter_complex", "[0:v]" + phone_chain(d_render, zr, b.get("freeze", False), bool(hl_in), en) + "[v]", "-map", "[v]", "-frames:v", str(frames(d_render)), *ENC, out)
+           "-filter_complex", "[0:v]" + phone_chain(d_render, zr, b.get("freeze", False), bool(hl_in), en, hl_until=((b["highlight"]["until"] + head) if hl_in and b["highlight"].get("until") else None)) + "[v]", "-map", "[v]", "-frames:v", str(frames(d_render)), *ENC, out)
         print(f"beat {i}: {b['src'].split('/')[-1]} @{b['start']}s +{d}s" + ("  frozen" if b.get("freeze") else "") + ((f"  zoom x{z['to']} in {z['in']} " + (f"out {z['out']}" if z.get('out') else "held into the card")) if z else ""))
     n = int(probe(out)["nb_frames"]); assert n == frames(d_render), f"beat {i}: {n} frames, wanted {frames(d_render)}"
     parts.append(out)

@@ -93,6 +93,26 @@ def facts_name(sym, text):
     return first.group(0) if first and first.group(0).split()[0].lower() in n.lower() + " " + sym.lower() else re.sub(r",?\s+(Inc\.?|Corporation|Corp\.?)$", "", n)
 
 
+
+def first_visible(take, t0, t1, pattern, step=0.1):
+    """(time, box) of the first frame in [t0, t1] of the take where OCR reads `pattern` (regex) and no "Still thinking"
+    is on screen; (None, None) if never. Owner, 10/1 preopen-v3: the Ask beat started on the UI test's ask_answer mark,
+    but the recorded display still showed "Still thinking..." for 1.3 s, with the highlight box drawn around EMPTY space
+    while the voice already said the answer. Beats and highlights now start from what the recording actually shows."""
+    import shutil, tempfile
+    from screen import frames as _frames, ocr as _ocr
+    d = tempfile.mkdtemp(prefix="vis-", dir=W)
+    try:
+        ts = [round(t0 + k * step, 2) for k in range(int((t1 - t0) / step) + 1)]
+        rows = _ocr(_frames(take, ts, d, "v"))
+        for t, rs in zip(ts, rows):
+            if any(re.search(r"still thinking", r[0], re.I) for r in rs): continue
+            hit = next((r for r in rs if re.search(pattern, r[0], re.I)), None)
+            if hit: return t, hit[1:5]
+        return None, None
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
 def main():
     story = jload(os.path.join(W, "story.json")); res = jload(os.path.join(W, "research.json")); mk = jload(os.path.join(W, "marks.json"))["marks"]
     askc = jload(os.path.join(W, "ask-check.json")); acct = jload(os.path.join(W, "account.json"))
@@ -147,8 +167,20 @@ def main():
         p = story["portfolio"]
         lines.append({"voice": "minjae", "say": p["text"], "tempo": 1.06, "cues": [{"eyebrow": "YOUR PORTFOLIO", "show": tokens(p["text"])}]})
         cue += 1
-        beats.append({"take": "take60.mp4", "start": round(mk["home_top"] + 1.0, 2), "focus_src": FOCUS["home"], "to_cue": cue,
-                      "note": "Home: total value, Today, All time, scrolling to the movers"})
+        hb = {"take": "take60.mp4", "start": round(mk["home_top"] + 1.0, 2), "focus_src": FOCUS["home"], "to_cue": cue,
+              "note": "Home: total value, Today, All time, scrolling to the movers"}
+        # owner, 10/1: outline the Home figure the portfolio line speaks ("up 28% all time" -> the All time row), the same
+        # accent box as the Ask answer, on only while Home holds still (it goes off before the scroll to the movers)
+        win = "All time" if re.search(r"all time|overall|since", p["text"], re.I) else "Today" if re.search(r"today", p["text"], re.I) else None
+        if win:
+            hold = mk.get("home_scroll", hb["start"] + 2.0)
+            t_h, box = first_visible(os.path.join(W, "take60.mp4"), hb["start"], max(hb["start"], hold - 0.2), rf"^{win}\b.*\d")
+            if box:
+                hb.update(highlight={"src_box": box, "pad": 8, "until": round(max(0.6, hold - hb["start"] - 0.15), 2)},
+                          note=hb["note"] + f"; {win} row highlighted")
+            else:
+                log(f"compose: the Home '{win}' row was not readable in the take: no highlight on the portfolio beat")
+        beats.append(hb)
         # Ask: the question typed on camera, then the real answer
         q = askc["question"]
         lines.append({"voice": gpt[len(items) % 2], "say": q, "tempo": 1.12, "cues": [{"eyebrow": "ASK ASSETLY", "show": tokens(q)}]})
@@ -161,6 +193,15 @@ def main():
         ab = {"take": atake, "start": round(amk["ask_answer"] + 0.3, 2), "focus_src": FOCUS["ask_a"], "tail": 1.0,
               "note": "Ask: the real answer, held into the card"}
         k = story["ask"].get("line")
+        if isinstance(k, int) and 0 <= k < len(vis):
+            # the beat (and so its highlight) starts only once the quoted line is ON SCREEN in the recording
+            key = re.escape(re.sub(r"^[•\-\s]+", "", vis[k]["text"])[:14])
+            t_v, _ = first_visible(os.path.join(W, atake), amk["ask_answer"], amk["ask_answer"] + 15, key)
+            if t_v is None:
+                raise SystemExit("REFUSE: the quoted Ask answer line never shows on screen in the recording")
+            if t_v + 0.1 > ab["start"]:
+                log(f"compose: the answer shows at {t_v:.2f}s, {t_v - amk['ask_answer']:.2f}s after the ask_answer mark: the beat starts there")
+                ab["start"] = round(t_v + 0.1, 2)
         if isinstance(k, int) and 0 <= k < len(vis):
             # the quoted line, outlined on screen as the voice says it; the push goes to it
             x0, y0, x1, y1 = vis[k]["box"]
