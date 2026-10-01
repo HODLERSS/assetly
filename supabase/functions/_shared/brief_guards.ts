@@ -11,6 +11,8 @@ const nameRe = (n: string) => new RegExp(`(?<![\\p{L}\\p{N}])${esc(n)}(?![\\p{L}
 
 // A percent right after these is a move, a return, a yield or a stake in something else, never the holding's weight.
 const NOT_WEIGHT_AFTER = /^\s*(?:lower|higher|down|up|below|above|off|under|over|cheaper|more|less|from|since|this|in\b|year|yield|dividend|return|gain|loss|rally|drop|decline|rebound|slide|move|jump|surge|fall|rise|one-year|1-year|annual|a year|weekly|monthly|ytd|year-to-date|today|so far|on the day|premium|discount|stake in|owned|ownership|of (?:its|the company|shares)|swing|pullback|selloff|sell-off)/i;
+// a group's share ("Korean stocks are 28.9%", "crypto at 1.5%"): the group word heads the noun phrase the figure belongs to
+const GROUP_BEFORE = /\b(?:Korean|Korea|US|U\.S\.|American|crypto|cash|tech|chips?|bonds?|theme|sector|rest|others|remaining|smaller)(?:\s+(?:stocks?|holdings|names|equities|exposure|assets|shares?|slices?|positions|funds?))?\s+(?:(?:is|are|was|were|at|makes? up|accounts? for|now|sits?|stands?|a|an|the|of|share|weight)\s+){0,3}$/i;
 const notWeightAfter = (after: string) => NOT_WEIGHT_AFTER.test(after) || /^\s*of [A-Z]/.test(after);   // "of Solidigm": a stake in something else
 const MOVE_BEFORE = /\b(?:rose|fell|dropped|drops?|climbed|climbs?|gained|gains?|slipped|slips?|jumped|jumps?|surged|sank|tumbled|rallied|declined|lost|added|adds|(?<!\b(?:make|makes|made|making|add|adds|added|sum|sums|summed|end|ends|ended|take|takes|took) )up|down|higher|lower|advanced|eased|dipped|slid|soared|plunged|moved|rebound(?:ed|s)?|yield(?:s|ing)?)\b[^.%\d]{0,14}$|[+\-−]\s?$/i;
 
@@ -71,7 +73,7 @@ export function fixNamedWeights(text: string, facts: WeightFact[], tol = 0.15): 
         const before = s.slice(Math.max(0, at - 30), at), after = s.slice(at + m[0].length);
         if (MOVE_BEFORE.test(before) || notWeightAfter(after)) continue;
         // a group's share ("Korean stocks are 28.9%") is not the named pair's
-        if (/\b(?:Korean|Korea|US|U\.S\.|American|crypto|cash|tech|chips?|bonds?|theme|sector|rest|others|remaining|smaller)\b[^.%\d]{0,30}$/i.test(before)) continue;
+        if (GROUP_BEFORE.test(before)) continue;
         // the figure must read as a share of the portfolio
         if (!/^\s*(?:of (?:the |your )?(?:portfolio|assets|holdings)|combined|together|in (?:two|both|the two))/i.test(after) && !/\b(?:together|combined|both|pair)\b[^.%\d]{0,20}$/i.test(before)) continue;
         const v = Number(num), t = tolFor(num, tol);
@@ -83,6 +85,26 @@ export function fixNamedWeights(text: string, facts: WeightFact[], tol = 0.15): 
     for (const r of repl.sort((a, b) => b.at - a.at)) s = s.slice(0, r.at) + r.to + s.slice(r.at + r.len);
     if (s !== s0) changed = true;
     return s;
+  });
+  return changed ? out.join(" ") : src;
+}
+
+/** A position note is about ITS holding: a bare "X% weight / stake / concentration / of assets" in it, in a sentence that
+ *  names no other holding and no group, is that holding's weight. 10/1 full regeneration: SK hynix's note said "35.0%
+ *  concentration" at a 21.4% weight. */
+export function fixNoteWeight(note: string, own: WeightFact | undefined, facts: WeightFact[], tol = 0.15): string {
+  const src = String(note ?? "");
+  if (!own || !/\d\s?%/.test(src)) return src;
+  let changed = false;
+  const out = splitSentences(src).map((s) => {
+    if (namedIn(s, facts.filter((f) => f !== own)).length) return s;
+    const x = s.replace(/(\d+(?:\.\d+)?)\s?%(?=\s+(?:portfolio\s+)?(?:weight|weighting|stake|concentration|allocation|position|of (?:assets|the portfolio|your portfolio))\b)/g, (m: string, num: string, at: number) => {
+      const before = s.slice(Math.max(0, at - 30), at);
+      if (MOVE_BEFORE.test(before) || GROUP_BEFORE.test(before) || /\b(?:top|two|combined|together)\b[^.%\d]{0,30}$/i.test(before)) return m;
+      return Math.abs(Number(num) - own.weight) <= tolFor(num, tol) ? m : m.replace(num, own.weight.toFixed(1));
+    });
+    if (x !== s) changed = true;
+    return x;
   });
   return changed ? out.join(" ") : src;
 }

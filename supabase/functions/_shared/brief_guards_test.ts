@@ -1,7 +1,7 @@
 // 10/1 owner regenerations of the morning brief, and the same classes found in the owner's briefs of 9/24-10/1.
 // Run: deno test -A supabase/functions/_shared/brief_guards_test.ts
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { fixNamedWeights, fixRecoveryClaims, ledeFallback, mangledFigureHits, PLAIN_WORDS_RULE, repairMangledFigures } from "./brief_guards.ts";
+import { fixNamedWeights, fixNoteWeight, fixRecoveryClaims, ledeFallback, mangledFigureHits, PLAIN_WORDS_RULE, repairMangledFigures } from "./brief_guards.ts";
 import { plainScrub, PORTFOLIO_PLAIN } from "./intel.ts";
 
 const BOOK = [
@@ -98,4 +98,13 @@ Deno.test("the empty-lede fallback is built from verified figures only", () => {
 
 Deno.test("the writer is told the plain words, the recovery arithmetic and the weight rule up front", () => {
   for (const w of ['never "bid"', "cycle peak", "rounding error", "multiple compression", "yellow flag", "sleeve", "dumping", "RECOVERY ARITHMETIC", "WEIGHTS"]) assert(PLAIN_WORDS_RULE.includes(w), w);
+});
+
+Deno.test("note weights: a bare weight in a holding's own note is that holding's (10/1 full regeneration)", () => {
+  const hynix = BOOK[1];
+  assertEquals(fixNoteWeight("SK hynix's 3.2% rally validates AI-chip demand but 35.0% concentration leaves portfolio vulnerable to valuation dilution from the Solidigm IPO.", hynix, BOOK),
+    "SK hynix's 3.2% rally validates AI-chip demand but 21.4% concentration leaves portfolio vulnerable to valuation dilution from the Solidigm IPO.");
+  assertEquals(fixNoteWeight("The 21.3% stake drives most of the portfolio gain.", hynix, BOOK), "The 21.3% stake drives most of the portfolio gain.");
+  // another holding named, a group share, or a move: left alone
+  for (const t of ["Together with MARA, a 55.1% weight rides two bets.", "Korean stocks are a 29.5% weight.", "It rose 3.2% stake-free.", "Up 35.0% this year."]) assertEquals(fixNoteWeight(t, hynix, BOOK), t);
 });

@@ -11,7 +11,7 @@
 //   4 fact-check       (every number verified against the deterministic stats, or cut)
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { fixGainAsDayMove, fixGrossAsNet, fixQuotedPrices } from "../_shared/prices.ts";
-import { fixNamedWeights, fixRecoveryClaims, ledeFallback, PLAIN_WORDS_RULE, repairMangledFigures, type WeightFact } from "../_shared/brief_guards.ts";
+import { fixNamedWeights, fixNoteWeight, fixRecoveryClaims, ledeFallback, PLAIN_WORDS_RULE, repairMangledFigures, type WeightFact } from "../_shared/brief_guards.ts";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
   superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, tidyClauseEndings, krxDollarTargets, taxRemarkClaims, bondValueClaims, isTaxAdvantaged, plainForBeginner, roundBookTotal, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
@@ -2147,7 +2147,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         sections.lede = g(sections.lede); sections.overnight = g(sections.overnight); sections.desk_view = g(sections.desk_view);
         if (sections.horizon) sections.horizon = g(sections.horizon);
         sections.ideas = (sections.ideas ?? []).map(g);
-        sections.positions = sections.positions.map((p) => ({ ...p, note: g(p.note), watch: p.watch ? g(p.watch) : p.watch }));
+        // a note is about its own holding: a bare weight in it is that holding's ("35.0% concentration" at 21.4%)
+        const ownOf = (name: string) => finalWeights.find((f) => f.names.some((n) => n && n.toLowerCase() === String(name ?? "").toLowerCase()));
+        sections.positions = sections.positions.map((p) => ({ ...p, note: fixNoteWeight(g(p.note), ownOf(p.name), finalWeights), watch: p.watch ? g(p.watch) : p.watch }));
       }
       if (!String(sections.lede ?? "").trim()) sections.lede = fallbackLede();
       // round 8: signed figures use the true minus sign, as the client renders them
