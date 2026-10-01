@@ -33,6 +33,7 @@ SPOKEN_CAPS = {"AI", "US", "UK", "EU", "CEO", "CFO", "ETF", "ETFs", "VIX", "AMD"
 LEAD = {"preopen": "Before the bell,", "midday": "At midday,", "close": "At the close,"}   # the fallback's timing phrase
 LEAD_SHORT = {"preopen": "Premarket,", "midday": "Midday,", "close": "Today,"}           # ... when the budget is tight
 STORY_CAP_S, STORY_ROUNDS = 360, 8                     # storyline rounds: at most 8, inside 6 minutes
+SPOKEN_MAX = 68                                        # words as voiced (speakable): 66-68 made 26-27 s, 73 made 30.3 s
 LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE"}
 
 
@@ -70,7 +71,8 @@ commentators traders markets market session hours after-hours year week month po
 amid despite following because when what which where why will would could more most less least
 rose rise rises rising fell fall falls falling gained gains gaining slipped slips slid slides dropped drops declined declines
 jumped jumps climbed climbs edged eased ended ending finished moved higher lower
-little reaction movement muted cautious steady quiet flat barely calm unmoved""".split())
+little reaction movement muted cautious steady quiet flat barely calm unmoved
+premarket pre-market overnight futures midday morning yesterday bell open opening ahead""".split())
 
 
 # generic reaction and framing words (10/1 preopen refused on "cheer", "credit", "liked", "purchase"): they carry no
@@ -82,7 +84,7 @@ view views viewed see sees seen think thinks expect expects expected hope hopes 
 read reads note notes noted call calls called point points argue argues upside downside sign signs signal signals boost boosted
 lift lifted drive driving drove news move moves rollout launch launched deal deals purchase purchased buyout acquisition acquired
 announcement announced plan plans report reports reported results update updates step steps push pushed bigger biggest strong
-stronger weak weaker solid good well better best positive negative mixed welcome encouraging encouraged""".split())
+stronger weak weaker solid good well better best positive negative mixed welcome encouraging encouraged cite cites cited""".split())
 
 
 def unsupported_words(text, corpus):
@@ -110,12 +112,12 @@ def ear_audit(lines):
     ts = os.path.join(W, "ear_check.ts")
     open(ts, "w").write(f'''import {{ speakable, earAudit }} from "{APP}/supabase/functions/narrate/ear.ts";
 const lines: string[] = JSON.parse(await new Response(Deno.stdin.readable).text());
-console.log(JSON.stringify(lines.map((l) => earAudit(speakable(l)))));''')
+console.log(JSON.stringify(lines.map((l) => {{ const s = speakable(l); return [earAudit(s), s.split(/\\s+/).filter(Boolean).length]; }})));''')
     r = subprocess.run(["npx", "-y", "deno@2", "run", "-A", ts], input=json.dumps(lines), capture_output=True, text=True, timeout=120)
     try:
         return json.loads(r.stdout.strip().splitlines()[-1])
     except Exception:                                    # noqa: BLE001
-        return [[f"ear check did not run: {r.stderr[-200:]}"]] 
+        return [[[f"ear check did not run: {r.stderr[-200:]}"], 0]]
 
 
 MOVE = r"\b(rose|rises?|rising|jump\w*|gain\w*|climb\w*|rall\w*|fell|fall\w*|drop\w*|slid|slides?|sank|sinks?|slip\w*|declin\w*|lift\w*|surg\w*|up|down|higher|lower)\b"
@@ -220,7 +222,13 @@ def check(story, res, facts, askc):
             nf = norm(f)
             if nf not in allowed and not re.match(r"^\d+-fold$", f) and not any(a.startswith(nf) and a[len(nf):].isalpha() for a in allowed):
                 errs.append(f"{where}: figure {f!r} is not in the verified set -> delete it (or use one of {sorted(allowed)[:12]})")
-    for (where, t), a in zip(sents, ear_audit([t for _, t in sents])):
+    audits = ear_audit([t for _, t in sents] + [askc["question"]])
+    spoken = sum(n for _, n in audits)
+    if spoken > SPOKEN_MAX:                              # figures read long: "5.8%" is four spoken words (10/1: 73 -> 30.3 s)
+        longest = max(zip(sents, audits), key=lambda x: x[1][1])
+        errs.append(f"{spoken} words once figures are read aloud ('5.8%' = 'five point eight percent'), max {SPOKEN_MAX}: cut "
+                    f"{spoken - SPOKEN_MAX} -> shorten {longest[0][0]} ({longest[0][1]!r}); fewer figures read shorter")
+    for (where, t), (a, _) in zip(sents, audits):
         if a: errs.append(f"{where}: the voice would stumble on {a} in {t!r} -> use plain words; names said as letters "
                           f"({', '.join(sorted(SPOKEN_CAPS)[:12])}...) are fine, other acronyms are not")
     all_spoken = " ".join(t for _, t in sents)
@@ -324,7 +332,7 @@ def fallback(story, res, facts, askc):
     for _ in range(12):
         errs, words = render()
         long_ = [(len(o[j][pick[i][j]].split()), i, j) for i, o in opts.items() for j in (0, 1) if pick[i][j] < len(o[j]) - 1]
-        over = words > 56 or any("sentence over 15 words" in e for e in errs)
+        over = words > 56 or any("sentence over 15 words" in e or "read aloud" in e for e in errs)
         if not over: break
         if not long_:                                    # only the model's own lines are left long: tell one with verified wording
             ln = lambda k: sum(len(x["text"].split()) for x in story["items"][k]["sentences"])
@@ -333,7 +341,7 @@ def fallback(story, res, facts, askc):
             if not rest: break
             verified(max(rest, key=lambda k: ln(k) - short(k))); continue
         _, i, j = max(long_); pick[i][j] += 1
-    if lead and words > 56:
+    if lead and (words > 56 or any("read aloud" in e for e in errs)):
         lead = LEAD_SHORT[ED]; errs, words = render()
     log(f"storyline fallback (verified wording for items {sorted(x + 1 for x in opts)}): {words} words, {len(errs)} problems {errs[:4]}")
     return story, errs, words

@@ -114,9 +114,17 @@ def main():
         def homophone(x, y):
             wx = [w for w in x.split() if not (re.search(r"\d", w) or w in NUMW)]; wy = [w for w in y.split() if not (re.search(r"\d", w) or w in NUMW)]
             return len(wx) == len(wy) == 1 and difflib.SequenceMatcher(a=wx[0], b=wy[0]).ratio() >= 0.75
+        # a brand that starts with a number word heard as the figure (10/1: "Tencent" -> "$0.10", i.e. "ten cents")
+        NUMV = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve".split())}
+        def numalike(x, y):
+            return len(x.split()) == 1 and x in proper and y.isdigit() and any(x.startswith(w) and len(x) > len(w) and int(y) == v for w, v in NUMV.items())
+        # a compound heard split or joined ("premarket" -> "pre market", "rollout" -> "roll out"), figures set aside
+        words_of = lambda z: "".join(w for w in z.split() if not (re.search(r"\d", w) or w in NUMW))
+        joined = lambda x, y: bool(words_of(x)) and words_of(x) == words_of(y)
         brand = lambda x, y: (x != "-" and all(w in proper for w in x.split()) and difflib.SequenceMatcher(a=x.replace(" ", ""), b=y.replace(" ", "")).ratio() >= 0.6) \
             or (x == "-" and y in ("you", "uh", "um", "thank you", "the")) \
-            or homophone(x, y)   # weak/week, beat/bead, once the figures (which may differ in format) are set aside
+            or homophone(x, y) \
+            or numalike(x, y) or joined(x, y)    # weak/week, beat/bead, once the figures (which may differ in format) are set aside
         bad = [p for p in bad if not brand(*p)]; vbad = [p for p in vbad if not brand(*p)]
         ok28 = not bad or (not vbad and len(bad) <= 2 and all(near(x, y) for x, y in bad))
         row("Q28", "Whisper round trip: the final mix says the script word for word (figures may differ only in format)", ok28,

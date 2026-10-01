@@ -16,8 +16,15 @@
   cross-checked figures. Close edition's timing words now include "at the close".
 - Runtime: the pre-open "today" wording in the Ask answer no longer forces retakes (it cost ~11 of the 31 minutes on
   10/1 and never cleared); jargon still does.
-- Validated on the refused work dir: storyline passes in round 1 (24 s); a close work dir converges in 5 rounds (78 s);
-  forced fallback passes at 55-56 words.
+- Spoken length: the storyline also counts words as voiced by speakable() (question included), max 68 ("5.8%" is four
+  words); 73 voiced words built a 30.3 s Short that the build refused. 66-68 made 26-27 s.
+- Q28: a compound heard split ("premarket" -> "pre market", "rollout" -> "roll out") and a brand that starts with a
+  number word heard as the figure ("Tencent" -> "$0.10") are not misreads. The manual preopen at 8:31 refused on the
+  second one.
+- Timing words (premarket, overnight, futures, yesterday...) and "cite" are free in the source-wording check.
+- Validated on the refused 7:32 work dir: `run.sh preopen --test --work ... --from story` storyline 2 rounds (29 s),
+  build + QA 31/31, delivered to shorts/2026-10-01-preopen-test4 (exit 0 after 328 s). A close work dir converges in
+  3-5 rounds (51-85 s); forced fallback passes at 55-56 words.
 
 ## v1.0 (2026-09-30, revised the same night)
 
