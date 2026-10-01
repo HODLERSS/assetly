@@ -105,6 +105,8 @@ Deno.test("note weights: a bare weight in a holding's own note is that holding's
   assertEquals(fixNoteWeight("SK hynix's 3.2% rally validates AI-chip demand but 35.0% concentration leaves portfolio vulnerable to valuation dilution from the Solidigm IPO.", hynix, BOOK),
     "SK hynix's 3.2% rally validates AI-chip demand but 21.4% concentration leaves portfolio vulnerable to valuation dilution from the Solidigm IPO.");
   assertEquals(fixNoteWeight("The 21.3% stake drives most of the portfolio gain.", hynix, BOOK), "The 21.3% stake drives most of the portfolio gain.");
+  // 10/1 forced-fallback regeneration: the Korean stocks' share (29.6%) hung on SK hynix
+  assertEquals(fixNoteWeight("The 29.6% Korean anchor added 3.2% in Thursday's Korean session.", hynix, BOOK), "The 21.4% Korean anchor added 3.2% in Thursday's Korean session.");
   // another holding named, a group share, or a move: left alone
   for (const t of ["Together with MARA, a 55.1% weight rides two bets.", "Korean stocks are a 29.5% weight.", "It rose 3.2% stake-free.", "Up 35.0% this year."]) assertEquals(fixNoteWeight(t, hynix, BOOK), t);
 });

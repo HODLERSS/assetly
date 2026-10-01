@@ -135,6 +135,9 @@ T("forceFallback (internal test flag) reaches SambaNova through a real refused c
   const r = await chat(REQ, { caller: "t", maraKey: "k", timeoutMs: 3000, forceFallback: true });
   assert(r.ok && r.provider === "sambanova" && r.failover?.startsWith("network"), JSON.stringify(r));
   assertEquals(M.st.calls, 0);
+  // forced test calls never open the breaker for real traffic
+  for (let i = 0; i < 4; i++) await chat(REQ, { caller: "t", maraKey: "k", timeoutMs: 3000, forceFallback: true });
+  assertEquals(breakerState("mara"), "closed");
 });
 T("no MARA key: SambaNova alone; no keys at all: no_provider", async () => {
   reset({}, {});

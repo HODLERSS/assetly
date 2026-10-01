@@ -214,9 +214,15 @@ Deno.serve(async (req) => {
       answer: ko ? "지금은 이 답을 끝내지 못했습니다. 잠시 후 다시 물어봐 주세요." : "I couldn't finish this answer just now. Please ask again in a moment." });
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // 10/1: once the book is read, handle() leaves its code-built answer here; the hard deadline ships that, never the
+  // apology, whenever it exists (the 10:37 CT outage showed the apology over a fully computable "what's moving" answer)
+  const best: { answer?: () => Response } = {};
   try {
     const late = new Promise<"late">((r) => { timer = setTimeout(() => r("late"), HARD_DEADLINE_MS); });
-    const out = await Promise.race([handle(req), late]);
+    const out = await Promise.race([handle(req, best), late]);
+    if (out === "late" && best.answer) {
+      try { const r = best.answer(); console.error("ask: hard deadline, shipped the code-built answer"); return r; } catch { /* fall through to the apology */ }
+    }
     return out === "late" ? await sorry("hard deadline") : out;
   } catch (e) {
     return await sorry(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
@@ -225,7 +231,7 @@ Deno.serve(async (req) => {
   }
 });
 
-async function handle(req: Request): Promise<Response> {
+async function handle(req: Request, best: { answer?: () => Response } = {}): Promise<Response> {
   const tReq = Date.now();
   // one client per isolate: its JWKS cache then survives across requests (a fetch per request was a failure point)
   const admin = adminClient ??= makeAdmin();
@@ -788,6 +794,11 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     top: held.map((r) => ({ label: nameOf(r), weight: usd(Number(r.value ?? 0), r.currency) / (assetsUsd || 1) * 100 })).sort((a, b) => b.weight - a.weight), ytd: ytdLine }, ko);
   // e2e F2: the honest "couldn't answer" text only ever REPLACES an empty answer; it never trails a computed lead
   const codeAnswer = (): string => summaryQ ? summaryLead() : dataLead ? mergeLeadAndFallback(dataLead, dataFallback()) : dataFallback();
+  // the deadline's answer: the same code-built text the no-key path ships (a decision question gets its no-call husk)
+  best.answer = () => {
+    const built = tradeQ || pickQ ? withNoCallLine(defaultInfo(), question, "", "", true) : codeAnswer();
+    return json({ ok: true, answer: unicodeMinus(plainDataWords(tidyNumbers(built))), followups: [], mentioned, meta: { judge: "skipped", code: "deadline" } });
+  };
   // r12 B: a report-date question is answered from the calendar, before (and without) the model
   if (earnLead && !tradeQ && !pickQ && !fixture) {
     const dlvs = held.map((r) => { const d = deliveriesEstimate(r.symbol, today); return d && (mentionedNow.length === 0 || mentionedNow.includes(r.symbol)) ? `${nameOf(r)} ${d.quarter} deliveries ~${new Date(d.est + "T12:00:00Z").toLocaleDateString(ko ? "ko-KR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" })} (est)` : null; }).filter(Boolean);
@@ -823,11 +834,13 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   const ask = async (msgs: { role: string; content: string }[], temperature: number, timeoutMs: number, model = Deno.env.get("MARA_MODEL") ?? "MiniMax-M3", signal?: AbortSignal) => {
     if (timeoutMs < 1500) return null;
     // 10/1: one shared client (_shared/llm.ts): failover to SambaNova on a router 5xx / timeout / empty reply, a per-isolate
-    // breaker, every body read under its timer (round 9 E). Hedging is per lane, from measured latencies on this prompt
-    // (10/1, daily013): MARA M3 4.5-7s but SambaNova M3 8.5-17s, so the M3 lane is NOT hedged (the gpt-oss lane is the
-    // hedge); MARA gpt-oss ~4.5s and SambaNova gpt-oss 5-7s, so the gpt-oss lane hedges at 4s.
+    // breaker, every body read under its timer (round 9 E). HEDGE POLICY, from latencies measured on this prompt (10/1,
+    // daily013): MARA M3 p50 5.4s / p95 ~9.5s, SambaNova M3 8.5-17s, MARA gpt-oss ~4.5s, SambaNova gpt-oss 4-7s.
+    // The M3 lane is not hedged (SambaNova M3 is slower than the gpt-oss lane). The gpt-oss lane only starts when M3 is
+    // already late (4s, about MARA's healthy p40) or MARA is out, so the router is suspect: it runs on BOTH providers at
+    // once (hedge 0) and takes the first answer.
     const res = await chat({ model, messages: msgs, temperature, max_tokens: 6000, response_format: { type: "json_object" } },
-      { caller: model === FAST ? "ask.fast" : "ask.primary", maraKey: key, timeoutMs, hedgeMs: model === FAST ? 4000 : undefined, forceFallback: forceLlmFallback, signal });
+      { caller: model === FAST ? "ask.fast" : "ask.primary", maraKey: key, timeoutMs, hedgeMs: model === FAST ? 0 : undefined, forceFallback: forceLlmFallback, signal });
     return res.ok ? parseAnswer(res.content) : null;
   };
   const base = [{ role: "system", content: system }, { role: "user", content: prompt }];
@@ -849,7 +862,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
       // gpt-oss reads its reasoning level from the system prompt ("Reasoning: low"); an unknown request field could
       // be refused by the gateway, which would turn every judgement into a timeout
       messages: [{ role: "system", content: `Reasoning: low\n\n${JUDGE_POLICY}` }, { role: "user", content: `Items:\n${list.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n\nReturn ONLY {"flag": [item numbers]}.` }] },
-      { caller: "ask.judge", maraKey: key, timeoutMs: ms, hedgeMs: 2000, acceptReasoning: true, forceFallback: forceLlmFallback });
+      { caller: "ask.judge", maraKey: key, timeoutMs: ms, hedgeMs: routerSuspect ? 0 : 2000, acceptReasoning: true, forceFallback: forceLlmFallback });
     if (!res.ok) { judgeStatus = res.reason === "timeout" ? "timeout" : "error"; return null; }
     // gpt-oss may put its JSON in the content or (on some gateways) leave content empty with the text in reasoning
     const txt = res.content;
@@ -867,6 +880,8 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
   // finish before the deadline is not started (the code-built answer ships instead)
   // the losing lane stops spending once an answer is chosen
   const lanes = new AbortController();
+  // set when the primary was late or failed: the judge then also runs on both providers at once
+  let routerSuspect = false;
   if (room() < (decisionQ ? 4000 : 6000)) parsedA = null;
   else parsedA = await new Promise<Ans>((resolve) => {
     let settled = false, fastStarted = false, open = 1;
@@ -878,14 +893,14 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     };
     const startFast = () => {
       if (fastStarted || settled) return;
-      fastStarted = true; open++;
+      fastStarted = true; open++; routerSuspect = true;
       ask(base, 0.3, Math.min(decisionQ ? 7000 : 20000, room() - 1500), FAST, lanes.signal).then(finish, () => finish(null));
     };
     ask(base, 0.2, Math.min(decisionQ ? 10000 : 20000, room() - 1500), undefined, lanes.signal).then(finish, () => finish(null));
     // 10/1: with MARA out (breaker open, or the internal test flag) M3 runs on SambaNova at 8.5-17s on this prompt, so the
     // gpt-oss lane starts at once instead of waiting 7s for a primary that will be slow
     const maraOut = forceLlmFallback || breakerState("mara") === "open";
-    setTimeout(startFast, maraOut ? 0 : decisionQ ? 3000 : 7000);
+    setTimeout(startFast, maraOut ? 0 : decisionQ ? 3000 : 4000);
     if (decisionQ) setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, Math.max(0, room() - 1000));
     else setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, Math.max(0, room() - 500));
   });

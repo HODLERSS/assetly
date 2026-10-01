@@ -135,7 +135,9 @@ export async function chat(req: ChatRequest, opts: ChatOpts): Promise<ChatResult
   if (!all.length) { const r: ChatFail = { ok: false, reason: "no_provider", status: null, detail: "no MARA key and no SambaNova key", provider: null, model: req.model, ms: 0 }; log(r, {}); return r; }
 
   const mara = all.find((p) => p.name === "mara"), sn = all.find((p) => p.name === "sambanova");
-  const state = mara ? breakerState("mara") : "open";
+  // a forced test call never reads or moves the breaker: test traffic must not send real users to the fallback
+  const forced = !!opts.forceFallback;
+  const state = mara ? (forced ? "closed" : breakerState("mara")) : "open";
   const probe = state === "probe";
   if (probe) br("mara").probing = true;
   const primary = mara && state !== "open" ? mara : null;
@@ -190,9 +192,9 @@ export async function chat(req: ChatRequest, opts: ChatOpts): Promise<ChatResult
     attempt(primary, req, Math.min(opts.timeoutMs, left()), pAbort.signal, !!opts.forceFallback).then((a0) => {
       pending--;
       const a = asEmpty(a0);
-      if (a.ok) { breakerResult("mara", true, probe); finish(toOk(a), { ...(fbStarted ? { hedged: true, hedge_winner: "mara" } : {}), ...(probe ? { breaker: "probe_ok" } : {}) }); return; }
+      if (a.ok) { if (!forced) breakerResult("mara", true, probe); finish(toOk(a), { ...(fbStarted ? { hedged: true, hedge_winner: "mara" } : {}), ...(probe ? { breaker: "probe_ok" } : {}) }); return; }
       if (a.reason === "aborted") { if (probe) br("mara").probing = false; settleIfAllFailed(); return; }   // it lost the hedge
-      if (a.failoverable) breakerResult("mara", false, probe); else if (probe) br("mara").probing = false;
+      if (a.failoverable && !forced) breakerResult("mara", false, probe); else if (probe) br("mara").probing = false;
       pFail = a;
       // our own request was refused (or the model overran its tokens): the other provider would say the same
       if (!a.failoverable) { finish(toOk(a), { hedged: fbStarted }); return; }

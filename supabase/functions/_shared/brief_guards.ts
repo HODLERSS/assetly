@@ -98,7 +98,7 @@ export function fixNoteWeight(note: string, own: WeightFact | undefined, facts: 
   let changed = false;
   const out = splitSentences(src).map((s) => {
     if (namedIn(s, facts.filter((f) => f !== own)).length) return s;
-    const x = s.replace(/(\d+(?:\.\d+)?)\s?%(?=\s+(?:portfolio\s+)?(?:weight|weighting|stake|concentration|allocation|position|of (?:assets|the portfolio|your portfolio))\b)/g, (m: string, num: string, at: number) => {
+    const x = s.replace(/(\d+(?:\.\d+)?)\s?%(?=\s+(?:(?:portfolio|Korean|US|AI|crypto|chip|memory|core|biggest|largest|single-name)[- ]?\s*)?(?:weight|weighting|stake|concentration|allocation|position|holding|anchor|bet|of (?:assets|the portfolio|your portfolio))\b)/g, (m: string, num: string, at: number) => {
       const before = s.slice(Math.max(0, at - 30), at);
       if (MOVE_BEFORE.test(before) || GROUP_BEFORE.test(before) || /\b(?:top|two|combined|together)\b[^.%\d]{0,30}$/i.test(before)) return m;
       return Math.abs(Number(num) - own.weight) <= tolFor(num, tol) ? m : m.replace(num, own.weight.toFixed(1));

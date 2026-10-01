@@ -34,15 +34,17 @@ These are from docs.sambanova.ai, read on 10/1.
 | Body stalls after the headers | Bounded. The whole body is read under the attempt timer. This was the 10/1 Ask outage. |
 | 3 failovers in a row (per isolate) | Breaker opens. MARA is skipped for 60s, then one half-open probe. |
 
-**Hedging** is set per caller from latencies measured on 10/1:
+**Hedging** is set per caller from latencies measured on 10/1 on the Ask prompt. MARA M3: p50 5.4s, p95 about 9.5s. SambaNova M3: 8.5-17s. MARA gpt-oss: about 4.5s. SambaNova gpt-oss: 4-7s.
 
 | Caller | Hedge | Why |
 | - | - | - |
-| `ask.judge` | 2s | MARA gpt-oss judge takes 0.9-2s |
-| `ask.fast` | 4s | gpt-oss on the Ask prompt: MARA ~4.5s, SambaNova 5-7s |
-| `ask.primary` (M3) | none | SambaNova M3 takes 8.5-17s on the Ask prompt against MARA's 4.5-7s. Ask's own gpt-oss lane is the hedge. |
+| `ask.primary` (M3) | none | SambaNova M3 is slower than Ask's own gpt-oss lane, which is the real hedge. |
+| `ask.fast` (gpt-oss) | 0s, both providers at once | The lane starts only when M3 is late (4s, was 7s) or MARA is out, so the router is already suspect. |
+| `ask.judge` | 2s, or 0s once the router is suspect | MARA's gpt-oss judge takes 0.9-2s. |
 
-When MARA is out, that gpt-oss lane starts at 0s instead of 7s. Batch callers (brief, insights, narrate, warmup) don't hedge; they fail over in sequence, so a healthy MARA costs nothing extra.
+Batch callers (brief, insights, narrate, warmup) don't hedge; they fail over in sequence, so a healthy MARA costs nothing extra.
+
+**Hard deadline.** Ask ships the code-built answer it already has, never the apology, whenever the book was read before the deadline.
 
 **Logs.** Each call writes one JSON line to the function logs, with no content and no keys:
 `{"llm": caller, "model", "provider", "ms", "ok", "failover"?, "reason"?, "status"?, "hedged"?, "breaker"?}`
