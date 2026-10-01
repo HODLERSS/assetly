@@ -18,8 +18,8 @@ types credentials: if TikTok shows the login page, the owner logs in.
 3. Description: click it, cmd+A, Backspace, type `tiktok-caption.txt` (the body, then the hashtag line), Escape to close the
    hashtag picker. Verify with JS: `document.querySelector('[contenteditable="true"]').innerText`.
 4. Show more: **AI-generated content ON** (synthetic voices; confirm "Turn on"), **Disclose post content ON -> Your brand**
-   (Assetly promoting itself). Who can see: **Everyone** (owner's choice 10/1). Comments and reuse on.
-5. `find` "Post" and click it by ref (a coordinate click after the page scrolls misses). TikTok shows "Content under review"
+   (Assetly promoting itself). Who can see: **Only me** (owner, 10/1 afternoon: the owner reviews each post and switches it to Everyone by hand for about a week, through ~Oct 8, then the default is revisited). Set the "Who can see this post" dropdown to Only me before Post. Comments and reuse on.
+5. Verify the dropdown reads **Only me**. `find` "Post" and click it by ref (a coordinate click after the page scrolls misses). TikTok shows "Content under review"
    / "Only me" for a few minutes, then Everyone.
 6. Studio > Posts: read the new `/@assetlyapp/video/<id>` link; write status "posted", url, posted_at into `tiktok.json`; remove
    the line from `tiktok-queue.txt`.
@@ -29,3 +29,4 @@ types credentials: if TikTok shows the login page, the owner logs in.
 |---|---|---|
 | 2026-10-01 | preopen (v5) | https://www.tiktok.com/@assetlyapp/video/7691790101013220639 |
 | 2026-10-01 | midday | https://www.tiktok.com/@assetlyapp/video/7691791021277072670 |
+| 2026-10-01 | close | (posted Only me) |

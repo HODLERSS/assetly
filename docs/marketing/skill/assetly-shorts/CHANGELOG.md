@@ -2,6 +2,8 @@
 
 ## v1.0.6 (2026-10-01, owner: post every Short to TikTok too)
 
+- TikTok posts are **Only me** (Chrome dropdown; API `SELF_ONLY`, override `TIKTOK_PRIVACY`): the owner switches each one to
+  Everyone by hand for about a week (~Oct 8), then the default is revisited. The 10/1 preopen and midday went out as Everyone.
 - Every delivered Short gets a TikTok package (tiktok_pack.py: < 10 MB tiktok.mp4, caption, tiktok.json). With --upload
   it posts through the TikTok Content Posting API (app/scripts/tiktok/post.py; AI-generated label, own-brand disclosure)
   once ~/.private_keys/tiktok_token.json exists; until then it queues the delivery (docs/marketing/shorts/tiktok-queue.txt)
