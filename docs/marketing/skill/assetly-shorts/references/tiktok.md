@@ -4,6 +4,9 @@
 - `scripts/tiktok_pack.py <delivery> <date>` (every non-test run): `tiktok.mp4` (< 10 MB, SSIM >= 0.99 against the YouTube
   upload), `tiktok-caption.txt` (title with the edition date, description, "Search Assetly on the App Store.", hashtags
   without #Shorts plus #stocks #fintech #Assetly), `tiktok.json` (status + required settings). A posted record is kept.
+- Caption (v1.0.7): the title is the first line (the hook TikTok shows), then the description, then 3-5 hashtags: up to
+  three companies + #stocks + #Assetly (no #fyp / #viral). Cover: the first frame (the headline cover, `thumbnail.png`):
+  in the Chrome flow leave TikTok's default cover or pick 0:00 under "Edit cover".
 - With `--upload`: `app/scripts/tiktok/post.py <delivery>` posts via the TikTok Content Posting API when
   `~/.private_keys/tiktok_token.json` exists. It does not exist yet (needs a TikTok developer app with `video.publish`;
   Claude cannot create accounts or apps). Without it the delivery joins `app/docs/marketing/shorts/tiktok-queue.txt` and

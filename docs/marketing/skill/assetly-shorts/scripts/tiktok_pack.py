@@ -25,15 +25,18 @@ body = m["description"].split("\n\nAssetly on the App Store")[0]
 first, _, rest = body.partition("\n")              # "Data as of ... ET" is a heading line: end it with a full stop
 body = (first.rstrip(".") + ". " + rest).strip() if rest else first
 # no "link in bio": the post must not promise a link the profile may not carry
-tags = list(dict.fromkeys([h for h in m.get("hashtags", []) if h.lower() != "#shorts"] + ["#stocks", "#fintech", "#Assetly"]))
+# 3-5 hashtags (TikTok search practice, 10/1): the stories' companies, one niche tag, the brand; never bait (#fyp, #viral)
+firms = [h for h in m.get("hashtags", []) if h.lower() not in ("#shorts", "#stockmarket", "#stocks", "#investing", "#fyp", "#foryou", "#viral")]
+tags = list(dict.fromkeys(firms[:3] + ["#stocks", "#Assetly"]))
 cap = f"{title}\n\n{body}\nSearch Assetly on the App Store.\n\n" + " ".join(tags)
 assert len(cap) <= 2200, "caption over 2,200 characters"
+assert 3 <= len(tags) <= 5 and "#" not in title, f"caption hashtags {tags} / title {title!r}"
 open(os.path.join(D, "tiktok-caption.txt"), "w").write(cap)
 tj = os.path.join(D, "tiktok.json")
 if os.path.exists(tj) and json.load(open(tj)).get("status") in ("posted", "publish_complete"):
     print("already posted: tiktok.json kept"); sys.exit(0)
 json.dump({"status": "pending", "account": "@assetlyapp", "video": "tiktok.mp4", "bytes": size, "ssim": round(ssim, 4),
            "settings": {"who_can_see": "Only me", "ai_generated_label": True, "disclose_post_content": "Your brand",
-                        "comments": True, "reuse": True, "automatic_checks_prompt": "Cancel (do not change account settings)"}},
+                        "comments": True, "reuse": True, "cover": "first frame (0:00, the headline cover = thumbnail.png)", "automatic_checks_prompt": "Cancel (do not change account settings)"}},
           open(os.path.join(D, "tiktok.json"), "w"), indent=1)
 print(f"tiktok package: {size / 1e6:.1f} MB, SSIM {ssim:.4f}, caption {len(cap)} chars")

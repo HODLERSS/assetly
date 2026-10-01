@@ -118,6 +118,65 @@ def first_visible(take, t0, t1, pattern, step=0.1):
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
+FOLLOW = "Follow for the open, midday and close"     # the end card's one CTA: true (three editions every trading day)
+HERO_MIN = 1.0                                       # a smaller move is not a thumbnail hook: the headline cover stays
+BAIT = {"#viral", "#fyp", "#foryou", "#foryoupage", "#trending", "#explore", "#viralshorts", "#shortsfeed"}
+
+
+def cover_hero(story, res, beats, ext):
+    """The cover's one big number (Shorts practice, 10/1: the thumbnail carries the biggest verified figure). Only a move
+    the viewer then reads in that item's beat: a holding page's day move (midday / close; both quote feeds must agree with
+    it, same sign, within max(0.5 pt, 5%)), or the beat's labelled extended-hours chip (two feeds already). Before the open
+    the page shows the previous session, so only a chip qualifies. None when nothing reaches HERO_MIN."""
+    scr = (jload(os.path.join(W, "screen.json"), {}) or {}).get("windows", {})
+    best = None
+    for i, it in enumerate(story["items"]):
+        if i >= len(beats): break
+        ref, b = res["items"][it["n"]], beats[i]
+        m = re.match(r"^(\w+) page", b.get("note", ""))
+        if not m: continue
+        sym = m.group(1)
+        ch = b.get("chip") or {}
+        if ch.get("label") and sym in ext:
+            v, label, src = float(ext[sym]["pct"]), ch["label"], f"{ch['label'].lower()} chip ({sym}, two feeds)"
+        elif ED != "preopen":
+            v = (scr.get(f"pos_{sym}") or {}).get("day_move")
+            fig = next((f for f in ref.get("figures", []) if f.get("symbol") == sym and f.get("field") == "pct" and f.get("ok")), None)
+            if v is None or not fig or (v > 0) != (fig["value"] > 0) or abs(v - fig["value"]) > max(0.5, 0.05 * abs(v)): continue
+            label, src = ("SO FAR TODAY" if ED == "midday" else "TODAY"), f"{sym} page {v:+.2f}% vs feeds {fig['feed1']:+.2f}/{fig['feed2']:+.2f}"
+        else:
+            continue
+        if abs(v) < HERO_MIN or (best and abs(v) <= abs(best["value"])): continue
+        cov = story["cover"][i] if i < len(story.get("cover", [])) else ""
+        nm = re.search(r"\[([^\]]+)\]", cov)
+        best = {"sym": sym, "beat": i, "value": round(v, 2), "fig": ("+" if v > 0 else "\u2212") + f"{abs(v):.1f}%", "label": label,
+                "dir": "up" if v > 0 else "down", "name": nm.group(1) if nm else facts_name(sym, cov), "src": src}
+    return best
+
+
+def reach_hashtags(tags):
+    """3-5 hashtags in the description: #Shorts, the stories' companies, one niche tag; never bait (#viral, #fyp)."""
+    seen, out = set(), ["#Shorts"]
+    for t in tags:
+        t = "#" + re.sub(r"[^\w]", "", t.lstrip("#"))
+        if len(t) > 1 and t.lower() not in BAIT and t.lower() not in seen and t.lower() != "#shorts": seen.add(t.lower()); out.append(t)
+    niche = [t for t in out[1:] if t.lower() in ("#stockmarket", "#stocks", "#investing", "#stockmarketnews")]
+    firms = [t for t in out[1:] if t not in niche]
+    out = ["#Shorts"] + firms[:3] + (niche[:1] or ["#stockmarket"])
+    return out + [t for t in ("#stocks", "#investing") if t not in out][:max(0, 3 - len(out))]   # a macro day still gets 3
+
+
+def reach_tags(story, res, hashtags):
+    """YouTube's hidden tags: what the post is (its companies, '<name> stock'), the niche, the brand; no bait."""
+    names = [re.search(r"\[([^\]]+)\]", c).group(1) for c in story.get("cover", []) if re.search(r"\[([^\]]+)\]", c)]
+    post = [x for n in names for x in (n, f"{n} stock")]
+    niche = ["stock market today", "stock market news", "AI stocks", "investing", "stocks"]
+    out = []
+    for t in post + niche + [h.lstrip("#") for h in hashtags if h.lower() != "#shorts"] + ["Assetly", "Shorts"]:
+        if t.lower() not in {o.lower() for o in out} and "#" + t.lower() not in BAIT: out.append(t)
+    return out[:20]
+
+
 def main():
     story = jload(os.path.join(W, "story.json")); res = jload(os.path.join(W, "research.json")); mk = jload(os.path.join(W, "marks.json"))["marks"]
     askc = jload(os.path.join(W, "ask-check.json")); acct = jload(os.path.join(W, "account.json"))
@@ -242,22 +301,28 @@ def main():
         stamp = {"edition": {"preopen": "Pre-open", "midday": "Midday", "close": "Close"}[ED],
                  "text": f"{snap.strftime('%b %-d')} · {hm} ET", "asof": snap.strftime("%Y-%m-%d %H:%M"),
                  "line": f"Data as of {snap.strftime('%b %-d, %Y')} {hm} ET", "sources": src}
+        hero = cover_hero(story, res, beats, ext)
         y, m, d = DATE.split("-")
         day = {"date": DATE, "slug": f"{DATE}-{ED}", "demo": 0, "edition": ED,
                "hook": "|".join(story["cover"]), "hook_kicker": f"{LABEL[ED]} · {MON[int(m) - 1]} {int(d)}", "hook_foot": "Assetly",
-               "hook_dur": 1.5, "stamp": stamp, "script": " ".join(ln["say"] for ln in lines), "grid": 0.3, "card": 1.8, "len_range": [20, 30],
+               "hook_dur": 1.5, "follow": FOLLOW, "stamp": stamp, "script": " ".join(ln["say"] for ln in lines), "grid": 0.3, "card": 1.8, "len_range": [20, 30],
                "motion": {"to": 1.15, "in": 0.7, "out": 0.6}, "lines": lines, "beats": beats}
+        if hero:
+            day["hook_hero"] = "|".join([hero["name"], hero["fig"], hero["label"], hero["dir"]]); day["hero"] = hero
+            log(f"cover hero: {hero['name']} {hero['fig']} {hero['label']} ({hero['src']})")
+        else:
+            log("cover hero: none (no move >= 1% that the page or a chip shows and both feeds confirm): the headline cover")
         os.makedirs(OUT, exist_ok=True)
         jdump(day, os.path.join(OUT, "day.json"))
-        tags = " ".join(story.get("hashtags", [])) or "#Shorts #stockmarket"
-        if "#Shorts" not in tags: tags = "#Shorts " + tags
+        tags = " ".join(reach_hashtags(story.get("hashtags", [])))
         desc = (stamp["line"] + "\n" + story["description"].strip() + "\nPortfolio shown is illustrative. Not financial advice.\n\n"
                 "Assetly on the App Store: https://apps.apple.com/app/id6811739789\nMore: https://hodlerss.github.io/assetly/about.html")
         # owner, 10/1 pm: the title is the hook only, no edition label and no date (the description carries "Data as of")
         story["title"] = re.sub(r"^\s*(before the bell|pre-?open|midday|after the bell|at the close|close)\s*[:|·-]\s*", "", story["title"], flags=re.I)
         story["title"] = re.sub(r"\s*[|·-]?\s*\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(, \d{4})?\s*$", "", story["title"]).strip(" |·-")
+        story["title"] = re.sub(r"\s*#\w+", "", story["title"]).strip()      # hashtags never in the title (they go in the description)
         meta = {"title": story["title"], "description": desc, "hashtags": tags.split(), "data_as_of_et": stamp["asof"],
-                "tags": [t.lstrip("#") for t in tags.split()] + ["Assetly", "stock market today", "AI stocks"], "thumbnail": "frame 0 (the headline cover)",
+                "tags": reach_tags(story, res, tags.split()), "thumbnail": "frame 0 (the headline cover" + (", hero figure)" if hero else ")"),
                 "category": "News & Politics", "made_for_kids": False}
         jdump(meta, os.path.join(OUT, "youtube-metadata.json"))
         open(os.path.join(OUT, "youtube-metadata.md"), "w").write(f"# YouTube metadata\n\n**Title** ({len(meta['title'])} chars)\n{meta['title']}\n\n"

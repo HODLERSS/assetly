@@ -587,6 +587,10 @@ THE APPROVED STYLE (the 9/30 Short; match its density and tone, not its facts):
   "Micron beat on AI memory demand, yet barely moved after hours. Commentators say it was priced in."
   "Google's Gemini 4 beat rivals on most tests, but few can use it yet. Shares jumped over 3%, then closed up 0.9%."
   "Meta slipped 1.8% as OpenAI launched a Muse rival. Analysts still back Muse."
+HOOK (Shorts practice: viewers decide in the first 1-2 s): item 1 is the most surprising verified fact, usually the biggest
+verified move or the most unexpected news, and the cover's first line is item 1. Lead with the fact itself, never a
+teaser, a question, "you won't believe" or a greeting. The Short ends on the real answer (no sign-off line: the end card
+carries the follow line).
 Each item: sentence 1 names the company, what happened AND the cause, with a figure when one is verified (an upcoming event,
 like a report or a data release, needs no cause: say what and when); sentence 2 is the
 read, starting with who holds it (Analysts / Commentators / Investors / Traders / Shares ...). Eyebrows are short:
@@ -601,9 +605,10 @@ Write JSON:
  "ask": {{"line": <the number of the visible answer line you quote>, "answer_text": "<<= 13 words: that line quoted or closely
          paraphrased in plain spoken words, its own figures only, no + or - signs, no 'I' / 'my'>"}},
  "cover": ["Micron beats.", "HPE hits a record.", "Stocks end mixed."]   (one per item, in order; short name first; <= 24 chars),
- "title": "<= 50 chars, short and catchy, the hook only: NO edition label (Midday / After the bell) and NO date, e.g. 'Micron pops, Boeing lands $20B' or 'AI stocks rip as Accenture soars'",
+ "title": "<= 50 chars, short and catchy, the hook only: NO edition label (Midday / After the bell) and NO date, e.g. 'Micron pops, Boeing lands $20B' or 'Accenture's record day lifts IBM'; lead with the most surprising verified fact and
+           name the company (people search by name); no hashtags, no question bait, no ALL CAPS, every claim true",
  "description": "<two plain sentences with the verified figures, second person ('your portfolio'), no advice>",
- "hashtags": ["#Shorts", "#stockmarket", ...5-8 total, include the companies]}}
+ "hashtags": ["#Shorts", "#Accenture", "#IBM", "#stockmarket"]   (3-5 total: #Shorts, the stories' companies, one niche tag; never #viral / #fyp)}}
 Budget: at most {{budget}} spoken words in total (the question adds {len(askc['question'].split())} more).
 Percentages with ONE decimal ("3.7%", never "3.71%"). The cover reads as plain English ("HPE hits a record.", never
 "Hewlett Packard record."). The Ask answer line must add something the portfolio line did not say, never repeat it.

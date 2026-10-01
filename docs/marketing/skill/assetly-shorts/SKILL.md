@@ -3,7 +3,7 @@ name: assetly-shorts
 description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, two-voice commentary, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day; uploads only with --upload (YouTube private; TikTok via API or the queue).
 ---
 
-# Assetly market Shorts, v1.0.6
+# Assetly market Shorts, v1.0.7
 
 Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratch every run:
 
@@ -50,7 +50,7 @@ private only) and the main session decides when the schedule turns it on.
 | story | `storyline.py` | OpenRouter (Claude Sonnet 5.5; M3 fallback; `SHORTS_STORY_MODEL=mara` flips it) writes cover, item lines (why, then read), the portfolio line ("Your portfolio"), the Ask line (quoting one numbered, visible answer line), title, description | figures only from the verified set; Q13 words + tape/book/print/demo; no tickers of candidate/held names (names said as letters, IBM / NASA / AMD, are fine); claim-carrying words traceable to sources (reaction words free); edition timing words; <= 15 words a sentence; <= 56 spoken words; up to 8 rounds of explicit rewrite instructions inside 6 min, every spoken figure readable in its shot (the app's screen per `screen.json`, or a fresh pre-market / after-hours quote said with its label word, shown on a chip); no first person; then a verified-wording fallback that fits the budget and leads with the edition's timing phrase, then refuse |
 | compose | `compose.py` | - | the labelled PRE-MARKET / AFTER HOURS chip (the Short's own overlay, value + quote time, top-right corner block like the stamp) on any beat whose line says it; the quoted answer line outlined (`highlight.src_box` from the UI test's element frames) and pushed to; voices: items marin/cedar alternating, portfolio + answer in the app's brief voice (Minjae clone), the question in gpt-audio; beats from the marks; one push on every beat |
 | build | repo `web/ios/App/marketing/shorts/make-short.sh` | - | speakable() + earAudit() on every line; voices, word-synced subtitles with story eyebrows, speaking pills, Apple Loops bed, duck, -14 LUFS / <= -1.5 dBTP, proof frames, Q1-Q19 |
-| qa | `qa_deliver.py` | - | Q21-Q34 (references/quality.md; Q32 answer quoted + visible + outlined, Q33 every spoken figure readable in its beat, Q34 one moment: every time shown <= corner stamp, no live quote in a pre-open Short; Q35 chips / tags in the top-right corner block, clear of the phone), writes the report and the sources, delivers or refuses |
+| qa | `qa_deliver.py` | - | Q21-Q40 (references/quality.md; Q32 answer quoted + visible + outlined, Q33 every spoken figure readable in its beat, Q34 one moment: every time shown <= corner stamp, no live quote in a pre-open Short; Q35 chips / tags in the top-right corner block, clear of the phone; Q38 the cover hero is a verified move read on frame 0 and in its beat; Q39 the end-card follow line; Q40 reach metadata), writes the report and the sources, delivers or refuses |
 
 ## What still needs a person (or the agent running the skill)
 
@@ -76,6 +76,9 @@ Vault `get_secret`; OpenRouter from `~/.private_keys/openrouter.txt`; the YouTub
 only with `--upload`, only private, never a test run; never log into a site. Never
 advice language. If sources disagree, drop the figure. Never say or show "demo".
 
-Shorts craft applied (caption size, safe zones, framing, beats) and what it never overrides: `references/shorts-craft.md`.
+Shorts craft applied (caption size, safe zones, framing, beats; v1.0.7 reach: the cover HERO number = the thumbnail, hook-first
+item order, the end-card follow line, title / hashtag / tag rules) and what it deliberately does NOT do (no spoken CTA, no
+bait tags, no fewer uploads or re-uploads without the owner): `references/shorts-craft.md`. `thumbnail.png` (frame 0) is
+delivered with every Short.
 
 TikTok: every Short is also posted to @assetlyapp (API when a token exists, else the Chrome queue): `references/tiktok.md`.

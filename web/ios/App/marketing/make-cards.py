@@ -119,13 +119,27 @@ elif mode == "hook" and "[" in sys.argv[5]:
     os.makedirs(out, exist_ok=True)
     d0 = ImageDraw.Draw(layer(w, h))
     plain = lambda s: s.replace("[", "").replace("]", "")
-    size = 132
-    while size > 60 and max(d0.textlength(plain(l), font=grotesk(size, 800)) for l in lines) > maxw: size -= 2
+    # HOOK_HERO "Accenture|+18.3%|SO FAR TODAY|up" (Shorts best practice, 10/1: the thumbnail carries ONE big, verified
+    # number): the name, the move in the app's figure face at thumbnail size in the gain / loss colour, and its window
+    # label; the headlines then stack smaller beneath. compose.py picks it from figures two feeds and the page agree on.
+    hero = [p.strip() for p in os.environ.get("HOOK_HERO", "").split("|")] if os.environ.get("HOOK_HERO") else []
+    if hero: maxw = int(maxw / 1.05)     # the cover's slow 1.05x push must not carry the big figure past the safe zone
+    size = 132 if not hero else 76
+    while size > 50 and max(d0.textlength(plain(l), font=grotesk(size, 800)) for l in lines) > maxw: size -= 2
     f = grotesk(size, 800); asc = d0.textbbox((0, 0), "Hg", font=f)
-    lh = int(size * 1.12); gap_k = int(size * 0.55)
+    lh = int(size * 1.12); gap_k = int(size * 0.55) if not hero else 40
     kick = os.environ.get("HOOK_KICKER", ""); fk = grotesk(34, 700); track = 4
     kh = (d0.textbbox((0, 0), kick, font=fk)[3] - d0.textbbox((0, 0), kick, font=fk)[1]) if kick else 0
-    total = (kh + gap_k if kick else 0) + lh * len(lines)
+    if hero:
+        hname, hfig, hlab, hdir = (hero + ["", "", "", ""])[:4]
+        fn = grotesk(84, 800); hs = 250
+        while hs > 120 and d0.textlength(hfig, font=grotesk(hs, 800)) > maxw: hs -= 4
+        fh = grotesk(hs, 800); fl = grotesk(32, 700)
+        bh = lambda t, fo: d0.textbbox((0, 0), t, font=fo)[3] - d0.textbbox((0, 0), t, font=fo)[1]
+        hero_h = bh(hname, fn) + 30 + bh(hfig, fh) + 30 + bh(hlab, fl) + 70
+    else:
+        hero_h = 0
+    total = (kh + gap_k if kick else 0) + hero_h + lh * len(lines)
     y = (h - total) // 2 - int(h * 0.05)
     if kick:
         img = layer(w, h); d = ImageDraw.Draw(img)
@@ -133,6 +147,17 @@ elif mode == "hook" and "[" in sys.argv[5]:
         t0 = d.textbbox((0, 0), kick, font=fk)[1]
         for ch in kick: d.text((x, y - t0), ch, font=fk, fill=ACCENT + (255,)); x += d.textlength(ch, font=fk) + track
         img.save(os.path.join(out, "hook_kicker.png")); y += kh + gap_k
+    if hero:
+        GAIN, LOSS = ((98, 210, 154), (227, 107, 91)) if DARK else ((30, 122, 76), (148, 43, 33))
+        col = GAIN if hdir == "up" else LOSS if hdir == "down" else INK
+        img = layer(w, h); d = ImageDraw.Draw(img)
+        y += centred(d, y, hname, fn, INK, w) + 30
+        y += centred(d, y, hfig, fh, col, w) + 30
+        lw = sum(d.textlength(ch, font=fl) for ch in hlab) + 3 * (len(hlab) - 1); x = (w - lw) / 2
+        t0 = d.textbbox((0, 0), hlab, font=fl)[1]
+        for ch in hlab: d.text((x, y - t0), ch, font=fl, fill=MUTED + (255,)); x += d.textlength(ch, font=fl) + 3
+        y += bh(hlab, fl) + 70
+        img.save(os.path.join(out, "hook_hero.png"))
     for i, ln in enumerate(lines):
         img = layer(w, h); d = ImageDraw.Draw(img)
         x = (w - d.textlength(plain(ln), font=f)) / 2
@@ -187,12 +212,19 @@ elif mode == "end":
     sub1 = os.environ.get("END_SUB1", "Your whole portfolio, priced live")
     sub2 = os.environ.get("END_SUB2", "Briefs · Intelligence · Ask")
     cta = os.environ.get("END_CTA", "Available on the App Store")
-    block = ICON + 56 + hgt(name, f_name) + 26 + hgt(sub1, f_sub) + 10 + hgt(sub2, f_sub) + 58 + hgt(cta, f_cta)
+    # END_FOLLOW (the daily Short, 10/1): one plain follow line above the button, a true promise (three recaps every
+    # trading day), never "like and subscribe"; the launch clips leave it unset and keep their card unchanged
+    follow = os.environ.get("END_FOLLOW", ""); f_fol = grotesk(42, 700)
+    block = ICON + 56 + hgt(name, f_name) + 26 + hgt(sub1, f_sub) + 10 + hgt(sub2, f_sub) + 58 + hgt(cta, f_cta) + ((hgt(follow, f_fol) + 40) if follow else 0)
     y = (h - block) // 2 - int(h * 0.03)
     img = layer(w, h); img.paste(icon, ((w - ICON) // 2, y), mask); img.save(os.path.join(out, "end_icon.png")); y += ICON + 56
     img = layer(w, h); centred(ImageDraw.Draw(img), y, name, f_name, INK, w); img.save(os.path.join(out, "end_name.png")); y += hgt(name, f_name) + 26
     img = layer(w, h); d = ImageDraw.Draw(img); centred(d, y, sub1, f_sub, MUTED, w); y2 = y + hgt(sub1, f_sub) + 10
     centred(d, y2, sub2, f_sub, MUTED, w); img.save(os.path.join(out, "end_sub.png")); y = y2 + hgt(sub2, f_sub) + 58
+    if follow:
+        img = layer(w, h); centred(ImageDraw.Draw(img), y, follow, f_fol, ACCENT, w); img.save(os.path.join(out, "end_follow.png"))
+        y += hgt(follow, f_fol) + 40
+    elif os.path.exists(os.path.join(out, "end_follow.png")): os.remove(os.path.join(out, "end_follow.png"))
     # the call to action as a button, not a line of type: accent pill, dark text, generous padding
     img = layer(w, h); d = ImageDraw.Draw(img)
     f_btn = grotesk(38, 700); l, t, r, b = d.textbbox((0, 0), cta, font=f_btn)

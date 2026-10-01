@@ -161,8 +161,8 @@ hook = plan.get("hook")
 if hook:
     d = hook["dur"]
     subprocess.run([os.path.join(HERE, "make-cards.py"), "hook", str(W), str(H), f"{T}/cards", hook["lines"]], check=True, capture_output=True,
-                   env=dict(os.environ, HOOK_KICKER=hook.get("kicker", ""), HOOK_FOOT=hook.get("foot", "")))
-    layers = [f for f in ("hook_kicker.png", "hook0.png", "hook1.png", "hook2.png", "hook3.png") if os.path.exists(f"{T}/cards/{f}")] + ["hook_rule.png"]
+                   env=dict(os.environ, HOOK_KICKER=hook.get("kicker", ""), HOOK_FOOT=hook.get("foot", ""), HOOK_HERO=hook.get("hero", "")))
+    layers = [f for f in ("hook_kicker.png", "hook_hero.png", "hook0.png", "hook1.png", "hook2.png", "hook3.png") if os.path.exists(f"{T}/cards/{f}")] + ["hook_rule.png"]
     inputs = []; fc = f"color=c={BG}:s={W}x{H}:r={FPS}:d={d:.3f}[b0];"
     for i, name in enumerate(layers):
         inputs += ["-loop", "1", "-t", f"{d:.3f}", "-i", f"{T}/cards/{name}"]
@@ -321,6 +321,8 @@ print(f"product {PRODUCT:.2f}s with {len(caps)} captions, {len(plan.get('subtitl
 card_len = LEN - PRODUCT + XF
 subprocess.run([os.path.join(HERE, "make-cards.py"), "end", str(W), str(H), plan["card"]["icon"], f"{T}/cards"], check=True, capture_output=True)
 layers = [("end_icon.png", 0.0), ("end_name.png", 0.35), ("end_sub.png", 0.65), ("end_cta.png", 1.05)]
+if os.path.exists(f"{T}/cards/end_follow.png"):   # the Short's follow line (END_FOLLOW): a quicker stagger so it reads >= 1 s
+    layers = [("end_icon.png", 0.0), ("end_name.png", 0.15), ("end_sub.png", 0.3), ("end_follow.png", 0.45), ("end_cta.png", 0.6)]
 inputs = []; fc = f"color=c={BG}:s={W}x{H}:r={FPS}:d={card_len:.3f}[b0];"
 for i, (name, st) in enumerate(layers):
     inputs += ["-loop", "1", "-t", f"{card_len:.3f}", "-i", f"{T}/cards/{name}"]

@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.0.7 (2026-10-01, owner: Shorts reach best practices, keep the core principles)
+
+- Source: "If your shorts get under 1,000 views... do this" (youtube.com/watch?v=Jc_-IPaW2pg; transcript, chapters read)
+  plus 2026 Shorts guidance (hooks, loops, CTAs, thumbnails, hashtags). What was applied and what was refused, with why:
+  references/shorts-craft.md.
+- Cover HERO (the thumbnail): compose `cover_hero` picks the biggest move among the three stories that the viewer then
+  reads in that item's beat (a holding page's day move both quote feeds agree with, or the beat's labelled pre-market /
+  after-hours chip; pre-open only from a chip); >= 1% or no hero. make-cards.py `HOOK_HERO` draws the name, the move
+  ~250 px in the app's gain / loss colour and its window label over the three headlines. Q38 OCRs it on frame 0 and in
+  its beat. `thumbnail.png` (frame 0) is delivered.
+- End card: one accent line "Follow for the open, midday and close" (`END_FOLLOW`, day.json `follow`), a quicker
+  stagger so it reads >= 1 s; nothing spoken, no like/subscribe. Q39. Launch clips unchanged (env unset).
+- Storyline prompt: item 1 = the most surprising verified fact (usually the biggest move), cover line 1 = item 1, no
+  teaser openers; titles name the company, no hashtags / question bait / caps.
+- Metadata: 3-5 hashtags (#Shorts, up to three companies, one niche tag; never #viral / #fyp); hidden tags = companies,
+  "<name> stock", niche phrases, brand; a stray "#" is stripped from the title. Q40. TikTok caption: 3-5 hashtags,
+  cover = first frame.
+- Not applied (owner's call or a principle): a spoken CTA, cutting to <= 20 s, one upload a day, delete-and-reupload,
+  bait tags, API thumbnail upload (token scope is youtube.upload only).
+
 ## v1.0.6 (2026-10-01, owner: post every Short to TikTok too)
 
 - Titles (owner, 10/1 pm): <= 50 chars, short and catchy, the hook only: no edition label (Midday / After the bell) and no

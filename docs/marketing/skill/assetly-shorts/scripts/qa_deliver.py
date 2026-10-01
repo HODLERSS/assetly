@@ -270,6 +270,51 @@ def main():
         ok37 = bool(tops) and max(tops) - min(tops) <= 16 and (not gaps or max(gaps) - min(gaps) <= 16)
         row("Q37", "Framing: the phone's top edge on one row in every beat (+-8 px) and the subtitle-to-phone gap the same (+-8 px)",
             ok37, "; ".join(det37))
+        # Q38 / Q39 / Q40 (Shorts reach practice, 10/1; never at the cost of a principle): the cover's one big number is a
+        # verified move the viewer then reads in that item's beat, labelled with its window, legible on frame 0 inside the
+        # safe zone; the end card carries the one true follow line, readable for >= 1 s, and no "like and subscribe"; the
+        # metadata keeps hashtags out of the title, 3-5 of them, no bait
+        f0, fz, fe = (os.path.join(B, n) for n in ("q38_f0.png", "q39_end1.png", "q39_end0.png"))
+        for at, png in ((0.0, f0), (max(0.0, L - 1.05), fz), (max(0.0, L - 0.05), fe)):
+            run("ffmpeg", "-v", "error", "-y", "-ss", f"{at:.2f}", "-i", final, "-frames:v", "1", png)
+        rd3 = ocr([x for x in (f0, fz, fe) if os.path.exists(x)])
+        r0, r1, r2 = (rd3 + [[], [], []])[:3]
+        hero = day.get("hero")
+        if hero:
+            lab_ok = hero["label"] in ({"preopen": ("PRE-MARKET",), "midday": ("SO FAR TODAY", "PRE-MARKET"),
+                                        "close": ("TODAY", "AFTER HOURS")}[ED])
+            fig_a = hero["fig"].replace("\u2212", "-")
+            in_beat = 0 <= hero["beat"] < len(seen) and shows(fig_a, figs_of(seen[hero["beat"]]))
+            cov = [r for r in r0 if shows(fig_a, figs_of([r[0].replace("\u2212", "-")])) and re.search(r"\d", r[0])]
+            safe = bool(cov) and all(r[1] >= 60 and r[3] <= 960 for r in cov)
+            name_ok = any(hero["name"].lower() in r[0].lower() for r in r0)
+            same_dir = (hero["value"] > 0) == (hero["dir"] == "up")
+            ok38 = lab_ok and in_beat and bool(cov) and safe and name_ok and same_dir
+            row("Q38", "Cover hero: one verified move, readable on frame 0 (safe zone), labelled with its window, and the same figure readable in that item's beat",
+                ok38, f"{hero['name']} {hero['fig']} {hero['label']} ({hero['src']}); frame 0 {'reads it' if cov else 'does NOT read it'}"
+                      f"{'' if safe else ' OUTSIDE x 60-960'}; beat {hero['beat'] + 1} {'shows it' if in_beat else 'does NOT show it'}"
+                      f"{'' if lab_ok else '; WRONG label'}{'' if name_ok else '; name not read'}")
+        else:
+            row("Q38", "Cover hero: one verified move, readable on frame 0 (safe zone), labelled with its window, and the same figure readable in that item's beat",
+                True, "no hero (no move >= 1% that its page or a chip shows and both feeds confirm): the headline cover")
+        fol = day.get("follow", "")
+        fw = set(re.findall(r"[a-z]+", fol.lower()))
+        hit = lambda rr: bool(fw) and len(fw & set(re.findall(r"[a-z]+", " ".join(r[0] for r in rr).lower()))) >= 0.8 * len(fw)
+        beg = re.search(r"\b(like and subscribe|smash|hit (the )?like|subscribe now)\b", " ".join(r[0] for r in r1 + r2), re.I)
+        ok39 = fol in ("Follow for the open, midday and close",) and hit(r1) and hit(r2) and not beg
+        row("Q39", "End card: the one follow line (true: three editions every trading day) readable for >= 1 s, no like/subscribe begging",
+            ok39, f"\"{fol}\" at {L - 1.05:.2f}s {'read' if hit(r1) else 'NOT read'}, at {L - 0.05:.2f}s {'read' if hit(r2) else 'NOT read'}"
+                  + (f"; BEGGING '{beg.group(0)}'" if beg else ""))
+        hs = meta.get("hashtags", [])
+        bait = [h for h in hs if h.lower() in ("#viral", "#fyp", "#foryou", "#foryoupage", "#trending", "#explore", "#viralshorts", "#shortsfeed")]
+        names40 = [re.search(r"\[([^\]]+)\]", c).group(1) for c in (day.get("hook") or "").split("|") if re.search(r"\[([^\]]+)\]", c)]
+        ok40 = "#" not in meta["title"] and 3 <= len(hs) <= 5 and hs[:1] == ["#Shorts"] and not bait and \
+            any(n.lower() in [t.lower() for t in meta.get("tags", [])] for n in names40) and meta["title"] == meta["title"].strip()
+        row("Q40", "Reach metadata: no hashtag in the title, 3-5 hashtags (#Shorts first, no bait), tags name the stories' companies",
+            ok40, f"{len(hs)} hashtags {hs}; {len(meta.get('tags', []))} tags" + (f"; BAIT {bait}" if bait else ""))
+        # frame 0 IS the thumbnail: delivered as thumbnail.png for YouTube Studio (custom Shorts thumbnail where the channel
+        # has it) and TikTok's cover picker; on the phone the owner picks the first frame
+        if os.path.exists(f0): shutil.copy2(f0, os.path.join(ST, "thumbnail.png"))
         # Q30 the data time-stamp: on EVERY frame in the same top-left spot (cover, every beat, the end card), its text is the
         # snapshot the figures come from (research quotes, within 5 min), and the edition label is this edition's
         st = day.get("stamp") or {}

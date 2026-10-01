@@ -47,6 +47,9 @@ fails. Q1 is widened to the v1.0 length: **20.0 to 30.0 s, hard maximum 30.0 s**
 | Q31 | Time-stamp truth | the stamp's time is the data snapshot (research quote capture) within 5 min, and its label is this edition's | `stamp` in day.json vs `research-data.json` asof |
 | Q30 | Data time-stamp | top-left corner (x 60, y 104; inside the safe zone, clear of the centred "Not financial advice") on EVERY frame from the cover to the end card, same position and size: the edition as a tracked accent eyebrow (PRE-OPEN / MIDDAY / CLOSE) over "Sep 30 · 4:05 PM ET"; the time is the data snapshot (when the quotes were captured), within 5 min; the label matches the edition | text/mask contrast and pixel drift of the stamp box on the cover, every beat, and the card; `stamp` in day.json vs `research-data.json` asof |
 | Q29 | No loading frame | the phone screen at the middle of every beat has real detail (edge density), so no grey skeleton or blank page is on screen | `proof/beat*.png` |
+| Q38 | Cover hero | when the cover leads with a big number: it is a verified move (the page's day move both feeds agree with, or the labelled extended-hours chip), read on frame 0 inside x 60-960, labelled with its window, and readable again in that item's beat | OCR of frame 0 + the beat |
+| Q39 | End-card follow line | "Follow for the open, midday and close" readable for >= 1 s at the end; no like/subscribe begging | OCR of the end frames |
+| Q40 | Reach metadata | no hashtag in the title; 3-5 hashtags, #Shorts first, no bait (#viral, #fyp); hidden tags name the cover's companies | `youtube-metadata.json` |
 
 Market-figure rule (v1.0): a price move is spoken only when the CNBC quote service and the Nasdaq quote API agree (within
 0.05 points; 0.35 mid-session); after-hours and premarket directions need BOTH feeds' extended quotes; a strong verb

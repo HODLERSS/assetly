@@ -1,4 +1,4 @@
-# Quality gate (v1.0.3: Q1-Q35)
+# Quality gate (v1.0.7: Q1-Q40)
 
 The canonical list is `app/docs/marketing/SHORTS_QUALITY.md` (Q1-Q20 from the 9/30 Shorts, Q21-Q29 added by v1.0).
 `run.sh` measures every automatic row and refuses to deliver when any fails.
@@ -38,6 +38,9 @@ The canonical list is `app/docs/marketing/SHORTS_QUALITY.md` (Q1-Q20 from the 9/
 | Q35 | every chip / time tag sits in the top-right corner block (x 700-950, above y 450): never over the phone screen or the top texts | alpha bbox of each beat's chip png |
 | Q36 | the portfolio beat outlines the Home row its line names ("up 28% all time" -> the All time row; "today" -> Today), and the outline goes off before Home scrolls (`highlight.until`) | day.json beat `highlight`, compose OCR of the take |
 | Q37 | framing: the phone's top edge on one row in every beat (+-8 px) and the gap from the subtitles' last line to the phone constant (+-8 px) | final frames at 50/90% of each beat: left rim traced up from y 1500, top = rim start - 11.8% of the body width; text bottom in y 198-500 |
+| Q38 | cover hero (when there is one): a verified move (page day move both feeds agree with, or the beat's labelled chip) readable by OCR on frame 0 inside x 60-960, the edition's window label, and the same figure readable in that item's beat | day.json `hero`, OCR of frame 0 and the beat's frames |
+| Q39 | end card: the one follow line ("Follow for the open, midday and close") read by OCR at L-1.05 s and L-0.05 s (>= 1 s), no like/subscribe begging | OCR of the end frames |
+| Q40 | reach metadata: no hashtag in the title, 3-5 hashtags with #Shorts first and no bait, hidden tags name the cover's companies | youtube-metadata.json |
 | Q29 | no loading skeleton / blank screen mid-beat | saturation (home screen) and edge density (blank) on proof/beat*.png at 25/50/90% |
 
 Verification rules worth remembering:

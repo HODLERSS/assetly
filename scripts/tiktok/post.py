@@ -30,7 +30,8 @@ def main():
     cap = open(os.path.join(D, "tiktok-caption.txt")).read()
     init = api("https://open.tiktokapis.com/v2/post/publish/video/init/", {
         "post_info": {"title": cap, "privacy_level": privacy, "disable_comment": False, "disable_duet": False, "disable_stitch": False,
-                      "is_aigc": True, "brand_organic_toggle": True, "brand_content_toggle": False},
+                      "is_aigc": True, "brand_organic_toggle": True, "brand_content_toggle": False,
+                      "video_cover_timestamp_ms": 0},   # the cover = frame 0, the headline cover (thumbnail.png)
         "source_info": {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": size, "total_chunk_count": 1}}, tok=tok)["data"]
     put = urllib.request.Request(init["upload_url"], data=open(vid, "rb").read(), method="PUT",
                                  headers={"Content-Type": "video/mp4", "Content-Length": str(size), "Content-Range": f"bytes 0-{size - 1}/{size}"})

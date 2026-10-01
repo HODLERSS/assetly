@@ -14,6 +14,11 @@ reviews. Every rule here is enforced by code where code can enforce it; the rest
 - Real scrolling footage: at least three beats scroll (Q19).
 - One camera language: the same push (1.3x, in 0.7 s, out 0.6 s, smootherstep) on every beat; cuts on the 0.3 s grid
   (an eighth at 100 BPM); the last beat holds its push into the end card.
+- v1.0.7 (reach): when one of the three stories moved >= 1% and the viewer will read that move in its beat (the page,
+  both feeds agreeing, or the labelled chip), the cover leads with it: the name, the move very large in the gain / loss
+  colour, the window label (SO FAR TODAY / TODAY / PRE-MARKET / AFTER HOURS); the headlines stack smaller beneath.
+  The end card adds one accent line, "Follow for the open, midday and close", above the App Store button. Nothing
+  spoken is added.
 - Headline-led cover, fully drawn at frame 0 (it is the thumbnail): kicker "MARKET CLOSE · SEP 30", three lines with the
   company names in the accent, "Assetly" under the rule.
 - Word-synced subtitles with a story eyebrow per sentence (MICRON · AFTER THE BELL / MICRON · THE READ), five speaking

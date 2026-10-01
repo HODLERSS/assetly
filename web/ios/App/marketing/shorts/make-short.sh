@@ -149,13 +149,15 @@ plan = {"w": 1080, "h": 1920, "len": L, "theme": "dark", "fps": 60, "xfade": 0.6
         "captions": "top", "cap_top": 150, "cap_h": 330, "bottom": 40, "slide": 0.4,
         "phone_w": 860, "zoom_anchor": "top",      # owner, 10/1: a bigger phone whose top edge never moves (constant gap)
         "hook": {"lines": d.get("hook", "AI stocks today|" + d["date"]), "dur": tm["hook"], "static": True,
-                 "kicker": d.get("hook_kicker", ""), "foot": d.get("hook_foot", "")},
+                 "kicker": d.get("hook_kicker", ""), "foot": d.get("hook_foot", ""), "hero": d.get("hook_hero", "")},
         "beats": beats, "card": {"icon": f"{m}/../App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"},
         "overlays": [{"frames": f"{w}/fill", "x": 0, "y": 150}, {"png": f"{w}/disclaimer.png", "x": 0, "y": 0}] + chips}
 if lines: plan.update(speaking=f"{w}/spk", speaking_x=460, speaking_y=152)     # five pills over the strip while anyone speaks
 json.dump(plan, open("plan.json", "w"), indent=1)
 PY
-END_SUB1="Your portfolio, explained daily" END_SUB2="Not financial advice." END_CTA="Available on the App Store" \
+# the end card's follow line (Shorts practice, 10/1): one true sentence, no "like and subscribe"; day.json "follow" overrides
+FOLLOW="$(python3 -c "import json;print(json.load(open('$DAY')).get('follow',''))")"
+END_SUB1="Your portfolio, explained daily" END_SUB2="Not financial advice." END_CTA="Available on the App Store" END_FOLLOW="$FOLLOW" \
   python3 "$M/make-spot.py" plan.json video.mp4
 # "stamp": {"edition": "Close", "text": "Sep 30 · 4:05 PM ET"} -- the data time-stamp, top-left on EVERY frame (cover,
 # product and end card), laid over the finished picture so nothing in the edit can move or hide it
@@ -174,13 +176,13 @@ rm -f "$OUT"/proof/proof_*.png
 for t in 0.0 0.5 3.0 8.0 13.0 18.0 $(python3 -c "print(round($LEN-0.03,2))"); do
   ffmpeg -v error -y -ss "$t" -i "$FINAL" -frames:v 1 "$OUT/proof/proof_${t}s.png"; done
 HOOK_KICKER="$(python3 -c "import json;print(json.load(open('$DAY')).get('hook_kicker',''))")" HOOK_FOOT="$(python3 -c "import json;print(json.load(open('$DAY')).get('hook_foot',''))")" \
-  "$M/make-cards.py" hook 1080 1920 cards "$(python3 -c "import json;print(json.load(open('$DAY')).get('hook',''))")" >/dev/null
-END_SUB1="Your portfolio, explained daily" END_SUB2="Not financial advice." "$M/make-cards.py" end 1080 1920 \
+  HOOK_HERO="$(python3 -c "import json;print(json.load(open('$DAY')).get('hook_hero',''))")" "$M/make-cards.py" hook 1080 1920 cards "$(python3 -c "import json;print(json.load(open('$DAY')).get('hook',''))")" >/dev/null
+END_SUB1="Your portfolio, explained daily" END_SUB2="Not financial advice." END_FOLLOW="$FOLLOW" "$M/make-cards.py" end 1080 1920 \
   "$M/../App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png" cards >/dev/null
 L="disclaimer.png,0,0"; [ -f stamp.png ] && [ -n "$STAMP_ED" ] && L="$L;stamp.png,0,0"; for f in cards/hook*.png cards/end_*.png; do L="$L;$f,0,0"; done
 for f in $(ls fill | awk 'NR%120==60'); do L="$L;fill/$f,0,150"; done
 [ -d spk ] && for f in $(ls spk | awk 'NR%240==120'); do L="$L;spk/$f,460,152"; done
-STR="$(python3 -c "import json;d=json.load(open('$DAY'));s=d.get('stamp') or {};print(d.get('hook',''),d.get('hook_kicker',''),d.get('hook_foot',''),s.get('edition',''),s.get('text',''))") Not financial advice Your portfolio, explained daily Available on the App Store $(python3 -c "import json;print(' '.join(c.get('eyebrow','') for c in json.load(open('subs.json'))['cues']))")"
+STR="$(python3 -c "import json;d=json.load(open('$DAY'));s=d.get('stamp') or {};print(d.get('hook',''),d.get('hook_kicker',''),d.get('hook_foot',''),d.get('hook_hero','').replace('|',' '),d.get('follow',''),s.get('edition',''),s.get('text',''))") Not financial advice Your portfolio, explained daily Available on the App Store $(python3 -c "import json;print(' '.join(c.get('eyebrow','') for c in json.load(open('subs.json'))['cues']))")"
 HOLD_FROM=$(python3 -c "import json;t=json.load(open('timing.json'));print(round(t['hook']+sum(b['dur'] for b in t['beats'][:-1])+0.5,2))")
 SHORT_HOLD_FROM="$HOLD_FROM" SHORT_LEN_RANGE="$LMIN,$LMAX" SHORT_PLAN=plan.json SHORT_STRINGS="$STR" SHORT_LAYERS="$L" python3 "$HERE/qa-short.py" "$FINAL" vo-track.wav subs.json script_display.txt "$OUT/youtube-metadata.md" | tee "$OUT/qa-auto.md"
 echo "-> $FINAL  (demo $NNN)"
