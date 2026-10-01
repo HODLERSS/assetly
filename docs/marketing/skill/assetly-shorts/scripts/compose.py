@@ -98,18 +98,26 @@ def main():
         lines.append({"voice": "minjae", "say": a, "tempo": 1.06, "cues": [{"eyebrow": "THE ANSWER", "show": tokens(a)}]})
         beats.append({"take": "take60.mp4", "start": round(mk["ask_answer"] + 1.4, 2), "focus_src": FOCUS["ask_a"], "tail": 1.0,
                       "note": "Ask: the real answer, held into the card"})
+        # the data time-stamp: when the quotes behind every figure were captured (research.data), not the render time
+        from datetime import datetime
+        snap = datetime.strptime(jload(os.path.join(W, "research-data.json"))["asof_et"], "%Y-%m-%d %H:%M ET")
+        hm = snap.strftime("%-I:%M %p")
+        stamp = {"edition": {"preopen": "Pre-open", "midday": "Midday", "close": "Close"}[ED],
+                 "text": f"{snap.strftime('%b %-d')} · {hm} ET", "asof": snap.strftime("%Y-%m-%d %H:%M"),
+                 "line": f"Data as of {snap.strftime('%b %-d, %Y')} {hm} ET"}
         y, m, d = DATE.split("-")
         day = {"date": DATE, "slug": f"{DATE}-{ED}", "demo": 0, "edition": ED,
                "hook": "|".join(story["cover"]), "hook_kicker": f"{LABEL[ED]} · {MON[int(m) - 1]} {int(d)}", "hook_foot": "Assetly",
-               "hook_dur": 1.5, "script": " ".join(ln["say"] for ln in lines), "grid": 0.3, "card": 1.8, "len_range": [20, 30],
+               "hook_dur": 1.5, "stamp": stamp, "script": " ".join(ln["say"] for ln in lines), "grid": 0.3, "card": 1.8, "len_range": [20, 30],
                "motion": {"to": 1.3, "in": 0.7, "out": 0.6}, "lines": lines, "beats": beats}
         os.makedirs(OUT, exist_ok=True)
         jdump(day, os.path.join(OUT, "day.json"))
         tags = " ".join(story.get("hashtags", [])) or "#Shorts #stockmarket"
         if "#Shorts" not in tags: tags = "#Shorts " + tags
-        desc = (story["description"].strip() + "\nPortfolio shown is illustrative. Not financial advice.\n\n"
+        desc = (stamp["line"] + "\n" + story["description"].strip() + "\nPortfolio shown is illustrative. Not financial advice.\n\n"
                 "Assetly on the App Store: https://apps.apple.com/app/id6811739789\nMore: https://hodlerss.github.io/assetly/about.html")
-        meta = {"title": story["title"], "description": desc, "hashtags": tags.split(), "thumbnail": "frame 0 (the headline cover)",
+        meta = {"title": story["title"], "description": desc, "hashtags": tags.split(), "data_as_of_et": stamp["asof"],
+                "tags": [t.lstrip("#") for t in tags.split()] + ["Assetly", "stock market today", "AI stocks"], "thumbnail": "frame 0 (the headline cover)",
                 "category": "News & Politics", "made_for_kids": False}
         jdump(meta, os.path.join(OUT, "youtube-metadata.json"))
         open(os.path.join(OUT, "youtube-metadata.md"), "w").write(f"# YouTube metadata\n\n**Title** ({len(meta['title'])} chars)\n{meta['title']}\n\n"

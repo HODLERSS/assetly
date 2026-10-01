@@ -7,6 +7,12 @@
  "hook_kicker": "BEFORE THE BELL · OCT 1",
  "hook_foot": "Assetly",
  "hook_dur": 1.5,
+ "stamp": {
+  "edition": "Pre-open",
+  "text": "Sep 30 · 10:38 PM ET",
+  "asof": "2026-09-30 22:38",
+  "line": "Data as of Sep 30, 2026 10:38 PM ET"
+ },
  "script": "Futures rose after a softer inflation reading. Traders see hike bets cooling. Kashkari said inflation still worries the Fed. Commentators say hikes may continue. Accenture rose on Q4 earnings due this week. Shares rose ahead of it. Yesterday my portfolio rose 1.0%. What's ahead for my portfolio today? Your portfolio was up 0.98% yesterday.",
  "grid": 0.3,
  "card": 1.8,

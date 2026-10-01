@@ -16,12 +16,12 @@ Cover (frame 0): MARKET CLOSE · SEP 30 / [Stocks] end mixed. / [HPE] hits a rec
 | # | Seconds | Source | Note |
 |---|---|---|---|
 | 0 | 0.00-1.50 | cover | headline cover, voice starts at 0.3 s |
-| 1 | 1.50-5.40 | take 81.13s | brief scrolling (Stocks close mixed.) |
+| 1 | 1.50-5.40 | take 81.14s | brief scrolling (Stocks close mixed.) |
 | 2 | 5.40-12.30 | take 102.81s | HPE page, chart then scroll |
 | 3 | 12.30-17.70 | take 127.61s | MU page, chart then scroll |
-| 4 | 17.70-21.00 | take 64.40s | Home: total value, Today, All time, scrolling to the movers |
-| 5 | 21.00-23.10 | take 173.12s | Ask: the question typed |
-| 6 | 23.10-27.60 | take 199.82s | Ask: the real answer, held into the card |
+| 4 | 17.70-21.00 | take 64.41s | Home: total value, Today, All time, scrolling to the movers |
+| 5 | 21.00-23.10 | take 173.14s | Ask: the question typed |
+| 6 | 23.10-27.60 | take 199.84s | Ask: the real answer, held into the card |
 
 ## The portfolio on screen
 

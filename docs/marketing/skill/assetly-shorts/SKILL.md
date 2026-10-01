@@ -21,13 +21,20 @@ Weekends and US market holidays: skip (the app's own calendar, `supabase/functio
 ~/.claude/skills/assetly-shorts/scripts/run.sh close                # today's close edition
 ~/.claude/skills/assetly-shorts/scripts/run.sh preopen --date 2026-10-01 --test --seed 4
 ~/.claude/skills/assetly-shorts/scripts/run.sh close --work /tmp/assetly-shorts/<run> --from story   # resume at a stage
+~/.claude/skills/assetly-shorts/scripts/run.sh close --upload        # + private upload after the gate passes (never with --test)
 ```
+
+Every frame carries the data time-stamp in the top-left corner (edition eyebrow over "Sep 30 · 4:05 PM ET": the time the
+quotes were captured, not the render time), and the YouTube description opens with "Data as of <date> <time> ET".
+`--upload` hands the `-upload.mp4` and `youtube-metadata.json` to `app/scripts/youtube/upload.py` (PRIVATE; the owner
+publishes). The Google app is in Testing, so its refresh token lasts 7 days: an auth failure prints the fix
+(`python3 app/scripts/youtube/auth.py`) and exits 3 with the Short still delivered.
 
 Delivers to `app/docs/marketing/shorts/<date>-<edition>/` (`-test<k>` for `--test`): the master mp4, the
 `-upload.mp4` copy (<= 9.9 MB, SSIM >= 0.995), `youtube-metadata.json` (+ `.md`), `sources.md`, `quality-report.md`
 (every metric + latency per stage), `script.md`, `day.json`, `book.json`, `research.json`, `proof/`, `voice/`,
-`asr-transcript.txt`. **It refuses (exit 1, nothing copied to docs/) if any automatic metric fails.** It never
-uploads or posts; the main session handles YouTube after the owner's review.
+`asr-transcript.txt`. **It refuses (exit 1, nothing copied to docs/) if any automatic metric fails.** Upload is opt-in (`--upload`,
+private only) and the main session decides when the schedule turns it on.
 
 ## The stages (scripts/)
 
@@ -42,14 +49,14 @@ uploads or posts; the main session handles YouTube after the owner's review.
 | story | `storyline.py` | OpenRouter (Claude Sonnet 5.5; M3 fallback; `SHORTS_STORY_MODEL=mara` flips it) writes cover, item lines (why, then read), the portfolio line, the Ask line, title, description | figures only from the verified set; Q13 words + tape/book/print/demo; no tickers; edition timing words; <= 15 words a sentence; <= 60 spoken words; 3 rounds of fix-ups, then refuse |
 | compose | `compose.py` | - | voices: items marin/cedar alternating, portfolio + answer in the app's brief voice (Minjae clone), the question in gpt-audio; beats from the marks; one push on every beat |
 | build | repo `web/ios/App/marketing/shorts/make-short.sh` | - | speakable() + earAudit() on every line; voices, word-synced subtitles with story eyebrows, speaking pills, Apple Loops bed, duck, -14 LUFS / <= -1.5 dBTP, proof frames, Q1-Q19 |
-| qa | `qa_deliver.py` | - | Q21-Q29 (references/quality.md), writes the report and the sources, delivers or refuses |
+| qa | `qa_deliver.py` | - | Q21-Q30 (references/quality.md), writes the report and the sources, delivers or refuses |
 
 ## What still needs a person (or the agent running the skill)
 
 1. **Look at the proof frames** (`proof/`, one per beat plus the standard seven) before handing over: a zoom on a
    stale intelligence bullet, an unsourced figure in a frame, or an odd answer layout are not all machine-checkable.
 2. **Listen once.** Loudness, sync and the Whisper round trip are measured; whether a voice sounds right is not.
-3. **Post.** The main session uploads after the owner's review (title, description and hashtags are in the metadata).
+3. **Publish.** `--upload` (or the main session) uploads PRIVATE; the owner reviews and publishes.
 4. If a run refuses, read `quality-report.md` / `run.log`: re-run from the failing stage (`--from`), or with a
    different `--seed` for a different portfolio.
 
@@ -64,5 +71,6 @@ uploads or posts; the main session handles YouTube after the owner's review.
 ## Hard rules
 
 Never print a key (service key via the Supabase CLI into a chmod-600 file; MARA / ElevenLabs / internal token via
-Vault `get_secret`; OpenRouter from `~/.private_keys/openrouter.txt`). Never upload, post or log into a site. Never
+Vault `get_secret`; OpenRouter from `~/.private_keys/openrouter.txt`; the YouTube token stays inside upload.py). Upload
+only with `--upload`, only private, never a test run; never log into a site. Never
 advice language. If sources disagree, drop the figure. Never say or show "demo".

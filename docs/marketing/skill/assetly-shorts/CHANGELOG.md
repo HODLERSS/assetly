@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0 (2026-09-30, revised the same night)
+
+Owner additions after the first test runs:
+- The data time-stamp: top-left corner on every frame (cover, beats, end card), edition eyebrow + "Mon D · h:mm AM/PM ET"
+  from the research quote snapshot; description opens with "Data as of ..."; QA Q30 (and Q27 checks the first line).
+- `--upload`: private upload through app/scripts/youtube/upload.py after the gate passes, never on --test; a clear fix
+  message when the 7-day Testing-mode token has expired. `--dest` rebuilds into an existing delivery folder.
+
 ## v1.0 (2026-09-30)
 
 First version of the skill. Owner: Minjae.

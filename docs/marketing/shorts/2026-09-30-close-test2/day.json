@@ -7,6 +7,12 @@
  "hook_kicker": "MARKET CLOSE · SEP 30",
  "hook_foot": "Assetly",
  "hook_dur": 1.5,
+ "stamp": {
+  "edition": "Close",
+  "text": "Sep 30 · 10:32 PM ET",
+  "asof": "2026-09-30 22:32",
+  "line": "Data as of Sep 30, 2026 10:32 PM ET"
+ },
  "script": "Hewlett Packard Enterprise rose on a $1.2 billion order. Shares closed at a record. Intel rose 3.71% as chips climbed. Shares outperformed competitors. Micron beat estimates on data center growth. Shares barely moved after hours. My portfolio closed up 0.8%. How did I do this week and this month? Up 0.3% this week, 5.3% this month.",
  "grid": 0.3,
  "card": 1.8,

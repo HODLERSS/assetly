@@ -8,6 +8,8 @@
 #   --test     allowed off-hours / off-calendar; delivers to docs/marketing/shorts/<date>-<edition>-test<k>/
 #   --from     resume an existing --work dir at a stage: research book account facts record ask story compose build qa
 #   --seed     the portfolio design's random seed (a different seed = a different believable book)
+#   --upload   after the gate passes, upload the -upload.mp4 to the Assetly channel as PRIVATE (app/scripts/youtube/upload.py);
+#              the owner publishes. Never with --test. An auth failure is reported, the delivery stands (exit 3).
 #
 # Never uploads or posts. Keys stay in chmod-600 files inside the work dir (Supabase CLI + Vault get_secret) and are
 # never printed. Needs: the Supabase CLI logged in, Xcode, ffmpeg, python3 (numpy, Pillow, faster-whisper), node, and
@@ -15,10 +17,10 @@
 set -euo pipefail
 ED="${1:?usage: run.sh preopen|midday|close [--date D] [--test]}"; shift
 case "$ED" in preopen|midday|close) ;; *) echo "edition must be preopen, midday or close"; exit 2 ;; esac
-DATE=$(TZ=America/New_York date +%F); TEST=0; ACCT=""; SEED="$RANDOM"; FROM=""; W=""
+DATE=$(TZ=America/New_York date +%F); TEST=0; ACCT=""; SEED="$RANDOM"; FROM=""; W=""; UPLOAD=0
 while [ $# -gt 0 ]; do case "$1" in
   --date) DATE="$2"; shift 2 ;; --test) TEST=1; shift ;; --account) ACCT="--account $2"; shift 2 ;;
-  --seed) SEED="$2"; shift 2 ;; --from) FROM="$2"; shift 2 ;; --work) W="$2"; shift 2 ;; *) echo "unknown $1"; exit 2 ;; esac; done
+  --seed) SEED="$2"; shift 2 ;; --upload) UPLOAD=1; shift ;; --dest) DSTO="$2"; shift 2 ;; --from) FROM="$2"; shift 2 ;; --work) W="$2"; shift 2 ;; *) echo "unknown $1"; exit 2 ;; esac; done
 SK="$(cd "$(dirname "$0")" && pwd)"; APP="${ASSETLY_APP:-/Users/minjaelee/Documents/_Claude/AI/stockAnalysis/app}"
 export PATH="$HOME/.pyenv/shims:/opt/homebrew/bin:/usr/local/bin:$PATH" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
@@ -31,6 +33,7 @@ mkdir -p "$W/build" "$W/stage"; chmod 700 "$W"; W="$(cd "$W" && pwd)"; ST="$W/st
 if [ "$TEST" = 1 ]; then
   K=1; while [ -e "$APP/docs/marketing/shorts/$DATE-$ED-test$K" ]; do K=$((K+1)); done; DST="$APP/docs/marketing/shorts/$DATE-$ED-test$K"
 else DST="$APP/docs/marketing/shorts/$DATE-$ED"; fi
+[ -n "${DSTO:-}" ] && DST="$DSTO"                       # --dest: rebuild into an existing delivery folder
 exec > >(tee -a "$W/run.log") 2>&1
 echo "assetly-shorts v1.0: $ED $DATE test=$TEST seed=$SEED work=$W -> $DST"
 
@@ -67,3 +70,17 @@ if want build; then
 fi
 want qa && python3 qa_deliver.py "$ED" "$DATE" "$W" "$ST" "$DST"
 echo "done: $DST"
+if [ "$UPLOAD" = 1 ]; then
+  if [ "$TEST" = 1 ]; then echo "--upload ignored on a --test run"; exit 0; fi
+  SLUG="$DATE-$ED"
+  if ! python3 "$APP/scripts/youtube/upload.py" "$DST/assetly-short-$SLUG-upload.mp4" "$DST/youtube-metadata.json" --privacy private > "$W/upload.json" 2> "$W/upload.err"; then
+    if grep -qiE "invalid_grant|401|unauthorized|expired|revoked|youtube_token" "$W/upload.err"; then
+      echo "UPLOAD FAILED: YouTube authorization is no longer valid (the Google app is in Testing, so refresh tokens expire after 7 days)."
+      echo "  Fix: run python3 $APP/scripts/youtube/auth.py once, then: python3 $APP/scripts/youtube/upload.py $DST/assetly-short-$SLUG-upload.mp4 $DST/youtube-metadata.json"
+    else
+      echo "UPLOAD FAILED (the Short is delivered; upload it by hand): $(tail -c 300 "$W/upload.err" | tr '\n' ' ')"
+    fi
+    exit 3
+  fi
+  cp "$W/upload.json" "$DST/youtube-upload.json"; echo "uploaded (private): $(cat "$W/upload.json")"
+fi

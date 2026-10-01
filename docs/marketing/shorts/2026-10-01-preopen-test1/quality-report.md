@@ -1,6 +1,6 @@
 # Quality report: assetly-short-2026-10-01-preopen.mp4
 
-**DELIVERED**: 29/29 metrics pass. Measured against docs/marketing/SHORTS_QUALITY.md (v1.0).
+**DELIVERED**: 30/30 metrics pass. Measured against docs/marketing/SHORTS_QUALITY.md (v1.0).
 
 | # | Metric | Result | Measured |
 |---|---|---|---|
@@ -13,7 +13,7 @@
 | Q7 | Hook by 1.5 s | PASS | voice starts 0.37 s; title card on screen from frame 0 |
 | Q8 | Caption sync (first word lit vs speech onset) | PASS | worst 90 ms over 9 sentences: -70, -50, -90, -50, -60, -50, -60, -70, -70 |
 | Q9 | Subtitle cap height >= 34 px | PASS | 36 px cap height at 50 px type |
-| Q10 | Overlay text inside safe zone (x 60-950, y 100-1536) | PASS | 28 layers checked; union x 137-944, y 112-1229 |
+| Q10 | Overlay text inside safe zone (x 60-950, y 100-1536) | PASS | 29 layers checked; union x 60-944, y 110-1229 |
 | Q11 | Every figure sourced (two agreeing feeds; disagreements dropped) | PASS | market figures: both quote feeds per item; portfolio: app vs Nasdaq recompute (11/11 kept); Ask: 2 verified |
 | Q12 | Pronunciation: speakable() + earAudit() empty on every line | PASS | make-short.sh refuses a line earAudit flags; Whisper round trip in Q28 |
 | Q13 | No advice / hype / jargon words, em dashes, emoji | PASS | hits none, em dash False, emoji 0 |
@@ -29,10 +29,11 @@
 | Q23 | 3-5 market items, each why + read on >= 2 independent sources | PASS | Futures point higher. (why 2, read 2 publishers); Kashkari eyes more hikes. (why 2, read 2 publishers); Accenture reports today. (why 2, read 2 publishers) |
 | Q24 | Duration 20-30 s (hard max 30.0) | PASS | 26.11 s |
 | Q25 | Edition-correct timing words (preopen) | PASS | uses 'Futures'; wrong-edition words: none |
-| Q26 | Upload copy <= 9.9 MB, visually identical (SSIM >= 0.995) | PASS | master 12.75 MB -> upload 9.42 MB, SSIM 0.9988 |
-| Q27 | Metadata: title <= 70, illustrative line, App Store + about links, #Shorts, no 'demo' | PASS | title 65 chars: "Before The Bell: Futures up, Kashkari on hikes, Accenture reports"; 7 hashtags |
+| Q26 | Upload copy <= 9.9 MB, visually identical (SSIM >= 0.995) | PASS | master 12.99 MB -> upload 9.41 MB, SSIM 0.9989 |
+| Q27 | Metadata: first line 'Data as of ...', title <= 70, illustrative line, App Store + about links, #Shorts, tags, no 'demo' | PASS | title 65 chars: "Before The Bell: Futures up, Kashkari on hikes, Accenture reports"; 7 hashtags |
 | Q28 | Whisper round trip: the final mix says the script word for word (figures may differ only in format) | PASS | 62 words; final mix mismatches: none |
 | Q29 | Every beat shows the app (no home screen, no blank screen) at 25/50/90% of the beat | PASS | beat 1 sat 5 edge 15.9, beat 2 sat 5 edge 12.4, beat 3 sat 5 edge 3.6, beat 4 sat 5 edge 7.4, beat 5 sat 4 edge 7.3, beat 6 sat 6 edge 12.5 |
+| Q30 | Data time-stamp top-left on every frame (same spot), = snapshot within 5 min, edition label right | PASS | "PRE-OPEN / Sep 30 · 10:38 PM ET" at x 61-325, y 110-166 on 10 frames (cover to card); snapshot 2026-09-30 22:38 ET (diff 0 min); label ok |
 
 ## Latency per stage (seconds)
 
@@ -51,8 +52,8 @@
 | facts.ask | 0 |
 | storyline.llm | 69 |
 | compose | 0 |
-| build | 238 |
+| build | 246 |
 | qa | 28 |
-| **total** | **1284** (21.4 min) |
+| **total** | **1292** (21.5 min) |
 
 Not measurable here: how the voices sound against the bed (listen once before posting).

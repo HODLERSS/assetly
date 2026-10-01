@@ -150,6 +150,14 @@ json.dump(plan, open("plan.json", "w"), indent=1)
 PY
 END_SUB1="Your portfolio, explained daily" END_SUB2="Not financial advice." END_CTA="Available on the App Store" \
   python3 "$M/make-spot.py" plan.json video.mp4
+# "stamp": {"edition": "Close", "text": "Sep 30 · 4:05 PM ET"} -- the data time-stamp, top-left on EVERY frame (cover,
+# product and end card), laid over the finished picture so nothing in the edit can move or hide it
+STAMP_ED=$(python3 -c "import json;print((json.load(open('$DAY')).get('stamp') or {}).get('edition',''))")
+if [ -n "$STAMP_ED" ]; then
+  "$M/make-cards.py" stamp 1080 1920 60 104 stamp.png "$STAMP_ED" "$(python3 -c "import json;print(json.load(open('$DAY'))['stamp']['text'])")" >/dev/null
+  ffmpeg -v error -y -i video.mp4 -loop 1 -i stamp.png -filter_complex "[1:v]format=rgba[s];[0:v][s]overlay=0:0:shortest=1:format=auto,format=yuv420p[v]" \
+    -map "[v]" -c:v libx264 -crf 15 -preset slow -aq-mode 3 -profile:v high -pix_fmt yuv420p -r 60 video_stamped.mp4 && mv video_stamped.mp4 video.mp4
+fi
 FINAL="$OUT/assetly-short-$(python3 -c "import json;d=json.load(open('$DAY'));print(d.get('slug',d['date']))").mp4"
 ffmpeg -v error -y -i video.mp4 -i mix.wav -map 0:v -map 1:a -c:v copy -af "afade=t=out:st=$(python3 -c "print($LEN-1.2)"):d=1.2" \
   -c:a aac_at -b:a 256k -ar 48000 -movflags +faststart "$FINAL"   # no -shortest: it cut 9 video frames
@@ -162,10 +170,10 @@ HOOK_KICKER="$(python3 -c "import json;print(json.load(open('$DAY')).get('hook_k
   "$M/make-cards.py" hook 1080 1920 cards "$(python3 -c "import json;print(json.load(open('$DAY')).get('hook',''))")" >/dev/null
 END_SUB1="Your portfolio, explained daily" END_SUB2="Not financial advice." "$M/make-cards.py" end 1080 1920 \
   "$M/../App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png" cards >/dev/null
-L="disclaimer.png,0,0"; for f in cards/hook*.png cards/end_*.png; do L="$L;$f,0,0"; done
+L="disclaimer.png,0,0"; [ -f stamp.png ] && [ -n "$STAMP_ED" ] && L="$L;stamp.png,0,0"; for f in cards/hook*.png cards/end_*.png; do L="$L;$f,0,0"; done
 for f in $(ls fill | awk 'NR%120==60'); do L="$L;fill/$f,0,150"; done
 [ -d spk ] && for f in $(ls spk | awk 'NR%240==120'); do L="$L;spk/$f,460,152"; done
-STR="$(python3 -c "import json;d=json.load(open('$DAY'));print(d.get('hook',''),d.get('hook_kicker',''),d.get('hook_foot',''))") Not financial advice Your portfolio, explained daily Available on the App Store $(python3 -c "import json;print(' '.join(c.get('eyebrow','') for c in json.load(open('subs.json'))['cues']))")"
+STR="$(python3 -c "import json;d=json.load(open('$DAY'));s=d.get('stamp') or {};print(d.get('hook',''),d.get('hook_kicker',''),d.get('hook_foot',''),s.get('edition',''),s.get('text',''))") Not financial advice Your portfolio, explained daily Available on the App Store $(python3 -c "import json;print(' '.join(c.get('eyebrow','') for c in json.load(open('subs.json'))['cues']))")"
 HOLD_FROM=$(python3 -c "import json;t=json.load(open('timing.json'));print(round(t['hook']+sum(b['dur'] for b in t['beats'][:-1])+0.5,2))")
 SHORT_HOLD_FROM="$HOLD_FROM" SHORT_LEN_RANGE="$LMIN,$LMAX" SHORT_PLAN=plan.json SHORT_STRINGS="$STR" SHORT_LAYERS="$L" python3 "$HERE/qa-short.py" "$FINAL" vo-track.wav subs.json script_display.txt "$OUT/youtube-metadata.md" | tee "$OUT/qa-auto.md"
 echo "-> $FINAL  (demo $NNN)"

@@ -4,6 +4,7 @@
 Market Close: Stocks mixed, HPE record, Micron beats
 
 **Description**
+Data as of Sep 30, 2026 9:57 PM ET
 The S&P 500 slipped 0.25% while the Nasdaq rose 0.24% as Treasury yields rose. Hewlett Packard Enterprise gained 3.9% on a $1.2 billion server order, and Micron topped fourth-quarter estimates.
 Portfolio shown is illustrative. Not financial advice.
 

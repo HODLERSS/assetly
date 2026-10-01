@@ -19,6 +19,9 @@ reviews. Every rule here is enforced by code where code can enforce it; the rest
 - Word-synced subtitles with a story eyebrow per sentence (MICRON · AFTER THE BELL / MICRON · THE READ), five speaking
   pills over the strip while anyone talks.
 - "Not financial advice" small at the top of every frame and on the end card.
+- The data time-stamp in ONE fixed corner, top-left (x 60, y 104), on every frame from the cover to the end card:
+  "CLOSE" (tracked accent eyebrow) over "Sep 30 · 4:05 PM ET" (ink). The time is when the quotes were captured.
+  The description's first line repeats it: "Data as of Sep 30, 2026 4:05 PM ET".
 - -14 LUFS integrated, <= -1.5 dBTP; Whisper returns the script word for word.
 - Numbers are spoken as words by the product's own `narrate/ear.ts speakable()`; `earAudit()` must be empty.
 - No advice or hype words, no em dashes, no jargon: never thesis, tape, book, print, catalyst, guidance, capex, EPS.

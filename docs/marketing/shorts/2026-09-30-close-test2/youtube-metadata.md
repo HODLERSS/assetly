@@ -4,6 +4,7 @@
 Market Close: Hewlett Packard record, Intel rallies, Micron beats
 
 **Description**
+Data as of Sep 30, 2026 10:32 PM ET
 Hewlett Packard Enterprise closed up 3.9% at a record after a $1.2 billion server order, and Intel rose 3.71%. Micron beat fourth-quarter estimates but showed little change after hours.
 Portfolio shown is illustrative. Not financial advice.
 

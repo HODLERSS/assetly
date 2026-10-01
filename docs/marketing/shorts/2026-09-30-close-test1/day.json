@@ -7,6 +7,12 @@
  "hook_kicker": "MARKET CLOSE · SEP 30",
  "hook_foot": "Assetly",
  "hook_dur": 1.5,
+ "stamp": {
+  "edition": "Close",
+  "text": "Sep 30 · 9:57 PM ET",
+  "asof": "2026-09-30 21:57",
+  "line": "Data as of Sep 30, 2026 9:57 PM ET"
+ },
  "script": "Stocks closed mixed as Treasury yields rose. Investors weighed softer inflation. Hewlett Packard Enterprise jumped 3.9% on a $1.2 billion server order. Shares hit a record close. Micron topped fourth-quarter estimates, with a strong outlook. Shares rose after hours. My portfolio closed up 0.9%. How did I do this week and this month? Flat this week, up 3.8% this month.",
  "grid": 0.3,
  "card": 1.8,
@@ -171,7 +177,7 @@
  "beats": [
   {
    "take": "take60.mp4",
-   "start": 81.13,
+   "start": 81.14,
    "focus_src": 1000,
    "note": "brief scrolling (Stocks close mixed.)",
    "to_cue": 2
@@ -192,21 +198,21 @@
   },
   {
    "take": "take60.mp4",
-   "start": 64.4,
+   "start": 64.41,
    "focus_src": 620,
    "to_cue": 7,
    "note": "Home: total value, Today, All time, scrolling to the movers"
   },
   {
    "take": "take60.mp4",
-   "start": 173.12,
+   "start": 173.14,
    "focus_src": 1450,
    "to_cue": 8,
    "note": "Ask: the question typed"
   },
   {
    "take": "take60.mp4",
-   "start": 199.82,
+   "start": 199.84,
    "focus_src": 900,
    "tail": 1.0,
    "note": "Ask: the real answer, held into the card"

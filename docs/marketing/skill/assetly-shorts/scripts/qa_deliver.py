@@ -81,7 +81,8 @@ def main():
         d = meta["description"]
         okm = (len(meta["title"]) <= 70 and "Portfolio shown is illustrative. Not financial advice." in d and "https://apps.apple.com/app/id6811739789" in d
                and "https://hodlerss.github.io/assetly/about.html" in d and "#Shorts" in meta["hashtags"] and not re.search(r"\bdemo\b", json.dumps(meta), re.I))
-        row("Q27", "Metadata: title <= 70, illustrative line, App Store + about links, #Shorts, no 'demo'", okm,
+        okm = okm and d.splitlines()[0] == day.get("stamp", {}).get("line", "") and bool(meta.get("tags"))
+        row("Q27", "Metadata: first line 'Data as of ...', title <= 70, illustrative line, App Store + about links, #Shorts, tags, no 'demo'", okm,
             f"title {len(meta['title'])} chars: \"{meta['title']}\"; {len(meta['hashtags'])} hashtags")
         # Q28 Whisper round trip on the final mix
         from faster_whisper import WhisperModel
@@ -133,6 +134,37 @@ def main():
                 if sat > 20 or edge < 0.8: low.append(f"beat {i + 1} @{at:.1f}s (sat {sat:.0f}, edge {edge:.1f})")
             t += bt["dur"]
         row("Q29", "Every beat shows the app (no home screen, no blank screen) at 25/50/90% of the beat", not low, ", ".join(det29) + (f"; BAD {low}" if low else ""))
+        # Q30 the data time-stamp: on EVERY frame in the same top-left spot (cover, every beat, the end card), its text is the
+        # snapshot the figures come from (research quotes, within 5 min), and the edition label is this edition's
+        st = day.get("stamp") or {}
+        snap = jload(os.path.join(W, "research-data.json"))["asof_et"]
+        from datetime import datetime
+        try:
+            shown = datetime.strptime(f"{DATE[:4]} {st.get('text', '')}", "%Y %b %d · %I:%M %p ET")
+            delta = abs((shown - datetime.strptime(snap, "%Y-%m-%d %H:%M ET")).total_seconds()) / 60
+        except ValueError:
+            delta = 1e9
+        label_ok = st.get("edition") == {"preopen": "Pre-open", "midday": "Midday", "close": "Close"}[ED]
+        from PIL import Image
+        import numpy as np
+        sp = os.path.join(B, "stamp.png"); fails, n = [], 0
+        if os.path.exists(sp):
+            a_ = np.array(Image.open(sp).getchannel("A")); ys, xs = np.nonzero(a_ > 128)
+            box = (xs.min(), ys.min(), xs.max() + 1, ys.max() + 1); mask = a_[box[1]:box[3], box[0]:box[2]] > 128
+            times = [0.0, 0.5] + [tm["hook"] + sum(b["dur"] for b in tm["beats"][:i]) + tm["beats"][i]["dur"] / 2 for i in range(len(tm["beats"]))] + [L - 0.6, L - 0.05]
+            ref = None
+            for at in times:
+                png = os.path.join(W, f"stampchk_{at:.2f}.png")
+                run("ffmpeg", "-v", "error", "-y", "-ss", f"{at:.2f}", "-i", final, "-frames:v", "1", png)
+                g = np.array(Image.open(png).convert("L")).astype(float)[box[1]:box[3], box[0]:box[2]]
+                contrast = g[mask].mean() - g[~mask].mean(); n += 1
+                if ref is None: ref = g
+                same = np.abs(g[mask] - ref[mask]).mean()
+                if contrast < 40 or same > 12: fails.append(f"{at:.1f}s (contrast {contrast:.0f}, drift {same:.0f})")
+        ok30 = os.path.exists(sp) and not fails and delta <= 5 and label_ok
+        row("Q30", "Data time-stamp top-left on every frame (same spot), = snapshot within 5 min, edition label right", ok30,
+            f"\"{st.get('edition', '').upper()} / {st.get('text', '')}\" at x {box[0]}-{box[2]}, y {box[1]}-{box[3]} on {n} frames (cover to card)"
+            f"{'; FAIL ' + str(fails) if fails else ''}; snapshot {snap} (diff {delta:.0f} min); label {'ok' if label_ok else 'WRONG'}" if os.path.exists(sp) else "no stamp layer")
         # Q11 / Q20 from the verification artifacts
         row("Q11", "Every figure sourced (two agreeing feeds; disagreements dropped)", True,
             f"market figures: both quote feeds per item; portfolio: app vs Nasdaq recompute ({sum(c['ok'] for c in facts['checks'])}/{len(facts['checks'])} kept); Ask: {len(askc['verified'])} verified")

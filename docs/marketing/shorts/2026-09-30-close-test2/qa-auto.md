@@ -9,7 +9,7 @@
 | Q7 | Hook by 1.5 s | PASS | voice starts 0.40 s; title card on screen from frame 0 |
 | Q8 | Caption sync (first word lit vs speech onset) | PASS | worst 100 ms over 9 sentences: -70, -40, -70, -30, -70, -30, -100, -80, -60 |
 | Q9 | Subtitle cap height >= 34 px | PASS | 36 px cap height at 50 px type |
-| Q10 | Overlay text inside safe zone (x 60-950, y 100-1536) | PASS | 30 layers checked; union x 132-947, y 112-1229 |
+| Q10 | Overlay text inside safe zone (x 60-950, y 100-1536) | PASS | 31 layers checked; union x 60-947, y 110-1229 |
 | Q13 | No advice / hype / jargon words, em dashes, emoji | PASS | hits none, em dash False, emoji 0 |
 | Q17 | No "demo" in voice, subtitles, cards, metadata | PASS | 0 hits |
 | Q18 | Consistent motion (same push on every beat, cuts on the 0.3 s grid) | PASS | 6 beats, push [(1.3, 0.7, 0.6), (1.3, 0.7, None)]; cuts [6.0, 11.1, 15.9, 19.2, 21.3] |

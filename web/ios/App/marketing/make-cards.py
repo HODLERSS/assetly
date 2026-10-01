@@ -89,6 +89,19 @@ elif mode == "sub":
         centred(d, y, s, f, SUB, w); y += hh + gap
     img.save(out); print(f"subtitle {w}x{h}: {len(lines)} line(s): {text}")
 
+elif mode == "stamp":
+    # The data time-stamp of a Short (owner, 9/30): ONE fixed corner, top-left inside the Shorts safe zone, the same
+    # position and size on every frame from the cover to the end card. Two short lines so it stays clear of the centred
+    # "Not financial advice": the edition as a tracked accent eyebrow ("CLOSE"), then "Sep 30 · 4:05 PM ET" in ink.
+    w, h, x, y, out, edition, text = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), sys.argv[6], sys.argv[7], sys.argv[8]
+    img = layer(w, h); d = ImageDraw.Draw(img)
+    fe, ft = grotesk(22, 700), grotesk(27, 600)
+    cx = x
+    for ch in edition.upper():
+        d.text((cx, y), ch, font=fe, fill=ACCENT); cx += d.textlength(ch, font=fe) + 2
+    d.text((x, y + 30), text, font=ft, fill=INK)
+    img.save(out); print(f"stamp at ({x},{y}): {edition.upper()} / {text} bbox {img.getchannel('A').getbbox()}")
+
 elif mode == "line":
     # one small muted line at a fixed y on a full-canvas layer (the Short's standing disclaimer)
     w, h, y, size, out, text = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), sys.argv[6], sys.argv[7]
