@@ -11,6 +11,7 @@
 //   4 fact-check       (every number verified against the deterministic stats, or cut)
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { fixGainAsDayMove, fixGrossAsNet, fixQuotedPrices } from "../_shared/prices.ts";
+import { fixNamedWeights, fixRecoveryClaims, ledeFallback, PLAIN_WORDS_RULE, repairMangledFigures, type WeightFact } from "../_shared/brief_guards.ts";
 import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
 import {
   superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, tidyClauseEndings, krxDollarTargets, taxRemarkClaims, bondValueClaims, isTaxAdvantaged, plainForBeginner, roundBookTotal, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
@@ -90,7 +91,8 @@ const FAST_MODEL = "gpt-oss-120b";
 // 18 (r13 M1): period figures relabelled to their true window (SOXL "347.4% this year" is its 1-year return)
 // 17 (r12 D): house-voice verdicts/forecasts ("A clean beat rerates the whole portfolio") and low-yield income claims
 //    dropped from stored rows; scripts re-made (card decimals, "~" / "(est)" in words, "Platforms'")
-const GEN_VERSION = 22;   // 22: net worth as the portfolio value; day $ beside day % (10/1)   // 4:
+const GEN_VERSION = 23;   // 23: weight/recovery/mangled-figure guards, plain words, never an empty lede (10/1)
+// 22: net worth as the portfolio value; day $ beside day % (10/1)   // 4:
 const REPAIR_ROWS_PER_RUN = 12, REPAIR_ROWS_PER_USER = 6;   // r10 load: a GEN bump no longer rewrites every stored row in one run calendar lines from the estimates, the round-4 guards; today's older rows are repaired
 // What the writers were given, per user: a dated claim in the finished brief must trace to a date in here
 // (drafts handed back to a fact-checker are not sources).
@@ -312,6 +314,7 @@ BANNED PHRASES (never write these or variants): "investors should", "keep an eye
 NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
 RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as \u20a9 (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.
+${PLAIN_WORDS_RULE}
 ${EVIDENCE_LAW}`;
 /** The assessment's YOUR PORTFOLIO paragraph, from the book itself (exported for tests via the shared helper). */
 function yourPortfolio(holdings: { name: string; usd: number }[], cashUsd: number, total: number, exp: Exposure, modelText: string): string {
@@ -408,7 +411,8 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   });
   const bookPct = typeof (src as unknown as { day_pct?: number }).day_pct === "number" && edition !== "assessment" && edition !== "weekend" ? (src as unknown as { day_pct: number }).day_pct : null;
   const repairMixed = (ctx?.facts ?? []).some((f) => /\.(?:KS|KQ)$|-USD$|^(?:BTC|ETH|SOL|XRP|DOGE)$/.test(f.symbol));
-  const text = (t: string) => ((u: string) => edition === "close" || edition === "kr_close" ? dropFuturesAfterClose(u) : u)(mergeParens(fixFragments(fixScopeLabels(fixBookMove(fixWhatItMeans(closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))))), bookPct), repairMixed))));
+  // 10/1: a figure an older scrub mangled ("SolidigmB") and a recovery claim the arithmetic contradicts are fixed in stored rows too
+  const text = (t: string) => ((u: string) => repairMangledFigures(fixRecoveryClaims(edition === "close" || edition === "kr_close" ? dropFuturesAfterClose(u) : u)))(mergeParens(fixFragments(fixScopeLabels(fixBookMove(fixWhatItMeans(closeLabel(unicodeMinus(fixProperCase(tidyNumbers(fixArticles(plainScrub(fixGlossArticles(deDirect(unComma(dedupePhrases(stripVerdictTails(String(t ?? "")))))), PORTFOLIO_PLAIN))))))), bookPct), repairMixed))));
   const dlvFacts = ests.map((e) => ({ names: e.names, est: e.dlv ?? null }));
   const dropWrong = (t: string) => {
     const x0 = liveFacts.length ? liveNotYesterday2(text(t), liveFacts) : text(t);
@@ -802,7 +806,12 @@ Deno.serve(async (req) => {
         crypto: Number(shareOf(isCrypto).toFixed(1)), bonds: Number(shareOf(isBond).toFixed(1)), cash: Number(shareOf(isCash).toFixed(1)),
       };
       const exposureLine = `EXPOSURE BY TYPE (share of total assets; the ONLY exposure figures you may state): US stocks and stock funds ${exposure.usEquity}%, Korean stocks ${exposure.krEquity}%, bonds ${exposure.bonds}%, crypto ${exposure.crypto}%, cash ${exposure.cash}%.`;
-      const statsLines = `${statsLines0}\n${divBlock}\n${exposureLine}`;
+      // 10/1: "MARA at 33.7% and SK hynix at 55.1% means 21.4% of the portfolio rides two single-name bets": the writer added
+      // the pair itself and hung the sum on the wrong name. Each weight and the pair's sum are given, labelled, in the data.
+      const topW = assets.filter((r) => !r.symbol.startsWith("$") && r.kind !== "cash").sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency))
+        .slice(0, 2).map((r) => ({ name: krName(r.symbol, r.nickname, r.name), weight: usd(Number(r.value ?? 0), r.currency) / total * 100 }));
+      const largestLine = topW.length ? `LARGEST HOLDINGS (each weight belongs to its OWN name): ${topW.map((t) => `${t.name} ${t.weight.toFixed(1)}% of assets`).join(", ")}${topW.length === 2 ? `; the two together ${(Number(topW[0].weight.toFixed(1)) + Number(topW[1].weight.toFixed(1))).toFixed(1)}% of assets` : ""}.` : "";
+      const statsLines = `${statsLines0}\n${divBlock}\n${exposureLine}${largestLine ? "\n" + largestLine : ""}`;
       const marketLines = marketLinesFor(korean), mktLive = mktLiveFor(korean);
       // A morning edition that starts after the bell (a late cron, a retry through an API wave) is an OPENING
       // READ: its US day figures are today's early moves, and it says so, never "yesterday".
@@ -847,6 +856,10 @@ Deno.serve(async (req) => {
       let sections: Sections | null = null;
       let p8Adds: { tech: number; lev: string } | null = null;   // r12 F: appended after the last sanitizer
       let finalWins: { names: string[]; windows: Record<number, number | null> }[] = [];   // r13 M1: the final pass's period facts
+      let finalWeights: WeightFact[] = [];   // 10/1: each holding's weight, for the last guards
+      // 10/1: the lede is never empty: when nothing of the model's survives, it is built from verified figures
+      const fallbackLede = () => ledeFallback(netWorth, holdings.filter((r) => r.kind !== "cash").slice(0, 2)
+        .map((r) => ({ name: plainCompanyName(krName(r.symbol, r.nickname, r.name)), weight: usd(Number(r.value ?? 0), r.currency) / total * 100 })));
       let usedCompact = false;
       let memosOut: Record<string, unknown>[] = [];
       // a watch with no usable date falls back to that holding's own tripwire, never a placeholder (round 6: "What
@@ -1279,6 +1292,7 @@ BANNED PHRASES (never write these or variants): "investors should", "keep an eye
 NEVER mention internal process words: "skeptic", "memo", "pushback", "analyst notes". The reader sees only conclusions.
 NUMBER STYLE: dollar amounts >= 1,000 rounded to the nearest hundred with commas ($107,300 not $107299); percentages to one decimal; state at most TWO numbers per position note.
 RULES: every word must earn its place; no filler, no hedging, no generic advice. Numbers ONLY from the data above; if a number is not in the data, it does not exist. Korean companies by NAME with won as ₩ (never the letters KRW before a number). Never numeric KRX codes. Never use em dashes or semicolons. Opinionated but honest.
+${PLAIN_WORDS_RULE}
 BLUF LAW: every section opens with its CONCLUSION first; never a chain of ticker-and-percent moves. NUMBER DIET: one number per point, never more than three per section. OPINION: one confident, fact-backed judgment per section; never hedged into mush. CONSTRUCTIVE FRAME: risks come with what to check or manage next, never bare doom; every section leaves the reader knowing what to DO.\n${READER}`;
         let draft = await askModel(key, "You are the editor of a one-reader research desk. Dense, precise, every word counts. Think briefly, then write.", editorPrompt, 24000, 75000);
         const meta1 = lastMeta;
@@ -1294,7 +1308,7 @@ ${statsLines}
 TOP MEMOS:
 ${memosOut.slice(0, 3).map((m) => `- ${m.name}: ${m.changed}. ${m.bull}. ${m.bear}.`).join("\n")}
 Return STRICT JSON {"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": []}.
-lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their holdings; 1-3 positions, note <= 32 words with a number, each OPENING WITH WHAT IT MEANS and never with the price move,${noteSplit} watch <= 10 words naming a concrete event (NEVER the words monitor, watch, track, keep an eye); desk_view <= 40 words, structural only: no day moves, no overnight numbers. Banned: investors should, keep an eye, monitor, worth watching, remains to be seen. No filler, no em dashes, Korean companies by name, won as ₩.`;
+lede <= 34 words; overnight <= 55 words with >= 3 market numbers tied to their holdings; 1-3 positions, note <= 32 words with a number, each OPENING WITH WHAT IT MEANS and never with the price move,${noteSplit} watch <= 10 words naming a concrete event (NEVER the words monitor, watch, track, keep an eye); desk_view <= 40 words, structural only: no day moves, no overnight numbers. Banned: investors should, keep an eye, monitor, worth watching, remains to be seen. No filler, no em dashes, Korean companies by name, won as ₩.\n${PLAIN_WORDS_RULE}`;
           draft = await askModel(key, "Think very briefly. Output only the JSON.", compactPrompt, 12000, Math.max(18000, Math.min(40000, (150 - elapsed()) * 1000)), FAST_MODEL);
           if (draft && validSections(draft)) usedCompact = true;
         }
@@ -1374,19 +1388,19 @@ ${shape}
 lede: the ONE thing the Korea open changes for THIS portfolio, stated as a consequence for the reader. <= 28 words.
 overnight: the Korean tape RIGHT NOW: KOSPI and USDKRW copied from MARKET NOW with their EXACT labels and numbers, then the biggest Korean day move BY NAME with its number. US names appear only through their last session, past tense. <= 50 words.
 positions: the Korean names FIRST (each with its day number and current weight, largest first), then at most ONE US name and only if it has fresh news; note <= 30 words that OPENS WITH WHAT IT MEANS for this owner. watch <= 10 words naming a level or event inside the Korean session or at the next US open.
-desk_view: what the Korea open changes about the book's direction; the Korean sleeve's weight and its shared driver with the US names. AT MOST THREE figures. <= 36 words.
+desk_view: what the Korea open changes about the book's direction; the Korean holdings' combined weight and their shared driver with the US names. AT MOST THREE figures. <= 36 words.
 calendar: 0-3 items: the KRX close (3:30 PM KST) if a Korean catalyst lands today, the next US session with its date, dated earnings from NEXT EARNINGS ESTIMATES.
 KR-SESSION LAW: "today" means the Korean session. Every US figure belongs to the US session named in SESSIONS and is past tense ("in Friday's session"), never "today".
 QUIET-BOOK LAW: if no Korean name moved more than 1.5% and there is no fresh news, SAY the open is quiet in one clause and make the next catalyst the centerpiece. Never invent levels.
 ${STYLE_RULES}\n${READER}`
           : edition === "kr_close"
-          ? `Write the ${briefDate} KOREA CLOSING NOTE (published after the 3:30 PM KST close on ${dayName(briefDate)}; the US market opens in ${usOpensIn}) for ONE investor who holds Korean names alongside a US book. Settle what the Korean session meant for the Korean sleeve and arm them for the US open.
+          ? `Write the ${briefDate} KOREA CLOSING NOTE (published after the 3:30 PM KST close on ${dayName(briefDate)}; the US market opens in ${usOpensIn}) for ONE investor who holds Korean names alongside a US book. Settle what the Korean session meant for their Korean holdings and arm them for the US open.
 
 ${dataBlock}
 
 ${shape}
 lede: the Korean session's story for THIS portfolio in one breath: the Korean names' day result, then a consequence clause. <= 30 words.
-overnight: OPEN WITH THE CONCLUSION (what the session did to the Korean sleeve, plain words), THEN KOSPI and USDKRW copied from MARKET NOW with their EXACT labels and numbers, plus the Korean day P&L from PORTFOLIO. <= 55 words.
+overnight: OPEN WITH THE CONCLUSION (what the session did to their Korean holdings, plain words), THEN KOSPI and USDKRW copied from MARKET NOW with their EXACT labels and numbers, plus the Korean day P&L from PORTFOLIO. <= 55 words.
 positions: the Korean names that defined the session, largest first, each with its day number and weight; then at most ONE US name with a catalyst at the coming US open. note <= 30 words: what happened AND what it means beyond today. watch <= 10 words naming the next concrete catalyst, level or event (the US open, a print, a KRX event tomorrow).
 desk_view: the setup for the US session that opens in ${usOpensIn}: the one structural risk or opportunity that carries over from Korea. No single-day numbers. <= 40 words.
 calendar: 0-3 items: the US open with its date and time, tomorrow's KRX session (or the next one if a holiday intervenes, name it), dated earnings.
@@ -1433,7 +1447,7 @@ ${statsLines}
 DESK CONTEXT:
 ${memosOut.slice(0, 4).map((m) => `- ${m.name}: ${m.changed ?? ""}. watch: ${m.watch ?? ""}`).join("\n") || "- none"}
 ${shape}
-lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 3 MARKET NOW numbers and exact labels; 1-3 positions ordered by weight, note <= 28 words with a number,${noteSplit} watch <= 10 words taken from DESK CONTEXT or "next session open", NEVER an invented level or date (and NEVER monitor/watch/track); desk_view <= 36 words structural only; calendar []. The day G/L figures in PORTFOLIO are the only loss/gain numbers allowed. No filler, no em dashes, Korean companies by name, won as \u20a9.`;
+lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 3 MARKET NOW numbers and exact labels; 1-3 positions ordered by weight, note <= 28 words with a number,${noteSplit} watch <= 10 words taken from DESK CONTEXT or "next session open", NEVER an invented level or date (and NEVER monitor/watch/track); desk_view <= 36 words structural only; calendar []. The day G/L figures in PORTFOLIO are the only loss/gain numbers allowed. No filler, no em dashes, Korean companies by name, won as \u20a9.\n${PLAIN_WORDS_RULE}`;
           draft = await askModel(key, "Think very briefly. Output only the JSON.", compact, 12000, Math.max(18000, Math.min(35000, (150 - elapsed()) * 1000)), FAST_MODEL);
           if (draft && validSections(draft)) usedCompact = true;
         }
@@ -1526,8 +1540,11 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // produce a figure that was not in the text they started from, the scrubs lose and the original stands.
       const figSet = (o: unknown) => new Set((JSON.stringify(o ?? "").match(/-?\d[\d,]*(?:\.\d+)?%?/g) ?? []));
       // per-field: a scrub that alters a figure loses THAT field, not the whole diet
+      // 10/1: one regeneration shipped an EMPTY lede: deAdvice dropped its every sentence and an empty string carries no
+      // new figure, so it passed. A scrub that empties a field loses too.
       const safeField = (before: string, after: string) => {
         const b = figSet(before);
+        if (!String(after ?? "").trim() && String(before ?? "").trim()) return before;
         return [...figSet(after)].some((f) => !b.has(f)) ? before : after;
       };
       const dietFloor = edition === "assessment" ? (holdings.length <= 2 ? 180 : 240) : 120;
@@ -1679,7 +1696,9 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       const ADVICE_FRAME = /\b(should|consider|needs? to|ought to|task is to|we(?:'|\u2019)?ll|you (?:could|might|can|should)|worth (?:adding|buying|selling|trimming)|would (?:improve|help|boost|lift|strengthen|protect))\b/i;
       const deAdvice = (t: string) => {
         let out = String(t ?? "");
-        out = out.replace(/[,;]\s*(?:so\s+|and\s+)?[^.;]*\b(?:should|consider|task is to|we(?:'|\u2019)?ll|you (?:could|might|can))\b[^.]*?(?=\.|$)/gi, "");
+        // a comma INSIDE a number is a thousands separator, not a clause boundary ("selling 27,505 shares should..." was
+        // cut to "selling 27.", which the integrity net then reverted, advice and all)
+        out = out.replace(/(?:;|,(?!\d))\s*(?:so\s+|and\s+)?[^.;]*\b(?:should|consider|task is to|we(?:'|\u2019)?ll|you (?:could|might|can))\b[^.]*?(?=\.(?!\d)|$)/gi, "");
         out = splitSentences(out).filter((x) => !(TRADE_VERB.test(x) && ADVICE_FRAME.test(x))).join(" ");
         return out;
       };
@@ -1694,7 +1713,11 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // the model sometimes writes the section label into the field itself
       sections.desk_view = String(sections.desk_view ?? "").replace(/^\s*(desk\s*view|structure\s*(?:&|and)\s*risk|the\s*desk\s*view)\s*[:\u2014-]\s*/i, "");
       sections.desk_view = safeField(sections.desk_view, tidy(deSemi(deAdvice(trimStats(dropReturnsList(collapsePctFirst(collapseRun(dropMoveChain(deWeightParens(sections.desk_view, 0))))), edition === "assessment" ? 5 : 3, 18)))));   // structural section; the floor is 18, not 30, because at 30 a four-sentence desk view could not shed a single sentence without breaching it, so the figure cap never bit
-      sections.lede = safeField(sections.lede, tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1)))));
+      // 10/1 EMPTY LEDE: a two-sentence lede whose both sentences paired a trade word with an advice frame ("CEO Thiel selling
+      // MARA shares ... should worry you. Adding here would help only if...") lost both here, and an empty string carries no
+      // new figure, so the integrity net let it through. The advice stays out; the lede is rebuilt from verified figures.
+      { const ledeD = tidy(deSemi(deAdvice(deWeightParens(sections.lede, 1))));
+        sections.lede = ledeD.trim() ? safeField(sections.lede, ledeD) : fallbackLede(); }
       // in a DAILY note the weight is structural, not news, and the book line already states it: dropping the
       // "on a 9.3% weight" clause leaves the move and its dollar impact, which is what the day is about
       const deWeightClause = (t: string) => edition === "assessment" ? t
@@ -1863,7 +1886,10 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         const dlvFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], est: deliveriesEstimate(r.symbol, briefDate)?.est ?? null }));
         // "30.1% Bitcoin weight" when Bitcoin is 25.2% (30.1% = Bitcoin + Ether, round 5): a holding's weight is its
         // own; a group share must be labelled as the group
-        const weightFacts = holdings.map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / total * 100 }));
+        const weightFacts: WeightFact[] = holdings.map((r) => { const nm = krName(r.symbol, r.nickname, r.name);
+          // "Samsung Electronics (Pref)" is written "Samsung Pref"
+          return { names: [nm, ...(/\(Pref\)\s*$/.test(nm) ? [`${nm.split(/\s+/)[0]} Pref`] : []), ...aliasesFor(r.symbol, r.name)], weight: usd(Number(r.value ?? 0), r.currency) / total * 100 }; });
+        finalWeights = weightFacts;
         const bookNamesAll = weightFacts.flatMap((w) => w.names);
         // r10: "META, the week's biggest loser" when META was the week's top gainer: superlatives and period claims are held
         // to each holding's own windows, as in Ask
@@ -1918,7 +1944,10 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           // round 8: a verdict TAIL leaves a one-sentence lede as a clause ("…, keeping the portfolio on track"), and a
           // tech share is held to the computed one ("Tech makes up about 57%" at ~97%)
           // round 9: the compact morning read "Portfolio up 0.5%" (+0.27%) and "What it means the AI chip rally adds..."
-          const x0 = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(String(t ?? "")), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup, 5, weightFacts);
+          // 10/1: a weight hung on the wrong holding (fixNamedWeights runs before fixWeights, whose pair rule read "SK hynix at
+          // 55.1%" as a sum), a recovery claim the arithmetic contradicts, a figure an earlier scrub mangled
+          const xg = fixNamedWeights(fixRecoveryClaims(repairMangledFigures(String(t ?? ""))), weightFacts);
+          const x0 = fixGroupShares(fixWeights(fixAgreement(fixExposure(fixFractions(fixProperCase(tidyNumbers(digitsForWritten(dropInstructionEcho(plainScrub(stripVerdictTails(xg), PORTFOLIO_PLAIN))))), weightFacts, fracGroups), exposure)), weightFacts, [...weightGroups, ...fracGroups]), techGroup, 5, weightFacts);
           const x = ((t: string) => edition === "close" || edition === "kr_close" ? dropFuturesAfterClose(t) : t)(fixFragments(dropYieldPurpose(fixThemeShares(fixScopeLabels(fixThemeHeavy(fixBookMove(fixWhatItMeans(x0), edition === "assessment" || edition === "weekend" ? null : dayPctB), themesArr), scopeMixed), themesArr), bookYieldPct)));
           // a cause for a move that no headline states ("Meta's dip signals weaker AI spend", round 4) goes too, and
           // so does a report month or date off its estimate ("Microsoft earnings in late November", round 4
@@ -2111,6 +2140,16 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
           if (add.length) sections.desk_view = `${String(sections.desk_view ?? "").trim().replace(/[.\s]+$/, "")}. ${add.join(" ")}`.replace(/^\.\s*/, "");
         }
       }
+      // 10/1 LAST GUARDS, after every pass that can rewrite a sentence (the grammar model, sanitize, the facts pass): plain
+      // words, each weight on its own holding, recovery arithmetic, no mangled figure; and the lede is never empty.
+      if (!backfillOnly) {
+        const g = (t: string) => { const x = plainScrub(repairMangledFigures(fixRecoveryClaims(fixNamedWeights(String(t ?? ""), finalWeights))), PORTFOLIO_PLAIN); return x.trim() ? x : String(t ?? ""); };
+        sections.lede = g(sections.lede); sections.overnight = g(sections.overnight); sections.desk_view = g(sections.desk_view);
+        if (sections.horizon) sections.horizon = g(sections.horizon);
+        sections.ideas = (sections.ideas ?? []).map(g);
+        sections.positions = sections.positions.map((p) => ({ ...p, note: g(p.note), watch: p.watch ? g(p.watch) : p.watch }));
+      }
+      if (!String(sections.lede ?? "").trim()) sections.lede = fallbackLede();
       // round 8: signed figures use the true minus sign, as the client renders them
       { const um = (v: unknown): unknown => typeof v === "string" ? unicodeMinus(v) : Array.isArray(v) ? v.map(um) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, k === "day_by_symbol" || k === "held" || k === "as_of" ? x : um(x)])) : v;
         sections = um(sections) as Sections; }

@@ -80,3 +80,10 @@ Deno.test("9/30: card slang said plainly (book, thesis, tripwire, setup)", () =>
   assertEquals(speakable("The morning's slide thesis failed. Your all-in QQQ book is up. The bearish setup flipped. The tripwire is VIX above 18.", [["QQQ", "Invesco QQQ"]]),
     "The morning's call for a drop failed. Your all-in Invesco QQQ portfolio is up. The gloomy mood flipped. The warning sign is VIX above eighteen.");
 });
+
+Deno.test("10/1: desk words from the card are said plainly", async () => {
+  const { speakable } = await import("./ear.ts");
+  const out = speakable("Seoul's bid carried. The yield is a rounding error, AMD bought at cycle peak, and CEO Thiel dumping shares is a yellow flag.");
+  for (const w of ["bid", "rounding error", "cycle peak", "dumping", "yellow flag"]) assertEquals(out.includes(w), false, `${w}: ${out}`);
+  assertEquals(speakable("Netflix made a takeover bid for the studio.").includes("takeover bid"), true);
+});

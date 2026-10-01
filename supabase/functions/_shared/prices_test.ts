@@ -31,3 +31,14 @@ Deno.test("10/1: gross assets quoted as the portfolio's value becomes net worth"
   assertEquals(fixGrossAsNet("Total assets $1.37 M before the loan.", 1375000, 1253500), "Total assets $1.37 M before the loan.");
   assertEquals(fixGrossAsNet("Portfolio sits at $1.37 M.", 1375000, 1370000), "Portfolio sits at $1.37 M.");   // no debt: unchanged
 });
+
+Deno.test("10/1: a valuation or range after 'at' is not a share price (Solidigm IPO talk-150B, SolidigmB)", () => {
+  assertEquals(fixQuotedPrices("Solidigm IPO talk at $100-150B is unfiled speculation.", 1833000, "KRW", 1345), "Solidigm IPO talk at $100-150B is unfiled speculation.");
+  assertEquals(fixQuotedPrices("Solidigm at $150B is unfiled speculation.", 1833000, "KRW", 1345), "Solidigm at $150B is unfiled speculation.");
+  assertEquals(fixQuotedPrices("A listing at $100 billion to $150 billion is talk.", 1833000, "KRW", 1345), "A listing at $100 billion to $150 billion is talk.");
+  assertEquals(fixQuotedPrices("Valued at $100 to $150 billion.", 1833000, "KRW", 1345), "Valued at $100 to $150 billion.");
+  assertEquals(fixQuotedPrices("The deal closes at $8.2B.", 607.87, "USD", 607.87), "The deal closes at $8.2B.");
+  // a real wrong price is still dropped, and a won price still corrected
+  assertEquals(fixQuotedPrices("AMD slid 3.6% to $580.", 607.87, "USD", 607.87), "AMD slid 3.6%.");
+  assertEquals(fixQuotedPrices("SK hynix dropped 5.0% to ₩1,300.", 1761000, "KRW", 1294.9), "SK hynix dropped 5.0% to ₩1,761,000.");
+});

@@ -96,6 +96,12 @@ const PLAIN: [RegExp, string][] = [
   [/\bincome book\b/gi, "dividend stocks"], [/\bequity tilt\b/gi, "lean toward stocks"], [/\btilt\b/gi, "lean"],
   [/\bAI-?capex\b/gi, "AI spending"], [/\bcapex\b/gi, "spending on equipment"], [/\bEPS\b/g, "earnings per share"], [/\bFCF\b/g, "free cash"],
   [/\bfree cash flow\b/gi, "cash left over"], [/\bEBITDA\b/g, "operating profit"], [/\bbasis points\b/gi, "hundredths of a percent"],
+  // 10/1 owner: the same desk words the card scrub now removes (PORTFOLIO_PLAIN), for anything the restatement adds
+  [/\b(hold|holds|held|keep|keeps|kept) the bid\b/gi, "$1 its gains"],
+  [/(?<!\b(?:takeover|acquisition|buyout|tender|hostile|rival|competing|cash|merger|buyback)\s)\bbid\b(?!\s+(?:for|to|up)\b)/gi, "buying"],
+  [/\b(?:the |a )?cycle peak\b/gi, "the top of the cycle"], [/\b(?:an?\s+)?rounding errors?\b/gi, "too small to matter"],
+  [/\b(?:the |a )?multiple compression\b/gi, "a lower price relative to earnings"], [/\byellow flags?\b/gi, "warning sign"],
+  [/\bdumping\b/gi, "selling"], [/\bdumped\b/gi, "sold"],
   [/\bbuyback bid\b/gi, "buyback"], [/\brisk-off\b/gi, "cautious"], [/\brisk-on\b/gi, "confident"], [/\bprint\b(?=\s+(?:expected|due|on|in|next))/gi, "report"],
   [/\bsentiment tell\b/gi, "mood signal"], [/\bvalue-income hold\b/gi, "steady dividend holding"],
 [/\bslide thesis\b/gi, "call for a drop"], [/\b(?:investment )?thesis\b/gi, "view"], [/\btripwire\b/gi, "warning sign"], [/\bbearish setup\b/gi, "gloomy mood"], [/\bbullish setup\b/gi, "upbeat mood"],

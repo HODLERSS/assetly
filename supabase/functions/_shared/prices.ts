@@ -4,7 +4,10 @@
 export function fixQuotedPrices(note: string, localPx: number, currency: string, usdPx: number): string {
   const fmtLocal = currency === "KRW" ? `₩${Math.round(localPx).toLocaleString("en-US")}` : `$${localPx >= 1000 ? Math.round(localPx).toLocaleString("en-US") : localPx.toFixed(2)}`;
   const near = (a: number, b: number) => b > 0 && Math.abs(a / b - 1) <= 0.03;
-  return String(note ?? "").replace(/\s(to|at|near|around)\s(₩|\$)(\d[\d,]*(?:\.\d+)?)/g, (m, prep, sym, num) => {
+  // 10/1: a figure with a scale ("at $150B", "$8.2 billion") or a range ("at $100-150B", "$100 to $150 billion") is a
+  // deal size or a valuation, never a share price: dropping it as a "wrong price" left "Solidigm IPO talk-150B" and
+  // "SolidigmB". The lookahead spans the WHOLE number, so the digits cannot backtrack out of it.
+  return String(note ?? "").replace(/\s(to|at|near|around)\s(₩|\$)(?![\d,]*(?:\.\d+)?\s?(?:[KMBTkmbt]\b|bn\b|thousand\b|million\b|billion\b|trillion\b|%|[-–]\s?[₩$]?\d|to\s[₩$]?\d))(\d[\d,]*(?:\.\d+)?)/g, (m, prep, sym, num) => {
     const v = Number(String(num).replace(/,/g, ""));
     const labelLocal = (sym === "₩") === (currency === "KRW");
     if (labelLocal && near(v, localPx)) return m;

@@ -1022,6 +1022,38 @@ export const PORTFOLIO_PLAIN: [RegExp, string][] = [
   [/(?<!double-edged )\bcatalysts\b/g, "triggers"], [/(?<!double-edged )\bcatalyst\b/g, "trigger"], [/\bCatalysts\b/g, "Triggers"], [/\bCatalyst\b/g, "Trigger"],
   [/\b(your|these|those|the|other|single|one|each|every|US|Korean|tech|chip|growth|AI|megacap|big|biggest|largest|top|two|three|four|five|several|many|few|both|held|such)\s+names\b/gi, "$1 stocks"],
   [/\b(single|one|each|every|any)\s+name\b(?!\s+(?:of|for|change))/gi, "$1 stock"],
+  // 10/1 owner (cards, and so the narration that restates them): desk slang in a finance brief for a beginner.
+  // "bid" (buying pressure): "Seoul's bid carried", "the same AI-memory bid", "holds the bid". A bid FOR something, a
+  // bid TO do something, a takeover/tender bid, "bid up" and the shared card's "tape bid" (CARD_PLAIN) are left alone.
+  [/\b(hold|holds|held|holding|keep|keeps|kept|keeping) the bid\b/gi, "$1 its gains"],
+  [/\b(?:caught|found|got|drew) an? bid\b/gi, "drew buyers"], [/\b(?:catch|catches|find|finds|get|gets|draw|draws) an? bid\b/gi, "draws buyers"],
+  [/\b(?:catching|finding|getting|drawing) an? bid\b/gi, "drawing buyers"], [/\b(is|are|was|were) bid\b(?!\s+(?:for|to|on|at)\b)/gi, "$1 drawing buyers"],
+  [/(?<!\b(?:takeover|acquisition|buyout|tender|hostile|rival|competing|counter|cash|all-cash|merger|winning|formal|binding|failed|opening|IPO|[Tt]ape)[- ])\bbid\b(?![- ]?(?:ask|for|to|on|price|prices|up|at|and ask)\b)/g, "buying"],
+  [/\b(at|near|into|past|around) (?:the |a )?cycle peak\b/gi, "$1 the top of the cycle"], [/\bpeak[- ]cycle\b/gi, "top-of-the-cycle"], [/\b(?:the |a )?cycle peak\b/gi, "the top of the cycle"],
+  [/\b(?:an?\s+)?rounding errors?\b/gi, "too small to matter"],
+  [/\b(?:the |a )?multiple compression\b/g, "a lower price relative to earnings"], [/\b(?:The |A )?Multiple compression\b/g, "A lower price relative to earnings"],
+  [/\b(?:the |a )?multiple expansion\b/g, "a higher price relative to earnings"], [/\b(?:The |A )?Multiple expansion\b/g, "A higher price relative to earnings"],
+  [/\ba yellow flag\b/gi, "a warning sign"], [/\byellow flags\b/gi, "warning signs"], [/\byellow flag\b/gi, "warning sign"],
+  // "sleeve" (a slice of the portfolio): "Korean holdings", with the verb made plural ("the Korean sleeve now accounts"
+  // -> "the Korean holdings now account") and the possessive moved ("sleeve's" -> "holdings'")
+  [/\b((?:Korean|Korea|US|U\.S\.|crypto|income|growth|bond|tech|dividend|equity|cash|defensive|chip|memory|AI)\s+)?sleeve['’]s\b/gi, "$1holdings'"],
+  [/\b((?:Korean|Korea|US|U\.S\.|crypto|income|growth|bond|tech|dividend|equity|cash|defensive|chip|memory|AI)\s+)?sleeve((?:\s+(?:now|still|also|alone|only|already|just))?)\s+is\b/gi, "$1holdings$2 are"],
+  [/\b((?:Korean|Korea|US|U\.S\.|crypto|income|growth|bond|tech|dividend|equity|cash|defensive|chip|memory|AI)\s+)?sleeve((?:\s+(?:now|still|also|alone|only|already|just))?)\s+was\b/gi, "$1holdings$2 were"],
+  [/\b((?:Korean|Korea|US|U\.S\.|crypto|income|growth|bond|tech|dividend|equity|cash|defensive|chip|memory|AI)\s+)?sleeve((?:\s+(?:now|still|also|alone|only|already|just))?)\s+has\b/gi, "$1holdings$2 have"],
+  [/\b((?:Korean|Korea|US|U\.S\.|crypto|income|growth|bond|tech|dividend|equity|cash|defensive|chip|memory|AI)\s+)?sleeve((?:\s+(?:now|still|also|alone|only|already|just))?)\s+([a-z]+)ies\b/gi, "$1holdings$2 $3y"],
+  [/\b((?:Korean|Korea|US|U\.S\.|crypto|income|growth|bond|tech|dividend|equity|cash|defensive|chip|memory|AI)\s+)?sleeve((?:\s+(?:now|still|also|alone|only|already|just))?)\s+([a-z]+(?:sh|ch|x|ss))es\b/gi, "$1holdings$2 $3"],
+  [/\b((?:Korean|Korea|US|U\.S\.|crypto|income|growth|bond|tech|dividend|equity|cash|defensive|chip|memory|AI)\s+)?sleeve((?:\s+(?:now|still|also|alone|only|already|just))?)\s+(?!(?:this|is|was|has|its|plus|thus|less|news|always|perhaps|series|across|versus|as|us|yes|gas)\b)([a-z]*[^s\W])s\b/gi, "$1holdings$2 $3"],
+  [/\b(?:the|your|this|that)\s+sleeve\b/gi, "those holdings"],
+  [/\b(?:an?\s+)?((?:Korean|Korea|US|U\.S\.|crypto|income|growth|bond|tech|dividend|equity|cash|defensive|chip|memory|AI)\s+)sleeves?\b/gi, "$1holdings"], [/\bsleeves?\b/gi, "holdings"],
+  // an insider sale is a sale ("CEO Thiel dumping 27,505 shares")
+  [/\bdumping\b/g, "selling"], [/\bDumping\b/g, "Selling"], [/\bdumped\b/g, "sold"], [/\bDumped\b/g, "Sold"], [/\bdumps\b/g, "sells"],
+  [/\bdump\b(?=\s+(?:shares|stock|stakes?|their|his|her|its|the stock))/g, "sell"],
+  // the same briefs, 9/28-10/1: "keeps vol contained", "a JPMorgan PT cut", "high-beta chip stocks", "a risk-off day", "the canary"
+  [/\bvol\b(?!\.)/g, "price swings"],
+  [/\b(an?|the|its|their)\s+PT\b/g, "$1 price target"], [/\bPTs?\s+(cut|cuts|raise|raises|hike|hikes|increase|bump|of|to)\b/g, "price target $1"],
+  [/\bhigh[- ]beta\b/gi, "more volatile"], [/\blow[- ]beta\b/gi, "steadier"], [/\b(BTC|bitcoin|crypto|market|AI|tech|chip)\s+beta\b/gi, "$1 sensitivity"], [/\bbeta (bets?|plays?|trades?)\b/gi, "$1"],
+  [/\brisk-off\b/g, "cautious"], [/\bRisk-off\b/g, "Cautious"], [/\b([Aa]) risk-on\b/g, "$1n upbeat"], [/\brisk-on\b/g, "upbeat"], [/\bRisk-on\b/g, "Upbeat"],
+  [/\bthe canary\b/g, "the early warning sign"], [/\bcanary\b/g, "early warning sign"],
 ];
 
 const YEAR_RE = /\b(19\d{2}|20\d{2})\b/g;

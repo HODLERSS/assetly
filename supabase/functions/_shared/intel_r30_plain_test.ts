@@ -17,7 +17,7 @@ Deno.test("r30: tape -> market, adjective kept", () => {
     ["A calm tape let Microsoft climb.", "A calm market let Microsoft climb."],
     ["Nvidia led the live tape.", "Nvidia led the live market."],
     ["Utilities held up in a defensive tape.", "Utilities held up in a defensive market."],
-    ["It was a risk-on tape all afternoon.", "It was a risk-on market all afternoon."],
+    ["It was a risk-on tape all afternoon.", "It was an upbeat market all afternoon."],   // 10/1: risk-on is desk slang too
     ["Miners lagged a flat BTC tape.", "Miners lagged a flat BTC market."],
     ["A firm tape lifted chips.", "A firm market lifted chips."],
     ["Tape was quiet into the close.", "Market was quiet into the close."],
