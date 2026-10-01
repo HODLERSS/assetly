@@ -48,27 +48,28 @@ FOCUS = {"pos": 640, "home": 620, "brief": 1000, "news": 1000, "ask_q": 1450, "a
 EXT_RE = {"PRE-MARKET": r"\b(premarket|pre-market)\b", "AFTER HOURS": r"\b(after hours|after-hours)\b"}
 
 
-def chip_png(path, name, label, pct, asof):
-    """The Short's own overlay (never app UI): '<LABEL> · <time>' over '<Name>  +5.8%', a dark rounded card with the accent
-    outline, centred just under the subtitle strip, over the top of the phone. Full-canvas RGBA, laid on in its beat."""
+def corner_block(path, lines):
+    """The Short's own overlay in the top-right corner, mirroring the data stamp top-left: right-aligned lines, clear of
+    the phone (owner, 10/1: a tag over the status bar hid the clock) and inside the Shorts safe zone (x <= 950).
+    lines: [(text, size, colour)]"""
     from PIL import Image, ImageDraw, ImageFont
     fonts = os.path.expanduser("~/Library/Fonts/assetly-brand")
-    def font(f, size, wt):
-        x = ImageFont.truetype(os.path.join(fonts, f), size); x.set_variation_by_axes([wt]); return x
-    acc, ink, muted = (139, 152, 224), (233, 236, 241), (155, 163, 176)
-    up, dn = (88, 196, 140), (232, 106, 106)
-    fe, fb = font("SchibstedGrotesk[wght].ttf", 30, 700), font("SchibstedGrotesk[wght].ttf", 50, 700)
     img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
-    top = f"{label}  \u00b7  {asof}"; val = ("+" if pct >= 0 else "\u2212") + f"{abs(pct):.1f}%"
-    wt = d.textlength(top, font=fe) + 2 * len(top); wn = d.textlength(name + "   ", font=fb); wv = d.textlength(val, font=fb)
-    w = int(max(wt, wn + wv) + 64); h = 132; x0 = (1080 - w) // 2; y0 = 500
-    d.rounded_rectangle([x0, y0, x0 + w, y0 + h], radius=22, fill=(15, 18, 22, 236), outline=acc + (255,), width=3)
-    x = x0 + 32
-    for ch in top: d.text((x, y0 + 16), ch, font=fe, fill=acc + (255,)); x += d.textlength(ch, font=fe) + 2
-    d.text((x0 + 32, y0 + 58), name, font=fb, fill=ink + (255,))
-    d.text((x0 + w - 32 - wv, y0 + 58), val, font=fb, fill=(up if pct >= 0 else dn) + (255,))
+    y = 104
+    for text, size, col in lines:
+        f = ImageFont.truetype(os.path.join(fonts, "SchibstedGrotesk[wght].ttf"), size); f.set_variation_by_axes([700])
+        w = sum(d.textlength(ch, font=f) + 2 for ch in text) - 2; x = 950 - w
+        for ch in text: d.text((x, y), ch, font=f, fill=col + (255,)); x += d.textlength(ch, font=f) + 2
+        y += int(size * 1.25)
     img.save(path)
-    return {"label": label, "name": name, "value": val, "asof": asof, "text": f"{label} {asof} {name} {val}"}
+
+
+def chip_png(path, name, label, pct, asof):
+    """The labelled extended-hours quote ('PRE-MARKET' / 'IBM +5.8%' / '8:47 AM ET') in the top-right corner block."""
+    acc, ink, muted = (139, 152, 224), (233, 236, 241), (155, 163, 176)
+    val = ("+" if pct >= 0 else "\u2212") + f"{abs(pct):.1f}%"
+    corner_block(path, [(label, 24, acc), (f"{name} {val}", 34, (88, 196, 140) if pct >= 0 else (232, 106, 106)), (asof, 24, muted)])
+    return {"label": label, "name": name, "value": val, "asof": asof, "text": f"{label} {name} {val} {asof}"}
 
 
 def tokens(text):
@@ -78,15 +79,9 @@ def tokens(text):
 
 
 def tag_png(path, text):
-    """A small time tag for a beat recorded at another moment ("ASK RECORDED 10:12 AM ET"), the Short's own overlay."""
-    from PIL import Image, ImageDraw, ImageFont
-    f = ImageFont.truetype(os.path.expanduser("~/Library/Fonts/assetly-brand/SchibstedGrotesk[wght].ttf"), 30); f.set_variation_by_axes([700])
-    img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
-    w = int(d.textlength(text, font=f) + 2 * len(text) + 48); x0 = (1080 - w) // 2; y0 = 500
-    d.rounded_rectangle([x0, y0, x0 + w, y0 + 58], radius=29, fill=(15, 18, 22, 236), outline=(139, 152, 224, 255), width=2)
-    x = x0 + 24
-    for ch in text: d.text((x, y0 + 12), ch, font=f, fill=(139, 152, 224, 255)); x += d.textlength(ch, font=f) + 2
-    img.save(path)
+    """A time tag for a beat recorded at another moment ('ASK RECORDED' / '11:26 AM ET'), in the top-right corner block."""
+    head, _, when = text.rpartition(" ") if False else (text.split(" ", 2)[0] + " " + text.split(" ", 2)[1], "", text.split(" ", 2)[2])
+    corner_block(path, [(head, 24, (139, 152, 224)), (when, 24, (233, 236, 241))])
     return {"png": path, "text": text}
 
 

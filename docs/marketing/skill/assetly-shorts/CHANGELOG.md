@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.0.3 (2026-10-01, owner review of preopen-v3)
+
+- A portfolio figure carries the window Home labels it with: "up 28% all time" over "All time +28.33%" (refused: "up
+  28%" under "Today · markets closed"). Storyline check from the Home OCR.
+- The direction rule covers the cover, title and description too: no "IBM rallies." when IBM's page shows -0.03% and no
+  chip carries the move; before the open without a chip they describe the news. The fallback writes "<Name> in focus."
+- News timing needs a source: overnight / this morning / earlier today / yesterday / last night about the news are
+  refused unless every cited WHY headline was published inside that window (ET); "Before the bell," (our time) is fine.
+  "overnight" and "this morning" no longer satisfy the pre-open timing rule.
+- Chips and time tags moved to a top-right corner block that mirrors the data stamp (right-aligned at x 950, y 104-200):
+  the "ASK RECORDED" tag had covered the phone's status-bar clock. Q35 refuses any chip / tag that reaches the phone
+  (below y 450) or the top texts (left of x 700). Q33 now reads the phone and that corner block (not our subtitles).
+- Model fallback: lib.llm tries OpenRouter Sonnet -> SambaNova MiniMax-M3 (key FILE ~/.private_keys/sambanova.txt; the
+  shell env key is stale) -> MARA M3, and skips straight to the next provider on 401/402/403 (OpenRouter returned 402
+  "exceeds your available credits" ten times in the 10/1 midday storyline).
+- Network: lib.get retries network/5xx errors with 2-4-8-16-30 s backoff (a ~1 min DNS blip at 11:13 CT killed a midday
+  run after a good take); the take-time facts refresh is non-fatal (keeps the earlier facts with a warning).
+- Fallback can no longer refuse on an item its own verified wording fails (10/1: a "20" its shot did not show): the item
+  is swapped for the next verified research item until only non-item problems remain.
+- Over 30 s (10/1 midday 31.0 s): run.sh rewrites the script on the same take with a smaller budget (50/61, then 46/56
+  words written/voiced) and rebuilds, twice max, before refusing. SHORTS_BUDGET / SHORTS_SPOKEN_MAX drive storyline.
+- A whole-market line names its index ("The S&P 500 slipped 0.4%"); a bare "Stocks slipped" is refused (it contradicted
+  "US stocks today +2.00%" in the Ask on screen).
+
 ## v1.0.2 (2026-10-01, after the official midday refused and the owner's review of preopen-v2)
 
 - Direction agrees with the screen: a price direction about a holding (rise / fell / jumped / higher ...) must match the

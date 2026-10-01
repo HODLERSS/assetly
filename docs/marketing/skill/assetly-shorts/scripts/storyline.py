@@ -22,7 +22,7 @@ ED, W = sys.argv[1], sys.argv[2]
 BAN = re.compile(r"\b(buy|sell|should|must-own|recommend|guaranteed|skyrocket\w*|soar\w*|explod\w*|moon|crush\w*|massive|insane|huge|"
                  r"don't miss|act now|best stock|secret|bagger|yolo|alpha|beta|eps|p/e|guidance|bps|basis points|multiples?|catalysts?|"
                  r"thesis|tape|tripwire|setup|capex|tam|book|print|prints|demo|demonstration|swing factors?|narratives?|cost curves?)\b", re.I)
-TIMING = {"preopen": {"need": r"\b(this morning|before the bell|premarket|pre-market|futures|today|overnight|ahead of the open)\b",
+TIMING = {"preopen": {"need": r"\b(before the bell|premarket|pre-market|futures|today|ahead of the open)\b",
                       "never": r"\b(closed (?:up|down|at|higher|lower)|after the bell|today's close|so far today|this afternoon)\b"},
           "midday": {"need": r"\b(so far|midday|this afternoon|right now|today)\b",
                      "never": r"\b(closed (?:up|down|at|higher|lower)|today's close|before the bell|this morning's open|futures point)\b"},
@@ -34,7 +34,9 @@ SPOKEN_CAPS = {"AI", "US", "UK", "EU", "CEO", "CFO", "ETF", "ETFs", "VIX", "AMD"
 LEAD = {"preopen": "Before the bell,", "midday": "At midday,", "close": "At the close,"}   # the fallback's timing phrase
 LEAD_SHORT = {"preopen": "Premarket,", "midday": "Midday,", "close": "Today,"}           # ... when the budget is tight
 STORY_CAP_S, STORY_ROUNDS = 360, 8                     # storyline rounds: at most 8, inside 6 minutes
-SPOKEN_MAX = 68                                        # words as voiced (speakable): 66-68 made 26-27 s, 73 made 30.3 s
+# SHORTS_BUDGET / SHORTS_SPOKEN_MAX: run.sh lowers both when a build measures over 30 s (10/1 midday: 31.0 s)
+BUDGET = int(os.environ.get("SHORTS_BUDGET", 56))
+SPOKEN_MAX = int(os.environ.get("SHORTS_SPOKEN_MAX", 68))                                        # words as voiced (speakable): 66-68 made 26-27 s, 73 made 30.3 s
 LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE"}
 
 
@@ -220,6 +222,28 @@ def ticker_names(res, facts):
     return names
 
 
+NEWS_WHEN = re.compile(r"\b(overnight|last night|this morning|earlier today|yesterday|late (?:yesterday|monday|tuesday|wednesday|thursday|friday))\b", re.I)
+
+
+def when_supported(word, cited):
+    """A news-timing word holds only when EVERY cited WHY headline was published inside its window (ET): overnight = after
+    the previous 4 PM to 9:30 AM, this morning / earlier today = today after 4 AM, yesterday / last night = the day before."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    if not cited: return False
+    day = datetime.strptime(jload(os.path.join(W, "research-data.json"))["date"], "%Y-%m-%d")
+    try:
+        ts = [datetime.strptime(h["utc"], "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/New_York")).replace(tzinfo=None)
+              for h in cited]
+    except Exception:                                    # noqa: BLE001
+        return False
+    w = word.lower()
+    if w == "overnight": lo, hi = day - timedelta(hours=8), day + timedelta(hours=9, minutes=30)
+    elif w in ("this morning", "earlier today"): lo, hi = day + timedelta(hours=4), day + timedelta(hours=12)
+    else: lo, hi = day - timedelta(days=1), day
+    return all(lo <= t <= hi for t in ts)
+
+
 def check(story, res, facts, askc):
     errs = []
     heads = {h["id"]: h for h in jload(os.path.join(W, "research-data.json"))["headlines"]}
@@ -240,6 +264,10 @@ def check(story, res, facts, askc):
         corpus += " " + " ".join(k for k, v in pubs_by_stem.items() if len(v) >= 2)
         sign = next((f["value"] for f in r.get("figures", []) if f.get("symbol") in r.get("symbols", [])), None)
         for x in it["sentences"]:
+            m_t = NEWS_WHEN.search(x["text"])
+            if m_t and not when_supported(m_t.group(0), [heads[h] for h in r.get("why_ids", []) if h in heads]):
+                errs.append(f"item {i + 1}: '{m_t.group(0)}' says when the news happened, but its sources' times do not show it "
+                            f"-> drop it; use a neutral lead about our time ('{LEAD[ED]}') if a timing word is needed")
             if sign is not None and not re.search(r"after[- ]hours|premarket|pre-market", x["text"], re.I):
                 if abs(sign) >= 1.0 and re.search(r"\b(flat|barely|little (?:reaction|movement|changed?)|unmoved|muted)\b", x["text"], re.I):
                     errs.append(f"item {i + 1}: says flat, the verified move is {sign:+.2f}%")
@@ -278,9 +306,9 @@ def check(story, res, facts, askc):
     sents = [(f"item {i + 1}", s["text"]) for i, it in enumerate(story["items"]) for s in it["sentences"]]
     sents += [("portfolio", story["portfolio"]["text"]), ("ask answer", story["ask"]["answer_text"])]
     words = sum(len(t.split()) for _, t in sents) + len(askc["question"].split())
-    if words > story.get("_budget", 56):
+    if words > story.get("_budget", BUDGET):
         longest = max(sents, key=lambda x: len(x[1].split()))
-        errs.append(f"{words} spoken words, budget {story.get('_budget', 56)}: cut at least {words - story.get('_budget', 56)} words "
+        errs.append(f"{words} spoken words, budget {story.get('_budget', BUDGET)}: cut at least {words - story.get('_budget', BUDGET)} words "
                     f"-> shorten {longest[0]} ({len(longest[1].split())} words: {longest[1]!r}) first; keep every fact you keep exact")
     if not 3 <= len(story["items"]) <= 5: errs.append(f"{len(story['items'])} market items, need 3 to 5")
     for where, t in sents + [("cover", " ".join(story["cover"])), ("title", story["title"]), ("description", story["description"])]:
@@ -331,6 +359,15 @@ def check(story, res, facts, askc):
         m = re.search(r"\b(my|I'm|I am|I|me|mine|we|our)\b", t)
         if m:
             errs.append(f"{where}: first person '{m.group(0)}' in {t!r} -> second person: 'Your portfolio ...', 'you ...'")
+    # the portfolio figure carries its window word, the one Home labels it with (owner, 10/1: "up 28%" over "All time +28.33%")
+    htexts = ctx()["screen"].get("home", {}).get("texts", [])
+    for f in nums(pt):
+        lab = next((("all time", r"\b(all[- ]time)\b") if re.search(r"all time", t, re.I) else ("today", r"\b(today|so far today|yesterday)\b")
+                    for t in htexts if re.search(r"all time|today", t, re.I) and shows(f, re.findall(r"[+\-\u2212]?\$?\d[\d,]*(?:\.\d+)?%?", t))), None)
+        if lab and not re.search(lab[1], pt, re.I):
+            errs.append(f"portfolio: '{f}' is Home's {lab[0]} figure -> say '{lab[0]}' with it (e.g. 'Your portfolio is up {f} {lab[0]}.')")
+        elif not lab and not re.search(r"\b(all[- ]time|today|yesterday|this week|this month|this year)\b", pt, re.I):
+            errs.append(f"portfolio: '{f}' needs its window (all time / today / this week / this month)")
     # every figure spoken over Home must be on Home in the take
     home = ctx()["screen"].get("home", {}).get("figures")
     if home is not None:
@@ -360,13 +397,41 @@ def check(story, res, facts, askc):
         for m in re.finditer(r"\d+\.\d{2,}%", t): errs.append(f"{where}: {m.group(0)}: one decimal for percentages")
     if len(story["title"]) > 70: errs.append(f"title is {len(story['title'])} chars (max 70)")
     if len(story["cover"]) != 3: errs.append("cover needs exactly 3 lines")
-    # the accent bracket is code's job: the leading name (one word, or two when the second is capitalised)
+    # covers, title and description state no price direction the screen contradicts (owner, 10/1: "IBM rallies." over a
+    # page at -0.03%), unless a chip shows that move
+    from screen import direction as _dir
+    names_i = []
+    for r_ in res["items"]:
+        nm_ = [short_name(tick.get(x_, x_)) for x_ in r_.get("symbols", [])] + list(r_.get("symbols", [])) + [r_["cover"].split()[0]]
+        names_i.append((r_, [n_ for n_ in nm_ if n_]))
+    def dir_conflict(seg):
+        for r_, nm_ in names_i:
+            if not any(re.search(rf"\b{re.escape(n_)}\b", seg, re.I) for n_ in nm_): continue
+            shot_, _, sym_ = item_shot(r_)
+            if not sym_: continue
+            dv_ = _dir(seg); mv_ = ctx()["screen"].get(shot_, {}).get("day_move")
+            if dv_ and sym_ not in ctx()["ext"] and (mv_ is None or abs(mv_) < 0.05 or (mv_ > 0) != (dv_ > 0)): return sym_, mv_
+        return None
+    for where, t in [("cover", c) for c in story["cover"]] + [("title", story["title"]), ("description", story["description"])]:
+        for seg in re.split(r",|;|\band\b|(?<=[.!?])\s+|:", t.replace("[", "").replace("]", "")):
+            bad_ = dir_conflict(seg)
+            if bad_:
+                errs.append(f"{where}: {seg.strip()!r} gives a price direction its page does not show ({bad_[0]} "
+                            f"{'no day move' if bad_[1] is None else format(bad_[1], '+.2f') + '%'}) -> describe the news instead ('IBM launches AI platform.')")
     # the accent bracket is code's job: the leading name (one word, or two when the second is capitalised)
     story["cover"] = [re.sub(r"\s*:\s*", " ", c.replace("[", "").replace("]", "")).strip() for c in story["cover"]]
     story["cover"] = [c if c.endswith(".") else c + "." for c in story["cover"]]
     story["cover"] = [re.sub(r"^((?:[A-Z][\w&'.-]*)(?: [A-Z][\w&'.-]*)?)", r"[\1]", c, count=1) for c in story["cover"]]
     for c in story["cover"]:
         if len(c) > 30 or " " not in c: errs.append(f"cover line {c!r}: 'Name verb.' with a short name, <= 28 chars")
+    # a bare "Stocks slipped" (10/1 midday) contradicted "US stocks today +2.00%" in the Ask on screen: a whole-market line
+    # names its index
+    for k, it in enumerate(story.get("items", [])):
+        for snt in (it.get("sentences") or []) if isinstance(it, dict) else []:
+            t = snt.get("text", "") if isinstance(snt, dict) else ""
+            if re.search(r"\b(Stocks|Markets|The market|Wall Street|U\.?S\. stocks)\b[^.]*\b(slipped|slid|fell|dropped|rose|climbed|gained|rallied|jumped|sank|dipped)\b", t) \
+               and not re.search(r"S&P|Nasdaq|Dow|Russell", t):
+                errs.append(f"item {k + 1}: a whole-market line must name its index (S&P 500 / Nasdaq / Dow) -> rewrite '{t}' with the index and its verified figure, or drop the market line")
     return errs, words
 
 
@@ -382,7 +447,7 @@ def fallback(story, res, facts, askc):
     story.setdefault("cover", [res["items"][it.get("n", 0)]["cover"] for it in story["items"][:3]])
     story.setdefault("title", f"{LABEL[ED].title()}: " + ", ".join(res["items"][it.get("n", 0)]["cover"].rstrip(".") for it in story["items"][:3])[:60])
     story.setdefault("description", " ".join(res["items"][it.get("n", 0)]["why"] for it in story["items"][:3]))
-    story.setdefault("hashtags", ["#Shorts", "#stockmarket"]); story["_budget"] = 56
+    story.setdefault("hashtags", ["#Shorts", "#stockmarket"]); story["_budget"] = BUDGET
 
     def trims(t):
         """The sentence, then shorter versions cut at a clause boundary (each still a verified claim, just less of it)."""
@@ -458,7 +523,7 @@ def fallback(story, res, facts, askc):
     for _ in range(12):
         errs, words = render()
         long_ = [(len(o[j][pick[i][j]].split()), i, j) for i, o in opts.items() for j in (0, 1) if pick[i][j] < len(o[j]) - 1]
-        over = words > 56 or any("sentence over 15 words" in e or "read aloud" in e for e in errs)
+        over = words > BUDGET or any("sentence over 15 words" in e or "read aloud" in e for e in errs)
         if not over: break
         if not long_:                                    # only the model's own lines are left long: tell one with verified wording
             ln = lambda k: sum(len(x["text"].split()) for x in story["items"][k]["sentences"])
@@ -467,8 +532,15 @@ def fallback(story, res, facts, askc):
             if not rest: break
             verified(max(rest, key=lambda k: ln(k) - short(k))); continue
         _, i, j = max(long_); pick[i][j] += 1
-    if lead and (words > 56 or any("read aloud" in e for e in errs)):
+    if lead and (words > BUDGET or any("read aloud" in e for e in errs)):
         lead = LEAD_SHORT[ED]; errs, words = render()
+    # covers / title / description that state a direction the screen does not show: the news, neutrally
+    if any(e.startswith(("cover:", "title:", "description:")) for e in errs):
+        nm = [re.sub(r"\s+\w+\.?$", "", res["items"][it["n"]]["cover"]).strip() for it in story["items"][:3]]
+        story["cover"] = [f"{n} in focus." for n in nm]
+        story["title"] = f"{LABEL[ED].title()}: {', '.join(nm[:-1])} and {nm[-1]} in focus"[:70]
+        story["description"] = " ".join(res["items"][it["n"]]["why"].rstrip(".") + "." for it in story["items"][:3]) + " " + story["portfolio"]["text"]
+        errs, words = render()
     log(f"storyline fallback (verified wording for items {sorted(x + 1 for x in opts)}): {words} words, {len(errs)} problems {errs[:4]}")
     return story, errs, words
 
@@ -524,10 +596,17 @@ Budget: at most {{budget}} spoken words in total (the question adds {len(askc['q
 Percentages with ONE decimal ("3.7%", never "3.71%"). The cover reads as plain English ("HPE hits a record.", never
 "Hewlett Packard record."). The Ask answer line must add something the portfolio line did not say, never repeat it.
 Second person throughout: "Your portfolio", never "my portfolio", "I'm" or "we".
+A portfolio figure carries the window Home labels it with ("up 28% all time", "up $3,965 today").
+Covers, title and description describe the NEWS ("IBM launches AI platform."), never a price direction the item's page
+does not show (no "rallies / climbs / gains" before the open unless a chip shows the move).
+A line about the whole market names its index ("The S&P 500 slipped 0.4%"), never a bare "Stocks slipped", and only
+with a figure from the verified items; never contradict the portfolio or Ask lines on screen.
+Never say when the news happened (overnight, this morning, yesterday) unless the sources' times show it; "Before the bell,"
+is about our time and always fine.
 Figures: write them as digits ("1.8%", "$1.2 billion"), only from the verified items, the portfolio, or the verified answer figures.
 No advice or hype words, no jargon (thesis, tape, book, print, catalyst, guidance, capex, swing factor, narrative, cost curve),
 sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashes, no tickers, never "demo"."""
-        budget = 56 - len(askc["question"].split())
+        budget = BUDGET - len(askc["question"].split())
         prompt = base.replace("{budget}", str(budget))
         story, errs, words, best = None, ["not run"], 0, None
         t0, rounds = time.time(), int(os.environ.get("SHORTS_STORY_ROUNDS", STORY_ROUNDS))
@@ -540,7 +619,7 @@ sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashe
                             prefer=os.environ.get("SHORTS_STORY_MODEL", "openrouter"))   # M3 reasons long: 8000 truncated its JSON
             except RuntimeError as e:
                 log(f"storyline round {rnd + 1}: no draft ({str(e)[:120]})"); continue
-            story["_budget"] = 56
+            story["_budget"] = BUDGET
             try:
                 errs, words = check(story, res, facts, askc)
             except Exception as e:                       # noqa: BLE001  (a malformed shape is a failed round)
@@ -557,6 +636,20 @@ sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashe
             if best: story = best[0]
             try:
                 story, errs, words = fallback(story, res, facts, askc)
+                # 10/1 midday: the fallback's verified wording itself failed an item (a figure its shot does not show). An
+                # item that still fails is swapped for the next verified research item, told in verified wording, until
+                # only non-item problems remain or the research list runs out; the run refuses only after that.
+                tried = {it.get("n") for it in story.get("items", []) if isinstance(it, dict)}
+                for _ in range(6):
+                    bad = sorted({int(m.group(1)) - 1 for e in errs for m in [re.match(r"item (\d+):", e)] if m})
+                    spare = [i for i in range(len(res["items"])) if i not in tried]
+                    if not bad or not spare: break
+                    for k in bad:
+                        if not spare or k >= len(story["items"]): continue
+                        n = spare.pop(0); tried.add(n); story["items"][k] = {"n": n}
+                    for key in ("cover", "title", "description"): story.pop(key, None)
+                    story, errs, words = fallback(story, res, facts, askc)
+                    log(f"storyline fallback swapped item(s) {[b + 1 for b in bad]}: {len(errs)} problems {errs[:4]}")
             except Exception as e:                       # noqa: BLE001
                 errs = errs + [f"fallback failed: {e}"]; story = story if isinstance(story, dict) else {}
         story["_errors"] = errs; story["_words"] = words

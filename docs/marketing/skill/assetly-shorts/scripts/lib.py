@@ -47,7 +47,9 @@ class Stage:
 
 
 # ---- HTTP --------------------------------------------------------------------------------------------
-def get(url, headers=None, timeout=20, tries=3, raw=False):
+def get(url, headers=None, timeout=20, tries=6, raw=False):
+    # 10/1 11:13 a ~1 min DNS blip ("nodename nor servname provided") killed a midday run after a good take: retry
+    # network errors with backoff (2, 4, 8, 16, 30 s) so a short outage is ridden out instead of failing the stage
     last = None
     for i in range(tries):
         try:
@@ -55,7 +57,9 @@ def get(url, headers=None, timeout=20, tries=3, raw=False):
             b = urllib.request.urlopen(req, timeout=timeout).read()
             return b if raw else b.decode("utf-8", "replace")
         except Exception as e:                       # noqa: BLE001 (network: retry, then report)
-            last = e; time.sleep(1.5 * (i + 1))
+            last = e
+            if isinstance(e, urllib.error.HTTPError) and e.code < 500 and e.code not in (408, 429): break
+            if i < tries - 1: time.sleep(min(30, 2 ** (i + 1)))
     raise RuntimeError(f"GET failed {url.split('?')[0]}: {last}")
 
 
@@ -105,6 +109,11 @@ def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, pr
         tries.append(("mara", "https://api.cloud.mara.com/v1/chat/completions", vault(work, "mara_api_key"), "MiniMax-M3"))
     except Exception as e:                           # noqa: BLE001
         log("mara key unavailable:", str(e)[:80])
+    # SambaNova Cloud serves the same MiniMax-M3 (OpenAI-compatible). The key FILE wins: a stale SAMBANOVA_API_KEY in the
+    # shell env returns 401 (10/1). Added after OpenRouter ran out of credits (402) mid-storyline on 10/1.
+    snf = os.path.expanduser("~/.private_keys/sambanova.txt")
+    if os.path.exists(snf) and open(snf).read().strip():
+        tries.append(("sambanova", "https://api.sambanova.ai/v1/chat/completions", open(snf).read().strip(), "MiniMax-M3"))
     orf = os.path.expanduser("~/.private_keys/openrouter.txt")
     if os.environ.get("OPENROUTER_API_KEY") or os.path.exists(orf):
         ork = os.environ.get("OPENROUTER_API_KEY") or next((l.split("=", 1)[1].strip() for l in open(orf) if l.startswith("key=")), "")
@@ -136,6 +145,8 @@ def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, pr
                 return out
             except Exception as e:                   # noqa: BLE001
                 last = e; log(f"llm {name} attempt {attempt + 1} failed after {time.time() - t0:.0f}s: {str(e)[:160]}")
+                # out of credits / bad key: retrying the same provider cannot help, go to the next one at once
+                if re.search(r"-> (401|402|403) ", str(e)): break
     raise RuntimeError(f"every model failed: {last}")
 
 

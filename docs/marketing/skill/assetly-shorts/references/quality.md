@@ -1,4 +1,4 @@
-# Quality gate (v1.0.2: Q1-Q34)
+# Quality gate (v1.0.3: Q1-Q35)
 
 The canonical list is `app/docs/marketing/SHORTS_QUALITY.md` (Q1-Q20 from the 9/30 Shorts, Q21-Q29 added by v1.0).
 `run.sh` measures every automatic row and refuses to deliver when any fails.
@@ -33,8 +33,9 @@ The canonical list is `app/docs/marketing/SHORTS_QUALITY.md` (Q1-Q20 from the 9/
 | Q30 | data time-stamp top-left, same spot, on every sampled frame | stamp box contrast + drift on cover/beats/card |
 | Q31 | stamp = the latest time in the Short (research snapshot, main take end, app-shown times, chip quotes) within 5 min, edition label right | day.json stamp + stamp.sources |
 | Q32 | Ask: the spoken answer follows ONE recorded answer line (60% of its words, same figures), that line is readable in the answer beat, and it is outlined | storyline `ask.line`, day.json `quote` + `highlight`, OCR of the final frames |
-| Q33 | every $ / % spoken over a beat is readable in that beat: the app's screen or the beat's labelled chip (rounding allowed: 28% <- +28.33%); a direction word about a holding agrees with the day move its page shows | OCR (Vision) of the final frames at 3/25/50/90% below the subtitle strip |
+| Q33 | every $ / % spoken over a beat is readable in that beat: the app's screen or the beat's labelled chip (rounding allowed: 28% <- +28.33%); a direction word about a holding agrees with the day move its page shows (storyline: also cover, title, description; a portfolio figure carries Home's window word; news-timing words need the sources' times) | OCR (Vision) of the final frames at 3/25/50/90% below the subtitle strip |
 | Q34 | one moment per Short: every chip's quote time and every time readable in an untagged beat <= the corner stamp (the stamp is the latest data time shown); a pre-open Short shows no "live" intraday quote; an Ask re-recorded later carries its own "ASK RECORDED h:mm" tag | day.json chips/tags + OCR |
+| Q35 | every chip / time tag sits in the top-right corner block (x 700-950, above y 450): never over the phone screen or the top texts | alpha bbox of each beat's chip png |
 | Q29 | no loading skeleton / blank screen mid-beat | saturation (home screen) and edge density (blank) on proof/beat*.png at 25/50/90% |
 
 Verification rules worth remembering:

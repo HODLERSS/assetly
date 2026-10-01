@@ -117,7 +117,11 @@ def main():
         # a brand that starts with a number word heard as the figure (10/1: "Tencent" -> "$0.10", i.e. "ten cents")
         NUMV = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve".split())}
         def numalike(x, y):
-            return len(x.split()) == 1 and x in proper and y.isdigit() and any(x.startswith(w) and len(x) > len(w) and int(y) == v for w, v in NUMV.items())
+            xs = [w for w in x.split() if w not in NUMW]          # "dollars tencent" -> "tencent" (the figure words around it)
+            ys = y.split(); digs = [w for w in ys if w.isdigit()]; rest = "".join(w for w in ys if not w.isdigit())
+            return len(xs) == 1 and xs[0] in proper and bool(digs) and any(
+                xs[0].startswith(w) and len(xs[0]) > len(w) and int(d) == v and xs[0][len(w):] in (rest, "")
+                for w, v in NUMV.items() for d in digs)
         # a compound heard split or joined ("premarket" -> "pre market", "rollout" -> "roll out"), figures set aside
         words_of = lambda z: "".join(w for w in z.split() if not (re.search(r"\d", w) or w in NUMW))
         exn = lambda z: re.sub(r"(^|\s)x(?=\s|dividend|$)", r"\1ex", z)           # "ex-dividend" heard as "x dividend"
@@ -161,11 +165,13 @@ def main():
             for frac in (0.03, 0.25, 0.5, 0.9):
                 at = t + bt["dur"] * frac; png = os.path.join(B, f"q33_b{i + 1}_{frac}.png")
                 run("ffmpeg", "-v", "error", "-y", "-ss", f"{at:.2f}", "-i", final, "-frames:v", "1", png)
-                if os.path.exists(png):
-                    Image.open(png).crop((0, 470, 1080, 1920)).save(png); ps.append(png)
+                if os.path.exists(png): ps.append(png)
             shots.append(ps); t += bt["dur"]
         rd = ocr([p for ps in shots for p in ps]); it = iter(rd)
-        seen = [[r[0] for p in ps for r in next(it)] for ps in shots]
+        # what the viewer reads apart from our own words: the phone (below the subtitle strip) and the top-right corner block
+        # (a chip or a time tag); the subtitles, the stamp and the disclaimer are not evidence
+        keep = lambda r: r[2] >= 470 or (r[1] >= 700 and r[4] <= 260)
+        seen = [[r[0] for p in ps for r in next(it) if keep(r)] for ps in shots]
         lines_d = day.get("lines", [])
         miss33, det33 = [], []
         for i, ln in enumerate(lines_d[:len(shots)]):
@@ -198,6 +204,16 @@ def main():
         later = [f"beat {i + 1}: {m // 60}:{m % 60:02d}" for i, ts in enumerate(seen) if i not in tagged for m in shown_times(ts) if m > st_m]
         late += later
         tags = [b["tag"]["text"] for b in day.get("beats", []) if b.get("tag")]
+        # Q35 our overlays never cover the phone or the top texts: every chip / tag sits in the top-right corner block
+        from PIL import Image as _Im
+        cover35 = []
+        for i, b in enumerate(day.get("beats", [])):
+            pth = (b.get("chip") or {}).get("png")
+            if pth and os.path.exists(pth):
+                bb = _Im.open(pth).getchannel("A").getbbox()
+                if bb and (bb[3] > 450 or bb[0] < 700 or bb[2] > 950): cover35.append(f"beat {i + 1}: {bb}")
+        row("Q35", "Overlay chips and tags stay clear of the phone screen and the top texts (top-right corner block, x 700-950, above y 450)",
+            not cover35, "; ".join(cover35) or "all clear")
         row("Q34", "One moment: chip times <= the corner stamp; pre-open shows no live intraday quote (an Ask re-recorded later carries its own time tag)",
             not late and not live, f"stamp {st34}; chips {[c for c in (b.get('chip', {}).get('asof_iso') for b in day.get('beats', [])) if c] or '-'}"
             + (f"; LATE {late}" if late else "") + (f"; LIVE {live[:3]}" if live else "") + (f"; tags {tags}" if tags else ""))

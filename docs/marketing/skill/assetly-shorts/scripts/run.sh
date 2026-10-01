@@ -71,7 +71,7 @@ if want ask; then
     # takes 1-2 also want clean wording (no desk jargon, no pre-open "today" for yesterday); take 3 accepts it if the figures pass
     # mid-session the book moves between the facts stage and the take (10/1 midday: facts $4,368, Home +$3,965 13 min
     # later): re-verify the portfolio figures against the account at take time, so what Home shows is checkable
-    [ "$ED" = midday ] && python3 facts.py "$ED" "$W"
+    if [ "$ED" = midday ]; then python3 facts.py "$ED" "$W" || echo "WARN: the take-time facts refresh failed (network?); keeping the earlier facts"; fi
     if SHORTS_ASK_STRICT=$([ $take -lt 3 ] && echo 1 || echo 0) python3 facts.py "$ED" "$W" --ask; then ok=1; break; fi
     [ $take -lt 3 ] && { echo "Ask answer failed its check: take $((take + 1))"; python3 record.py "$ED" "$W"; }
   done
@@ -86,6 +86,24 @@ if want build; then
   install -m 600 "$W/eleven_api_key" "$W/build/elk"; ln -sf "$W/take60.mp4" "$W/build/take60.mp4"
   [ -f "$W/takeask.mp4" ] && ln -sf "$W/takeask.mp4" "$W/build/takeask.mp4"     # an Ask-only re-take (ask-take.json)
   timed build "$APP/web/ios/App/marketing/shorts/make-short.sh" "$ST/day.json" "$W/build" "$ST" || true
+  # the duck under the first cue depends on where that line pauses (10/1 v4: -5.6 dB, the check wants -12..-6): one rebuild on
+  # the same voices with the sidechain level moved toward the range
+  if [ ! -s "$ST/qa-auto.md" ]; then
+    D=$(grep -o "duck [-+][0-9.]* dB out of range" "$W/run.log" | tail -1 | awk '{print $2}')
+    if [ -n "$D" ]; then
+      SC=$(python3 -c "print(1.0 if $D > -9 else 0.5)")
+      echo "duck $D dB out of range: rebuild on the same voices with DUCK_SC=$SC"
+      REUSE_VO=1 DUCK_SC=$SC "$APP/web/ios/App/marketing/shorts/make-short.sh" "$ST/day.json" "$W/build" "$ST" || true
+    fi
+  fi
+  # over 30 s (10/1 midday: 31.0 s): rewrite the script with a smaller word budget on the same take, then rebuild (twice max)
+  for tight in "50 61" "46 56"; do
+    [ -s "$ST/qa-auto.md" ] && break
+    tail -40 "$W/run.log" | grep -q "tighten the script" || break
+    set -- $tight; echo "too long: storyline again with budget $1 words ($2 voiced), same take"
+    SHORTS_BUDGET=$1 SHORTS_SPOKEN_MAX=$2 python3 storyline.py "$ED" "$W" && python3 compose.py "$ED" "$DATE" "$W" "$ST" && \
+      { timed build "$APP/web/ios/App/marketing/shorts/make-short.sh" "$ST/day.json" "$W/build" "$ST" || true; }
+  done
   [ -s "$ST/qa-auto.md" ] || { echo "REFUSE: the build did not finish (see $W/run.log)"; exit 1; }
 fi
 if want qa; then
