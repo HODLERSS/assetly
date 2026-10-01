@@ -20,9 +20,13 @@ with the proof frames open, and recorded in the same report.
 | Q11 | Every figure sourced | each spoken and on-screen number has two agreeing sources in the sources table; a figure the sources disagree on is dropped, not guessed | `sources.md` |
 | Q12 | Pronunciation | every name and number word in the script is in the listen-check list, spelled for the ear by `speakable()` (no digits, no tickers) and `earAudit()` returns nothing | `narrate/ear.ts` on the script; person listens once |
 | Q13 | No advice, hype or jargon | zero hits from the word list below in the script, captions and metadata | regex scan |
-| Q14 | Disclaimer | "Demo portfolio. Not financial advice." (or "Demo portfolio · Not financial advice") visible on every product frame and on the end card, and in the description | proof frames + metadata |
+| Q14 | Disclaimer | "Not financial advice" visible small on every frame and on the end card; the description says "Portfolio shown is illustrative. Not financial advice." | proof frames + metadata |
 | Q15 | Brand | Schibsted Grotesk type, Assetly dark ground #14181F / ink #E9ECF1 / accent #8B98E0, app icon and "Assetly" on the end card, App Store CTA | proof frames |
 | Q16 | Proof frames viewed | frames at 0.5, 3, 8, 13, 18 s and the last frame exported and looked at; nothing clipped, overlapped or misspelled | `proof/` |
+| Q17 | No "demo" | zero case-insensitive hits for "demo" in the script, subtitles, cover/eyebrow/card strings and metadata (owner, 9/30: the portfolio is described only as illustrative, in the description) | regex over every viewer-facing string |
+| Q18 | Consistent motion | every beat carries the SAME push (scale, in-duration, out-duration, smootherstep; the last beat holds it into the card) and every cut lands on the 0.3 s music grid (an eighth at 100 BPM) | read from the built plan.json |
+| Q19 | Real scrolling | at least 3 beats whose source footage scrolls for >= 0.5 s (frame-to-frame row change in the take) | frame differencing of each beat's source window |
+| Q20 | Insight, not headlines | each story line says WHY it moved and the market or community SENTIMENT, attributed ("analysts", "commentators"), and every claim has two sources in sources.md | sources.md insight table |
 
 **Q13 word list** (case-insensitive, whole words): buy, sell, should, must-own, recommend, guaranteed,
 skyrocket, soar, soars, soaring, explode, moon, crush, crushed, massive, insane, huge, don't miss, act now,

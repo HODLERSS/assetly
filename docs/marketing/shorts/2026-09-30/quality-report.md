@@ -1,44 +1,47 @@
-# Quality report: assetly-short-2026-09-30.mp4 (multi-voice cut)
+# Quality report: assetly-short-2026-09-30.mp4 (v2, rebuilt from scratch)
 
-Measured against [SHORTS_QUALITY.md](../../SHORTS_QUALITY.md). Automatic rows from
-`web/ios/App/marketing/shorts/qa-short.py` (run by `make-short.sh`); manual rows checked by the agent on
-the proof frames, the sources table and a speech-recognition round trip. **All 16 pass.**
+Measured against [SHORTS_QUALITY.md](../../SHORTS_QUALITY.md) (now 20 metrics). Automatic rows from
+`qa-short.py` (run by `make-short.sh`); manual rows checked on the proof frames, the sources table and a
+speech-recognition round trip. **All 20 pass.**
 
 | # | Metric | Result | Measured |
 |---|---|---|---|
-| Q1 | Duration (video runs the whole file) | PASS | 24.26 s, video 24.233 s |
+| Q1 | Duration (video runs the whole file) | PASS | 24.81 s, video 24.800 s |
 | Q2 | Format | PASS | 1080x1920 60/1 fps h264 High yuv420p, aac 48000 Hz, faststart=True |
-| Q3 | Integrated loudness | PASS | -14.0 LUFS |
+| Q3 | Integrated loudness | PASS | -13.9 LUFS |
 | Q4 | True peak | PASS | -1.5 dBTP |
 | Q5 | No black frames | PASS | 0 black segments |
 | Q6 | No frozen video (outside the end card) | PASS | freezes: none |
-| Q7 | Hook by 1.5 s | PASS | voice starts 0.31 s; title card on screen from frame 0 |
-| Q8 | Caption sync (first word lit vs speech onset) | PASS | worst 70 ms over 5 sentences: -50, -60, -70, -60, -50 |
+| Q7 | Hook by 1.5 s | PASS | voice starts 0.33 s; title card on screen from frame 0 |
+| Q8 | Caption sync (first word lit vs speech onset) | PASS | worst 80 ms over 7 sentences: -70, -50, -80, -30, -70, -50, -80 |
 | Q9 | Subtitle cap height >= 34 px | PASS | 36 px cap height at 50 px type |
-| Q10 | Overlay text inside safe zone (x 60-950, y 100-1536) | PASS | 25 layers checked; union x 138-942, y 112-1233 |
+| Q10 | Overlay text inside safe zone (x 60-950, y 100-1536) | PASS | 26 layers checked; union x 138-942, y 112-1229 |
 | Q13 | No advice / hype / jargon words, em dashes, emoji | PASS | hits none, em dash False, emoji 0 |
-| Q11 | Every figure sourced | PASS | Same 8 figures as the first cut, each with two agreeing sources ([sources.md](sources.md)); 5 contested figures dropped |
-| Q12 | Pronunciation | PASS | Every line through `speakable()` (no change: already words; `earAudit()` clean); gpt-audio's own transcript matched each line verbatim at render; faster-whisper small.en on the FINAL MIX returns the script word for word ([asr-transcript.txt](asr-transcript.txt)); only digit formatting differs. Listen list: Micron, Google, Gemini four, Meta, Muse, A I, September, fifty-four point two billion dollars, zero point nine / one point eight / zero point two percent |
-| Q14 | Disclaimer visible | PASS | "Demo portfolio · Not financial advice" at y 112 on every product frame; "Demo portfolio. Not financial advice." on the end card and in the description; eyebrow "YOUR ASSETLY BRIEF · DEMO 001" and the words "this demo portfolio" |
-| Q15 | Brand | PASS | Schibsted Grotesk; #14181F ground, #E9ECF1 ink, #8B98E0 accent (eyebrows, pills, highlights, CTA); icon + name + "Your portfolio, explained daily" + App Store pill |
-| Q16 | Proof frames viewed | PASS | proof/ (0.0, 0.5, 3, 8, 13, 18, 24.21 s) plus 1.0, 1.5, 4, 7.5, 8.5, 9.5, 11, 16, 19.5, 21, 22.5 s viewed: every spoken line has its subtitle lit word by word, its eyebrow, moving pills, and a highlight box on the phone around what is being said (the Micron, Google and Meta "today" lines, the portfolio's day). Review fixes (main session): the cover is now headline-led ("Micron beats. / Gemini 4 launches. / Meta slips.", fully drawn at frame 0), and the Google beat was re-recorded with the chart on 1D so it reads +0.93% like the caption (it opened on 1M, -0.72%) |
+| Q17 | No "demo" in voice, subtitles, cards, metadata | PASS | 0 hits |
+| Q18 | Consistent motion (same push on every beat, cuts on the 0.3 s grid) | PASS | 5 beats, push [(1.3, 0.7, 0.6), (1.3, 0.7, None)]; cuts [4.5, 6.3, 13.8, 19.8] |
+| Q19 | Live scroll segments >= 3 | PASS | 4 beats scroll; moving time per beat ['0.0s', '0.7s', '1.2s', '1.2s', '0.5s'] |
+| Q20 | Insight lines: why + sentiment, two sources each | PASS | Micron (why: AI memory demand; reaction: barely moved after hours; sentiment: priced in), Google (why: Gemini 4 leads most benchmarks; reception: few can use it yet; market: +3% intraday, +0.9% close), Meta (why: OpenAI's Dots; sentiment: analysts still back Muse). Every claim has two sources in [sources.md](sources.md) |
+| Q11 | Every figure sourced | PASS | Spoken: 1.8%, over 3%, 0.9 (two sources each); on screen: prices, net worth, today, all time, movers (app vs Nasdaq/Yahoo). Micron's after-hours % dropped (sources disagree), said as "barely moved" |
+| Q12 | Pronunciation | PASS | gpt-audio transcripts verbatim at render; faster-whisper on the FINAL MIX returns the script word for word ([asr-transcript.txt](asr-transcript.txt)) |
+| Q14 | Disclaimer visible | PASS | "Not financial advice" at the top of every frame and on the end card; description carries "Portfolio shown is illustrative. Not financial advice." |
+| Q15 | Brand | PASS | Schibsted Grotesk, dark ground, accent eyebrows/pills/cover names, icon + Assetly + App Store pill |
+| Q16 | Proof frames viewed | PASS | proof/ (0, 0.5, 3, 8, 13, 18, 24.77 s) plus 1.0, 2.2, 3.5, 5.0, 5.8, 7.0, 8.5, 10.5, 12.5, 14.0, 15.5, 17.0, 19.0, 20.6, 21.5, 22.4, 24.7 s |
 
-**Also measured:** duck: -11.9 dB under the voices (mixer asserts -6 to -12); 1454 frames;  13M. Speaking pills visible
-whenever a voice is speaking (20.2 s of 24.2 s), absent over the title's silence and the card.
+**Footage frame rate (honest number):** the take is the simulator display captured with `simctl io
+recordVideo`, delivered at 60 fps. The simulator only renders frames when the screen changes: during the
+scrolls it produced 30 to 42 unique frames per second (measured per second of the take), and static
+moments repeat the last frame. The camera moves (push, slide, card) are computed per output frame at 60.
+This is far smoother than the XCTest attachment used before (about 17 fps) but it is not 60 unique frames
+on every scroll.
 
-**Caveats:** (1) I cannot hear audio. The ASR round trip proves every word is intelligible over the bed and
-the two gpt-audio voices were checked verbatim, but whether the hand-off from marin/cedar to the Minjae
-clone sounds natural needs one listen. (2) At the very start of the Micron beat (about 2.0 to 3.0 s, phone
-at rest before the push) the app's MU intelligence card is on screen at small size, including its
-"$63B guidance" (CNBC reports about $61.5B). It is roughly 11 px text and is covered by the push within a
-second; nothing in the voice or subtitles uses it.
+**Not measurable here:** I cannot hear audio; the voices are verified word for word but the handover
+marin -> cedar -> marin -> Minjae needs one listen.
 
-## The account's own close brief (what the app wrote, checked as the brief asks)
-
-Demo Portfolio 001's close brief (2026-09-30, gen 21:30 UTC) is on screen in the last beat. Checked line by line:
-- Lede "A quiet session added $336, leaving the AI book intact at $213,100" and the Today paragraph (S&P 7,651.54 -0.3%, VIX 16.34 +1.9%, portfolio +$336 +0.2%, NVDA +0.5%): correct.
-- Three defects found, none in the Short's words, two visible only as small text in the brief beat:
-  1. First generation said "Setup is a tech book with **no earnings on the calendar**" on the night Micron (a holding) reported. Cause: MU was a newly registered symbol with no filings synced, so the brief had no earnings date for it. Fixed at the input (filings-sync for MU) and regenerated. Product gap: `symbol-search ensure` registers a symbol without triggering filings-sync.
-  2. Second generation: "Meta dropped 1.8% today, ending **your** best monthly run since 2022" (Meta's month, not the portfolio's). Regenerated.
-  3. Current generation, META note: "Best month since 2022 on AI momentum, plus a **$15.75 quarterly dividend**". $15.75 is this holding's quarterly income (30 sh x $0.525), phrased like a per-share dividend; and "since 2022" is the CNBC framing other outlets dispute ("since 2013"). The brief zoom is framed above this line, so it is not legible in the Short.
-- Also: the spoken brief says "two hundred ten thousand dollars" for $213,100 (rounded down), and insights-sync returned WORKER_RESOURCE_LIMIT on a 10-symbol call (worked in batches of 3-4). The MU intelligence card says "$63B guidance" where CNBC reports about $61.5B.
+## The app's own close brief (on screen in beat 2), checked
+Regenerated three times; the kept version (00:37 UTC) is correct on every figure: $248 (+0.1%), S&P
+7,651.54 (-0.3%), VIX 16.34 (+1.9%), NVDA +0.5% and its $150B buyback ($235B remaining authorization:
+NVIDIA release + CNBC 9/28), Micron's $61.5B forecast. Defects seen and not fixed (product issues):
+- first regeneration: "ready for **tomorrow's** Micron print" (Micron reported tonight), META "with no fresh news" (OpenAI Dots was the news), a vague "Oct 15: AI infrastructure calendar event";
+- second: a fallback brief whose per-holding dollar moves were wrong ($285 / $372 / $653 vs $292 / $379 / $680);
+- kept version: "the day's leaders were GOOGL (+0.9%) and NVDA (+0.5%)" (HPE +3.9% led), "tripwire" left in the desk view;
+- MU intelligence card says "heavier capex guidance sparked an after-hours selloff" while quote feeds show ~flat; the edit keeps it out of frame.

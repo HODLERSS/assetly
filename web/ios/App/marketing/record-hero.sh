@@ -62,6 +62,12 @@ GOT=$(xcrun simctl ui "$UDID" appearance)
 
 # Seed and take in ONE invocation: each xcodebuild run reinstalls the app and would wipe the session.
 rm -rf /tmp/assetly-hero.xcresult
+# SIM_VIDEO=<file.mov>: also record the display itself at its native 60 Hz (the XCTest attachment is
+# ~17 fps variable rate, which judders on a scroll). Started before the test, stopped after it; trim later.
+if [ -n "${SIM_VIDEO:-}" ]; then
+  rm -f "$SIM_VIDEO"; xcrun simctl io "$UDID" recordVideo --codec=h264 --force "$SIM_VIDEO" > /tmp/assetly-simrec.log 2>&1 &
+  SIMREC=$!; sleep 2
+fi
 set +e
 xcodebuild test -project App.xcodeproj -scheme AssetlyUITests -testPlan Hero \
   -destination "id=$UDID" \
@@ -71,6 +77,7 @@ xcodebuild test -project App.xcodeproj -scheme AssetlyUITests -testPlan Hero \
   CODE_SIGNING_ALLOWED=NO > /tmp/assetly-hero.log 2>&1
 STATUS=$?
 set -e
+if [ -n "${SIMREC:-}" ]; then kill -INT "$SIMREC"; wait "$SIMREC" 2>/dev/null || true; echo "display take: $SIM_VIDEO $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$SIM_VIDEO")s"; fi
 grep -E "Test Case .*(passed|failed)|error:|XCTAssert" /tmp/assetly-hero.log | tail -8 || true
 
 rm -rf /tmp/assetly-hero-att

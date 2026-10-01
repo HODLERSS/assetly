@@ -184,6 +184,75 @@ final class AssetlyHeroUITests: XCTestCase {
         scroll(.down, 0.5); scroll(.down, 0.5); beat(3.0)
     }
 
+    // MARK: the daily Short, scrolling take
+
+    /// A slow, even scroll: press, drag at a fixed speed (points per second), hold so it lands without
+    /// a fling. Recorded by `simctl io recordVideo` at the display's 60 Hz, this reads as a thumb
+    /// moving through the screen rather than a flick.
+    private func glide(_ dir: Dir, _ amount: CGFloat, _ speed: CGFloat = 420) {
+        let fromY: CGFloat = dir == .up ? 0.78 : 0.24
+        let toY = dir == .up ? fromY - amount : fromY + amount
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: fromY))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: toY))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: XCUIGestureVelocity(speed), thenHoldForDuration: 0.25)
+    }
+
+    private func openPosition(_ sym: String, range: String) {
+        if app.buttons["Home"].exists { app.buttons["Home"].tap(); beat(0.8) }
+        let close = button(startingWith: "Close the brief")
+        if close.exists { close.tap(); beat(0.6) }
+        scroll(.down, 0.5); scroll(.down, 0.5); beat(0.6)
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", sym + " ")).firstMatch
+        var tries = 0
+        while !(row.exists && row.isHittable) && tries < 6 { scroll(.up, 0.25); beat(0.5); tries += 1 }
+        guard row.exists else { NSLog("DAILY no row for %@", sym); return }
+        row.tap(); beat(2.0)
+        let chip = app.buttons[range]
+        if !range.isEmpty && chip.waitForExistence(timeout: 6) { chip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        beat(4.0)                                 // the chart loads on the new range; hold the header
+        glide(.up, 0.30); beat(1.6)               // chart -> intelligence
+        glide(.up, 0.30); beat(1.6)               // intelligence -> shares, value, gain
+        glide(.up, 0.22); beat(1.8)
+    }
+
+    /// Footage for the daily Short, v2 (owner notes 9/30): real scrolling everywhere. Home from net worth
+    /// through the brief card, movers and positions; the close brief opened, playing and scrolled; each
+    /// story's position page on DAILY_RANGE (1D) scrolled from price to value and gain; News scrolled.
+    func testFdaily() {
+        app.launch()
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 60), "not signed in for the take")
+        beat(4.0)                                 // net worth, today, all time
+        glide(.up, 0.20, 300); beat(1.4)          // the brief card
+        glide(.up, 0.24, 300); beat(1.4)          // movers
+        glide(.up, 0.30, 300); beat(1.6)          // positions
+        glide(.up, 0.30, 300); beat(1.6)
+        glide(.down, 0.50, 1400); glide(.down, 0.50, 1400); beat(1.2)
+
+        let read = button(startingWith: "Read")
+        if read.waitForExistence(timeout: 10) { read.tap() }
+        beat(2.0)
+        let listen = button(startingWith: "Listen")
+        if listen.waitForExistence(timeout: 6) { listen.tap(); beat(2.5) }
+        glide(.up, 0.22, 260); beat(1.4)          // the brief text, read-speed
+        glide(.up, 0.22, 260); beat(1.4)
+        glide(.up, 0.22, 260); beat(1.6)
+        let pause = button(startingWith: "Pause")
+        if pause.exists { pause.tap(); beat(0.4) }
+        let closePlayer = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Close the player' OR label CONTAINS[c] 'Close player'")).firstMatch
+        if closePlayer.exists { closePlayer.tap(); beat(0.4) }
+
+        let range = env("DAILY_RANGE")
+        let symbols = env("DAILY_SYMBOLS").isEmpty ? ["NVDA"] : env("DAILY_SYMBOLS").split(separator: ",").map(String.init)
+        for sym in symbols { openPosition(sym, range: range) }
+
+        if app.buttons["News"].exists { app.buttons["News"].tap(); beat(3.0) }
+        glide(.up, 0.24, 320); beat(1.4)
+        glide(.up, 0.24, 320); beat(1.4)
+        glide(.up, 0.24, 320); beat(1.6)
+        if app.buttons["Home"].exists { app.buttons["Home"].tap(); beat(1.0) }
+        scroll(.down, 0.5); scroll(.down, 0.5); beat(3.0)
+    }
+
     // MARK: the longer spots
 
     /// Footage for the 20s and 30s spots. Same beats as the hero take, then two more: Settings, and

@@ -1,0 +1,13 @@
+[
+ {"symbol": "NVDA",  "qty": 250, "cost": 138.20},
+ {"symbol": "GOOGL", "qty": 120, "cost": 186.40},
+ {"symbol": "META",  "qty": 50,  "cost": 612.00},
+ {"symbol": "MU",    "qty": 30,  "cost": 418.50},
+ {"symbol": "AVGO",  "qty": 60,  "cost": 241.80},
+ {"symbol": "HPE",   "qty": 300, "cost": 22.10},
+ {"symbol": "TSM",   "qty": 40,  "cost": 262.30},
+ {"symbol": "MSFT",  "qty": 30,  "cost": 431.00},
+ {"symbol": "AMD",   "qty": 25,  "cost": 158.90},
+ {"symbol": "CEG",   "qty": 40,  "cost": 281.50},
+ {"symbol": "$CASH", "qty": 6000, "cost": 1, "account": "bank"}
+]

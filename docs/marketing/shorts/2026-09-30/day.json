@@ -1,193 +1,109 @@
 {
  "date": "2026-09-30",
  "demo": 1,
- "script": "AI stocks today. Micron beat after the bell, with record revenue of $54.2 billion. Google rose 0.9% as it launched Gemini 4. Meta slipped 1.8%, ending a September rally driven by its Muse AI app. This demo portfolio closed up 0.2%. That's your brief.",
  "hook": "[Micron] beats.|[Gemini 4] launches.|[Meta] slips.",
- "beats": [
-  {
-   "take": "take1.mp4",
-   "start": 42.4,
-   "freeze": true,
-   "zoom": {
-    "to": 1.8,
-    "focus_src": 640,
-    "in": [
-     0.3,
-     3.0
-    ],
-    "out": "auto"
-   },
-   "to_cue": 2,
-   "note": "MU header, '0.00% today · closed 4:00 PM ET' highlighted",
-   "highlight": {
-    "src_box": [
-     40,
-     772,
-     790,
-     832
-    ],
-    "pad": 10,
-    "radius": 10
-   }
-  },
-  {
-   "take": "take3.mp4",
-   "start": 44.6,
-   "freeze": true,
-   "zoom": {
-    "to": 1.6,
-    "focus_src": 780,
-    "in": [
-     0.3,
-     2.8
-    ],
-    "out": "auto"
-   },
-   "highlight": {
-    "src_box": [
-     40,
-     772,
-     812,
-     834
-    ],
-    "pad": 10,
-    "radius": 10
-   },
-   "to_cue": 3,
-   "note": "GOOGL header with the 1D chart (+0.93%), today line highlighted"
-  },
-  {
-   "take": "take1.mp4",
-   "start": 80.4,
-   "freeze": true,
-   "zoom": {
-    "to": 1.8,
-    "focus_src": 640,
-    "in": [
-     0.3,
-     3.4
-    ],
-    "out": "auto"
-   },
-   "to_cue": 4,
-   "note": "META header, '-1.84% today' highlighted",
-   "highlight": {
-    "src_box": [
-     40,
-     770,
-     820,
-     834
-    ],
-    "pad": 10,
-    "radius": 10
-   }
-  },
-  {
-   "take": "take1.mp4",
-   "start": 3.2,
-   "zoom": {
-    "to": 1.8,
-    "focus_src": 560,
-    "in": [
-     0.2,
-     1.2
-    ],
-    "out": "auto"
-   },
-   "to_cue": 5,
-   "note": "Home, 'Today +$336 (+0.16%)' highlighted",
-   "highlight": {
-    "src_box": [
-     40,
-     534,
-     530,
-     582
-    ],
-    "pad": 7,
-    "radius": 10
-   }
-  },
-  {
-   "take": "take1.mp4",
-   "start": 21.3,
-   "zoom": {
-    "to": 1.6,
-    "focus_src": 880,
-    "in": [
-     0.1,
-     0.9
-    ]
-   },
-   "tail": 0.45,
-   "note": "close brief open, player running"
-  }
- ],
+ "hook_kicker": "AI STOCKS · SEP 30",
+ "hook_foot": "Assetly",
+ "hook_dur": 1.5,
+ "script": "Micron beat on AI memory demand, yet barely moved after hours. Commentators say it was priced in. Google's Gemini 4 beat rivals on most tests, but few can use it yet. Shares jumped over 3%, then closed up 0.9%. Meta slipped 1.8% as OpenAI launched a Muse rival. Analysts still back Muse. That's your brief.",
+ "grid": 0.3,
+ "card": 2.0,
+ "motion": {
+  "to": 1.3,
+  "in": 0.7,
+  "out": 0.6
+ },
  "lines": [
   {
    "voice": "marin",
-   "say": "AI stocks today. Micron beat after the bell, with record revenue of fifty-four point two billion dollars.",
+   "say": "Micron beat on AI memory demand, yet barely moved after hours. Commentators say it was priced in.",
+   "tempo": 1.1,
    "reuse": {
     "file": "voice/line0-marin.wav",
     "from": 0,
-    "to": 8.05
+    "to": 7.05
    },
    "cues": [
-    {
-     "skip": true,
-     "show": [
-      "AI",
-      "stocks",
-      "today."
-     ]
-    },
     {
      "eyebrow": "MICRON · AFTER THE BELL",
      "show": [
       "Micron",
       "beat",
+      "on",
+      "AI",
+      "memory",
+      "demand,",
+      "yet",
+      "barely",
+      "moved",
       "after",
-      "the",
-      "bell,",
-      "with",
-      "record",
-      "revenue",
-      "of",
-      "$54.2",
-      "billion."
+      "hours."
+     ]
+    },
+    {
+     "eyebrow": "MICRON · THE READ",
+     "show": [
+      "Commentators",
+      "say",
+      "it",
+      "was",
+      "priced",
+      "in."
      ]
     }
    ]
   },
   {
    "voice": "cedar",
-   "say": "Google rose zero point nine percent as it launched Gemini four.",
+   "say": "Google's Gemini 4 beat rivals on most tests, but few can use it yet. Shares jumped over three percent, then closed up zero point nine.",
+   "tempo": 1.1,
    "reuse": {
     "file": "voice/line1-cedar.wav",
     "from": 0,
-    "to": 4.2
+    "to": 8.25
    },
    "cues": [
     {
-     "eyebrow": "GOOGLE",
+     "eyebrow": "GOOGLE · GEMINI 4",
      "show": [
-      "Google",
-      "rose",
-      "0.9%",
-      "as",
+      "Google's",
+      "Gemini 4",
+      "beat",
+      "rivals",
+      "on",
+      "most",
+      "tests,",
+      "but",
+      "few",
+      "can",
+      "use",
       "it",
-      "launched",
-      "Gemini 4."
+      "yet."
+     ]
+    },
+    {
+     "eyebrow": "GOOGLE · SHARES",
+     "show": [
+      "Shares",
+      "jumped",
+      "over",
+      "3%,",
+      "then",
+      "closed",
+      "up",
+      "0.9%."
      ]
     }
    ]
   },
   {
    "voice": "marin",
-   "say": "Meta slipped one point eight percent, ending a September rally driven by its Muse AI app.",
+   "say": "Meta slipped one point eight percent as OpenAI launched a Muse rival. Analysts still back Muse.",
+   "tempo": 1.1,
    "reuse": {
     "file": "voice/line2-marin.wav",
     "from": 0,
-    "to": 6.45
+    "to": 6.9
    },
    "cues": [
     {
@@ -195,42 +111,37 @@
      "show": [
       "Meta",
       "slipped",
-      "1.8%,",
-      "ending",
+      "1.8%",
+      "as",
+      "OpenAI",
+      "launched",
       "a",
-      "September",
-      "rally",
-      "driven",
-      "by",
-      "its",
       "Muse",
-      "AI",
-      "app."
+      "rival."
+     ]
+    },
+    {
+     "eyebrow": "META · THE READ",
+     "show": [
+      "Analysts",
+      "still",
+      "back",
+      "Muse."
      ]
     }
    ]
   },
   {
    "voice": "minjae",
-   "say": "This demo portfolio closed up zero point two percent. That's your brief.",
+   "say": "That's your brief.",
    "reuse": {
     "file": "voice/line3-minjae.wav",
     "from": 0,
-    "to": 4.58
+    "to": 1.18
    },
    "cues": [
     {
-     "eyebrow": "YOUR ASSETLY BRIEF · DEMO 001",
-     "show": [
-      "This",
-      "demo",
-      "portfolio",
-      "closed",
-      "up 0.2%."
-     ]
-    },
-    {
-     "eyebrow": "YOUR ASSETLY BRIEF",
+     "eyebrow": "YOUR PORTFOLIO",
      "show": [
       "That's",
       "your",
@@ -240,6 +151,41 @@
    ]
   }
  ],
- "hook_kicker": "AI STOCKS · SEP 30",
- "hook_foot": "Demo Portfolio 001 · Assetly"
+ "beats": [
+  {
+   "take": "take60.mp4",
+   "start": 111.6,
+   "focus_src": 560,
+   "to_cue": 1,
+   "note": "MU page, 1D chart, 0.00% today"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 94.6,
+   "focus_src": 1300,
+   "to_cue": 2,
+   "note": "close brief scrolling past its MU paragraph"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 134.4,
+   "focus_src": 1000,
+   "to_cue": 4,
+   "note": "GOOGL 1D (intraday high on the chart), scroll to the Gemini intelligence"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 156.9,
+   "focus_src": 1000,
+   "to_cue": 6,
+   "note": "META 1D -1.84%, scroll to the Muse/OpenAI bullet"
+  },
+  {
+   "take": "take60.mp4",
+   "start": 65.4,
+   "focus_src": 1000,
+   "tail": 2.0,
+   "note": "Home: net worth, today, all time, then scroll to movers and positions"
+  }
+ ]
 }

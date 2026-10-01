@@ -3,7 +3,10 @@
 // talking about, then runs the real pipeline (prices, news, intelligence, the close brief). The email prefix
 // is excluded from the owner's funnel stats. The password is written to ~/.private_keys/assetly-daily<NNN>.txt
 // (chmod 600) and never printed.
-//   SRK_FILE=<file holding the service key> node e2e/seed-daily-demo.mjs 1 [--brief close] [--no-content]
+//   SRK_FILE=<file holding the service key> node e2e/seed-daily-demo.mjs 1 [--book book.json] [--name "My portfolio"]
+//       [--reset] [--brief close] [--no-content]
+// --book: [{"symbol","qty","cost","account"?}] designed for the day's stories (docs/marketing/shorts/<date>/book.json);
+// --reset deletes the account's holdings first, so a re-design replaces the book instead of adding to it.
 // The service key comes from `npx --no-install supabase projects api-keys --project-ref hhdpthrfmsdmxdrfckxq -o json`.
 import fs from "node:fs";
 import crypto from "node:crypto";
@@ -24,7 +27,7 @@ const CRED = `${process.env.HOME}/.private_keys/assetly-daily${NNN}.txt`;
 
 // ~$200k, AI-heavy, weights that a real long-term tech holder could plausibly have. Round share counts,
 // cost bases well under today's prices (bought over the last year or two). Change the book here, not per run.
-const BOOK = [
+const BOOK_DEFAULT = [
   { symbol: "NVDA",  qty: 220, cost: 142.50 },
   { symbol: "MSFT",  qty: 50,  cost: 415.00 },
   { symbol: "GOOGL", qty: 70,  cost: 188.00 },
@@ -37,6 +40,8 @@ const BOOK = [
   { symbol: "PLTR",  qty: 50,  cost: 128.00 },
   { symbol: "$CASH", qty: 8000, cost: 1, account: "bank" },
 ];
+const BOOK = arg("--book") ? JSON.parse(fs.readFileSync(arg("--book"), "utf8")) : BOOK_DEFAULT;
+const NAME = arg("--name") ?? `Demo Portfolio ${NNN}`;
 
 const rest = async (path, init = {}) => {
   const r = await fetch(`${URL_}/rest/v1/${path}`, { ...init, headers: { ...H, ...(init.headers ?? {}) } });
@@ -61,7 +66,7 @@ if (existing) {
 } else {
   const password = crypto.randomBytes(18).toString("base64url") + "!9a";
   const r = await fetch(`${URL_}/auth/v1/admin/users`, { method: "POST", headers: H,
-    body: JSON.stringify({ email: EMAIL, password, email_confirm: true, user_metadata: { full_name: `Demo Portfolio ${NNN}` } }) });
+    body: JSON.stringify({ email: EMAIL, password, email_confirm: true, user_metadata: { full_name: NAME } }) });
   const u = await r.json();
   if (!r.ok) { console.error("create failed:", r.status, JSON.stringify(u).slice(0, 200)); process.exit(1); }
   uid = u.id;
@@ -73,7 +78,7 @@ if (existing) {
 // the profile row is made by the auth trigger; wait for it, then answer setup so the app skips it
 for (let i = 0; i < 10 && !(await rest(`profiles?select=id&id=eq.${uid}`)).length; i++) await new Promise((r) => setTimeout(r, 500));
 await rest(`profiles?id=eq.${uid}`, { method: "PATCH", body: JSON.stringify({
-  display_name: `Demo Portfolio ${NNN}`, base_currency: "USD", display_us: "USD", display_kr: "KRW",
+  display_name: NAME, base_currency: "USD", display_us: "USD", display_kr: "KRW",
   markets: ["US"], onboarded_at: new Date().toISOString(),
   investor: { styles: ["growth", "ai_tech"], purpose: ["build"], horizon: ["3-10y"], target: ["12-20%"], risk: ["hold"], level: ["intermediate"], defaulted: [] },
 }) });
@@ -83,6 +88,15 @@ for (const { symbol } of BOOK) {
   if (symbol.startsWith("$")) continue;
   if ((await rest(`symbols?select=symbol&symbol=eq.${symbol}`)).length) continue;
   await fn("symbol-search", { ensure: { symbol, name: symbol, exchange: "NASDAQ", currency: "USD", kind: "equity", yahoo: symbol } });
+}
+if (process.argv.includes("--reset")) {
+  const old = await rest(`holdings?select=id&user_id=eq.${uid}`);
+  if (old.length) {
+    const ids = old.map((h) => h.id).join(",");
+    await rest(`lots?holding_id=in.(${ids})`, { method: "DELETE" });
+    await rest(`holdings?id=in.(${ids})`, { method: "DELETE" });
+    console.log(`reset: removed ${old.length} holdings`);
+  }
 }
 const have = await rest(`holdings?select=id,symbol&user_id=eq.${uid}`);
 for (const row of BOOK) {
@@ -97,7 +111,11 @@ const syms = BOOK.map((b) => b.symbol).filter((s) => !s.startsWith("$"));
 if (!process.argv.includes("--no-content")) {
   await fn("price-sync", { symbols: syms });
   await fn("news-sync", { symbols: syms });
-  await fn("insights-sync", { symbols: syms, user_id: uid });
+  // filings give the brief its earnings dates: without them a holding that reports tonight reads as
+  // "no earnings on the calendar" (9/30, MU)
+  await fn("filings-sync", { symbols: syms });
+  // insights-sync on ~10 symbols hits WORKER_RESOURCE_LIMIT; three at a time fits
+  for (let i = 0; i < syms.length; i += 3) await fn("insights-sync", { symbols: syms.slice(i, i + 3), user_id: uid });
   await fn("daily-brief", { user_id: uid, edition, force: true });
 }
 

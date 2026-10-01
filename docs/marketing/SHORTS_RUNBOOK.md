@@ -6,6 +6,12 @@ subtitles, ends on the App Store card. Quality bar: [SHORTS_QUALITY.md](SHORTS_Q
 First one: [shorts/2026-09-30/](shorts/2026-09-30/) (demo #001). Never upload from the pipeline: the
 owner reviews the file and the main session posts it.
 
+**Owner rules (9/30 review, all required):** no "demo" anywhere in the video or voice (the description says
+"Portfolio shown is illustrative. Not financial advice."); show real numbers (net worth, today $ and %,
+all time, movers, a position's value and gain); design the book around the day's stories BEFORE
+recording; one camera language on every beat; insight, not headlines (why + sentiment, attributed, two
+sources each); real scrolling footage. The 9/30 v2 folder is the reference.
+
 Time: about 45 minutes, most of it the two recordings and the fact check.
 
 ## 0. Keys (never printed)
@@ -46,6 +52,14 @@ curl ... /functions/v1/daily-brief -d '{"user_id":"<uid>","edition":"close","for
 possessives ("your best month" when it was Meta's), dividend phrasing, anything contested. Regenerate
 (stochastic) rather than hand-edit; note what stays wrong in the quality report.
 
+## 1b. Design the book first
+
+Pick the day's 2-3 stories, then write `docs/marketing/shorts/<date>/book.json`: the story names, a few AI
+leaders and supply-chain names, and one or two of the day's hot movers, sized ($150-300k) so the Home
+movers list and the day's P&L tell a believable story. Re-seed with
+`node e2e/seed-daily-demo.mjs N --book <book.json> --name "My portfolio" --reset` (it now syncs filings and
+runs insights in threes). Check the regenerated close brief line by line; regenerate when it is wrong.
+
 ## 2. The stories and the script
 
 Pick 2-3 AI / market stories of the day. Every figure needs two agreeing sources (the app's price row and
@@ -64,10 +78,15 @@ never fits.
 
 ```bash
 cd web/ios/App/marketing
-THEME=dark CRED=$HOME/.private_keys/assetly-daily00$N.txt DAILY_SYMBOLS=MU,GOOGL,META HERO_TEST=testEdaily \
-  OUT=$W/raw.mp4 ./record-hero.sh <simulator-udid>
-ffmpeg -i $W/raw.mp4 -vf fps=30 -c:v libx264 -crf 10 -preset fast -pix_fmt yuv420p -an $W/take1.mp4
+THEME=dark CRED=$HOME/.private_keys/assetly-daily00$N.txt DAILY_SYMBOLS=MU,GOOGL,META DAILY_RANGE=1D \
+  HERO_TEST=testFdaily SIM_VIDEO=$W/disp.mov OUT=$W/raw.mp4 ./record-hero.sh <simulator-udid>
+ffmpeg -i $W/disp.mov -vf fps=60 -vsync cfr -c:v libx264 -crf 12 -preset fast -pix_fmt yuv420p -an $W/build/take60.mp4
 ```
+
+`testFdaily` glides (fixed-speed drags) through Home (net worth -> brief card -> movers -> positions),
+opens the close brief and scrolls it, opens each story's position on 1D and scrolls it to value and
+gain, then scrolls News. `SIM_VIDEO` records the display itself (30-42 unique fps while scrolling; the
+XCTest attachment is ~17 fps and judders). Take every beat from `take60.mp4`.
 
 Use a simulator of your own (`xcrun simctl create "Shorts iPhone 17 Pro" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro <runtime>`)
 so a parallel agent's tests cannot collide with the take. `testEdaily` records Home, the close brief and
@@ -94,7 +113,12 @@ spoken-word counts voices the whole script in the Minjae clone (the first 9/30 c
 `-alt-minjae-voice.mp4`). Keys: OpenRouter from `~/.private_keys/openrouter.txt`, ElevenLabs from
 `$W/build/elk` (only for minjae lines that are not reused).
 
-Highlights: give each zoomed beat a `highlight.src_box` (recording pixels, 1206 wide) around the line
+Motion and grid: set `"motion": {"to": 1.3, "in": 0.7, "out": 0.6}` and `"grid": 0.3` in day.json; every
+beat then gets the same push toward its `focus_src` and every cut snaps to the music grid (Q18). Give
+`"hook_dur"` when the voice starts on the first story (the cover carries "AI stocks today" as text).
+`DUCK_SC` (default 0.7) sets the sidechain depth if the mixer's -6..-12 dB check trips.
+
+Highlights (optional, static beats only): give each zoomed beat a `highlight.src_box` (recording pixels, 1206 wide) around the line
 being spoken; a freeze beat needs a slow push (`"in": [0.3, 3.0]`) or the freeze metric trips.
 
 

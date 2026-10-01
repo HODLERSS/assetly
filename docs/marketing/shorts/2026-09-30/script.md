@@ -1,28 +1,30 @@
-# Script: 2026-09-30 Short (Demo Portfolio 001)
+# Script: 2026-09-30 Short (v2, rebuilt from scratch)
 
-Four lines, three voices, handed over with a 0.17 s touch (no overlap). Every line is on screen as a word-synced subtitle with an eyebrow naming the story, and five speaking-indicator pills move with whoever is talking, so a muted viewer can follow each line.
+## The portfolio (designed before recording)
 
-| # | Voice | Spoken (ear-ready: numbers as words) | On screen |
-|---|---|---|---|
-| 1 | marin (OpenRouter openai/gpt-audio) | AI stocks today. Micron beat after the bell, with record revenue of fifty-four point two billion dollars. | AI stocks today. / Micron beat after the bell, with record revenue of $54.2 billion. |
-| 2 | cedar (OpenRouter openai/gpt-audio) | Google rose zero point nine percent as it launched Gemini four. | Google rose 0.9% as it launched Gemini 4. |
-| 3 | marin (OpenRouter openai/gpt-audio) | Meta slipped one point eight percent, ending a September rally driven by its Muse AI app. | Meta slipped 1.8%, ending a September rally driven by its Muse AI app. |
-| 4 | Minjae voice clone (ElevenLabs eleven_v4), the app's brief voice | This demo portfolio closed up zero point two percent. That's your brief. | This demo portfolio closed up 0.2%. / That's your brief. |
+Account minjae.m.lee+daily001@gmail.com, display name "My portfolio" (excluded from funnel stats by the +daily address). Book in [book.json](book.json): the three story names (MU, GOOGL, META), AI leaders and supply chain (NVDA, AVGO, TSM, AMD, MSFT), and two of the day's hot AI-infrastructure movers (HPE, record high on a $1.2B AMD Helios rack order; CEG, AI power, -4%). Sized so the day reads true and the movers list has a story: **$271,925, Today +$248 (+0.09%), All time +$106,059 (+66.34%); movers HPE +$720, META -$680, CEG -$422**; MU position $31,953 (+$19,398), GOOGL $41,290 (+$18,922), META $36,259 (+$5,659).
 
-gpt-audio lines: brisk news-anchor prompt, read-verbatim check on the returned transcript, pauses over 0.3 s shortened, +6% pitch-preserving tempo (as the launch clip). Minjae line: the verified ElevenLabs take, unaltered.
+## Voice (62 words, numbers spoken as words; every line attributed)
 
-**Timeline** (seconds in the final file)
+| # | Voice | Spoken | Why | Sentiment |
+|---|---|---|---|---|
+| 1 | marin (OpenRouter gpt-audio) | Micron beat on AI memory demand, yet barely moved after hours. Commentators say it was priced in. | AI memory demand drove the beat | barely moved after hours; commentators: priced in |
+| 2 | cedar (OpenRouter gpt-audio) | Google's Gemini 4 beat rivals on most tests, but few can use it yet. Shares jumped over three percent, then closed up zero point nine. | Gemini 4 beat rivals on most tests; limited access | shares +3% intraday, faded to +0.9% |
+| 3 | marin (OpenRouter gpt-audio) | Meta slipped one point eight percent as OpenAI launched a Muse rival. Analysts still back Muse. | OpenAI launched a Muse rival (Dots) | analysts still back Muse |
+| 4 | Minjae clone (ElevenLabs), the app's brief voice | That's your brief. |  |  |
 
-| Time | Picture | Voice / words |
+All gpt-audio takes matched their script verbatim (model transcript); pauses over 0.3 s shortened; +10% pitch-preserving tempo. The cover carries "AI stocks today" as text; the voice opens straight on Micron.
+
+## Timeline (seconds in the final file; every beat: the same 1.3x push in 0.7 s, out 0.6 s, cuts on the 0.3 s music grid)
+
+| Time | Picture (real 60 Hz app footage) | Words on screen |
 |---|---|---|
-| 0.00 to 1.89 | Cover (thumbnail, fully drawn at frame 0): kicker "AI STOCKS · SEP 30", then "**Micron** beats. / **Gemini 4** launches. / **Meta** slips." (company in accent), "Demo Portfolio 001 · Assetly"; slow 5% push | marin: "AI stocks today." |
-| 1.89 to 7.30 | Micron page, frozen; slow push-in, '0.00% today · closed 4:00 PM ET' highlighted | marin: "Micron beat after the bell, with record revenue of $54.2 billion." |
-| 7.30 to 11.18 | Google page with the chart set to 1D (+0.93%, today), frozen; slow push-in, '+0.93% today · closed 4:00 PM ET' highlighted | cedar: "Google rose 0.9% as it launched Gemini 4." |
-| 11.18 to 17.18 | Meta page, frozen; slow push-in, '-1.84% today · closed 4:00 PM ET' highlighted | marin: "Meta slipped 1.8%, ending a September rally driven by its Muse AI app." |
-| 17.18 to 20.64 | Home; push-in, 'Today +$336 (+0.16%)' highlighted | Minjae: "This demo portfolio closed up 0.2%." |
-| 20.64 to 22.04 | The close brief open, its player running; push-in held into the end card | Minjae: "That's your brief." |
-| 21.44 to end | End card: icon, Assetly, "Your portfolio, explained daily", "Demo portfolio. Not financial advice.", Available on the App Store | music resolves |
+| 0.00 to 1.50 | Cover: AI STOCKS · SEP 30 / **Micron** beats. / **Gemini 4** launches. / **Meta** slips. / Assetly | Micron line begins (subtitle from 0.2 s) |
+| 1.50 to 4.50 | Micron page, 1D chart: $1,065.11, 0.00% today, closed 4:00 PM ET | Micron beat on AI memory demand, yet barely moved after hours. |
+| 4.50 to 6.30 | The close brief scrolling past its MU paragraph ("$61.5B revenue forecast ... capex jitters") | Commentators say it was priced in. |
+| 6.30 to 13.80 | Google page, 1D (+0.93%, chart high $352.29), scrolling to the Gemini 4 intelligence and the position ($41,290, +$18,922) | Google's Gemini 4 beat rivals on most tests, but few can use it yet. / Shares jumped over 3%, then closed up 0.9%. |
+| 13.80 to 19.80 | Meta page, 1D (-1.84%), scrolling to "Muse downloads beat ChatGPT ... OpenAI rival agent" and the position | Meta slipped 1.8% as OpenAI launched a Muse rival. / Analysts still back Muse. |
+| 19.80 to 22.80 | Home: $271,925, Today +$248 (+0.09%), All time +$106,059 (+66.34%), scrolling to the brief card and movers (CEG, HPE, META); held into the card | That's your brief. |
+| 22.20 to end | End card: icon, Assetly, "Your portfolio, explained daily", "Not financial advice.", Available on the App Store | |
 
-The standing line "Demo portfolio · Not financial advice" sits at the top of every product frame.
-
-**Alternate cut:** `assetly-short-2026-09-30-alt-minjae-voice.mp4` is the first delivery (commit 66b8c12), the whole script in the Minjae voice clone, same stories and figures, 24.83 s. Kept for comparison.
+"Not financial advice" sits small at the top of every frame. The word "demo" appears nowhere in the picture, the voice or the metadata.

@@ -83,8 +83,36 @@ hits = sorted(set(m.lower() for m in re.findall(BAN, texts, re.I))); dash = "\u2
 emoji = re.findall(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", texts)
 row("Q13", "No advice / hype / jargon words, em dashes, emoji", not hits and not dash and not emoji, f"hits {hits or 'none'}, em dash {dash}, emoji {len(emoji)}")
 
+# Q17 no "demo" anywhere a viewer sees or hears it: script, subtitles, every text layer's source strings,
+# and the metadata title/description lines other than the illustrative-portfolio disclaimer
+plan = json.load(open(os.environ["SHORT_PLAN"])) if os.environ.get("SHORT_PLAN") else None
+seen = texts + "\n" + os.environ.get("SHORT_STRINGS", "")
+demo = re.findall(r"\bdemo\b", seen, re.I)
+row("Q17", "No \"demo\" in voice, subtitles, cards, metadata", not demo, f"{len(demo)} hits")
+
+if plan:
+    # Q18 one camera language: every beat pushes to the same scale with the same in/out durations, and
+    # every cut sits on the music grid (0.3 s at 100 BPM)
+    zs = [b.get("zoom") for b in plan["beats"]]
+    shape = {(z["to"], round(z["in"][1] - z["in"][0], 2), round(z["out"][1] - z["out"][0], 2) if z.get("out") else None) for z in zs if z}
+    outs = {s[2] for s in shape if s[2] is not None}
+    cuts, t = [], plan["hook"]["dur"] if plan.get("hook") else 0.0
+    for b in plan["beats"][:-1]: t += b["dur"]; cuts.append(round(t, 3))
+    off = [c for c in cuts if abs(c / 0.3 - round(c / 0.3)) > 0.02]
+    ok18 = all(zs) and len({(s[0], s[1]) for s in shape}) == 1 and len(outs) <= 1 and not off
+    row("Q18", "Consistent motion (same push on every beat, cuts on the 0.3 s grid)", ok18,
+        f"{len(zs)} beats, push {sorted(shape, key=str)}; cuts {cuts}" + (f", off-grid {off}" if off else ""))
+    # Q19 real scrolling: beats whose source footage scrolls (row-shift between frames) for >= 0.5 s
+    n_scroll = 0; detail = []
+    for b in plan["beats"]:
+        if b.get("freeze"): detail.append("frozen"); continue
+        o = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(b["start"]), "-t", str(b["dur"]), "-i", b["src"], "-vf", "fps=30,crop=1206:1600:0:500,scale=120:160,format=gray", "-f", "rawvideo", "-"], capture_output=True).stdout
+        fr = np.frombuffer(o, dtype=np.uint8).reshape(-1, 160, 120).astype(float)
+        moving = sum(1 for a, c in zip(fr, fr[1:]) if np.abs(a - c).mean() > 1.5) / 30
+        detail.append(f"{moving:.1f}s"); n_scroll += moving >= 0.5
+    row("Q19", "Live scroll segments >= 3", n_scroll >= 3, f"{n_scroll} beats scroll; moving time per beat {detail}")
 print("| # | Metric | Result | Measured |\n|---|---|---|---|")
 for r in rows: print(f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} |")
-for k, n in (("Q11", "Every figure sourced"), ("Q12", "Pronunciation"), ("Q14", "Disclaimer visible"), ("Q15", "Brand"), ("Q16", "Proof frames viewed")):
+for k, n in (("Q20", "Insight lines: why + sentiment, each with 2 sources"), ("Q11", "Every figure sourced"), ("Q12", "Pronunciation"), ("Q14", "Disclaimer visible"), ("Q15", "Brand"), ("Q16", "Proof frames viewed")):
     print(f"| {k} | {n} | MANUAL | see below |")
 sys.exit(1 if bad else 0)

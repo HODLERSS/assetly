@@ -87,11 +87,19 @@ python3 - "$DAY" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1])); st = json.load(open("starts.json"))
 starts, last = [x[0] for x in st[:-1]], st[-1][0]
-hook = round(starts[1] - 0.13, 3); cur = hook; beats = []
-for b in d["beats"]:
-    b = {k: v for k, v in b.items() if k != "note"}
-    if "to_cue" in b: b["dur"] = round(starts[b.pop("to_cue")] - 0.13 - cur, 3)
-    elif "tail" in b: b["dur"] = round(last + b.pop("tail") - cur, 3)
+# "grid": cuts snap to the music's grid (0.3 s = an eighth at 100 BPM), so picture and bed move together.
+# "motion": ONE camera language for every beat: the same push (to, in, out seconds, smootherstep) toward
+# each beat's focus_src; the last beat holds its push into the card.
+G = d.get("grid", 0); snap = (lambda t: round(round(t / G) * G, 3)) if G else (lambda t: round(t, 3))
+mo = d.get("motion")
+hook = snap(d.get("hook_dur", starts[1] - 0.13)); cur = hook; beats = []
+for i, b in enumerate(d["beats"]):
+    b = {k: v for k, v in b.items() if k != "note"}; last_beat = i == len(d["beats"]) - 1
+    if "to_cue" in b: b["dur"] = round(snap(starts[b.pop("to_cue")] - 0.13) - cur, 3)
+    elif "tail" in b: b["dur"] = round(snap(last + b.pop("tail")) - cur, 3)
+    if mo and "zoom" not in b:
+        b["zoom"] = {"to": mo["to"], "focus_src": b.pop("focus_src", 1100), "in": [0.05, round(0.05 + mo["in"], 3)]}
+        if not last_beat: b["zoom"]["out"] = [round(b["dur"] - mo["out"] - 0.05, 3), round(b["dur"] - 0.05, 3)]
     z = b.get("zoom")
     if z and z.get("out") == "auto": b["zoom"] = dict(z, out=[round(b["dur"] - 0.8, 2), round(b["dur"] - 0.1, 2)])   # settle before the cut
     cur += b["dur"]; beats.append(b)
@@ -99,21 +107,21 @@ json.dump({"hook": hook, "beats": beats, "product": round(cur, 3)}, open("timing
 print("timing: hook %.2fs, beats %s, product %.2fs" % (hook, [b["dur"] for b in beats], cur))
 PY
 LEN_PRODUCT=$(python3 -c "import json;print(json.load(open('timing.json'))['product'])")
-LEN=$(python3 -c "print(round($LEN_PRODUCT+2.2,2))")
+LEN=$(python3 -c "import json;print(round($LEN_PRODUCT+json.load(open('$DAY')).get('card',2.2),2))")
 python3 -c "import sys; sys.exit('Short is %.2fs, outside 20-25s: tighten the script' % $LEN) if not 20 <= $LEN <= 25 else None"
 
 # 3. sound first (the speaking pills are drawn from the mixed voice track): Apple Loops bed at the
 # Short's length, the voice cues, sidechain duck, -14 LUFS
 python3 -c "import json;p=json.load(open('$HERE/music-short.json'));p['len']=$LEN;json.dump(p,open('music.json','w'))"
 "$M/make-spot-music.py" music.json music.wav
-DUCK_SC=1.2 VO_OUT="$W/vo-track.wav" "$M/mix-spot-audio.sh" music.wav mix.wav "$LEN" $(cat mixcues.txt)
+DUCK_SC="${DUCK_SC:-0.7}" VO_OUT="$W/vo-track.wav" "$M/mix-spot-audio.sh" music.wav mix.wav "$LEN" $(cat mixcues.txt)
 
 # 4. picture: subtitles, pills, disclaimer, beats, card
 rm -rf fill spk; SUB_TOP=98 SUB_MAXW=820 SUB_MAX_LINES=3 python3 "$M/make-fill-subtitles.py" subs.json fill 1080 300 60 "$LEN_PRODUCT" >/dev/null
 if [ "$LINES" = 1 ]; then
   ffmpeg -v error -y -i vo-track.wav -ac 1 -c:a pcm_s16le vo16.wav; python3 "$M/make-speaking.py" vo16.wav spk 60 dark
 fi
-"$M/make-cards.py" line 1080 1920 112 30 disclaimer.png "Demo portfolio · Not financial advice" >/dev/null
+"$M/make-cards.py" line 1080 1920 112 30 disclaimer.png "Not financial advice" >/dev/null
 python3 - "$DAY" "$W" "$LEN" "$M" "$LINES" <<'PY'
 import json, sys
 d, w, L, m, lines = json.load(open(sys.argv[1])), sys.argv[2], float(sys.argv[3]), sys.argv[4], sys.argv[5] == "1"
@@ -129,7 +137,7 @@ plan = {"w": 1080, "h": 1920, "len": L, "theme": "dark", "fps": 60, "xfade": 0.6
 if lines: plan.update(speaking=f"{w}/spk", speaking_x=460, speaking_y=152)     # five pills over the strip while anyone speaks
 json.dump(plan, open("plan.json", "w"), indent=1)
 PY
-END_SUB1="Your portfolio, explained daily" END_SUB2="Demo portfolio. Not financial advice." END_CTA="Available on the App Store" \
+END_SUB1="Your portfolio, explained daily" END_SUB2="Not financial advice." END_CTA="Available on the App Store" \
   python3 "$M/make-spot.py" plan.json video.mp4
 FINAL="$OUT/assetly-short-$DATE.mp4"
 ffmpeg -v error -y -i video.mp4 -i mix.wav -map 0:v -map 1:a -c:v copy -af "afade=t=out:st=$(python3 -c "print($LEN-1.2)"):d=1.2" \
@@ -141,10 +149,11 @@ for t in 0.0 0.5 3.0 8.0 13.0 18.0 $(python3 -c "print(round($LEN-0.03,2))"); do
   ffmpeg -v error -y -ss "$t" -i "$FINAL" -frames:v 1 "$OUT/proof/proof_${t}s.png"; done
 HOOK_KICKER="$(python3 -c "import json;print(json.load(open('$DAY')).get('hook_kicker',''))")" HOOK_FOOT="$(python3 -c "import json;print(json.load(open('$DAY')).get('hook_foot',''))")" \
   "$M/make-cards.py" hook 1080 1920 cards "$(python3 -c "import json;print(json.load(open('$DAY')).get('hook',''))")" >/dev/null
-END_SUB1="Your portfolio, explained daily" END_SUB2="Demo portfolio. Not financial advice." "$M/make-cards.py" end 1080 1920 \
+END_SUB1="Your portfolio, explained daily" END_SUB2="Not financial advice." "$M/make-cards.py" end 1080 1920 \
   "$M/../App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png" cards >/dev/null
 L="disclaimer.png,0,0"; for f in cards/hook*.png cards/end_*.png; do L="$L;$f,0,0"; done
 for f in $(ls fill | awk 'NR%120==60'); do L="$L;fill/$f,0,150"; done
 [ -d spk ] && for f in $(ls spk | awk 'NR%240==120'); do L="$L;spk/$f,460,152"; done
-SHORT_LAYERS="$L" python3 "$HERE/qa-short.py" "$FINAL" vo-track.wav subs.json script_display.txt "$OUT/youtube-metadata.md" | tee "$OUT/qa-auto.md"
+STR="$(python3 -c "import json;d=json.load(open('$DAY'));print(d.get('hook',''),d.get('hook_kicker',''),d.get('hook_foot',''))") Not financial advice Your portfolio, explained daily Available on the App Store $(python3 -c "import json;print(' '.join(c.get('eyebrow','') for c in json.load(open('subs.json'))['cues']))")"
+SHORT_PLAN=plan.json SHORT_STRINGS="$STR" SHORT_LAYERS="$L" python3 "$HERE/qa-short.py" "$FINAL" vo-track.wav subs.json script_display.txt "$OUT/youtube-metadata.md" | tee "$OUT/qa-auto.md"
 echo "-> $FINAL  (demo $NNN)"
