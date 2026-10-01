@@ -6,12 +6,15 @@
   (make-spot.py `zoom_anchor: "top"`, `phone_w`), 1.15x (was 1.3x). The old focus-point push moved the phone between
   y 478 and 739, so the gap to the subtitles changed every beat.
 - Subtitles end on a fixed row (`SUB_BOTTOM`, y 468), 40 px above the phone, for one, two or three lines; the eyebrow
-  sits 16 px above the first line. Type 60 px (was 50), 840 px max width (Shorts caption guidance: 60-75 px).
+  sits 16 px above the first line. Type 60 px (was 50), 820 px max width (Q10 safe zone x 60-950) (Shorts caption guidance: 60-75 px).
 - Q37: the phone's top on one row in every beat and the subtitle-to-phone gap constant (+-8 px), measured on the final
   frames.
 - references/shorts-craft.md: the Shorts guidance applied and what it never overrides.
 - The answer-on-screen search matches the quoted line by its words (two of its first four), not an exact prefix: OCR
   reads "−4.0%" and bold tickers unreliably, and the 12:12 midday refused on a line that was on screen.
+- The title's date is the edition's (compose sets "| Oct 1"; QA checks it): the 10/1 midday was titled "| Sep 14".
+- Q8 allows 320 ms for the second sentence of one voice line (it runs on with no clean acoustic onset), 150 ms
+  elsewhere; onsets also from a loose dip and an 8 dB rise. Subtitles 820 px wide (Q10 x <= 950).
 - A delivered Short whose takes are gone can be re-framed frame by frame (preopen-v5: measure2.py + relayout.py).
 
 ## v1.0.4 (2026-10-01, owner review of preopen-v3 highlights)

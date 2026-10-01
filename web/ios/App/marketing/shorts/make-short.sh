@@ -130,7 +130,7 @@ DUCK_SC="${DUCK_SC:-0.7}" VO_OUT="$W/vo-track.wav" "$M/mix-spot-audio.sh" music.
 # 4. picture: subtitles, pills, disclaimer, beats, card
 # owner, 10/1: subtitles end on a fixed row (SUB_BOTTOM) 40 px above the phone whatever their line count, the eyebrow 16 px
 # above the first line; 60 px type (Shorts caption guidance: 60-75 px at 1080x1920), centred, kept left of the action rail
-rm -rf fill spk; SUB_TOP=98 SUB_BOTTOM=318 SUB_EYE_GAP=16 SUB_MAXW=840 SUB_MAX_LINES=3 python3 "$M/make-fill-subtitles.py" subs.json fill 1080 330 60 "$LEN_PRODUCT" >/dev/null
+rm -rf fill spk; SUB_TOP=98 SUB_BOTTOM=318 SUB_EYE_GAP=16 SUB_MAXW=820 SUB_MAX_LINES=3 python3 "$M/make-fill-subtitles.py" subs.json fill 1080 330 60 "$LEN_PRODUCT" >/dev/null
 if [ "$LINES" = 1 ]; then
   ffmpeg -v error -y -i vo-track.wav -ac 1 -c:a pcm_s16le vo16.wav; python3 "$M/make-speaking.py" vo16.wav spk 60 dark
 fi

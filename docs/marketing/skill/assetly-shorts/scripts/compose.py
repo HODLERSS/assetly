@@ -253,6 +253,11 @@ def main():
         if "#Shorts" not in tags: tags = "#Shorts " + tags
         desc = (stamp["line"] + "\n" + story["description"].strip() + "\nPortfolio shown is illustrative. Not financial advice.\n\n"
                 "Assetly on the App Store: https://apps.apple.com/app/id6811739789\nMore: https://hodlerss.github.io/assetly/about.html")
+        # the date in the title is the edition's, never the model's (10/1 midday titled "| Sep 14", copied from nowhere)
+        from datetime import date as _date
+        _d = _date.fromisoformat(DATE); _tag = f"{_d.strftime('%b')} {_d.day}"
+        _t = re.sub(r"\s*[|·-]?\s*\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(, \d{4})?\b", "", story["title"]).strip(" |·-")
+        story["title"] = (_t if len(_t) + len(_tag) + 3 <= 70 else _t[:70 - len(_tag) - 3].rstrip(" ,")) + f" | {_tag}"
         meta = {"title": story["title"], "description": desc, "hashtags": tags.split(), "data_as_of_et": stamp["asof"],
                 "tags": [t.lstrip("#") for t in tags.split()] + ["Assetly", "stock market today", "AI stocks"], "thumbnail": "frame 0 (the headline cover)",
                 "category": "News & Politics", "made_for_kids": False}

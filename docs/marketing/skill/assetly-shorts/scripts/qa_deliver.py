@@ -79,7 +79,9 @@ def main():
             f"master {size / 1e6:.2f} MB -> upload {usize / 1e6:.2f} MB, SSIM {ssim:.4f}")
         # Q27 metadata
         d = meta["description"]
-        okm = (len(meta["title"]) <= 70 and "Portfolio shown is illustrative. Not financial advice." in d and "https://apps.apple.com/app/id6811739789" in d
+        from datetime import date as _dq
+        _dd = _dq.fromisoformat(DATE) if "DATE" in globals() else None
+        okm = (len(meta["title"]) <= 70 and (_dd is None or meta["title"].endswith(f"| {_dd.strftime('%b')} {_dd.day}")) and "Portfolio shown is illustrative. Not financial advice." in d and "https://apps.apple.com/app/id6811739789" in d
                and "https://hodlerss.github.io/assetly/about.html" in d and "#Shorts" in meta["hashtags"] and not re.search(r"\bdemo\b", json.dumps(meta), re.I))
         okm = okm and d.splitlines()[0] == day.get("stamp", {}).get("line", "") and bool(meta.get("tags"))
         row("Q27", "Metadata: first line 'Data as of ...', title <= 70, illustrative line, App Store + about links, #Shorts, tags, no 'demo'", okm,
@@ -260,8 +262,8 @@ def main():
                 xl, xr = int(br[0]), int(br[-1]); rim = a[:, xl:xl + 4].max(1) > 200; y = 1500
                 while y > 200 and (rim[y - 1] or rim[y - 2]): y -= 1
                 top = y - 0.118 * (xr - xl); g = int(a[1000, 3])
-                rows = _np.where((a[198:500] > g + 40).sum(1) >= 2)[0]
-                tb = 198 + int(rows.max()) if len(rows) else None
+                txt37 = _np.where((a[198:500] > g + 40).sum(1) >= 2)[0]
+                tb = 198 + int(txt37.max()) if len(txt37) else None
                 tops.append(top); det37.append(f"b{i + 1}@{frac}: top {top:.0f}" + (f", text {tb}" if tb else ""))
                 if tb: gaps.append(top - tb)
             t += bt["dur"]
