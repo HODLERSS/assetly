@@ -2,6 +2,14 @@
 
 ## v1.0 (2026-09-30, revised the same night)
 
+Writing quality (main-session review of preopen-test3, 10/1 5 AM; validated on the saved preopen-test3 and close-test5
+work dirs at the storyline stage, no full run):
+- storyline rejects a second sentence that only restates the first (a second "shares rose" line, or nothing new).
+- "swing factor", "narrative", "cost curve" banned in spoken/subtitled lines (the model rewrites them plainly).
+- The on-screen Ask answer is scanned for desk jargon and, before the open, a "today" that is really the previous
+  session; takes 1-2 retake on these, take 3 keeps them if every figure verifies (so the 7:32 run cannot be refused
+  for wording alone).
+
 Repeatability (main-session review, 10/1 night): two clean single-invocation runs on frozen code (close --seed 8,
 preopen --seed 9), both exit 0, 31/31. Fixes found on the way:
 - run.sh executes a frozen copy of the scripts (editing the skill mid-run had broken a run); prints "exit N after Ss".

@@ -20,7 +20,7 @@ from lib import Stage, jdump, jload, llm, log
 ED, W = sys.argv[1], sys.argv[2]
 BAN = re.compile(r"\b(buy|sell|should|must-own|recommend|guaranteed|skyrocket\w*|soar\w*|explod\w*|moon|crush\w*|massive|insane|huge|"
                  r"don't miss|act now|best stock|secret|bagger|yolo|alpha|beta|eps|p/e|guidance|bps|basis points|multiples?|catalysts?|"
-                 r"thesis|tape|tripwire|setup|capex|tam|book|print|prints|demo|demonstration)\b", re.I)
+                 r"thesis|tape|tripwire|setup|capex|tam|book|print|prints|demo|demonstration|swing factors?|narratives?|cost curves?)\b", re.I)
 TIMING = {"preopen": {"need": r"\b(this morning|before the bell|premarket|pre-market|futures|today|overnight|ahead of the open)\b",
                       "never": r"\b(closed (?:up|down|at|higher|lower)|after the bell|today's close|so far today|this afternoon)\b"},
           "midday": {"need": r"\b(so far|midday|this afternoon|right now|today)\b",
@@ -91,6 +91,23 @@ console.log(JSON.stringify(lines.map((l) => earAudit(speakable(l)))));''')
         return [[f"ear check did not run: {r.stderr[-200:]}"]] 
 
 
+MOVE = r"\b(rose|rises?|rising|jump\w*|gain\w*|climb\w*|rall\w*|fell|fall\w*|drop\w*|slid|slides?|sank|sinks?|slip\w*|declin\w*|lift\w*|surg\w*|up|down|higher|lower)\b"
+
+
+def restates(s1, s2):
+    """Sentence 2 adds nothing (owner review, 10/1: "Alphabet unveils Gemini 4, lifting shares 2.2%. Shares rise on the
+    model."): it is a price-move sentence about the shares when sentence 1 already gave the move, or every content word
+    of it is already in sentence 1."""
+    move1 = re.search(r"\d+(?:\.\d+)?%", s1) or (re.search(r"\b(shares?|stock)\b", s1, re.I) and re.search(MOVE, s1, re.I))
+    move2 = re.match(r"^\s*(shares?|the stock|its stock|stock)\b", s2, re.I) and re.search(MOVE, s2, re.I)
+    if move1 and move2 and not re.search(r"\b(record|high|low|after hours|after-hours|premarket|despite|but|still|since|year|week|month)\b", s2, re.I):
+        return True
+    stem = lambda w: re.sub(r"[^a-z]", "", w.lower())[:5]
+    w1 = {stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]+", s1)}
+    w2 = [stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]+", s2) if len(w) >= 4 and w.lower() not in STOP]
+    return bool(w2) and all(w in w1 for w in w2)
+
+
 def check(story, res, facts, askc):
     errs = []
     heads = {h["id"]: h for h in jload(os.path.join(W, "research-data.json"))["headlines"]}
@@ -144,6 +161,8 @@ def check(story, res, facts, askc):
     for m in re.finditer(TIMING[ED]["never"], all_spoken, re.I): errs.append(f"timing: '{m.group(0)}' is wrong for the {ED} edition")
     for i, it in enumerate(story["items"]):
         if len(it["sentences"]) != 2: errs.append(f"item {i + 1}: needs exactly 2 sentences (why, then the read)")
+        elif restates(it["sentences"][0]["text"], it["sentences"][1]["text"]):
+            errs.append(f"item {i + 1}: sentence 2 only restates sentence 1 ({it['sentences'][1]['text']!r}); give the read: who thinks what, or the reaction's meaning")
         elif not re.search(r"\b(analysts?|commentators?|investors?|traders?|shares|the stock|markets?|economists?|strategists?|wall street|critics|fans|users|observers|futures|policymakers|officials|fed|bond traders|yields|economists|the market)\b",
                            it["sentences"][1]["text"], re.I):
             errs.append(f"item {i + 1}: the second sentence must be the attributed read (analysts/investors/traders/shares...)")
@@ -212,7 +231,8 @@ Percentages with ONE decimal ("3.7%", never "3.71%"). The cover reads as plain E
 "Hewlett Packard record."). The Ask answer line must add something the portfolio line did not say (the week, the month,
 the biggest mover), never repeat it.
 Figures: write them as digits ("1.8%", "$1.2 billion"), only from the verified items, the portfolio, or the verified answer figures.
-No advice or hype words, no jargon (thesis, tape, book, print, catalyst, guidance, capex), no em dashes, no tickers, never "demo"."""
+No advice or hype words, no jargon (thesis, tape, book, print, catalyst, guidance, capex, swing factor, narrative, cost curve),
+sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashes, no tickers, never "demo"."""
         budget = 56 - len(askc["question"].split())
         prompt = base.replace("{budget}", str(budget))
         story, errs = None, ["not run"]

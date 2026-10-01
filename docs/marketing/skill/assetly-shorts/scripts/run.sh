@@ -66,7 +66,8 @@ if want ask; then
   # the on-screen answer is the app's own words: a figure only one source carries fails it, and a fresh take usually
   # answers without it. Up to three takes, then refuse.
   ok=0; for take in 1 2 3; do
-    if python3 facts.py "$ED" "$W" --ask; then ok=1; break; fi
+    # takes 1-2 also want clean wording (no desk jargon, no pre-open "today" for yesterday); take 3 accepts it if the figures pass
+    if SHORTS_ASK_STRICT=$([ $take -lt 3 ] && echo 1 || echo 0) python3 facts.py "$ED" "$W" --ask; then ok=1; break; fi
     [ $take -lt 3 ] && { echo "Ask answer failed its check: take $((take + 1))"; python3 record.py "$ED" "$W"; }
   done
   [ $ok = 1 ] || { echo "REFUSE: three takes, and every Ask answer showed an unconfirmed figure"; exit 1; }

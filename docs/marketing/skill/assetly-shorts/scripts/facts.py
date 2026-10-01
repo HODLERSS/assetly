@@ -215,11 +215,21 @@ def main_ask():
                 pubs = {h["publisher"] for h in heads if core and re.search(r"(?<![\d.])" + re.escape(core) + r"(?![\d])", h["title"])}
                 ok = len(pubs) >= 2
             (verified if ok else unverified).append(tok)
-        res = {"question": ask["question"], "answer": ans, "figures": found, "verified": verified, "unverified": unverified}
+        # wording a viewer reads on screen (owner review 10/1): desk jargon, and before the open a "today" that is really
+        # the previous session ("US stocks today: +$314" at 5 AM). These prefer another take; the last take may keep them.
+        quality = [f"jargon '{m.group(0)}'" for m in re.finditer(r"\b(swing factors?|narratives?|cost curves?|thesis|tape|tripwire|catalysts?|capex)\b", ans, re.I)]
+        if ED == "preopen":
+            quality += [f"says 'today' for the previous session: {b.strip()[:60]!r}" for b in re.split(r"\u2022|\n", ans)
+                        if re.search(r"\btoday\b", b, re.I) and re.search(r"[+\-\u2212]\$?\d|\d%", b)]
+        res = {"question": ask["question"], "answer": ans, "figures": found, "verified": verified, "unverified": unverified, "quality": quality}
         jdump(res, os.path.join(W, "ask-check.json"))
         log(f"ask figures: {len(verified)} verified {verified}, unverified {unverified}")
         if unverified:
             sys.exit(f"REFUSE: the Ask answer shows figures no second source confirms: {unverified}")
+        if quality:
+            log(f"ask wording: {quality}")
+            if os.environ.get("SHORTS_ASK_STRICT") == "1":
+                print(f"RETAKE: the answer's wording: {quality}"); sys.exit(3)
 
 
 if "--ask" in sys.argv:
