@@ -134,3 +134,17 @@ if [ "$UPLOAD" = 1 ]; then
   fi
   cp "$W/upload.json" "$DST/youtube-upload.json"; echo "uploaded (private): $(cat "$W/upload.json")"
 fi
+# TikTok (owner, 10/1): every delivered Short also goes to @assetlyapp. The package is always built; with --upload it posts
+# through the Content Posting API when ~/.private_keys/tiktok_token.json exists, otherwise it joins the queue that an
+# interactive Claude session posts through TikTok Studio in Chrome (references/tiktok.md), and the owner gets a notice.
+if [ "$TEST" != 1 ]; then
+  python3 "$SK/tiktok_pack.py" "$DST" "$DATE" || echo "TIKTOK PACKAGE FAILED (YouTube is unaffected)"
+  if [ "$UPLOAD" = 1 ] && [ -s "$DST/tiktok.mp4" ]; then
+    if python3 "$APP/scripts/tiktok/post.py" "$DST" > "$W/tiktok.out" 2> "$W/tiktok.err"; then echo "tiktok: $(tail -1 "$W/tiktok.out")"
+    else
+      Q="$APP/docs/marketing/shorts/tiktok-queue.txt"; grep -qxF "$DST" "$Q" 2>/dev/null || echo "$DST" >> "$Q"
+      echo "tiktok: queued for Chrome posting ($(tail -c 160 "$W/tiktok.err" | tr '\n' ' ')) -> $Q"
+      osascript -e "display notification \"$ED Short ready for TikTok: ask Claude to post the TikTok queue\" with title \"Assetly Shorts\"" 2>/dev/null || true
+    fi
+  fi
+fi

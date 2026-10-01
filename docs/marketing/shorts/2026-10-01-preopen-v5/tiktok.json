@@ -1,0 +1,13 @@
+{
+ "account": "@assetlyapp",
+ "video": "tiktok.mp4",
+ "settings": {
+  "who_can_see": "Everyone",
+  "ai_generated_label": true,
+  "disclose_post_content": "Your brand"
+ },
+ "status": "posted",
+ "via": "chrome (TikTok Studio)",
+ "url": "https://www.tiktok.com/@assetlyapp/video/7691790101013220639",
+ "posted_at": "2026-10-01 13:54 CT"
+}

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.6 (2026-10-01, owner: post every Short to TikTok too)
+
+- Every delivered Short gets a TikTok package (tiktok_pack.py: < 10 MB tiktok.mp4, caption, tiktok.json). With --upload
+  it posts through the TikTok Content Posting API (app/scripts/tiktok/post.py; AI-generated label, own-brand disclosure)
+  once ~/.private_keys/tiktok_token.json exists; until then it queues the delivery (docs/marketing/shorts/tiktok-queue.txt)
+  and notifies the owner; an interactive Claude session posts the queue in Chrome (references/tiktok.md). YouTube is
+  unaffected by any TikTok failure. 10/1 preopen-v5 and midday posted to @assetlyapp (Everyone, AI label, Your brand).
+
 ## v1.0.5 (2026-10-01, owner framing review of preopen-v4 + Shorts craft)
 
 - Framing (owner): a bigger phone (860 px body, was 663) whose TOP edge never moves: the push grows it from the top

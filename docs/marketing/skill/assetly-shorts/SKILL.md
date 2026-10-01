@@ -1,9 +1,9 @@
 ---
 name: assetly-shorts
-description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, two-voice commentary, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day; never uploads.
+description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, two-voice commentary, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day; uploads only with --upload (YouTube private; TikTok via API or the queue).
 ---
 
-# Assetly market Shorts, v1.0.5
+# Assetly market Shorts, v1.0.6
 
 Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratch every run:
 
@@ -77,3 +77,5 @@ only with `--upload`, only private, never a test run; never log into a site. Nev
 advice language. If sources disagree, drop the figure. Never say or show "demo".
 
 Shorts craft applied (caption size, safe zones, framing, beats) and what it never overrides: `references/shorts-craft.md`.
+
+TikTok: every Short is also posted to @assetlyapp (API when a token exists, else the Chrome queue): `references/tiktok.md`.

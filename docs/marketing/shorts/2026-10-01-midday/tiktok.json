@@ -1,0 +1,18 @@
+{
+ "status": "posted",
+ "account": "@assetlyapp",
+ "video": "tiktok.mp4",
+ "bytes": 5431214,
+ "ssim": 0.9979,
+ "settings": {
+  "who_can_see": "Everyone",
+  "ai_generated_label": true,
+  "disclose_post_content": "Your brand",
+  "comments": true,
+  "reuse": true,
+  "automatic_checks_prompt": "Cancel (do not change account settings)"
+ },
+ "via": "chrome (TikTok Studio)",
+ "url": "https://www.tiktok.com/@assetlyapp/video/7691791021277072670",
+ "posted_at": "2026-10-01 13:54 CT"
+}
