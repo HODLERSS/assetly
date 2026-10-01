@@ -20,6 +20,7 @@ set -euo pipefail
 if [ -z "${SHORTS_FROZEN:-}" ]; then
   mkdir -p /tmp/assetly-shorts; F="$(mktemp -d /tmp/assetly-shorts/frozen.XXXXXX)"
   cp -R "$(cd "$(dirname "$0")" && pwd)/." "$F/"; rm -rf "$F/__pycache__"
+  cp "$(cd "$(dirname "$0")/.." && pwd)/SKILL.md" "$F/SKILL.md" 2>/dev/null || true    # the version this run is
   SHORTS_FROZEN="$F" exec bash "$F/run.sh" "$@"
 fi
 ED="${1:?usage: run.sh preopen|midday|close [--date D] [--test]}"; shift
@@ -42,7 +43,8 @@ if [ "$TEST" = 1 ]; then
 else DST="$APP/docs/marketing/shorts/$DATE-$ED"; fi
 [ -n "${DSTO:-}" ] && DST="$DSTO"                       # --dest: rebuild into an existing delivery folder
 exec > >(tee -a "$W/run.log") 2>&1
-echo "assetly-shorts v1.0: $ED $DATE test=$TEST seed=$SEED work=$W -> $DST (code frozen at $SHORTS_FROZEN)"
+VER=$(sed -n 's/^# Assetly market Shorts, v\([0-9.]*\).*/\1/p' "$SK/SKILL.md" 2>/dev/null | head -1)
+echo "assetly-shorts v${VER:-?}: $ED $DATE test=$TEST seed=$SEED work=$W -> $DST (code frozen at $SHORTS_FROZEN)"
 START_TS=$(date +%s); trap 'rc=$?; echo "exit $rc after $(( $(date +%s) - START_TS ))s"' EXIT
 
 STAGES="research book account facts record ask story compose build qa"; on=0; [ -z "$FROM" ] && on=1
@@ -72,12 +74,14 @@ if want ask; then
   done
   [ $ok = 1 ] || { echo "REFUSE: three takes, and every Ask answer showed an unconfirmed figure"; exit 1; }
 fi
-want story    && python3 storyline.py "$ED" "$W"
+# what the take shows (OCR per beat) and fresh extended-hours quotes for the chips, then the words
+want story    && python3 screen.py "$ED" "$W" && python3 storyline.py "$ED" "$W"
 want compose  && python3 compose.py "$ED" "$DATE" "$W" "$ST"
 if want build; then
   python3 -c "import sys;sys.path.insert(0,'$SK');from lib import vault;vault('$W','eleven_api_key')"
   rm -f "$ST/qa-auto.md" "$ST/quality-report.md"          # a failed build must never be graded on a previous build's table
   install -m 600 "$W/eleven_api_key" "$W/build/elk"; ln -sf "$W/take60.mp4" "$W/build/take60.mp4"
+  [ -f "$W/takeask.mp4" ] && ln -sf "$W/takeask.mp4" "$W/build/takeask.mp4"     # an Ask-only re-take (ask-take.json)
   timed build "$APP/web/ios/App/marketing/shorts/make-short.sh" "$ST/day.json" "$W/build" "$ST" || true
   [ -s "$ST/qa-auto.md" ] || { echo "REFUSE: the build did not finish (see $W/run.log)"; exit 1; }
 fi

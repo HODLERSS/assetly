@@ -381,8 +381,14 @@ final class AssetlyHeroUITests: XCTestCase {
     func testGshort() {
         // the marks and the answer are attached even when a step fails, so a partial take is still diagnosable
         addTeardownBlock { [self] in
-            let texts = app.staticTexts.allElementsBoundByIndex.map { $0.label }
-            let payload: [String: Any] = ["marks": marks, "question": env("ASK_QUESTION"), "texts": texts]
+            let els = app.staticTexts.allElementsBoundByIndex
+            let texts = els.map { $0.label }
+            // where each text sits on screen (points; the take is pixels = points x scale), so the edit can highlight the
+            // exact answer line the voice quotes and QA can check it was visible (the screen is unchanged since ask_end)
+            let win = app.windows.firstMatch.frame
+            let frames: [[Any]] = els.map { e in let f = e.frame; return [e.label, f.minX, f.minY, f.maxX, f.maxY] }
+            let payload: [String: Any] = ["marks": marks, "question": env("ASK_QUESTION"), "texts": texts, "frames": frames,
+                                          "window": [win.width, win.height]]
             if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted]),
                let s = String(data: data, encoding: .utf8) {
                 let a = XCTAttachment(string: s); a.name = "short-markers"; a.lifetime = .keepAlways; add(a)
@@ -436,13 +442,18 @@ final class AssetlyHeroUITests: XCTestCase {
             else { for n in ["send", "Send", "Return", "return", "Go", "go"] where app.keyboards.buttons[n].firstMatch.exists { app.keyboards.buttons[n].firstMatch.tap(); break } }
         } else { mark("ask_no_field") }
         // the answer is in when the thinking dots are gone (up to the function's own ~60 s budget)
+        // The dots give way to "Still thinking..." on a slow answer (10/1 pre-open: the take ended on it, the answer arrived
+        // after the hold), so the answer is in only when neither shows and the answer's own foot is on screen
         let thinking = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Thinking'")).firstMatch
+        let still = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Still thinking'")).firstMatch
+        let foot = app.staticTexts.matching(NSPredicate(format: "label == 'Not financial advice'")).firstMatch
         _ = thinking.waitForExistence(timeout: 5)
         let t0 = Date()
-        while thinking.exists && Date().timeIntervalSince(t0) < 75 { beat(0.25) }
+        while (thinking.exists || still.exists || !foot.exists) && Date().timeIntervalSince(t0) < 90 { beat(0.25) }
+        beat(0.6)                                 // the answer settles (layout, fade-in)
         // held, not scrolled: the answer is the last beat and holds into the end card (a drag here sent the app to the
         // home screen in one 9/30 take)
-        mark("ask_answer"); beat(7.0)
+        mark("ask_answer"); beat(7.5)
         mark("ask_end")
     }
 }

@@ -136,15 +136,19 @@ fi
 python3 - "$DAY" "$W" "$LEN" "$M" "$LINES" <<'PY'
 import json, sys
 d, w, L, m, lines = json.load(open(sys.argv[1])), sys.argv[2], float(sys.argv[3]), sys.argv[4], sys.argv[5] == "1"
-tm = json.load(open("timing.json")); beats = []
+tm = json.load(open("timing.json")); beats = []; chips = []; t = tm["hook"]
 for b in tm["beats"]:
-    b = dict(b); b["src"] = f"{w}/{b.pop('take')}"; beats.append(b)
+    b = dict(b); b["src"] = f"{w}/{b.pop('take')}"; ch = b.pop("chip", None); b.pop("quote", None); beats.append(b)
+    # a beat's "chip" {"png": full-canvas RGBA}: the Short's own labelled overlay (an extended-hours quote the app does not
+    # show), laid on for exactly that beat, fading in with its line
+    if ch and ch.get("png"): chips.append({"png": ch["png"], "x": 0, "y": 0, "start": round(t + 0.12, 3), "end": round(t + b["dur"] - 0.05, 3)})
+    t += b["dur"]
 plan = {"w": 1080, "h": 1920, "len": L, "theme": "dark", "fps": 60, "xfade": 0.6, "crf": 15,
         "captions": "top", "cap_top": 150, "cap_h": 300, "bottom": 40, "slide": 0.4,
         "hook": {"lines": d.get("hook", "AI stocks today|" + d["date"]), "dur": tm["hook"], "static": True,
                  "kicker": d.get("hook_kicker", ""), "foot": d.get("hook_foot", "")},
         "beats": beats, "card": {"icon": f"{m}/../App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"},
-        "overlays": [{"frames": f"{w}/fill", "x": 0, "y": 150}, {"png": f"{w}/disclaimer.png", "x": 0, "y": 0}]}
+        "overlays": [{"frames": f"{w}/fill", "x": 0, "y": 150}, {"png": f"{w}/disclaimer.png", "x": 0, "y": 0}] + chips}
 if lines: plan.update(speaking=f"{w}/spk", speaking_x=460, speaking_y=152)     # five pills over the strip while anyone speaks
 json.dump(plan, open("plan.json", "w"), indent=1)
 PY

@@ -16,6 +16,7 @@ Writes <work>/story.json.
 import copy, json, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import Stage, jdump, jload, llm, log
+from screen import fval, shows
 
 ED, W = sys.argv[1], sys.argv[2]
 BAN = re.compile(r"\b(buy|sell|should|must-own|recommend|guaranteed|skyrocket\w*|soar\w*|explod\w*|moon|crush\w*|massive|insane|huge|"
@@ -56,6 +57,7 @@ def allowed_figures(res, facts, askc):
             out.add(norm(m.group(0)))          # a figure the two cited headlines state ("$1.2 billion", "11-fold")
     for k, v in facts.get("figures", {}).items(): out.add(norm(v))
     for v in askc.get("verified", []): out.add(norm(v))
+    for v in ctx()["ext"].values(): add_pct(v["pct"])
     return out
 
 
@@ -137,6 +139,43 @@ def restates(s1, s2):
     return bool(w2) and all(w in w1 for w in w2)
 
 
+EXT_WORDS = {"PRE-MARKET": r"\b(premarket|pre-market)\b", "AFTER HOURS": r"\b(after hours|after-hours)\b"}
+EXT_MAX_AGE = float(os.environ.get("SHORTS_EXT_MAX_AGE_MIN", "15"))    # a chip's quote must be this fresh at the take
+_CTX = {}
+
+
+def ctx():
+    """What the take shows (screen.json), the fresh extended-hours quotes (ext.json) and the recorded answer's lines."""
+    if not _CTX:
+        _CTX["screen"] = (jload(os.path.join(W, "screen.json"), {}) or {}).get("windows", {})
+        ext = jload(os.path.join(W, "ext.json"), {}) or {}
+        take = (jload(os.path.join(W, "latency.json"), {}) or {}).get("record.take", {})
+        t_take = take.get("start", 0) + take.get("secs", 0)          # the take's end: the chip quote must predate it by < 15 min
+        _CTX["ext"] = {k: v for k, v in ext.items() if not t_take or abs(t_take - v.get("asof_ts", 0)) / 60 <= EXT_MAX_AGE}
+        ask = jload(os.path.join(W, "ask.json"), {}) or {}
+        _CTX["lines"] = [r for r in ask.get("answer_rects", []) if r.get("visible") and re.search(r"[A-Za-z0-9]", r["text"])]
+    return _CTX
+
+
+def item_shot(r):
+    """The screen.json window an item's beat uses (compose: the held story name's page, else the brief / News)."""
+    win = ctx()["screen"]
+    sym = next((x for x in r.get("symbols", []) if f"pos_{x}" in win), None)
+    if sym: return f"pos_{sym}", win[f"pos_{sym}"]["figures"], sym
+    return "brief+news", (win.get("brief", {}).get("figures", []) + win.get("news", {}).get("figures", [])), None
+
+
+def plain_line(t):
+    """An answer point as a voice would quote it: no bullet or '(Seeking Alpha, investorshub)' attribution, signs as
+    words, a bracketed % as ', or 3.1%' (one decimal)."""
+    t = re.sub(r"\s*\([^)\d]*\)|\s*\[[^\]]*\]", "", t.replace("\u2022", "")).replace("~", "about ")
+    t = re.sub(r"(\$[\d,.]+)\s*\(\s*[+\-\u2212]?(\d+(?:\.\d+)?)%\s*\)", lambda m: f"{m.group(1)}, or {float(m.group(2)):.1f}%", t)
+    t = re.sub(r"\s*\(\s*([+\-\u2212]?)(\d+(?:\.\d+)?)%\s*\)", lambda m: " " + ("down" if m.group(1) in ("-", "\u2212") else "up") + f" {float(m.group(2)):.1f}%", t)
+    t = re.sub(r"\+(?=\$?\d)", "up ", t); t = re.sub(r"[\u2212-](?=\$?\d)", "down ", t)
+    t = re.sub(r"(\d+\.\d)\d+%", r"\1%", t)
+    return re.sub(r"\s+", " ", t).strip(" .;:") + "."
+
+
 def short_name(n):
     """The name people say (= facts.short_name): "Accenture PLC" -> "Accenture"."""
     n = re.sub(r"\s*(?:Common Stock|Class [A-C]( Common Stock)?|Ordinary Shares|American Depositary Shares)\b.*$", "", str(n or ""))
@@ -147,7 +186,8 @@ def short_name(n):
 
 def say_names(facts):
     """Ticker -> the name the voice says: the letters when people say them (IBM, AMD), else the short name."""
-    return {k: (k if k in SPOKEN_CAPS else short_name(v)) for k, v in facts.get("names", {}).items()}
+    nm = lambda v: v.title() if v.isupper() and len(v) > 3 else v                # "NIKE" -> "Nike" (the voice spells caps)
+    return {k: (k if k in SPOKEN_CAPS else nm(short_name(v))) for k, v in facts.get("names", {}).items()}
 
 
 def ticker_names(res, facts):
@@ -194,6 +234,21 @@ def check(story, res, facts, askc):
                 if sign < 0 and re.search(r"\b(rose|gained|jumped|climbed|rallied|higher)\b", x["text"], re.I): errs.append(f"item {i + 1}: says up, the verified move is {sign:+.2f}%")
                 if sign > 0 and re.search(r"\b(fell|dropped|slid|slipped|declined|sank|lower)\b", x["text"], re.I) and not re.search(r"\b(despite|but|after)\b", x["text"], re.I):
                     errs.append(f"item {i + 1}: says down, the verified move is {sign:+.2f}%")
+            # every figure spoken over the shot is on the shot: the app's screen, or the edit's labelled extended-hours chip
+            shot, figs, sym = item_shot(r); ex = ctx()["ext"].get(sym or next(iter(r.get("symbols", [])), ""), None)
+            says_ext = re.search(r"premarket|pre-market|after hours|after-hours", x["text"], re.I)
+            for f in nums(x["text"]):
+                v = fval(f)
+                is_ext = bool(ex and v and v[1] == "%" and round(abs(ex["pct"]), v[2]) == v[0])
+                if is_ext and not re.search(EXT_WORDS[ex["label"]], x["text"], re.I):
+                    errs.append(f"item {i + 1}: '{f}' is the {ex['label'].lower()} move -> say '{ex['label'].lower()}' in that sentence (the edit shows it on a chip)")
+                elif not is_ext and not shows(f, figs):
+                    alt = (f"the fresh {ex['label'].lower()} move {abs(ex['pct']):.1f}% with the word '{ex['label'].lower()}'" if ex else "no figure")
+                    errs.append(f"item {i + 1}: '{f}' is not on screen during its shot ({shot} shows {[g for g in figs if '%' in g or '$' in g][:6]}) "
+                                f"-> use one of those, {alt}, or drop it")
+            if says_ext and not ex:
+                errs.append(f"item {i + 1}: says extended hours in {x['text']!r} but there is no fresh two-feed quote for a chip -> "
+                            f"say what the app shows instead")
             names = unsupported_names(x["text"], corpus)
             miss = [w for w in unsupported_words(x["text"], corpus) if w not in names]
             if names or len(miss) > 1 or (miss and len(x["text"].split()) < 5):
@@ -248,8 +303,36 @@ def check(story, res, facts, askc):
         for x in it["sentences"]:
             if len(x["eyebrow"]) > 26: errs.append(f"eyebrow {x['eyebrow']!r} over 26 characters (use the short name)")
     pt, at = story["portfolio"]["text"], story["ask"]["answer_text"]
-    if "portfolio" not in pt.lower() or len(pt.split()) < 5: errs.append(f"portfolio: a full sentence that names 'My portfolio' (got {pt!r}) -> write it as "
-                                                                               f"'My portfolio <moved> <figure> <when>.' in 5-8 words, e.g. 'My portfolio closed up 0.8% today.'")
+    # second person (owner, 10/1): the narration talks to the viewer about THEIR portfolio; only the typed question is theirs
+    if "your portfolio" not in pt.lower() or len(pt.split()) < 5:
+        errs.append(f"portfolio: a full sentence that names 'Your portfolio' (got {pt!r}) -> write it as "
+                    f"'Your portfolio <moved> <figure> <when>.' in 5-8 words, e.g. 'Your portfolio is up 28% all time.'")
+    for where, t in sents + [("title", story["title"]), ("description", story["description"])]:
+        m = re.search(r"\b(my|I'm|I am|I|me|mine|we|our)\b", t)
+        if m:
+            errs.append(f"{where}: first person '{m.group(0)}' in {t!r} -> second person: 'Your portfolio ...', 'you ...'")
+    # every figure spoken over Home must be on Home in the take
+    home = ctx()["screen"].get("home", {}).get("figures")
+    if home is not None:
+        for f in nums(pt):
+            if not shows(f, home): errs.append(f"portfolio: '{f}' is not on Home in the take (Home shows {home[:6]}) -> use one of those")
+    # the Ask answer is a recorded, visible answer line, quoted or closely paraphrased, with the same figures
+    lines = ctx()["lines"]; k = story["ask"].get("line")
+    if not lines:
+        errs.append("ask answer: the take recorded no visible answer line (re-record: the answer must be on screen)")
+    elif not isinstance(k, int) or not 0 <= k < len(lines):
+        errs.append(f"ask answer: 'line' must be the number of the visible answer line it quotes (0-{len(lines) - 1})")
+    else:
+        lt = lines[k]["text"]; lf = nums(lt)
+        say = say_names(facts)
+        lt_said = lt + " " + " ".join(say.get(x, short_name(tick.get(x, x))) for x in re.findall(r"\b[A-Z]{2,5}\b", lt) if x in tick)
+        for f in nums(at):
+            if not shows(f, lf): errs.append(f"ask answer: '{f}' is not in answer line {k} ({lt!r}) -> use that line's own figures")
+        stem = lambda w: re.sub(r"[^a-z]", "", w.lower())[:5]
+        aw = [stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]+", at) if len(w) >= 3 and w.lower() not in STOP]
+        have = {stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]+", lt_said)} | {"your", "port"}
+        if aw and sum(w in have for w in aw) / len(aw) < 0.6:
+            errs.append(f"ask answer: {at!r} does not follow answer line {k} ({lt!r}) -> quote it or paraphrase it closely")
     if len(at.split()) < 4 or (ED != "preopen" and not re.search(r"\b(up|down|flat|gained|lost|rose|fell)\b", at, re.I)):
         errs.append(f"ask answer: a full spoken sentence with the direction words (up / down / flat), got {at!r} -> "
                     f"e.g. 'Up 3.8% this month and 31% over the year.' (4-13 words, verified figures only)")
@@ -309,13 +392,28 @@ def fallback(story, res, facts, askc):
     for i in bad - set(opts):
         if i < len(story["items"]): verified(i)
     pf = facts.get("portfolio", {})
-    if any(e.startswith("portfolio") for e in errs) and pf.get("today"):
-        moved = re.sub(r"^up\b", "rose", re.sub(r"^down\b", "fell", pf["today"]))
-        story["portfolio"]["text"] = {"preopen": f"My portfolio {moved} yesterday.", "midday": f"My portfolio is {pf['today']} so far today.",
-                                      "close": f"My portfolio closed {pf['today']} today."}[ED]
+    for k in ("title", "description"):              # second person in the metadata too
+        story[k] = re.sub(r"\bI'm\b", "you're", re.sub(r"\b[Mm]y\b", lambda m: "Your" if m.group(0) == "My" else "your", story[k]))
+    if any(e.startswith("portfolio") for e in errs):
+        # a figure Home shows in the take: the day's move when the session has one, else the all-time gain
+        home = ctx()["screen"].get("home", {}).get("figures", [])
+        opts_p = []
+        if pf.get("today"):
+            moved = re.sub(r"^up\b", "rose", re.sub(r"^down\b", "fell", pf["today"]))
+            opts_p.append({"preopen": f"Your portfolio {moved} yesterday.", "midday": f"Your portfolio is {pf['today']} so far today.",
+                           "close": f"Your portfolio closed {pf['today']} today."}[ED])
+        if pf.get("all_time"): opts_p.append(f"Your portfolio is up {pf['all_time']} all time.")
+        ok_p = [t for t in opts_p if all(shows(f, home) for f in nums(t))] or opts_p
+        if ok_p: story["portfolio"]["text"] = ok_p[0]
     if any(e.startswith("ask answer") for e in errs):
-        win = next(((w, pf[w]) for w in ("month", "week") if pf.get(w)), None)
-        if win: story["ask"]["answer_text"] = f"{win[1][0].upper() + win[1][1:]} this {win[0]}."
+        # the shortest visible answer line that carries a figure, quoted as it reads
+        cands = sorted([(len(plain_line(r["text"]).split()), k) for k, r in enumerate(ctx()["lines"]) if nums(r["text"])
+                        and 4 <= len(plain_line(r["text"]).split()) <= 12 and not re.search(r"\b(my|I|I'm)\b", r["text"])])
+        for _, k in cands:                         # the first that passes its own checks
+            said = plain_line(ctx()["lines"][k]["text"])
+            for sym, nm in sorted(say_names(facts).items(), key=lambda x: -len(x[0])): said = re.sub(rf"\b{re.escape(sym)}\b", nm, said)
+            story["ask"] = {"line": k, "answer_text": said}
+            if not [e for e in check(copy.deepcopy(story), res, facts, askc)[0] if e.startswith("ask answer")]: break
     # the edition's timing phrase leads item 1 when no timing word is spoken; then the budget and the 15-word sentence
     # limit: cut the longest verified sentence at a clause until both fit
     s0 = story["items"][0]["sentences"][0]
@@ -360,10 +458,18 @@ VERIFIED MARKET ITEMS (ranked; each WHY and READ is already backed by two publis
               "figures": [{"symbol": f["symbol"], "pct": f["value"]} for f in it.get("figures", [])]} for i, it in enumerate(res["items"])], indent=0)}
 Company names to say (never tickers; letters only where shown, like IBM): {json.dumps(say_names(facts))}
 
-THE PORTFOLIO ON SCREEN (the app's own numbers; this is "My portfolio"): {json.dumps(facts["portfolio"])}
+THE PORTFOLIO (the app's own numbers; the narration calls it "Your portfolio", never "my"): {json.dumps(facts["portfolio"])}
 {"BEFORE THE OPEN the portfolio's 'today' figure is the PREVIOUS session: say 'yesterday' (or the weekday), never 'today'." if ED == "preopen" else ""}
-THE ASK BEAT: the question typed on camera: {askc['question']!r}. The app's real answer (verified figures: {askc['verified']}):
-{askc['answer'][:900]}
+ON SCREEN (read off the recorded take; every figure you speak during a shot must be one the viewer can read in it):
+  each item's shot: {json.dumps({str(i): item_shot(it)[1] for i, it in enumerate(res["items"])})}
+  the portfolio line plays over Home, which shows: {json.dumps(ctx()["screen"].get("home", {}).get("figures", []))}
+FRESH EXTENDED-HOURS QUOTES (two feeds agree; the edit draws a labelled chip with this value and time next to the shot):
+  {json.dumps({s: {"label": v["label"], "pct": round(v["pct"], 2), "asof": v["asof"]} for s, v in ctx()["ext"].items()}) or "none: speak only what the app shows"}
+  To use one, say it with its label word in the same sentence ("IBM rose 5.8% premarket ..."); never say premarket / after
+  hours without one of these.
+THE ASK BEAT: the question typed on camera: {askc['question']!r}. The answer lines VISIBLE in the recorded shot (numbered):
+{json.dumps({i: r["text"] for i, r in enumerate(ctx()["lines"])}, indent=0)}
+The spoken answer quotes ONE of these lines or paraphrases it closely, with exactly its figures; the edit highlights it.
 
 THE APPROVED STYLE (the 9/30 Short; match its density and tone, not its facts):
   "Micron beat on AI memory demand, yet barely moved after hours. Commentators say it was priced in."
@@ -378,18 +484,18 @@ Write JSON:
 {{"items": [ {n_items} entries, the most useful for this edition, AI-focused but not only AI, in this shape:
    {{"n": <item n>, "sentences": [{{"eyebrow": "MICRON · AFTER THE BELL", "text": "<what happened and WHY, <= 13 words>"}},
                                   {{"eyebrow": "MICRON · THE READ", "text": "<the attributed read or reaction, <= 8 words>"}}]}} ],
- "portfolio": {{"eyebrow": "MY PORTFOLIO", "text": "<one sentence, <= 12 words, a TRUE note from the portfolio numbers: lean positive if the
-               numbers allow (today, all time, or a holding's gain), e.g. 'My portfolio closed up 0.8% today.'>"}},
- "ask": {{"answer_text": "<<= 13 words: the answer's key point in plain spoken words ('Up 3.8% this month and 31.2% over the year.'),
-         ONLY figures from the verified list, no + or - signs>"}},
+ "portfolio": {{"eyebrow": "YOUR PORTFOLIO", "text": "<one sentence, <= 12 words, a TRUE note from the portfolio numbers Home shows: lean
+               positive if the numbers allow, e.g. 'Your portfolio is up 28% all time.'>"}},
+ "ask": {{"line": <the number of the visible answer line you quote>, "answer_text": "<<= 13 words: that line quoted or closely
+         paraphrased in plain spoken words, its own figures only, no + or - signs, no 'I' / 'my'>"}},
  "cover": ["Micron beats.", "HPE hits a record.", "Stocks end mixed."]   (one per item, in order; short name first; <= 24 chars),
  "title": "<= 70 chars, e.g. '{LABEL[ED].title()}: Micron beats, HPE record, AppLovin slides | Sep 30'",
- "description": "<two plain sentences with the verified figures, no advice>",
+ "description": "<two plain sentences with the verified figures, second person ('your portfolio'), no advice>",
  "hashtags": ["#Shorts", "#stockmarket", ...5-8 total, include the companies]}}
 Budget: at most {{budget}} spoken words in total (the question adds {len(askc['question'].split())} more).
 Percentages with ONE decimal ("3.7%", never "3.71%"). The cover reads as plain English ("HPE hits a record.", never
-"Hewlett Packard record."). The Ask answer line must add something the portfolio line did not say (the week, the month,
-the biggest mover), never repeat it.
+"Hewlett Packard record."). The Ask answer line must add something the portfolio line did not say, never repeat it.
+Second person throughout: "Your portfolio", never "my portfolio", "I'm" or "we".
 Figures: write them as digits ("1.8%", "$1.2 billion"), only from the verified items, the portfolio, or the verified answer figures.
 No advice or hype words, no jargon (thesis, tape, book, print, catalyst, guidance, capex, swing factor, narrative, cost curve),
 sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashes, no tickers, never "demo"."""

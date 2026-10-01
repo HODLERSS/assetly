@@ -34,3 +34,10 @@
 - **Pre-open Ask "today".** The app's Ask answer labels the previous session "today" before the open; retakes never
   cleared it (three takes, ~11 min on 10/1), so it is now noted in ask-check.json, not retaken. The real fix is in the
   app's Ask prompt. Jargon in the answer still earns a retake.
+- **The Ask beat showed "Still thinking..." (10/1 7:32 preopen, uploaded).** The UI test took the dots ("Thinking") going
+  away as the answer, but a slow answer swaps them for "Still thinking...", so the 7 s hold ended before the answer drew
+  (the answer text in the attachment was read later, at teardown). testGshort now waits until neither shows and the
+  answer's "Not financial advice" foot is on screen (90 s), and logs every text's frame; record.py keeps the visible
+  answer lines with their boxes, and facts --ask retakes when none is visible. Q32 reads the final frames.
+- **OCR.** `scripts/ocr.swift` (Vision, accurate) is compiled once to `/tmp/assetly-shorts/ocr-<hash>`; ~0.3 s an image.
+  The status-bar clock reads as "9", "41": matching only uses figures with % or $ for spoken lines.

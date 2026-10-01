@@ -135,8 +135,34 @@ def _main_take_and_align(acct, res, syms, q):
         qi = max([i for i, t in enumerate(texts) if t.strip() == mk["question"].strip()], default=-1)
         foot = [i for i, t in enumerate(texts) if i > qi and t.strip() == "Not financial advice"]
         ans = [t for t in texts[qi + 1:foot[0] if foot else len(texts)] if t.strip()]
-        jdump({"question": mk["question"], "answer_lines": ans, "answer": " ".join(ans), "all_texts": texts}, os.path.join(W, "ask.json"))
-        log(f"ask: {mk['question']!r} -> {len(ans)} lines: {' '.join(ans)[:200]}")
+        # each answer line's box in take pixels (the UI test's element frames in points x the display scale) and whether it
+        # sits above the composer, i.e. visible in the held shot: the voice may only quote a visible line (owner, 10/1)
+        rects = []
+        fr, win = mk.get("frames") or [], mk.get("window") or [0, 0]
+        if fr and win[0]:
+            px = int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width", "-of", "csv=p=0",
+                                     os.path.join(W, "take60.mp4")], capture_output=True, text=True).stdout.strip() or 0)
+            k = px / win[0] if px else 3.0
+            fq = max([i for i, f in enumerate(fr) if f[0].strip() == mk["question"].strip()], default=-1)
+            ff = [i for i, f in enumerate(fr) if i > fq and f[0].strip() == "Not financial advice"]
+            # one entry per answer point: a bullet glyph starts a point and the text runs after it (a name in bold, a
+            # figure, the rest) join it, so the voice quotes a whole point and the outline covers all of its segments
+            seg = fr[fq + 1:ff[0] if ff else len(fr)]
+            bullets = any(not re.search(r"[A-Za-z0-9]", f[0]) and f[0].strip() for f in seg)
+            for f in seg:
+                if not re.search(r"[A-Za-z0-9]", f[0]):
+                    if f[0].strip() and (not rects or rects[-1]["boxes"]): rects.append({"text": "", "boxes": []})
+                    continue
+                box = [round(f[1] * k), round(f[2] * k), round(f[3] * k), round(f[4] * k)]
+                if not bullets or not rects: rects.append({"text": "", "boxes": []})
+                g = rects[-1]; g["text"] = (g["text"] + " " + f[0].strip()).strip(); g["boxes"].append(box)
+            rects = [g for g in rects if g["boxes"]]
+            for g in rects:
+                bx = g["boxes"]; g["box"] = [min(b[0] for b in bx), min(b[1] for b in bx), max(b[2] for b in bx), max(b[3] for b in bx)]
+                g["visible"] = g["box"][1] >= 0 and g["box"][3] <= 0.84 * win[1] * k
+        jdump({"question": mk["question"], "answer_lines": ans, "answer": " ".join(ans), "all_texts": texts, "answer_rects": rects},
+              os.path.join(W, "ask.json"))
+        log(f"ask: {mk['question']!r} -> {len(ans)} lines: {' '.join(ans)[:200]}; {sum(r['visible'] for r in rects)}/{len(rects)} line boxes visible")
         if not ans:
             sys.exit("REFUSE: no Ask answer on screen")
         if "pos_" in json.dumps(marks) and any(k.endswith("_missing") for k in marks):

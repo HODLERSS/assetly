@@ -45,6 +45,30 @@ ED, DATE, W, OUT = sys.argv[1:5]
 LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE"}
 MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 FOCUS = {"pos": 640, "home": 620, "brief": 1000, "news": 1000, "ask_q": 1450, "ask_a": 900}
+EXT_RE = {"PRE-MARKET": r"\b(premarket|pre-market)\b", "AFTER HOURS": r"\b(after hours|after-hours)\b"}
+
+
+def chip_png(path, name, label, pct, asof):
+    """The Short's own overlay (never app UI): '<LABEL> · <time>' over '<Name>  +5.8%', a dark rounded card with the accent
+    outline, centred just under the subtitle strip, over the top of the phone. Full-canvas RGBA, laid on in its beat."""
+    from PIL import Image, ImageDraw, ImageFont
+    fonts = os.path.expanduser("~/Library/Fonts/assetly-brand")
+    def font(f, size, wt):
+        x = ImageFont.truetype(os.path.join(fonts, f), size); x.set_variation_by_axes([wt]); return x
+    acc, ink, muted = (139, 152, 224), (233, 236, 241), (155, 163, 176)
+    up, dn = (88, 196, 140), (232, 106, 106)
+    fe, fb = font("SchibstedGrotesk[wght].ttf", 30, 700), font("SchibstedGrotesk[wght].ttf", 50, 700)
+    img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
+    top = f"{label}  \u00b7  {asof}"; val = ("+" if pct >= 0 else "\u2212") + f"{abs(pct):.1f}%"
+    wt = d.textlength(top, font=fe) + 2 * len(top); wn = d.textlength(name + "   ", font=fb); wv = d.textlength(val, font=fb)
+    w = int(max(wt, wn + wv) + 64); h = 132; x0 = (1080 - w) // 2; y0 = 500
+    d.rounded_rectangle([x0, y0, x0 + w, y0 + h], radius=22, fill=(15, 18, 22, 236), outline=acc + (255,), width=3)
+    x = x0 + 32
+    for ch in top: d.text((x, y0 + 16), ch, font=fe, fill=acc + (255,)); x += d.textlength(ch, font=fe) + 2
+    d.text((x0 + 32, y0 + 58), name, font=fb, fill=ink + (255,))
+    d.text((x0 + w - 32 - wv, y0 + 58), val, font=fb, fill=(up if pct >= 0 else dn) + (255,))
+    img.save(path)
+    return {"label": label, "name": name, "value": val, "asof": asof, "text": f"{label} {asof} {name} {val}"}
 
 
 def tokens(text):
@@ -53,9 +77,36 @@ def tokens(text):
     return t.split()
 
 
+def tag_png(path, text):
+    """A small time tag for a beat recorded at another moment ("ASK RECORDED 10:12 AM ET"), the Short's own overlay."""
+    from PIL import Image, ImageDraw, ImageFont
+    f = ImageFont.truetype(os.path.expanduser("~/Library/Fonts/assetly-brand/SchibstedGrotesk[wght].ttf"), 30); f.set_variation_by_axes([700])
+    img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
+    w = int(d.textlength(text, font=f) + 2 * len(text) + 48); x0 = (1080 - w) // 2; y0 = 500
+    d.rounded_rectangle([x0, y0, x0 + w, y0 + 58], radius=29, fill=(15, 18, 22, 236), outline=(139, 152, 224, 255), width=2)
+    x = x0 + 24
+    for ch in text: d.text((x, y0 + 12), ch, font=f, fill=(139, 152, 224, 255)); x += d.textlength(ch, font=f) + 2
+    img.save(path)
+    return {"png": path, "text": text}
+
+
+def facts_name(sym, text):
+    """The chip's name: the name the line says (IBM, Rocket Lab), else the ticker's short name."""
+    names = (jload(os.path.join(W, "facts.json"), {}) or {}).get("names", {})
+    n = names.get(sym, sym)
+    first = re.match(r"^(?:[A-Z][\w&'.-]*)(?: [A-Z][\w&'.-]*)?", re.sub(r"^(Before the bell|At the close|At midday|Premarket|Midday|Today),\s*", "", text))
+    return first.group(0) if first and first.group(0).split()[0].lower() in n.lower() + " " + sym.lower() else re.sub(r",?\s+(Inc\.?|Corporation|Corp\.?)$", "", n)
+
+
 def main():
     story = jload(os.path.join(W, "story.json")); res = jload(os.path.join(W, "research.json")); mk = jload(os.path.join(W, "marks.json"))["marks"]
     askc = jload(os.path.join(W, "ask-check.json")); acct = jload(os.path.join(W, "account.json"))
+    ext = jload(os.path.join(W, "ext.json"), {}) or {}
+    # the Ask beats may come from a later take of the same account (a rebuild that re-records only Ask): ask-take.json
+    # {"take": "takeask.mp4", "marks": {...}, "recorded_at": "2026-10-01 11:05"} (ET)
+    at = jload(os.path.join(W, "ask-take.json"), {}) or {}
+    amk, atake = (at.get("marks") or mk), at.get("take", "take60.mp4")
+    vis = [r for r in (jload(os.path.join(W, "ask.json"), {}) or {}).get("answer_rects", []) if r.get("visible") and re.search(r"[A-Za-z0-9]", r["text"])]
     held = {b["symbol"] for b in acct.get("book", [])}
     with Stage(W, "compose"):
         lines, beats, cue = [], [], 0
@@ -81,10 +132,20 @@ def main():
                 src = macro_src.pop(0) if macro_src else "news"
                 b = {"take": "take60.mp4", "start": round(mk["brief_open"] + 0.6 if src == "brief" else mk["news"] + 0.2, 2),
                      "focus_src": FOCUS[src], "note": f"{src} scrolling ({ref['cover']})"}
+            # an extended-hours move in the line is shown on the Short's own labelled chip for the whole beat (owner, 10/1:
+            # the app shows only regular-session moves, so voice and screen must never disagree)
+            xs = next((x for x in ref.get("symbols", []) if x in ext), None)
+            if xs and re.search(EXT_RE[ext[xs]["label"]], s1["text"] + " " + s2["text"], re.I):
+                b["chip"] = chip_png(os.path.join(OUT, f"chip{i + 1}.png"), facts_name(xs, s1["text"]), ext[xs]["label"], ext[xs]["pct"], ext[xs]["asof"])
+                b["chip"]["png"] = os.path.join(OUT, f"chip{i + 1}.png")
+                if ext[xs].get("asof_ts"):
+                    from datetime import datetime as _dt
+                    from zoneinfo import ZoneInfo
+                    b["chip"]["asof_iso"] = _dt.fromtimestamp(ext[xs]["asof_ts"], ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M")
             cue += 2; b["to_cue"] = cue; beats.append(b)
         # the portfolio, on Home
         p = story["portfolio"]
-        lines.append({"voice": "minjae", "say": p["text"], "tempo": 1.06, "cues": [{"eyebrow": p.get("eyebrow", "MY PORTFOLIO").upper(), "show": tokens(p["text"])}]})
+        lines.append({"voice": "minjae", "say": p["text"], "tempo": 1.06, "cues": [{"eyebrow": "YOUR PORTFOLIO", "show": tokens(p["text"])}]})
         cue += 1
         beats.append({"take": "take60.mp4", "start": round(mk["home_top"] + 1.0, 2), "focus_src": FOCUS["home"], "to_cue": cue,
                       "note": "Home: total value, Today, All time, scrolling to the movers"})
@@ -92,15 +153,32 @@ def main():
         q = askc["question"]
         lines.append({"voice": gpt[len(items) % 2], "say": q, "tempo": 1.12, "cues": [{"eyebrow": "ASK ASSETLY", "show": tokens(q)}]})
         cue += 1
-        beats.append({"take": "take60.mp4", "start": round(mk["ask_typing"] - 0.3, 2), "focus_src": FOCUS["ask_q"], "to_cue": cue,
-                      "note": "Ask: the question typed"})
+        qb = {"take": atake, "start": round(amk["ask_typing"] - 0.3, 2), "focus_src": FOCUS["ask_q"], "to_cue": cue,
+              "note": "Ask: the question typed"}
+        beats.append(qb)
         a = story["ask"]["answer_text"]
         lines.append({"voice": "minjae", "say": a, "tempo": 1.06, "cues": [{"eyebrow": "THE ANSWER", "show": tokens(a)}]})
-        beats.append({"take": "take60.mp4", "start": round(mk["ask_answer"] + 1.4, 2), "focus_src": FOCUS["ask_a"], "tail": 1.0,
-                      "note": "Ask: the real answer, held into the card"})
+        ab = {"take": atake, "start": round(amk["ask_answer"] + 0.3, 2), "focus_src": FOCUS["ask_a"], "tail": 1.0,
+              "note": "Ask: the real answer, held into the card"}
+        k = story["ask"].get("line")
+        if isinstance(k, int) and 0 <= k < len(vis):
+            # the quoted line, outlined on screen as the voice says it; the push goes to it
+            x0, y0, x1, y1 = vis[k]["box"]
+            ab.update(highlight={"src_box": [x0, y0, x1, y1], "pad": 6}, focus_src=round((y0 + y1) / 2),
+                      quote={"line": k, "text": vis[k]["text"]}, note=f"Ask: the real answer, line {k} highlighted")
+        beats.append(ab)
+        # an Ask recorded at another moment than the rest says so on screen (one honest moment per shot)
+        if at.get("recorded_at"):
+            from datetime import datetime as _dt
+            t = _dt.strptime(at["recorded_at"], "%Y-%m-%d %H:%M")
+            tg = tag_png(os.path.join(OUT, "ask-tag.png"), f"ASK RECORDED {t.strftime('%-I:%M %p')} ET")
+            for b in (qb, ab): b["chip"] = dict(tg); b["tag"] = {"text": tg["text"]}
         # the data time-stamp: when the quotes behind every figure were captured (research.data), not the render time
         from datetime import datetime
         snap = datetime.strptime(jload(os.path.join(W, "research-data.json"))["asof_et"], "%Y-%m-%d %H:%M ET")
+        # the corner stamp is the LATEST data time on screen (owner, 10/1): a chip quoted after the research snapshot moves it
+        for b in beats:
+            if (b.get("chip") or {}).get("asof_iso"): snap = max(snap, datetime.strptime(b["chip"]["asof_iso"], "%Y-%m-%d %H:%M"))
         hm = snap.strftime("%-I:%M %p")
         stamp = {"edition": {"preopen": "Pre-open", "midday": "Midday", "close": "Close"}[ED],
                  "text": f"{snap.strftime('%b %-d')} · {hm} ET", "asof": snap.strftime("%Y-%m-%d %H:%M"),

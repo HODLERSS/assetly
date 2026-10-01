@@ -226,6 +226,10 @@ def main_ask():
         log(f"ask figures: {len(verified)} verified {verified}, unverified {unverified}")
         if unverified:
             sys.exit(f"REFUSE: the Ask answer shows figures no second source confirms: {unverified}")
+        rects = jload(os.path.join(W, "ask.json"), {}).get("answer_rects")
+        if rects is not None and not any(r.get("visible") for r in rects):
+            # the answer must be on screen in the held shot (10/1: the take ended on "Still thinking...")
+            print("RETAKE: no answer line is visible in the held shot"); sys.exit(3)
         if quality:
             log(f"ask wording: {quality}")
             # only jargon earns a retake: the pre-open "today" label comes from the app's Ask answer itself and never

@@ -32,9 +32,15 @@ The canonical list is `app/docs/marketing/SHORTS_QUALITY.md` (Q1-Q20 from the 9/
 | Q28 | Whisper round trip word for word | faster-whisper small.en on the final file |
 | Q30 | data time-stamp top-left, same spot, on every sampled frame | stamp box contrast + drift on cover/beats/card |
 | Q31 | stamp = snapshot within 5 min, edition label right | day.json stamp vs research asof |
+| Q32 | Ask: the spoken answer follows ONE recorded answer line (60% of its words, same figures), that line is readable in the answer beat, and it is outlined | storyline `ask.line`, day.json `quote` + `highlight`, OCR of the final frames |
+| Q33 | every $ / % spoken over a beat is readable in that beat: the app's screen or the beat's labelled chip (rounding allowed: 28% <- +28.33%) | OCR (Vision) of the final frames at 3/25/50/90% below the subtitle strip |
 | Q29 | no loading skeleton / blank screen mid-beat | saturation (home screen) and edge density (blank) on proof/beat*.png at 25/50/90% |
 
 Verification rules worth remembering:
+- Voice and screen never disagree: the app shows regular-session moves only, so a pre-market / after-hours figure is said
+  with its label word and drawn on the Short's own chip ("PRE-MARKET · 8:47 AM ET / IBM +5.8%"), from a two-feed quote
+  taken <= 15 min before the take ends; without one, the line uses what the app shows.
+- Narration is second person ("Your portfolio"); only the typed Ask question is in the user's own words.
 - Two sources = two publishers AND two different headlines (syndicated copies count once).
 - A move is spoken only when the CNBC quote service and the Nasdaq quote API agree (0.05 pt; 0.35 mid-session).
 - After-hours / premarket direction needs both feeds' extended quotes; a strong verb (jumped, surged, sank) needs 2%+.

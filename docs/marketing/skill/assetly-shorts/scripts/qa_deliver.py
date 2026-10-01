@@ -42,7 +42,7 @@ def main():
         # Q22 portfolio insight
         p = story["portfolio"]["text"]
         row("Q22", "Portfolio-insight beat (Home: total value, Today, All time) with a verified figure",
-            bool(re.search(r"\d", p)) and "MY PORTFOLIO" in json.dumps(day["lines"]), f"\"{p}\" over Home; facts {json.dumps(facts['portfolio'])}")
+            bool(re.search(r"\d", p)) and "YOUR PORTFOLIO" in json.dumps(day["lines"]) and "your portfolio" in p.lower(), f"\"{p}\" over Home; facts {json.dumps(facts['portfolio'])}")
         # Q23 3-5 market items, each on two independent sources
         n_ok = 0; det = []
         bymap = {h["id"]: h for h in jload(os.path.join(W, "research-data.json"))["headlines"]}
@@ -149,11 +149,65 @@ def main():
                 if sat > 20 or edge < 0.8: low.append(f"beat {i + 1} @{at:.1f}s (sat {sat:.0f}, edge {edge:.1f})")
             t += bt["dur"]
         row("Q29", "Every beat shows the app (no home screen, no blank screen) at 25/50/90% of the beat", not low, ", ".join(det29) + (f"; BAD {low}" if low else ""))
+        # Q32 / Q33 (owner, 10/1): read the finished frames below the subtitle strip (Vision text recognition): every figure
+        # spoken over a beat must be readable in that beat (the app's screen or the beat's labelled chip), and the spoken
+        # answer must be a recorded answer line that is on screen and outlined while it is said
+        from screen import ocr, figures as figs_of, shows
+        from PIL import Image
+        t, shots = tm["hook"], []
+        for i, bt in enumerate(tm["beats"]):
+            ps = []
+            for frac in (0.03, 0.25, 0.5, 0.9):
+                at = t + bt["dur"] * frac; png = os.path.join(B, f"q33_b{i + 1}_{frac}.png")
+                run("ffmpeg", "-v", "error", "-y", "-ss", f"{at:.2f}", "-i", final, "-frames:v", "1", png)
+                if os.path.exists(png):
+                    Image.open(png).crop((0, 470, 1080, 1920)).save(png); ps.append(png)
+            shots.append(ps); t += bt["dur"]
+        rd = ocr([p for ps in shots for p in ps]); it = iter(rd)
+        seen = [[r[0] for p in ps for r in next(it)] for ps in shots]
+        lines_d = day.get("lines", [])
+        miss33, det33 = [], []
+        for i, ln in enumerate(lines_d[:len(shots)]):
+            disp = " ".join(w for c in ln.get("cues", []) for w in c.get("show", []))
+            if i == len(lines_d) - 2: continue                    # the typed question: the viewer's own words, no figures
+            spoken = [f for f in figs_of([disp]) if re.search(r"[%$]", f)]
+            have = figs_of(seen[i])
+            bad = [f for f in spoken if not shows(f, have)]
+            det33.append(f"beat {i + 1}: {spoken or '-'}" + (f" NOT SEEN {bad}" if bad else ""))
+            if bad: miss33.append(i + 1)
+        row("Q33", "Every figure spoken over a beat is readable in that beat (app screen or labelled chip)", not miss33, "; ".join(det33))
+        # Q34 one moment per Short (owner, 10/1): no chip time later than the corner stamp, and a pre-open Short shows no
+        # live intraday quote on the phone (a take recorded after the open)
+        st34 = (day.get("stamp") or {}).get("asof", "")
+        late = [c["asof_iso"] for c in (b.get("chip") or {} for b in day.get("beats", [])) if c.get("asof_iso") and c["asof_iso"] > st34]
+        live = [f"beat {i + 1}: {t!r}" for i, ts in enumerate(seen) for t in ts if ED == "preopen" and re.search(r"\blive\b", t, re.I)]
+        tags = [b["tag"]["text"] for b in day.get("beats", []) if b.get("tag")]
+        row("Q34", "One moment: chip times <= the corner stamp; pre-open shows no live intraday quote (an Ask re-recorded later carries its own time tag)",
+            not late and not live, f"stamp {st34}; chips {[c for c in (b.get('chip', {}).get('asof_iso') for b in day.get('beats', [])) if c] or '-'}"
+            + (f"; LATE {late}" if late else "") + (f"; LIVE {live[:3]}" if live else "") + (f"; tags {tags}" if tags else ""))
+        ab = (day.get("beats") or [{}])[-1]; quote = (ab.get("quote") or {}).get("text", "")
+        said = " ".join(w for c in (lines_d[-1].get("cues", []) if lines_d else []) for w in c.get("show", []))
+        stem = lambda w: re.sub(r"[^a-z]", "", w.lower())[:5]
+        filler = set("and the are was were its with for about each also than rose fell gained lost climbed slipped dropped jumped "
+                     "rises falls higher lower today this that".split())
+        ws = lambda x: [stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]{2,}", x) if w.lower() not in filler]
+        nm = facts.get("names", {})                    # a ticker on screen is said as its name ("NKE" -> "Nike")
+        qset = set(ws(quote + " " + " ".join(nm.get(x, "") for x in re.findall(r"\b[A-Z]{2,5}\b", quote)))) | {"your", "portf"}
+        follow = bool(quote) and ws(said) and sum(w in qset for w in ws(said)) / len(ws(said)) >= 0.6 and \
+            all(shows(f, figs_of([quote])) for f in figs_of([said]) if re.search(r"[%$]", f))
+        ocr_ans = " ".join(seen[-1]) if seen else ""
+        onscreen = bool(quote) and sum(w in set(ws(ocr_ans)) for w in ws(quote)) / max(1, len(ws(quote))) >= 0.6
+        hl = bool((ab.get("highlight") or {}).get("src_box"))
+        row("Q32", "Ask: the spoken answer follows a recorded answer line that is on screen and outlined while it is said",
+            follow and onscreen and hl, f"line {quote!r}; said {said!r}; follows {follow}; visible in the beat {onscreen}; highlight {hl}")
         # Q30 the data time-stamp: on EVERY frame in the same top-left spot (cover, every beat, the end card), its text is the
         # snapshot the figures come from (research quotes, within 5 min), and the edition label is this edition's
         st = day.get("stamp") or {}
         snap = jload(os.path.join(W, "research-data.json"))["asof_et"]
         from datetime import datetime
+        chip_t = [b["chip"]["asof_iso"] for b in day.get("beats", []) if (b.get("chip") or {}).get("asof_iso")]
+        if chip_t:                                      # the stamp is the latest data time shown: research snapshot or a chip quote
+            snap = max([snap] + [datetime.strptime(c, "%Y-%m-%d %H:%M").strftime("%Y-%m-%d %H:%M ET") for c in chip_t])
         try:
             shown = datetime.strptime(f"{DATE[:4]} {st.get('text', '')}", "%Y %b %d · %I:%M %p ET")
             delta = abs((shown - datetime.strptime(snap, "%Y-%m-%d %H:%M ET")).total_seconds()) / 60

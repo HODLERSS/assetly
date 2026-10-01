@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.0.2 (2026-10-01, owner changes after the morning Shorts)
+
+- Second person: the narration says "Your portfolio" (eyebrow YOUR PORTFOLIO); first person in any spoken line, title or
+  description is refused. The typed Ask question stays in the user's words.
+- The Ask answer comes from the recording: testGshort waits for the real answer (not "Still thinking..."; the 7:32 Short
+  showed the dots), holds 7.5 s and logs each text's frame; the storyline quotes one numbered, visible answer line (same
+  figures, close wording) and the edit outlines that line (`highlight.src_box`) and pushes to it. Q32 checks all three
+  on the final frames by OCR. facts --ask retakes when no answer line is visible.
+- Voice and screen agree: `screen.py` reads every beat's window of the take (Vision OCR) and re-quotes extended-hours
+  moves on both feeds. A spoken figure must be readable in its shot, or be a fresh (<= 15 min before the take ends)
+  pre-market / after-hours move said with its label word, which compose draws on a labelled chip ("PRE-MARKET · 8:47 AM
+  ET / IBM +5.8%", the Short's own overlay, never app UI) for that beat. Q33 checks every beat on the final frames.
+- Repo: make-short.sh passes a beat's `chip` to make-spot.py as a timed overlay (`start`/`end` on an overlay png).
+
 ## v1.0.1 (2026-10-01, after the 7:32 AM preopen refused at the storyline)
 
 - Acronyms: names said as letters or as a word (IBM, NASA, AMD, AI, ETF, CEO, FDA, SEC, NVIDIA, AT&T, HP; Fed is not

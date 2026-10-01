@@ -276,7 +276,12 @@ for j, sq in enumerate(seqs):
         inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{t_len:.3f}", "-i", sq["png"]]
     else:
         inputs += ["-framerate", str(FPS), "-i", os.path.join(sq["frames"], "%05d.png")]
-    fc += f"[{j+1}:v]format=rgba[sq{j}];[{base}][sq{j}]overlay={sq['x']}:{sq['y']}:format=auto:shortest=1[b0s{j}];"
+    if "start" in sq:              # a still for one window (a beat's chip): fade in 0.25 s, out 0.2 s, only between start and end
+        s0, e0 = sq["start"], sq["end"]
+        fc += (f"[{j+1}:v]format=rgba,fade=t=in:st={s0:.3f}:d=0.25:alpha=1,fade=t=out:st={max(s0, e0 - 0.2):.3f}:d=0.2:alpha=1[sq{j}];"
+               f"[{base}][sq{j}]overlay={sq['x']}:{sq['y']}:format=auto:shortest=1:enable='between(t,{s0:.3f},{e0:.3f})'[b0s{j}];")
+    else:
+        fc += f"[{j+1}:v]format=rgba[sq{j}];[{base}][sq{j}]overlay={sq['x']}:{sq['y']}:format=auto:shortest=1[b0s{j}];"
     base = f"b0s{j}"
 off = 1 + len(seqs)
 
