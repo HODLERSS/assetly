@@ -1,0 +1,5 @@
+name = "assetly-domain"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+routes = [{ pattern = "assetly.minjae.co", custom_domain = true }]
