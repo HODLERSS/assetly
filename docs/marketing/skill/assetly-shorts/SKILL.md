@@ -12,7 +12,7 @@ important"; v1.3.0, see "The 20-minute budget" below):
 | Edition | Ready by | Covers | App brief | Ask on camera (default) |
 |---|---|---|---|---|
 | `preopen` | 9:00 AM ET (8:00 CT) | overnight futures, premarket movers and why, today's calendar (data, Fed, earnings) | Morning Brief | "What's ahead for my portfolio today?" (no "should": a Q13 word) |
-| `midday` | 1:00 PM ET (12:00 CT) | what is moving so far and why | Midday Pulse | "What's moving my portfolio today?" |
+| `midday` | ~10:20 AM ET (9:20 CT; owner 10/2: 30 min after the open, run 9:00 CT, prestage 8:30) | what is moving so far and why | Midday Pulse | "What's moving my portfolio today?" |
 | `close` | ~4:20 PM ET | the session's movers and why, a big after-the-bell report | Closing Note | "How did I do this week and this month?" |
 
 Weekends and US market holidays: skip (the app's own calendar, `supabase/functions/_shared/calendar.ts`).

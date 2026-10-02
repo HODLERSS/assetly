@@ -345,8 +345,24 @@ def main():
         os.makedirs(OUT, exist_ok=True)
         jdump(day, os.path.join(OUT, "day.json"))
         tags = " ".join(reach_hashtags(story.get("hashtags", [])))
-        desc = (stamp["line"] + "\n" + story["description"].strip() + "\nPortfolio shown is illustrative. Not financial advice.\n\n"
-                "Assetly on the App Store: https://apps.apple.com/app/id6811739789\nMore: https://hodlerss.github.io/assetly/about.html")
+        # v1.4.0 (owner-approved channel plan 10/2, answers/channel/20261002_channel_optimization.md section 5): a searchable
+        # "<Company> stock" second line, the narration disclosure, the assetly.minjae.co about page
+        # the company names as the cover brackets them ("[Nike] misses."), for the items about a listed company
+        cos = list(dict.fromkeys(m.group(1) for c, it in zip(story["cover"], story["items"])
+                                 if res["items"][it["n"]].get("symbols") for m in [re.search(r"\[([^\]]+)\]", c)] if m))[:2]
+        search = (" and ".join(f"{c} stock" for c in cos) + " news: " if cos else "Stock market news: ") + \
+                 "; ".join(re.sub(r"[\[\]]", "", c).rstrip(".") for c in story["cover"]) + "."
+        desc = (stamp["line"] + "\n" + search + "\n" + story["description"].strip() + "\nPortfolio shown is illustrative. Not financial advice."
+                "\nNarration: AI clone of the founder's voice.\n\n"
+                "Assetly on the App Store: https://apps.apple.com/app/id6811739789\nMore: https://assetly.minjae.co/about.html")
+        # the pinned comment's text (owner pastes it; posting comments by API needs another scope): where every figure came from
+        heads = {h["id"]: h for h in (jload(os.path.join(W, "research-data.json"), {}) or {}).get("headlines", [])}
+        pubs = list(dict.fromkeys(heads[i]["publisher"] for it in story["items"] for i in
+                                  (res["items"][it["n"]].get("why_ids", []) + res["items"][it["n"]].get("sentiment_ids", [])) if i in heads))
+        feeds = "Yahoo + Daum (KRX) and CNBC + Nasdaq (US)" if KR else "CNBC + Nasdaq quote feeds"
+        open(os.path.join(OUT, "pin-comment.txt"), "w").write(
+            f"Sources: every figure checked on two feeds ({feeds}); each story on two newsrooms"
+            + (f" ({', '.join(pubs[:6])})" if pubs else "") + f". {stamp['line']}. Portfolio shown is illustrative. Not financial advice.\n")
         # owner, 10/1 pm: the title is the hook only, no edition label and no date (the description carries "Data as of")
         story["title"] = re.sub(r"^\s*(before the bell|pre-?open|midday|after the bell|at the close|close|seoul open|seoul close)\s*[:|·-]\s*", "", story["title"], flags=re.I)
         story["title"] = re.sub(r"\s*[|·-]?\s*\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(, \d{4})?\s*$", "", story["title"]).strip(" |·-")

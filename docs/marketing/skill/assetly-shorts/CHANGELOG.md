@@ -37,6 +37,22 @@ the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 5
   gpt-audio backup VOICE in voice-lines.py is separate and unchanged). `python3 lib.py --selftest-llm` forces each tier to
   fail in turn (SHORTS_LLM_FORCE_FAIL) and proves the next answers valid JSON: 6/6 PASS from `env -i HOME PATH`, claude
   2.4-2.7 s, MARA 0.9 s, SambaNova 1.6-1.8 s.
+- **Channel plan items** (owner-approved 10/2, answers/channel/20261002_channel_optimization.md section 5): description
+  link https://assetly.minjae.co/about.html (Q27 checks it), a searchable second line ("<Company> stock and <Company> stock
+  news: <covers>."), "Narration: AI clone of the founder's voice." (description and TikTok caption; Q27), `pin-comment.txt`
+  per delivery (two feeds per figure + the newsrooms cited + the data time), `publish-at.txt` per delivery (when to publish,
+  which playlist). upload.py: `defaultLanguage` / `defaultAudioLanguage` "en", `--publish-at` (korea-close: private with
+  status.publishAt 6:45 AM ET; an unverified API project may keep it private, so the hint file says the time too),
+  SHORTS_YT_SYNTHETIC=1 for the synthetic toggle (default off). Playlist auto-add skipped: it needs the broader `youtube`
+  scope (the hint names the playlist).
+- **Never late on research** (10/2: the 06:20 preopen prestage refused at research, the 06:50 run seeded in full and missed
+  7:30 by 3 min): the prestage seeds the book from research's kept items + hot names (or the AI leaders) even when research
+  is short; preopen's two premarket feeds agree within a band that scales with the move (>= 0.5 pt / 8% before 8:00 ET,
+  0.25 pt / 5% after, same sign always; was a flat 0.2 pt); the second pick sends only headlines about names both feeds agree
+  on (newest 140) instead of the whole prompt (MARA cut it at 12,000 tokens twice). The storyline fallback cleans verified
+  wording before speaking it (banned words swapped: guidance -> outlook ...; an extended-hours claim with no fresh chip
+  loses its premarket / after-hours words and figure), so verified items do not refuse on wording.
+- Schedule (owner 10/2): midday runs 9:00 CT (prestage 8:30), 30 minutes after the open.
 - **TikTok by API** ("make sure you can update tiktok too as you do in Youtube"): `app/scripts/tiktok/auth.py` (Login Kit
   for Desktop, hex-S256 PKCE, loopback `http://127.0.0.1:53683/callback/`, token file chmod 600, no secret printed);
   post.py reads TikTok's error codes, falls back to the creator's inbox (`video.upload`) when an unaudited app may not

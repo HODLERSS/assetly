@@ -581,6 +581,29 @@ def short_title(covers):
     return t if len(t) <= 50 else cs[0][:50]
 
 
+# v1.4.0 (10/2 preopen: the fallback refused on "premarket" with no chip and the banned word "guidance" in a verified WHY):
+# the deterministic wording is cleaned before it is spoken, so verified items never refuse on wording alone
+SWAP = [(r"\bguidance\b", "outlook"), (r"\bcatalysts\b", "drivers"), (r"\bcatalyst\b", "driver"), (r"\bcapex\b", "spending"),
+        (r"\bEPS\b", "earnings"), (r"\btheses\b|\bthesis\b", "case"), (r"\bmultiples?\b", "valuation"), (r"\bbasis points\b|\bbps\b", "points"),
+        (r"\bprints\b", "reports"), (r"\bprint\b", "report"), (r"\bnarratives?\b", "story"), (r"\bsoar(?:s|ed|ing)?\b", "jumped"),
+        (r"\bskyrocket(?:s|ed|ing)?\b", "jumped"), (r"\bexplod(?:e|es|ed|ing)\b", "jumped"), (r"\b(?:huge|massive)\b", "large"),
+        (r"\bcrush(?:es|ed|ing)?\b", "beat"), (r"\btape\b", "trading"), (r"\bsetup\b", "outlook")]
+EXT_RE_ = re.compile(r"\s*\b(?:in\s+)?(?:premarket|pre-market|after[- ]hours|after the bell|late|extended)(?:\s+trading)?\b", re.I)
+
+
+def clean_verified(text, syms):
+    """A verified sentence made speakable by the checks' own rules: banned words swapped for plain ones, and, when no fresh
+    two-feed chip backs an extended-hours claim for its names, the extended-hours words and their figure dropped (the claim
+    is then the move's cause, which two publishers state)."""
+    for pat, rep_ in SWAP:
+        text = re.sub(pat, lambda m: rep_.capitalize() if m.group(0)[:1].isupper() else rep_, text, flags=re.I)
+    if EXT_RE_.search(text) and not any(s_ in ctx()["ext"] for s_ in syms):
+        text = EXT_RE_.sub("", text)
+        text = re.sub(r"\s*(?:by\s+)?(?:about\s+|nearly\s+|almost\s+)?[+\-\u2212]?\d[\d.,]*%", "", text)
+        text = re.sub(r"\s{2,}", " ", text).replace(" .", ".").replace(" ,", ",").strip()
+    return text
+
+
 def fallback(story, res, facts, askc):
     """Last resort, deterministic: lines that still fail are told with the item's verified WHY and READ (trimmed at a
     clause when the budget needs it), the edition's timing phrase leads item 1, and the portfolio / Ask lines fall back
@@ -618,7 +641,8 @@ def fallback(story, res, facts, askc):
         if attributed(res["items"][n]["sentiment"]):
             used = {x.get("n") for x in story["items"] if isinstance(x, dict)}
             n = next((k for k, rr in enumerate(res["items"]) if k not in used and not attributed(rr["sentiment"])), n)
-        r = res["items"][n]; eb = it.get("sentences") if len(it.get("sentences") or []) == 2 else [{}, {}]
+        r = dict(res["items"][n]); eb = it.get("sentences") if len(it.get("sentences") or []) == 2 else [{}, {}]
+        r["why"], r["sentiment"] = (clean_verified(r[k], r.get("symbols") or []) for k in ("why", "sentiment"))
         story["items"][i] = {"n": n, "sentences": [
             {"eyebrow": (eb[0].get("eyebrow") or r["cover"].rstrip(".")).upper()[:26], "text": r["why"]},
             {"eyebrow": (eb[-1].get("eyebrow") or "THE READ").upper()[:26], "text": r["sentiment"]}]}

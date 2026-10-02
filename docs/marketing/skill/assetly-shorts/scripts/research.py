@@ -310,8 +310,17 @@ def main():
                 else:
                     a, b, session = c.get("pct"), n.get("pct"), "regular" if ED == "close" else "live"
                 # live quotes are seconds apart mid-session; extended-hours lasts differ by venue (JBL 9/30 night: 0.97 vs 1.05)
-                ok = agree(a, b, {"close": 0.06, "midday": 0.35, "preopen": 0.2}[ED])
-                cand_rows.append({"symbol": s, "name": NAMES.get(s, c.get("name") or s), "last": c.get("last"), "ai": s in AI,
+                tol = {"close": 0.06, "midday": 0.35, "preopen": 0.2}[ED]
+                if ED == "preopen" and a is not None and b is not None:
+                    # v1.4.0 (10/2 06:20 prestage: NKE / NVDA / APP dropped as "feeds disagree" on thin early premarket prints):
+                    # the two feeds' premarket % agree within a band that scales with the move, wider before 8:00 ET when
+                    # premarket volume is thin; same sign always. The figure spoken is still CNBC's, and a chip re-checks both
+                    # feeds fresh at take time (screen.py)
+                    early = now.hour < 8
+                    tol = max(0.5 if early else 0.25, (0.08 if early else 0.05) * max(abs(a), abs(b)))
+                    if (a > 0) != (b > 0) and min(abs(a), abs(b)) > 0.1: tol = 0
+                ok = agree(a, b, tol)
+                cand_rows.append({"symbol": s, "name": NAMES.get(s, c.get("name") or s), "last": c.get("last"), "ai": s in AI, "tol": tol,
                                   "ai_rank": ai_top.index(s) + 1 if s in ai_top else None,
                                   "pct_feed1": a, "pct_feed2": b, "feeds_agree": ok, "session": session,
                                   "regular_pct": c.get("pct"), "high": c.get("high"), "low": c.get("low"), "prev": c.get("prev"),
@@ -482,7 +491,13 @@ def main():
                     + ". Pick 6 items again; each WHY and READ must be stated by two different publishers' headlines, word for word close."
                     + (" At least 4 of the 6 must be about KRX listings (SK hynix, Samsung Electronics, Hanmi Semiconductor and peers, "
                        "or the KOSPI), using the Korean newsrooms' headlines too." if KR else ""))
-            pick2 = llm(W, "You are a careful markets editor for a 25-second video. You only state what the cited headlines and quotes support.", prompt + note)
+            # v1.4.0 (10/2 06:20: the second pick re-sent the whole prompt and MARA cut M3's reply at 12,000 tokens twice,
+            # ~100 s lost): a shorter prompt: only headlines about names both feeds agree on (and macro), newest 140
+            okt = {r["symbol"] for r in cand_rows if r.get("feeds_agree")} | {"MACRO"}
+            short = [h for h in data["headlines"] if h["tag"] in okt or (KR and KRM.is_kr(h["tag"]))][:140]
+            short_heads = "\n".join(f'{h["id"]} [{h["tag"]}] {h["publisher"]} ({h["et"]}): {h["title"]}' for h in short)
+            pick2 = llm(W, "You are a careful markets editor for a 25-second video. You only state what the cited headlines and quotes support.",
+                        prompt.replace(compact_heads, short_heads) + note)
             k2, d2 = verify(pick2.get("items", []), byid, rowsym, macro)
             have = {tuple(i.get("symbols", [])) or (i["cover"],) for i in kept}
             kept += [i for i in k2 if (tuple(i.get("symbols", [])) or (i["cover"],)) not in have]
@@ -582,6 +597,7 @@ def verify(items, byid, rowsym, macro):
                 figs.append({**f, "feed1": w.get("a"), "feed2": w.get("b"), "ok": ok})
             elif r:
                 live = {"close": 0.051, "midday": 0.35, "preopen": 0.2, "korea-close": 0.051, "korea-open": 0.35, "korea-midday": 0.35}[ED]
+                live = max(live, r.get("tol") or 0) if ED == "preopen" else live      # v1.4.0: the row's premarket band
                 ok = r["feeds_agree"] and agree(v, r["pct_feed1"], 0.051 if ED != "preopen" else 0.15) and agree(v, r["pct_feed2"], live)
                 figs.append({**f, "feed1": r["pct_feed1"], "feed2": r["pct_feed2"], "ok": ok})
             elif m:

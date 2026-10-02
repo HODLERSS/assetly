@@ -7,7 +7,7 @@ Proposal only: no launchd job is installed by the skill. The main session decide
 | Edition | Must be ready | Start (CT) | Start (ET) | Why |
 |---|---|---|---|---|
 | preopen | **done before 7:30 AM CT** (owner, 10/1) | **6:50 AM** | 7:50 AM | premarket quotes are live from 4:00 AM ET; the app's Morning Brief window opens at 8:00 AM ET, so a brief written before 8:00 ET goes through the internal out-of-window path (account.py `--out-of-window`, automatic); <= 20 min budget, done by 7:10 |
-| midday | 12:00 PM CT (1:00 PM ET) | **11:35 AM** | 12:35 PM | the Midday Pulse window is the session; <= 20 min budget |
+| midday | ~9:20 AM CT (10:20 AM ET) (owner 10/2: 30 min after the open) | **9:00 AM** | 10:00 AM | the session's first half hour is in; <= 20 min budget |
 | close | as soon as possible after 3:00 PM CT (4:00 PM ET) | **3:02 PM** | 4:02 PM | the Closing Note window opens at 4:00 PM ET; both quote feeds carry the official close by ~4:01 |
 
 Weekends and US market holidays: `run.sh` asks the app's calendar first and exits 0 without doing anything.
@@ -37,7 +37,7 @@ before each slot does the slow account work, so the run itself only verifies and
 | Edition | Prestage (CT, its own launchd job) | Run start (CT) | Hard deadline (CT) |
 |---|---|---|---|
 | preopen | 6:20 AM Mon-Fri | 6:50 AM | 7:10 AM |
-| midday | 11:05 AM Mon-Fri | 11:35 AM | 11:55 AM |
+| midday | 8:30 AM Mon-Fri (v1.4.0, owner 10/2) | 9:00 AM | 9:20 AM |
 | close | 2:32 PM Mon-Fri | 3:02 PM | 3:22 PM |
 | korea-open | fires 6:00 PM Sun-Thu, the gate waits for 9:02 AM KST | 9:32 AM KST (7:32 PM CDT / 6:32 PM CST) | start + 20 min |
 | korea-midday | fires 8:25 PM Sun-Thu, the gate waits for 11:30 AM KST | 12:00 PM KST (10:00 PM CDT / 9:00 PM CST) | start + 20 min |
@@ -118,9 +118,9 @@ Supabase CLI login, the Xcode simulator and `~/.private_keys` must be available)
 </array>
 ```
 
-preopen: Hour 6 Minute 50 (owner 10/1: done before 7:30 CT); midday: Hour 11 Minute 35; close: Hour 15 Minute 2 (CT, the Mac's local time); korea-open:
+preopen: Hour 6 Minute 50 (owner 10/1: done before 7:30 CT); midday: Hour 9 Minute 0 (owner 10/2; was 11:35); close: Hour 15 Minute 2 (CT, the Mac's local time); korea-open:
 Weekday 0-4 Hour 18 Minute 30, korea-midday: Weekday 0-4 Hour 20 Minute 55 and korea-close: Weekday 1-5 Hour 0 Minute 40 (the gate then waits for 9:32 / 12:00 / 15:45 KST).
-v1.3.0 prestage jobs (`<edition>-prestage`, gate `--prestage`): preopen 6:20, midday 11:05, close 14:32 (Mon-Fri); korea-open
+v1.3.0 prestage jobs (`<edition>-prestage`, gate `--prestage`): preopen 6:20, midday 8:30 (was 11:05), close 14:32 (Mon-Fri); korea-open
 Weekday 0-4 18:00, korea-midday Weekday 0-4 20:25, korea-close Weekday 1-5 0:05 (the gate waits for the KST start - 30 min). The script
 itself skips holidays. A refused run leaves its work dir under `/tmp/assetly-shorts/` and exits 1; the main session
 should check `~/Library/Logs/assetly-shorts.log` and the delivery folder before posting. The Mac must be awake

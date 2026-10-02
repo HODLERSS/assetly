@@ -59,7 +59,15 @@ if [ "$PRESTAGE" = 1 ]; then
   T0=$(date +%s); trap 'rc=$?; rm -f "$PRE/running"; echo "prestage exit $rc after $(( $(date +%s) - T0 ))s"' EXIT
   echo "assetly-shorts prestage: $ED $DATE seed=$SEED account=$ACCTN -> $PRE"
   cd "$SK"
-  if python3 research.py "$ED" "$DATE" "$PRE" && python3 design_book.py "$PRE" --seed "$SEED" && python3 account.py "$ED" "$PRE" $ACCT --prestage; then
+  # v1.4.0 (10/2: the 06:20 preopen prestage refused at research with 2 items, so the 06:50 run seeded in full and missed 7:30):
+  # the prestage never depends on research passing. A short research still leaves research.json (its kept items + "hot");
+  # none at all means a book of the AI leaders. The run's own research picks the items; up to two missing names are added.
+  if ! python3 research.py "$ED" "$DATE" "$PRE"; then
+    echo "prestage: research came up short; the book is built from its kept items + AI leaders, the run picks the stories"
+    [ -s "$PRE/research.json" ] || python3 -c "import json;json.dump({'edition':'$ED','date':'$DATE','items':[],'hot':['NVDA','AVGO','MU'] if '$MKT'=='US' else [],'context':''},open('$PRE/research.json','w'))"
+    [ -s "$PRE/research-data.json" ] || echo '{"candidates": []}' > "$PRE/research-data.json"
+  fi
+  if python3 design_book.py "$PRE" --seed "$SEED" && python3 account.py "$ED" "$PRE" $ACCT --prestage; then
     python3 -c "import json,time;json.dump({'ts':time.time(),'account':'$ACCTN','edition':'$ED','seed':$SEED},open('$PRE/prestage-ready.json','w'))"
     echo "prestage ready: $PRE"; exit 0
   fi
@@ -236,10 +244,22 @@ if want qa; then
 fi
 kill "$WD" 2>/dev/null || true; WD=""      # delivered inside the budget: the watchdog stands down
 echo "done: $DST in $(( $(date +%s) - START_TS ))s of ${DEADLINE_S}s"
+# publishing hints (v1.4.0, owner-approved channel plan 10/2): when to publish and which playlist (adding to a playlist by API
+# needs the broader youtube scope: the owner does it while publishing). korea-close goes out at 6:45 AM ET, not ~2:50 AM.
+PUBAT=""; [ "$ED" = korea-close ] && PUBAT=$(python3 -c "
+from datetime import datetime, timedelta; from zoneinfo import ZoneInfo
+n = datetime.now(ZoneInfo('America/New_York')); t = n.replace(hour=6, minute=45, second=0, microsecond=0)
+t = t if t > n + timedelta(minutes=10) else t + timedelta(days=1)
+print(t.astimezone(ZoneInfo('UTC')).strftime('%Y-%m-%dT%H:%M:%SZ'), t.strftime('%a %b %-d, 6:45 AM ET'))")
+PL=$([ "$MKT" = KR ] && echo "Korea AI Chip Stocks Daily" || echo "Stock Market Today: Open, Midday, Close")
+{ [ -n "$PUBAT" ] && echo "Publish: ${PUBAT#* } (YouTube publishAt ${PUBAT%% *} when uploaded with --upload; TikTok: post the inbox draft then)" || echo "Publish: at once"
+  echo "Playlist: $PL (add while publishing)"; echo "Pinned comment: pin-comment.txt"; } > "$DST/publish-at.txt"
+echo "publish hint: $(head -1 "$DST/publish-at.txt"); playlist: $PL"
 if [ "$UPLOAD" = 1 ]; then
   if [ "$TEST" = 1 ]; then echo "--upload ignored on a --test run"; exit 0; fi
   SLUG="$DATE-$ED"
-  if ! python3 "$APP/scripts/youtube/upload.py" "$DST/assetly-short-$SLUG-upload.mp4" "$DST/youtube-metadata.json" --privacy private > "$W/upload.json" 2> "$W/upload.err"; then
+  if ! python3 "$APP/scripts/youtube/upload.py" "$DST/assetly-short-$SLUG-upload.mp4" "$DST/youtube-metadata.json" --privacy private \
+       $([ -n "$PUBAT" ] && echo "--publish-at ${PUBAT%% *}") > "$W/upload.json" 2> "$W/upload.err"; then
     if grep -qiE "invalid_grant|401|unauthorized|expired|revoked|youtube_token" "$W/upload.err"; then
       echo "UPLOAD FAILED: YouTube authorization is no longer valid (the Google app is in Testing, so refresh tokens expire after 7 days)."
       echo "  Fix: run python3 $APP/scripts/youtube/auth.py once, then: python3 $APP/scripts/youtube/upload.py $DST/assetly-short-$SLUG-upload.mp4 $DST/youtube-metadata.json"
