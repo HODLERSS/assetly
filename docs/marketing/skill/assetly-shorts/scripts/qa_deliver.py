@@ -249,7 +249,11 @@ def main():
         follow = bool(quote) and ws(said) and sum(w in qset for w in ws(said)) / len(ws(said)) >= 0.6 and \
             all(shows(f, figs_of([quote])) for f in figs_of([said]) if re.search(r"[%$]", f))
         ocr_ans = " ".join(seen[-1]) if seen else ""
-        onscreen = bool(quote) and sum(w in set(ws(ocr_ans)) for w in ws(quote)) / max(1, len(ws(quote))) >= 0.6
+        # 10/2 close: a figures-only line ("1M: +$23,544 (+10.2%)") has no words to match, so it could never count as on
+        # screen; such a line is on screen when every one of its $ / % figures is read in the beat's frames
+        qw = ws(quote); qf = [f for f in figs_of([quote]) if re.search(r"[%$]", f)]
+        onscreen = bool(quote) and ((sum(w in set(ws(ocr_ans)) for w in qw) / len(qw) >= 0.6) if qw else
+                                    (bool(qf) and all(shows(f, figs_of([ocr_ans])) for f in qf)))
         hl = bool((ab.get("highlight") or {}).get("src_box"))
         # owner, 10/1 preopen-v3: the answer beat opened on "Still thinking..." with the outline around empty space while
         # the voice already said the answer. The beat's first frame (3%) must already show the answer, never the spinner.
