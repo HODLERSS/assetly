@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Assetly</title>
+<!-- Flyer / QR smart link (owner 10/2). iPhone/iPad -> App Store with campaign token ct=flyer-<c> (App Store Connect
+     counts flyer page views and downloads); Android and everything else -> the web app. ?c=<place> names the flyer. -->
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var c = (q.get("c") || "cafe").replace(/[^a-z0-9-]/gi, "").slice(0, 20) || "cafe";
+  var ua = navigator.userAgent || "";
+  var ios = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  location.replace(ios ? "https://apps.apple.com/app/apple-store/id6811739789?pt=129454012&ct=flyer-" + c + "&mt=8"
+                       : "../?ref=flyer-" + c);
+})();
+</script>
+<style>body{font:16px/1.5 -apple-system,system-ui,sans-serif;padding:24px;color:#16181D}a{color:#2A3F92}</style>
+</head><body>
+<p>Opening Assetly…</p>
+<p><a href="https://apps.apple.com/app/apple-store/id6811739789?pt=129454012&amp;ct=flyer-cafe&amp;mt=8">iPhone: App Store</a> · <a href="../">Android and others: open in your browser</a></p>
+</body></html>
