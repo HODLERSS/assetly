@@ -41,7 +41,8 @@ KR = ED in KRM.KR_EDITIONS                   # v1.1.0: the Seoul editions (Korea
 UNIVERSE = """NVDA MSFT AAPL GOOGL AMZN META TSLA AVGO ORCL AMD TSM MU INTC QCOM ARM ASML SMCI DELL HPE ANET CRWV NBIS
 PLTR SNOW CRM ADBE NOW IBM CSCO MRVL LRCX AMAT KLAC TXN CEG VST NRG GEV ETN VRT OKLO SMR IREN APLD CIFR WULF MARA
 COIN HOOD MSTR NFLX UBER SHOP SPOT RDDT APP DDOG CRWD PANW NET MDB SOUN PATH TEM RKLB ASTS IONQ RGTI QBTS JPM GS
-BAC WMT COST NKE LLY NVO UNH XOM BA DIS PYPL SOFI""".split()
+BAC WMT COST NKE LLY NVO UNH XOM BA DIS PYPL SOFI
+CRDO ALAB CLS AI TER COHR LITE ONTO NVTS""".split()       # v1.4.0 (owner 10/2: "there are so many AI-related relevant stocks")
 NAMES = {"GOOGL": "Google", "META": "Meta", "NVDA": "Nvidia", "MSFT": "Microsoft", "AAPL": "Apple", "AMZN": "Amazon",
          "TSLA": "Tesla", "AVGO": "Broadcom", "ORCL": "Oracle", "AMD": "AMD", "TSM": "TSMC", "MU": "Micron", "INTC": "Intel",
          "QCOM": "Qualcomm", "ARM": "Arm", "ASML": "ASML", "SMCI": "Super Micro", "DELL": "Dell", "HPE": "Hewlett Packard Enterprise",
@@ -55,11 +56,14 @@ NAMES = {"GOOGL": "Google", "META": "Meta", "NVDA": "Nvidia", "MSFT": "Microsoft
          "MDB": "MongoDB", "SOUN": "SoundHound", "PATH": "UiPath", "TEM": "Tempus AI", "RKLB": "Rocket Lab", "ASTS": "AST SpaceMobile",
          "IONQ": "IonQ", "RGTI": "Rigetti", "QBTS": "D-Wave", "JPM": "JPMorgan", "GS": "Goldman Sachs", "BAC": "Bank of America",
          "WMT": "Walmart", "COST": "Costco", "NKE": "Nike", "LLY": "Eli Lilly", "NVO": "Novo Nordisk", "UNH": "UnitedHealth",
-         "XOM": "Exxon", "BA": "Boeing", "DIS": "Disney", "PYPL": "PayPal", "SOFI": "SoFi"}
+         "XOM": "Exxon", "BA": "Boeing", "DIS": "Disney", "PYPL": "PayPal", "SOFI": "SoFi",
+         "CRDO": "Credo", "ALAB": "Astera Labs", "CLS": "Celestica", "AI": "C3.ai", "TER": "Teradyne", "COHR": "Coherent",
+         "LITE": "Lumentum", "ONTO": "Onto Innovation", "NVTS": "Navitas"}
 # v1.4.0 (owner 10/2: "prioritize AI news (like at least top 10 popular moves)"): the AI names whose session moves are ranked
 # first; the top 10 by move (dollar volume breaks ties) always join the candidates
 AI = set("""NVDA AVGO AMD MU TSM ARM SMCI ORCL MSFT META GOOGL PLTR AMZN MRVL ANET DELL HPE CRWV NBIS VRT ASML AMAT LRCX KLAC
-INTC QCOM IBM SNOW NOW CRM ADBE SOUN PATH TEM APP AAPL TSLA APLD IREN CIFR WULF CEG VST GEV ETN""".split())   # + AI power / data centers
+INTC QCOM IBM SNOW NOW CRM ADBE SOUN PATH TEM APP AAPL TSLA APLD IREN CIFR WULF CEG VST GEV ETN
+CRDO ALAB CLS AI TER COHR LITE ONTO NVTS MDB NET OKLO SMR RKLB""".split())   # + AI power / data centers
 MACRO = ["ES=F", "NQ=F", "^GSPC", "^IXIC", "^VIX"]          # only levels with a second feed (app prices / Nasdaq COMP)
 KEY_ECON = re.compile(r"Nonfarm|Unemployment Rate|CPI|PCE|GDP|ISM|Jobless Claims|Retail Sales|FOMC|Fed (?:Chair|Governor)|Powell|"
                       r"Interest Rate Decision|JOLTS|Consumer Confidence|Michigan|PPI|Durable Goods|Payrolls|ADP", re.I)
@@ -123,6 +127,8 @@ def front_pages(hours):
 def mentions(title, sym):
     """A front-page headline names this company (its spoken name or its ticker as a word)."""
     nm = NAMES.get(sym, sym)
+    if sym in ("AI",):            # C3.ai's ticker is a word every AI headline uses: its name only
+        return bool(re.search(r"\bC3\.?ai\b", title, re.I))
     return bool(re.search(r"\b" + re.escape(nm) + r"(?:'s)?\b", title, re.I) or re.search(r"\b\(?" + re.escape(sym) + r"\)?\b", title))
 
 
@@ -287,9 +293,19 @@ def main():
                 return q.get("pct")
             ranked = sorted([s for s in uni if move(s) is not None], key=lambda s: -abs(move(s)))
             dv = lambda s: (cq.get(s) or {}).get("last") and (cq.get(s) or {}).get("vol") and cq[s]["last"] * cq[s]["vol"] or 0
-            ai_top = sorted([s for s in uni if s in AI and move(s) is not None], key=lambda s: (-round(abs(move(s)), 1), -dv(s)))[:10]
+            # v1.4.0 (owner 10/2): AI names ranked by |move| x headline coverage (the front pages are read now, before the
+            # pick; their count also feeds the salience later). SHORTS_FOCUS=ai takes the top 22 instead of 10
+            try:
+                front = front_pages({"preopen": 18, "midday": 16, "close": 14}[ED])
+            except Exception as e:                           # noqa: BLE001
+                log(f"front pages failed: {str(e)[:80]}"); front = []
+            cover = lambda s: sum(1 for t, *_ in front if mentions(t, s))
+            ai_top = sorted([s for s in uni if s in AI and move(s) is not None],
+                            key=lambda s: (-abs(move(s)) * (1 + cover(s)), -dv(s)))[:22 if FOCUS == "ai" else 10]
             # v1.4.0: the session's top 10 AI movers are always candidates, and lead the headline queries
-            cands = list(dict.fromkeys(ranked[:8] + ai_top + ranked[8:14] + [e["symbol"] for e in earn][:6] + ["NVDA", "MSFT", "GOOGL", "META", "AMZN", "AAPL"]))
+            cands = list(dict.fromkeys((ai_top + ranked[:4] if FOCUS == "ai" else ranked[:8] + ai_top + ranked[8:14]) + [e["symbol"] for e in earn][:6]
+                                       + [x for x in ["NVDA", "MSFT", "GOOGL", "META", "AMZN", "AAPL"] if x not in EXCL]))
+            cands = [x for x in cands if x not in EXCL]       # an earnings reporter told earlier today stays out too
             # second feed for every candidate
             def second(s):
                 n = nasdaq(s)
@@ -360,17 +376,13 @@ def main():
             # 1b. headlines
             hours = {"preopen": 18, "midday": 16, "close": 14}[ED]
             heads, hid = [], 0
-            queries = [(s, f'"{NAMES.get(s, s)}" stock') for s in cands[:16]] + [(s, f'"{NAMES.get(s, s)}" shares') for s in cands[:10]]
+            nq_ = 22 if FOCUS == "ai" else 16                 # the AI edition reads headlines for its wider field
+            queries = [(s, f'"{NAMES.get(s, s)}" stock') for s in cands[:nq_]] + [(s, f'"{NAMES.get(s, s)}" shares') for s in cands[:10]]
             queries += [("MACRO", "stock market today"), ("MACRO", "Nasdaq S&P 500 futures" if ED == "preopen" else "stocks Nasdaq S&P 500"),
                         ("MACRO", "Federal Reserve rates"), ("MACRO", "AI stocks")]
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(8) as ex:                 # ~30 feeds: 2 min sequential, ~20 s in parallel
-                fp = ex.submit(front_pages, hours)
-                got = list(ex.map(lambda tq: (tq[0], gnews(tq[1], hours)), queries))
-                try:
-                    front = fp.result()
-                except Exception as e:                       # noqa: BLE001
-                    log(f"front pages failed: {str(e)[:80]}"); front = []
+                got = list(ex.map(lambda tq: (tq[0], gnews(tq[1], hours)), queries))      # front pages: read above
             # the front pages: each headline under the candidate it names (else MACRO), and each candidate's salience
             for r in cand_rows:
                 r["front_page"] = sum(1 for t, *_ in front if mentions(t, r["symbol"]))

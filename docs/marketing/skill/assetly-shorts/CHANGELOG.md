@@ -86,6 +86,12 @@ the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 5
   deal."), and the judge is told, for every edition, that price moves and windows were checked in code on two feeds and
   two histories and only the event, cause and fact are its to judge (korea-converge 0eb2426's clause, ungated). Replay of
   the 12:49 pick: no drop on a percentage; the remaining drops are causes no two headlines state.
+- **A wider AI field** (owner 10/2: "there are so many AI-related relevant stocks"): + Credo, Astera Labs, Celestica, C3.ai
+  (name-only headline match), Teradyne, Coherent, Lumentum, Onto Innovation, Navitas in the universe; MongoDB, Cloudflare,
+  Oklo, NuScale, Rocket Lab also flagged AI. AI names rank by |move| x (1 + front-page mentions) (front pages now read
+  before the pick); SHORTS_FOCUS=ai takes the top 22 AI movers (+4 by move) and reads headlines for all 22. Test 12:54
+  (AI focus, big tech avoided): 22 candidates (AVGO TER HPE NVDA ARM RKLB COHR DELL CRDO NBIS ONTO ...), 309 headlines,
+  4 kept, 50 s.
 - Schedule (owner 10/2): midday runs 9:00 CT (prestage 8:30), 30 minutes after the open.
 - **TikTok by API** ("make sure you can update tiktok too as you do in Youtube"): `app/scripts/tiktok/auth.py` (Login Kit
   for Desktop, hex-S256 PKCE, loopback `http://127.0.0.1:53683/callback/`, token file chmod 600, no secret printed);
