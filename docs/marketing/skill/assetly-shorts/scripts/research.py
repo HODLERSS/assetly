@@ -22,6 +22,7 @@ from email.utils import parsedate_to_datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import (CT, ET, Stage, agree, cnbc, get, jdump, jload, llm, log, nasdaq, nasdaq_pre, rest)
 import kr as KRM
+import kr_news as KRN
 
 ED, DATE, W = sys.argv[1], sys.argv[2], sys.argv[3]
 REVERIFY = "--reverify" in sys.argv
@@ -92,7 +93,7 @@ def kr_data(now):
         w = KRM.windows(s, today_kr, q.get("last"), q.get("last2"))
         return {"symbol": s, "name": KRM.KR_NAMES.get(s, s), "market": "KR", "last": q.get("last"), "currency": "KRW",
                 "pct_feed1": a, "pct_feed2": b, "feeds_agree": agree(a, b, 0.35 if q.get("live") else 0.06),
-                "session": "live" if q.get("live") else "regular", "regular_pct": a, "ext1": None, "ext2": None, "win": w,
+                "session": "stale: " + q["stale"] if q.get("stale") else "live" if q.get("live") else "regular", "regular_pct": a, "ext1": None, "ext2": None, "win": w,
                 "feeds": "Yahoo (the app's source) + Daum (KRX days)"}
 
     def us_row(s):
@@ -108,6 +109,7 @@ def kr_data(now):
         r["window_moves"] = {f: v["a"] for f, v in r["win"].items() if v["ok"]}
     macro = {}
     try:
+        if KRM.krx_open_now(): raise RuntimeError("live session: the KOSPI level is left out (Yahoo's index runs ~20 min behind Naver's)")
         _, ks = KRM.yahoo_chart("^KS11", "5d", "1d"); kk = sorted(ks)
         nv = json.loads(get("https://m.stock.naver.com/api/index/KOSPI/basic", tries=2))
         a = round(100 * (ks[kk[-1]] / ks[kk[-2]] - 1), 2) if len(kk) >= 2 and kk[-1] == DATE else None
@@ -118,7 +120,7 @@ def kr_data(now):
     sox, soxn = cq.get(".SOX") or {}, nasdaq("SOX", "index") or {}
     macro[".SOX"] = {"name": "Philadelphia semiconductor index", "last": sox.get("last"), "pct": sox.get("pct"), "app_pct": soxn.get("pct"),
                      "feeds_agree": agree(sox.get("pct"), soxn.get("pct"), 0.06)}
-    hours = {"korea-open": 60, "korea-close": 96}[ED]
+    hours = {"korea-open": 60, "korea-midday": 60, "korea-close": 96}[ED]
     queries = [("000660.KS", '"SK hynix"'), ("000660.KS", '"SK hynix" shares'), ("005930.KS", '"Samsung Electronics" shares'),
                ("005930.KS", '"Samsung Electronics" chip'), ("042700.KS", '"Hanmi Semiconductor"'), ("MU", '"Micron" stock'),
                ("NVDA", '"Nvidia" stock'), ("MACRO", "Kospi chip stocks"), ("MACRO", "HBM memory demand"), ("MACRO", "memory chip prices"),
@@ -126,18 +128,37 @@ def kr_data(now):
     movers = sorted([r for r in rows if r["market"] == "US" and r["window_moves"].get(KRM.RANGE_FIELD[KRM.RANGE[ED]]) is not None],
                     key=lambda r: -abs(r["window_moves"][KRM.RANGE_FIELD[KRM.RANGE[ED]]]))[:3]
     queries += [(r["symbol"], f'"{r["name"]}" stock') for r in movers if r["symbol"] not in ("MU", "NVDA")]
-    with ThreadPoolExecutor(8) as ex:
+    # v1.2.0 (owner 10/1): Korean newsrooms too (Yonhap EN/KO, Korea Herald, BusinessKorea, Maeil, Chosun, Naver Finance's
+    # per-ticker news under each item's ORIGINAL press office), so a Korea claim can meet the two-publisher rule; the
+    # 10/2 19:32 korea-open refused with only 2 items on Google News alone. Publishers are canonical (kr_news.py): one
+    # newsroom one name, a Yonhap reprint counts as Yonhap, never "Naver".
+    with ThreadPoolExecutor(9) as ex:
+        kn = ex.submit(KRN.kr_headlines, hours)
         got = list(ex.map(lambda tq: (tq[0], gnews(tq[1], hours)), queries))
+        try:
+            krh = kn.result()
+        except Exception as e:                                   # noqa: BLE001 (Google News alone still runs)
+            log(f"Korean news failed: {str(e)[:80]}"); krh = []
     heads, hid = [], 0
     for tag, items in got:
         for t, pub, when, link in items[:16]:
+            pub = KRN.canonical_publisher(pub, t)
+            if not pub: continue
             hid += 1
             heads.append({"id": f"h{hid}", "tag": tag, "title": t, "publisher": pub, "utc": when.strftime("%Y-%m-%d %H:%M"),
                           "et": when.astimezone(ET).strftime("%a %-I:%M %p ET"), "link": link})
+    # the Korean feeds: names first (a ticker's own news), then the sector; capped so the prompt stays readable
+    krh = sorted(krh, key=lambda h: (h["tag"] == "MACRO", -h["when"].timestamp()))[:70]
+    for h in krh:
+        hid += 1
+        heads.append({"id": f"h{hid}", "tag": h["tag"], "title": h["title"], "publisher": h["publisher"],
+                      "utc": h["when"].strftime("%Y-%m-%d %H:%M"), "et": h["when"].astimezone(ET).strftime("%a %-I:%M %p ET"),
+                      "link": h["link"], "lang": h["lang"], "via": h["via"]})
     seen, dedup = set(), []
     for h in heads:
         k = (h["title"].lower()[:80], h["publisher"])
         if k not in seen: seen.add(k); dedup.append(h)
+    log(f"headlines: {len(dedup)} ({len(krh)} from Korean newsrooms, {len({h['publisher'] for h in dedup})} publishers)")
     return rows, macro, dedup
 
 
@@ -147,7 +168,9 @@ KR_PICK = """Pick the 6 most useful things a US retail investor with an AI-heavy
     edition: at least 3 items about Korean names (SK hynix, Samsung Electronics, Hanmi Semiconductor or a peer in QUOTES), the rest the
     US chip names they move with or the KOSPI. Lead with the multi-week trend and its cause, not the day's noise. Each QUOTES row has
     "win": {"m1"|"m3"|"ytd": {"a": pct, "b": pct, "ok": both histories agree}}; use a window only where ok is true. Upcoming events
-    (earnings, a results date) only when a headline states the date. Never a price target, never what to do."""
+    (earnings, a results date) only when a headline states the date. Never a price target, never what to do. Some HEADLINES are
+    Korean-language (Yonhap, Maeil Business, Naver Finance's press offices): cite them like any other, but write every field in
+    plain English and claim only what the Korean headline itself says (translate faithfully, add nothing)."""
 FIG_FIELDS = ("pct = the session move; for the long view use field \"" + KRM.RANGE_FIELD[KRM.RANGE[ED]] + "\" (the app pages show the "
               + KRM.RANGE[ED] + " change) with the value from win." + KRM.RANGE_FIELD[KRM.RANGE[ED]] + ".a; no other window field") if KR else \
     "pct of the session for this edition"
@@ -302,6 +325,15 @@ def main():
                                    "chip names a US investor holds (Micron, Nvidia): context only, never a call on the US open. The KRX "
                                    "session move (field pct) may be mentioned with 'so far' or 'in Seoul'. Tense: 'in Seoul', 'so far', "
                                    "'this month', 'over the past month'.",
+                     # v1.2.0 (owner 10/1): a third Seoul edition, mid-session
+                     "korea-midday": "SEOUL MIDDAY (the Short posts ~10:20 PM CT, around noon in Seoul, the KRX session half done; "
+                                     "US investors watch it the night before the next US session). MID-TO-LONG TERM: how Korea's AI "
+                                     "chip names (SK hynix, Samsung Electronics, Hanmi Semiconductor and peers) stand THIS YEAR (field "
+                                     "ytd, the window the app's pages show tonight) and WHY (HBM and AI memory demand, memory prices, "
+                                     "earnings dates, foreign investors), how they are trading so far in the Seoul session, and the "
+                                     "read-through for the US AI chip names a US investor holds (Micron, Nvidia): context only, never a "
+                                     "call on the US open. The KRX session move (field pct) may be mentioned with 'so far' or 'in "
+                                     "Seoul'. Tense: 'in Seoul', 'so far', 'at midday', 'this year'.",
                      "korea-close": "SEOUL CLOSE, THE LONG VIEW (the Short posts ~2:15 AM CT, after the KRX close at 3:30 PM KST; US "
                                     "investors read it in their morning). MID-TO-LONG TERM: the THREE-MONTH trend (field m3, the window the "
                                     "app's pages show) of Korea's AI chip names and the US chip names they move with, WHY over that "
@@ -447,7 +479,7 @@ def verify(items, byid, rowsym, macro):
                 ok = bool(w.get("ok")) and agree(v, w.get("a"), 0.06) and (not KR or fld == KRM.RANGE_FIELD[KRM.RANGE[ED]])
                 figs.append({**f, "feed1": w.get("a"), "feed2": w.get("b"), "ok": ok})
             elif r:
-                live = {"close": 0.051, "midday": 0.35, "preopen": 0.2, "korea-close": 0.051, "korea-open": 0.35}[ED]
+                live = {"close": 0.051, "midday": 0.35, "preopen": 0.2, "korea-close": 0.051, "korea-open": 0.35, "korea-midday": 0.35}[ED]
                 ok = r["feeds_agree"] and agree(v, r["pct_feed1"], 0.051 if ED != "preopen" else 0.15) and agree(v, r["pct_feed2"], live)
                 figs.append({**f, "feed1": r["pct_feed1"], "feed2": r["pct_feed2"], "ok": ok})
             elif m:

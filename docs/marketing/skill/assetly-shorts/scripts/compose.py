@@ -43,7 +43,7 @@ def card_conflicts(sym, row):
     return bad
 
 ED, DATE, W, OUT = sys.argv[1:5]
-LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE", "korea-open": "SEOUL OPEN", "korea-close": "SEOUL CLOSE"}
+LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE", "korea-open": "SEOUL OPEN", "korea-midday": "SEOUL MIDDAY", "korea-close": "SEOUL CLOSE"}
 KR = ED in KRM.KR_EDITIONS
 MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 FOCUS = {"pos": 640, "home": 620, "brief": 1000, "news": 1000, "ask_q": 1450, "ask_a": 900}
@@ -126,7 +126,7 @@ def first_visible(take, t0, t1, pattern, step=0.1):
 # it near the old pace (~2.55-2.8 w/s). SHORTS_VOICE=mixed restores 1.12 for the gpt-audio items and the question.
 T_GPT = 1.12 if os.environ.get("SHORTS_VOICE", "minjae") == "mixed" else 1.06
 FOLLOW = "Follow for the open, midday and close"     # the end card's one CTA: true (three editions every trading day)
-FOLLOW_KR = "Follow for Korea's chips, twice a day"   # v1.1.0: the Seoul editions run twice every KRX trading day
+FOLLOW_KR = "Follow for Korea's chips, three times a day"   # v1.2.0: open, midday and close every KRX trading day
 if KR: FOLLOW = FOLLOW_KR
 HERO_MIN = 1.0                                       # a smaller move is not a thumbnail hook: the headline cover stays
 BAIT = {"#viral", "#fyp", "#foryou", "#foryoupage", "#trending", "#explore", "#viralshorts", "#shortsfeed"}
@@ -152,7 +152,7 @@ def cover_hero(story, res, beats, ext):
             sc = scr.get(f"pos_{sym}") or {}
             v, fld = sc.get("range_move"), KRM.RANGE_FIELD.get(sc.get("range") or "")
             fig = next((f for f in ref.get("figures", []) if f.get("symbol") == sym and f.get("field") == fld and f.get("ok")), None)
-            if v is None or not fig or (v > 0) != (fig["value"] > 0) or abs(v - fig["value"]) > (0.6 if ED == "korea-open" else 0.06): continue
+            if v is None or not fig or (v > 0) != (fig["value"] > 0) or abs(v - fig["value"]) > (0.6 if ED in KRM.LIVE_EDITIONS else 0.06): continue
             label, src = {"m1": "PAST MONTH", "m3": "PAST 3 MONTHS", "ytd": "THIS YEAR"}[fld], f"{sym} page {sc.get('range')} {v:+.2f}% vs histories {fig['feed1']:+.2f}/{fig['feed2']:+.2f}"
         elif ch.get("label") and sym in ext:
             v, label, src = float(ext[sym]["pct"]), ch["label"], f"{ch['label'].lower()} chip ({sym}, two feeds)"
@@ -316,7 +316,7 @@ def main():
         from datetime import timedelta
         snap = day0 + timedelta(minutes=max(mins))
         hm = snap.strftime("%-I:%M %p")
-        stamp = {"edition": {"preopen": "Pre-open", "midday": "Midday", "close": "Close", "korea-open": "Seoul open", "korea-close": "Seoul close"}[ED],
+        stamp = {"edition": {"preopen": "Pre-open", "midday": "Midday", "close": "Close", "korea-open": "Seoul open", "korea-midday": "Seoul midday", "korea-close": "Seoul close"}[ED],
                  "text": f"{snap.strftime('%b %-d')} · {hm} ET", "asof": snap.strftime("%Y-%m-%d %H:%M"),
                  "line": f"Data as of {snap.strftime('%b %-d, %Y')} {hm} ET", "sources": src}
         hero = cover_hero(story, res, beats, ext)

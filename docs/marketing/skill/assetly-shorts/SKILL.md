@@ -1,9 +1,9 @@
 ---
 name: assetly-shorts
-description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, commentary in Minjae's voice, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day plus two Korea AI-chip editions per KRX trading day (korea-open, korea-close); uploads only with --upload (YouTube private; TikTok via API or the queue).
+description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, commentary in Minjae's voice, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day plus three Korea AI-chip editions per KRX trading day (korea-open, korea-midday, korea-close); uploads only with --upload (YouTube private; TikTok via API or the queue).
 ---
 
-# Assetly market Shorts, v1.1.0
+# Assetly market Shorts, v1.2.0
 
 Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratch every run:
 
@@ -15,18 +15,21 @@ Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratc
 
 Weekends and US market holidays: skip (the app's own calendar, `supabase/functions/_shared/calendar.ts`).
 
-**Korea editions (v1.1.0, owner 10/1):** two more Shorts per KRX trading day for US investors with AI-heavy portfolios,
+**Korea editions (v1.1.0, owner 10/1; korea-midday v1.2.0):** three more Shorts per KRX trading day for US investors with AI-heavy portfolios,
 mid-to-long term (never day to day): Korea's AI-chip names (SK hynix, Samsung Electronics, Hanmi Semiconductor and peers)
 and the US chip names they move with (Micron, Nvidia ...).
 
 | Edition | Ready by | Covers | App brief | Pages on | Ask on camera |
 |---|---|---|---|---|---|
 | `korea-open` | ~8:00 PM CT (9:32 AM KST start, the evening before the US session) | the past-month move of Korea's AI-chip names and why, the session so far in Seoul, the read-through for US chip names as context | kr_open | 1M | "How exposed is my portfolio to memory chips?" |
+| `korea-midday` | ~10:20 PM CT (12:00 PM KST start, the KRX session half done) | how the names stand this year and why, how they trade so far in Seoul, the read-through for US chip names (mid/long term) | kr_open (the app has no midday Korea brief; kr_open is the live one) | YTD | "How much of my portfolio is in Korean stocks?" |
 | `korea-close` | ~2:10 AM CT (3:45 PM KST start, read in the US morning) | the long view: three-month trend and why, dated upcoming events, what it means for an AI-heavy portfolio's concentration | kr_close | 3M | "What's my AI chip concentration?" |
 
-Accounts `minjae.m.lee+daily015` (korea-open) and `+daily016` (korea-close), same funnel exclusion. KRX holidays skip
+Accounts `minjae.m.lee+daily015` (korea-open), `+daily017` (korea-midday) and `+daily016` (korea-close), same funnel exclusion. KRX holidays skip
 (the KR calendar). Quotes: Yahoo (the app's source) + Daum's KRX official days (`scripts/kr.py`; Naver is not a KRX feed in
-the evening: Nextrade after-market); windows on both histories; won at the app's USDKRW and CNBC's KRW=. No "today"
+the evening: Nextrade after-market); a live KRX quote counts only when its bar is inside today's session (v1.2.0
+stale-session guard: Yahoo lags ~20 min, and before the first bar range=1d still serves yesterday; facts withholds a day move
+the app's calendar.ts places in an earlier session); windows on both histories; won at the app's USDKRW and CNBC's KRW=. No "today"
 portfolio figure (Home's Today mixes US and KRX sessions): the portfolio line is the all-time gain. Times and the DST-proof
 launchd setup: `references/schedule.md`.
 
@@ -56,7 +59,7 @@ private only) and the main session decides when the schedule turns it on.
 
 | Stage | Script | Judgment (LLM) | Hard checks (code) |
 |---|---|---|---|
-| research | `research.py` | MARA MiniMax-M3 (OpenRouter fallback) ranks 6 items: cover, WHY, attributed READ, cited headline ids | two quote feeds agree (CNBC + Nasdaq; extended hours on both); >= 2 independent sources (two publishers, two headlines) for WHY and READ; direction and strength words vs the feeds; a judge call re-reads the cited headlines and must confirm; one repair round; < 3 items = refuse |
+| research | `research.py` (+ `kr_news.py` for Korea) | MARA MiniMax-M3 (OpenRouter fallback) ranks 6 items: cover, WHY, attributed READ, cited headline ids | two quote feeds agree (CNBC + Nasdaq; extended hours on both); >= 2 independent sources (two publishers, two headlines) for WHY and READ (Korea: Google News + Korean newsrooms and Naver Finance under the ORIGINAL publisher, a Yonhap reprint counts once); direction and strength words vs the feeds; a judge call re-reads the cited headlines and must confirm; one repair round; < 3 items = refuse |
 | book | `design_book.py` | - | ~$150-300k; story names held (a falling story small); AI leaders; hot names; cost inside each 52-week range; leans positive only when the day's real moves allow |
 | account | `account.py` | - | seeds `minjae.m.lee+daily0NN` ("My portfolio"; close 11, preopen 12, midday 13) through the real pipeline; checks the brief for jargon / edition-wrong words / "demo" and regenerates up to twice |
 | facts | `facts.py` | - | every portfolio figure the app shows recomputed from Nasdaq; disagreement drops it; 7/30-day windows from app history and Nasdaq history |

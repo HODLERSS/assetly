@@ -60,3 +60,11 @@ a window sentence ("fell 28.4% over three months") against the page's own chart 
 box on the same line) instead of the session move; Q38's hero is that header change (PAST MONTH / PAST 3 MONTHS); Q39 the
 Korea follow line. KRX figures come from Yahoo and Daum's KRX days (kr.py), windows from both histories, won from the app's
 USDKRW and CNBC's KRW= (facts refuses when the two rates differ by more than 0.4%).
+
+v1.2.0: `korea-midday` reads like korea-open (live session tolerances) with "this year" / "at midday" (Q25), "Seoul midday"
+(Q31), the YTD header (Q33) and THIS YEAR (Q38); Q39 the line "Follow for Korea's chips, three times a day". Stale-session
+guard: a day move counts only when it was printed in the current session (the app's calendar.ts `withholdStaleMoves`;
+Yahoo's KRX feed lags ~20 min, so before the first bar a row still holds yesterday's move): facts withholds it, kr.py's live
+quote waits and then refuses it, and an Ask day move verifies only when both feeds carry it and agree. Q28 accepts an
+initialism heard letter by letter ("AI" -> "hey i"). Korean newsrooms count as publishers under their ORIGINAL name
+(kr_news.py; a Yonhap reprint counts once, never "Naver").

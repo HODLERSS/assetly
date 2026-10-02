@@ -2,7 +2,7 @@
 # One entry per edition: research -> portfolio -> account + brief -> facts -> take (with Ask) -> Ask check -> storyline
 # -> edit plan -> build (voices, edit, mix) -> QA gate -> deliver. Refuses (exit 1, nothing in docs/) if any metric fails.
 #
-#   run.sh preopen|midday|close|korea-open|korea-close [--date YYYY-MM-DD] [--test] [--account N] [--seed N] [--from STAGE] [--work DIR]
+#   run.sh preopen|midday|close|korea-open|korea-midday|korea-close [--date YYYY-MM-DD] [--test] [--account N] [--seed N] [--from STAGE] [--work DIR]
 #
 #   --date     the market date (default: today in New York; the Korea editions: today in Seoul, the KRX session's date)
 #   --test     allowed off-hours / off-calendar; delivers to docs/marketing/shorts/<date>-<edition>-test<k>/
@@ -23,10 +23,10 @@ if [ -z "${SHORTS_FROZEN:-}" ]; then
   cp "$(cd "$(dirname "$0")/.." && pwd)/SKILL.md" "$F/SKILL.md" 2>/dev/null || true    # the version this run is
   SHORTS_FROZEN="$F" exec bash "$F/run.sh" "$@"
 fi
-ED="${1:?usage: run.sh preopen|midday|close|korea-open|korea-close [--date D] [--test]}"; shift
+ED="${1:?usage: run.sh preopen|midday|close|korea-open|korea-midday|korea-close [--date D] [--test]}"; shift
 case "$ED" in preopen|midday|close) MKT=US; DATE=$(TZ=America/New_York date +%F) ;;
-  korea-open|korea-close) MKT=KR; DATE=$(TZ=Asia/Seoul date +%F) ;;          # v1.1.0: the KRX session, dated in Seoul
-  *) echo "edition must be preopen, midday, close, korea-open or korea-close"; exit 2 ;; esac
+  korea-open|korea-midday|korea-close) MKT=KR; DATE=$(TZ=Asia/Seoul date +%F) ;;   # v1.1.0: the KRX session, dated in Seoul (v1.2.0: + korea-midday)
+  *) echo "edition must be preopen, midday, close, korea-open, korea-midday or korea-close"; exit 2 ;; esac
 TEST=0; ACCT=""; SEED="$RANDOM"; FROM=""; W=""; UPLOAD=0
 while [ $# -gt 0 ]; do case "$1" in
   --date) DATE="$2"; shift 2 ;; --test) TEST=1; shift ;; --account) ACCT="--account $2"; shift 2 ;;
@@ -73,7 +73,7 @@ if want ask; then
     # takes 1-2 also want clean wording (no desk jargon, no pre-open "today" for yesterday); take 3 accepts it if the figures pass
     # mid-session the book moves between the facts stage and the take (10/1 midday: facts $4,368, Home +$3,965 13 min
     # later): re-verify the portfolio figures against the account at take time, so what Home shows is checkable
-    if [ "$ED" = midday ] || [ "$ED" = korea-open ]; then python3 facts.py "$ED" "$W" || echo "WARN: the take-time facts refresh failed (network?); keeping the earlier facts"; fi
+    if [ "$ED" = midday ] || [ "$ED" = korea-open ] || [ "$ED" = korea-midday ]; then python3 facts.py "$ED" "$W" || echo "WARN: the take-time facts refresh failed (network?); keeping the earlier facts"; fi
     if SHORTS_ASK_STRICT=$([ $take -lt 3 ] && echo 1 || echo 0) python3 facts.py "$ED" "$W" --ask; then ok=1; break; fi
     [ $take -lt 3 ] && { echo "Ask answer failed its check: take $((take + 1))"; python3 record.py "$ED" "$W"; }
   done

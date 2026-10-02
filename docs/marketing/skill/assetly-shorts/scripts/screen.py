@@ -167,7 +167,7 @@ def ask_take(W):
 def ext_quotes(ed, syms):
     """Fresh extended-hours moves on both feeds (pre-open: PRE_MKT; close: POST_MKT). Kept only when the feeds agree."""
     from lib import cnbc, nasdaq, nasdaq_pre, agree, now_et
-    if ed in ("midday", "korea-open", "korea-close") or not syms: return {}   # KRX: no extended-hours chip (v1.1.0)
+    if ed in ("midday", "korea-open", "korea-midday", "korea-close") or not syms: return {}   # KRX: no extended-hours chip (v1.1.0)
     kind, label = ("pre", "PRE-MARKET") if ed == "preopen" else ("post", "AFTER HOURS")
     cq, out = cnbc(list(syms)), {}
     for s in syms:

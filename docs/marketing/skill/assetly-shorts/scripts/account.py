@@ -6,7 +6,7 @@
     account.py <edition> <work-dir> [--account N]
 
 Accounts: minjae.m.lee+daily0NN@gmail.com (the +daily prefix is excluded from the owner's funnel stats), display
-name "My portfolio". Default N: close 11, preopen 12, midday 13. Password in ~/.private_keys/assetly-daily0NN.txt.
+name "My portfolio". Default N: close 11, preopen 12, midday 13, korea-open 15, korea-close 16, korea-midday 17. Password in ~/.private_keys/assetly-daily0NN.txt.
 Writes <work>/account.json ({uid, email, cred, book rows, brief}).
 """
 import json, os, re, subprocess, sys
@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import APP, EDITIONS, ET, Stage, jdump, jload, log, now_et, rest, srk
 
 ED, W = sys.argv[1], sys.argv[2]
-N = int(sys.argv[sys.argv.index("--account") + 1]) if "--account" in sys.argv else {"close": 11, "preopen": 12, "midday": 13, "korea-open": 15, "korea-close": 16}[ED]
+N = int(sys.argv[sys.argv.index("--account") + 1]) if "--account" in sys.argv else {"close": 11, "preopen": 12, "midday": 13, "korea-open": 15, "korea-close": 16, "korea-midday": 17}[ED]
 BRIEF = EDITIONS[ED]
 JARGON = re.compile(r"\b(thesis|theses|tape|tapes|catalysts?|tripwire|setup|book(?! value)|bps|basis points|capex|EPS|beta|alpha)\b|\bprints?\b(?=\s|[.,])|\bdemo\b|—", re.I)
 WRONG = {"close": re.compile(r"\bthis morning\b|\bso far today\b|\bbefore the bell\b|\bfutures point\b", re.I),

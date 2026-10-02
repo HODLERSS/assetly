@@ -16,7 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import _num, cnbc, get, log
 
 KST = ZoneInfo("Asia/Seoul")
-KR_EDITIONS = ("korea-open", "korea-close")
+KR_EDITIONS = ("korea-open", "korea-midday", "korea-close")
+LIVE_EDITIONS = ("korea-open", "korea-midday")   # filmed while the KRX session trades: live tolerances
 # the Korean AI-chip universe (KOSPI + KOSDAQ): memory, HBM equipment and packaging, substrates
 KR_UNIVERSE = ["000660.KS", "005930.KS", "042700.KS", "009150.KS", "000990.KS", "403870.KQ", "058470.KQ", "240810.KQ", "039030.KQ"]
 KR_NAMES = {"000660.KS": "SK hynix", "005930.KS": "Samsung Electronics", "042700.KS": "Hanmi Semiconductor",
@@ -27,9 +28,11 @@ US_CHIPS = ["NVDA", "MU", "AMD", "AVGO", "TSM", "SNDK", "WDC", "STX", "ASML", "L
 MEMORY = {"MU", "000660.KS", "005930.KS", "SNDK", "WDC", "STX"}
 CHIPS = set(US_CHIPS) | set(KR_UNIVERSE)
 WINDOWS = {"m1": 1, "m3": 3, "ytd": None}            # the app's 1M / 3M / YTD chart ranges (chartRange.ts)
-RANGE = {"korea-open": "1M", "korea-close": "3M"}     # the range the story pages are filmed on
+RANGE = {"korea-open": "1M", "korea-midday": "YTD", "korea-close": "3M"}     # the range the story pages are filmed on
+WIN_PHRASE = {"1M": "this month", "3M": "over three months", "YTD": "this year"}   # how a line names that window
 RANGE_FIELD = {"1M": "m1", "3M": "m3", "YTD": "ytd"}
-ASKQ = {"korea-open": "How exposed is my portfolio to memory chips?", "korea-close": "What's my AI chip concentration?"}
+ASKQ = {"korea-open": "How exposed is my portfolio to memory chips?", "korea-midday": "How much of my portfolio is in Korean stocks?",
+        "korea-close": "What's my AI chip concentration?"}
 
 
 def is_kr(sym):
@@ -78,9 +81,62 @@ def krx_open_now():
     return z.weekday() < 5 and 540 <= m < 930
 
 
+def kr_quote_live(sym, session_date=None, waits=(20, 20)):
+    """During the KRX session, the two feeds at the SAME minute: Yahoo runs ~20 min behind (10/1 9:37 KST: Yahoo's last
+    bar 9:17, Daum live), so a live-vs-live comparison disagreed on every name and the first korea-open refused. Feed a:
+    Yahoo's last 1-minute bar (what the app's price-sync stores and the page shows); feed b: Daum's per-minute KRX trade
+    at that minute (`quote/<code>/times`), both against the previous KRX close (Yahoo meta / Daum quote).
+
+    Stale-session guard (v1.2.0; the app's 10/2 fix ff99849): before Yahoo's first bar of the day (~9:20 KST) range=1d
+    still returns YESTERDAY's bars, and their move against the day before would read as today's. A bar counts only when it
+    is inside today's KRX session (dated `session_date`, at or after 9:00 KST); likewise Daum's minute rows. Otherwise wait
+    and retry (`waits`, seconds), then return {"live": True, "stale": why} with no figures: the name's move is refused."""
+    session_date = session_date or kst_now().strftime("%Y-%m-%d")
+    why = ""
+    for i in range(len(waits) + 1):
+        if i: log(f"live quote {sym}: {why}; retry in {waits[i - 1]} s"); time.sleep(waits[i - 1])
+        d = json.loads(get(f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range=1d&interval=1m",
+                           headers={"User-Agent": "Mozilla/5.0"}, tries=4))["chart"]["result"][0]
+        bars = [(t, c) for t, c in zip(d.get("timestamp") or [], d["indicators"]["quote"][0].get("close") or []) if c is not None]
+        if not bars: why = "Yahoo has no bar yet"; continue
+        t, last = bars[-1]
+        at = datetime.fromtimestamp(t, KST)
+        if not in_session(at, session_date):
+            why = f"Yahoo's last bar is {at:%Y-%m-%d %H:%M} KST, not inside the {session_date} session"; continue
+        break
+    else:
+        return {"live": True, "stale": why}
+    prev = float(d["meta"].get("chartPreviousClose") or d["meta"].get("previousClose"))
+    hm = at.strftime("%H:%M")
+    out = {"live": True, "last": float(last), "prev": prev, "pct": round(100 * (last / prev - 1), 2), "asof_kst": hm}
+    q = daum(f"quotes/{_code(sym)}?summary=false", sym)
+    prev2 = float(q["prevClosingPrice"])
+    rows = []
+    for page in (1, 2, 3):
+        rows += (daum(f"quote/{_code(sym)}/times?page={page}&perPage=30", sym).get("data") or [])
+        if any(r["tradeTime"][:5] <= hm for r in rows): break
+    # a minute row from another day (Daum's list before today's first trade) is not this session's
+    same = [r for r in rows if r["tradeTime"][:5] <= hm and str(r.get("date") or session_date)[:10] == session_date]
+    if same:
+        r = max(same, key=lambda r: r["tradeTime"])
+        out.update(last2=float(r["tradePrice"]), pct2=round(100 * (r["tradePrice"] / prev2 - 1), 2), asof2_kst=r["tradeTime"][:5])
+    return out
+
+
+def in_session(at, session_date):
+    """Is the KST datetime `at` inside the KRX regular session dated `session_date` (9:00-15:30, plus the closing print)?"""
+    m = at.hour * 60 + at.minute
+    return at.strftime("%Y-%m-%d") == session_date and 540 <= m <= 935
+
+
 def kr_quote(sym, session_date):
     """Two KRX feeds for the session dated `session_date` (KST): {last, pct (Yahoo), last2, pct2 (Daum), live}."""
     live = krx_open_now() and kst_now().strftime("%Y-%m-%d") == session_date
+    if live:
+        try:
+            return kr_quote_live(sym, session_date)
+        except Exception as e:                       # noqa: BLE001
+            log(f"live quote {sym}: {str(e)[:80]}"); return {"live": True}
     out = {"live": live}
     try:
         meta, closes = yahoo_chart(sym, "5d", "1d")

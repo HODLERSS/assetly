@@ -14,7 +14,8 @@ SB = "https://hhdpthrfmsdmxdrfckxq.supabase.co"; REF = "hhdpthrfmsdmxdrfckxq"
 SKILL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
 EDITIONS = {"preopen": "morning", "midday": "midday", "close": "close",     # skill edition -> app brief edition
-            "korea-open": "kr_open", "korea-close": "kr_close"}            # v1.1.0: the Seoul editions (kr.py)
+            "korea-open": "kr_open", "korea-close": "kr_close",           # v1.1.0: the Seoul editions (kr.py)
+            "korea-midday": "kr_open"}         # v1.2.0: the app has no midday Korea brief; kr_open is the live one until 15:30 KST
 
 
 def log(*a):
@@ -237,6 +238,27 @@ console.log(JSON.stringify({{ trading: isTradingDay("{mkt}", "{ymd}") }}));"""
         return json.loads(r.stdout.strip().splitlines()[-1])["trading"], r.stderr[-200:]
     except Exception:                                # noqa: BLE001
         return None, (r.stdout + r.stderr)[-300:]
+
+
+def stale_moves(rows, now_iso=None):
+    """The symbols whose stored day move is NOT the current session's, by the app's own rule (calendar.ts
+    withholdStaleMoves / dayMoveCurrent, the 10/2 fix ff99849): Yahoo's KRX feed lags ~20 min, so before the day's first
+    bar a KRX row still holds yesterday's close and change_pct. rows: [{symbol, change_pct, as_of, kind, currency}].
+    Raises when the check cannot run (a figure we cannot place in its session is not used)."""
+    p = f"/tmp/assetly-shorts-stale-{os.getpid()}.ts"
+    open(p, "w").write(f"""import {{ withholdStaleMoves }} from "{APP}/supabase/functions/_shared/calendar.ts";
+const rows = JSON.parse(await new Response(Deno.stdin.readable).text());
+const now = {json.dumps(now_iso)} ? new Date({json.dumps(now_iso)}) : new Date();
+console.log(JSON.stringify([...withholdStaleMoves(rows, now)]));""")
+    try:
+        r = subprocess.run(["npx", "-y", "deno@2", "run", "-A", p], input=json.dumps(
+            [{k: x.get(k) for k in ("symbol", "change_pct", "as_of", "kind", "currency")} for x in rows]),
+            capture_output=True, text=True, timeout=120)
+        return set(json.loads(r.stdout.strip().splitlines()[-1]))
+    except Exception as e:                           # noqa: BLE001
+        raise RuntimeError(f"stale-move check failed: {(r.stderr if 'r' in dir() else str(e))[-200:]}") from None
+    finally:
+        os.remove(p)
 
 
 def now_et():

@@ -129,7 +129,13 @@ def main():
         words_of = lambda z: "".join(w for w in z.split() if not (re.search(r"\d", w) or w in NUMW))
         exn = lambda z: re.sub(r"(^|\s)x(?=\s|dividend|$)", r"\1ex", z)           # "ex-dividend" heard as "x dividend"
         joined = lambda x, y: bool(words_of(x)) and words_of(exn(x)) == words_of(exn(y))
-        brand = lambda x, y: (x != "-" and all(w in proper for w in x.split()) and difflib.SequenceMatcher(a=x.replace(" ", ""), b=y.replace(" ", "")).ratio() >= 0.6) \
+        # an initialism heard letter by letter (10/2 korea-open: "AI lifted Micron" -> "hey i lifted", mix AND dry track):
+        # every heard word must be that letter's name or a sound-alike of it, one per letter
+        caps = {w.lower() for w in re.findall(r"\b[A-Z]{2,4}\b", spoken)}
+        LETTER = {"a": {"a", "ay", "eh", "hey", "hay"}, "i": {"i", "eye", "aye"}, "e": {"e", "ee"}, "u": {"u", "you"}, "s": {"s", "es"}}
+        initialism = lambda x, y: x in caps and len(y.split()) == len(x) and all(
+            w in LETTER.get(c, {c}) for c, w in zip(x, y.split()))
+        brand = lambda x, y: initialism(x, y) or (x != "-" and all(w in proper for w in x.split()) and difflib.SequenceMatcher(a=x.replace(" ", ""), b=y.replace(" ", "")).ratio() >= 0.6) \
             or (x == "-" and y in ("you", "uh", "um", "thank you", "the")) \
             or homophone(x, y) \
             or numalike(x, y) or joined(x, y)    # weak/week, beat/bead, once the figures (which may differ in format) are set aside
@@ -291,7 +297,7 @@ def main():
         hero = day.get("hero")
         if hero:
             lab_ok = hero["label"] in ({"preopen": ("PRE-MARKET",), "midday": ("SO FAR TODAY", "PRE-MARKET"),
-                                        "close": ("TODAY", "AFTER HOURS"), "korea-open": ("PAST MONTH",),
+                                        "close": ("TODAY", "AFTER HOURS"), "korea-open": ("PAST MONTH",), "korea-midday": ("THIS YEAR",),
                                         "korea-close": ("PAST 3 MONTHS",)}[ED])
             fig_a = hero["fig"].replace("\u2212", "-")
             in_beat = 0 <= hero["beat"] < len(seen) and shows(fig_a, figs_of(seen[hero["beat"]]))
@@ -311,7 +317,7 @@ def main():
         fw = set(re.findall(r"[a-z]+", fol.lower()))
         hit = lambda rr: bool(fw) and len(fw & set(re.findall(r"[a-z]+", " ".join(r[0] for r in rr).lower()))) >= 0.8 * len(fw)
         beg = re.search(r"\b(like and subscribe|smash|hit (the )?like|subscribe now)\b", " ".join(r[0] for r in r1 + r2), re.I)
-        ok39 = fol in ("Follow for the open, midday and close", "Follow for Korea's chips, twice a day") and hit(r1) and hit(r2) and not beg
+        ok39 = fol in ("Follow for the open, midday and close", "Follow for Korea's chips, three times a day") and hit(r1) and hit(r2) and not beg
         row("Q39", "End card: the one follow line (true: three editions every trading day) readable for >= 1 s, no like/subscribe begging",
             ok39, f"\"{fol}\" at {L - 1.05:.2f}s {'read' if hit(r1) else 'NOT read'}, at {L - 0.05:.2f}s {'read' if hit(r2) else 'NOT read'}"
                   + (f"; BEGGING '{beg.group(0)}'" if beg else ""))
@@ -340,7 +346,7 @@ def main():
             delta = abs((shown - datetime.strptime(snap, "%Y-%m-%d %H:%M ET")).total_seconds()) / 60
         except ValueError:
             delta = 1e9
-        label_ok = st.get("edition") == {"preopen": "Pre-open", "midday": "Midday", "close": "Close", "korea-open": "Seoul open", "korea-close": "Seoul close"}[ED]
+        label_ok = st.get("edition") == {"preopen": "Pre-open", "midday": "Midday", "close": "Close", "korea-open": "Seoul open", "korea-midday": "Seoul midday", "korea-close": "Seoul close"}[ED]
         from PIL import Image
         import numpy as np
         sp = os.path.join(B, "stamp.png"); fails, n = [], 0
@@ -410,6 +416,9 @@ def write_sources(ST, res, facts, askc, story, byid):
          "quote feeds (CNBC quote service and the Nasdaq quote API; after-hours and premarket on both feeds' extended quotes). A figure the",
          "sources disagree on is dropped, not guessed.\n"]
     if ED in KRM.KR_EDITIONS:
+        L += ["Korean newsrooms too (v1.2.0): Yonhap (English and Korean RSS), Korea Herald, BusinessKorea, Maeil Business, Chosun Ilbo and",
+              "Naver Finance's per-ticker news, each under its ORIGINAL press office (never \"Naver\"); a Yonhap story reprinted elsewhere",
+              "counts once, as Yonhap.\n"]
         L += ["KRX figures (v1.1.0): Yahoo (the app's own price source) and Daum Finance's KRX official daily rows (Daum's live quote during",
               "the session); 1M / 3M / YTD windows on Yahoo's and Daum's (KRX) or Nasdaq's (US) histories; won converted at the app's USDKRW and",
               "CNBC's KRW=. Naver is not used: its evening price is the Nextrade after-market one, not the KRX close.\n"]
@@ -441,7 +450,7 @@ def write_script(ST, day, story, facts, tm):
         L.append(f"| {i + 1} | {t:.2f}-{t + b['dur']:.2f} | take {b['start']:.2f}s | {src.get('note', '')} |"); t += b["dur"]
     L += ["", "## The portfolio on screen", "", "```", json.dumps(facts["portfolio"], indent=1), "```"]
     L += ["", "| Holding | Value | Day % | Gain |", "|---|---|---|---|"]
-    L += [f"| {h['name']} | ${h['value']:,} | {h['day_pct']:+.2f}% | ${h['gain_usd']:,} |" for h in facts["holdings"]]
+    L += [f"| {h['name']} | ${h['value']:,} | {'withheld' if h['day_pct'] is None else format(h['day_pct'], '+.2f') + '%'} | ${h['gain_usd']:,} |" for h in facts["holdings"]]
     open(os.path.join(ST, "script.md"), "w").write("\n".join(L) + "\n")
 
 

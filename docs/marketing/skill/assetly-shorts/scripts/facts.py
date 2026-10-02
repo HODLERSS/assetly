@@ -16,7 +16,7 @@ With --ask (after the take): every $ and % figure in the on-screen Ask answer mu
 import json, os, re, sys
 from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from lib import ET, Stage, _num, agree, get, jdump, jload, log, nasdaq, rest
+from lib import ET, Stage, _num, agree, get, jdump, jload, log, nasdaq, rest, stale_moves
 import kr as KRM
 
 ED, W = sys.argv[1], sys.argv[2]
@@ -55,7 +55,16 @@ def short_name(n):
 def main_facts():
     acct = jload(os.path.join(W, "account.json")); uid = acct["uid"]
     with Stage(W, "facts.portfolio"):
-        rows = rest(W, f"portfolio?select=symbol,name,kind,qty,price,value,change_pct,avg_cost,total_gl,currency&user_id=eq.{uid}")
+        rows = rest(W, f"portfolio?select=symbol,name,kind,qty,price,value,change_pct,as_of,avg_cost,total_gl,currency&user_id=eq.{uid}")
+        # v1.2.0 stale-session guard (the app's 10/2 fix): a day move printed in an earlier session is not today's (before
+        # the first KRX bar the row still holds yesterday's +3.2%); it is withheld, so no day figure and no Ask check uses it
+        try:
+            stale = stale_moves(rows)
+        except RuntimeError as e:
+            sys.exit(f"REFUSE: {e}")
+        for r in rows:
+            if r["symbol"] in stale: r["change_pct"] = None
+        if stale: log(f"day moves withheld (not this session's): {sorted(stale)}")
         mdate0 = jload(os.path.join(W, "research-data.json"))["date"]
         if any(r.get("currency") == "KRW" for r in rows):
             # Home converts won holdings at the app's USDKRW (format.ts convertCcy); the recompute uses CNBC's rate and
@@ -153,7 +162,7 @@ def main_facts():
         for r in eq:
             s = r["symbol"]; n = nq[s]
             hrow = {"symbol": s, "name": r.get("name") or s, "value": round(float(r["value"])), "value_n": round(float(r["qty"]) * (n.get("last") or 0)),
-                    "day_pct": float(r["change_pct"] or 0),
+                    "day_pct": None if r["change_pct"] is None else float(r["change_pct"]),
                     "day_pct_nasdaq": n.get("pct"), "gain_usd": round(float(r["total_gl"] or 0)),
                     "gain_pct": 100 * float(r["total_gl"] or 0) / (float(r["qty"]) * float(r["avg_cost"])), "weight": 100 * float(r["value"]) / app_total}
             for lab, _ in CUTS:
@@ -205,7 +214,11 @@ def main_ask():
                 (cands_pct if "pct" in c["figure"] else cands_usd).append(abs(c[side]))
         for h in f["holdings"]:
             cands_usd += [h["value"], abs(h["gain_usd"])]
-            cands_pct += [abs(x) for x in (h["day_pct"], h["day_pct_nasdaq"], h["gain_pct"], h["weight"]) if x is not None]
+            cands_pct += [abs(x) for x in (h["gain_pct"], h["weight"]) if x is not None]
+            # a day move verifies only when both feeds carry it for this session and agree (v1.2.0: alone, the app's
+            # row could be yesterday's KRX move before the first bar, and the second feed's alone is one source)
+            if h["day_pct"] is not None and h["day_pct_nasdaq"] is not None and agree(h["day_pct"], h["day_pct_nasdaq"], 0.35):
+                cands_pct += [abs(h["day_pct"]), abs(h["day_pct_nasdaq"])]
             for k, v in h.items():
                 if k.endswith("_usdA") and v is not None and h.get(k[:-1] + "N") is not None and abs(v - h[k[:-1] + "N"]) <= max(3, 0.01 * abs(v)):
                     cands_usd += [abs(v), abs(h[k[:-1] + "N"])]

@@ -33,20 +33,22 @@ TIMING = {"preopen": {"need": r"\b(before the bell|premarket|pre-market|futures|
           # v1.1.0, the Seoul editions: the KRX session is "in Seoul"; the long window is the point
           "korea-open": {"need": r"\b(in Seoul|Seoul|so far|this month|past month|a month)\b",
                          "never": r"\b(after the bell|before the bell|premarket|pre-market|today's close|futures point|after hours)\b"},
+          "korea-midday": {"need": r"\b(in Seoul|Seoul|so far|midday|this year)\b",
+                           "never": r"\b(after the bell|before the bell|premarket|pre-market|today's close|futures point|after hours|closed (?:up|down|at|higher|lower))\b"},
           "korea-close": {"need": r"\b(in Seoul|Seoul|three months|closed)\b",
                           "never": r"\b(so far today|this morning|before the bell|premarket|pre-market|futures point|right now|after hours)\b"}}
 # names and terms said as letters or as a word: = narrate/ear.ts SPOKEN_CAPS (earAudit's allowlist) + AT&T
 SPOKEN_CAPS = {"AI", "US", "UK", "EU", "CEO", "CFO", "ETF", "ETFs", "VIX", "AMD", "IBM", "HP", "NASA", "FDA", "SEC", "FTC", "DOJ",
                "GDP", "CPI", "PCE", "PPI", "IPO", "EV", "EVs", "OPEC", "NATO", "OK", "TV", "NVIDIA", "SK", "AM", "PM", "IBK", "KOSPI"}
 LEAD = {"preopen": "Before the bell,", "midday": "At midday,", "close": "At the close,",   # the fallback's timing phrase
-        "korea-open": "In Seoul,", "korea-close": "In Seoul,"}
-LEAD_SHORT = {"preopen": "Premarket,", "midday": "Midday,", "close": "Today,", "korea-open": "In Seoul,", "korea-close": "In Seoul,"}
+        "korea-open": "In Seoul,", "korea-midday": "In Seoul,", "korea-close": "In Seoul,"}
+LEAD_SHORT = {"preopen": "Premarket,", "midday": "Midday,", "close": "Today,", "korea-open": "In Seoul,", "korea-midday": "In Seoul,", "korea-close": "In Seoul,"}
 STORY_CAP_S, STORY_ROUNDS = 360, 8                     # storyline rounds: at most 8, inside 6 minutes
 # SHORTS_BUDGET / SHORTS_SPOKEN_MAX: run.sh lowers both when a build measures over 30 s (10/1 midday: 31.0 s)
 _KRB = sys.argv[1:2] and sys.argv[1].startswith("korea")              # Korea lines carry longer names and window phrases:
 BUDGET = int(os.environ.get("SHORTS_BUDGET", 52 if _KRB else 56))      # 10/1 korea-close tests: 56 words 31.9 s, 52 words 30.8 s, 50 fit; 49 never converged
 SPOKEN_MAX = int(os.environ.get("SHORTS_SPOKEN_MAX", 58 if _KRB else 68))                                        # words as voiced (speakable): 66-68 made 26-27 s, 73 made 30.3 s
-LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE", "korea-open": "SEOUL OPEN", "korea-close": "SEOUL CLOSE"}
+LABEL = {"preopen": "BEFORE THE BELL", "midday": "MIDDAY", "close": "MARKET CLOSE", "korea-open": "SEOUL OPEN", "korea-midday": "SEOUL MIDDAY", "korea-close": "SEOUL CLOSE"}
 
 
 def nums(text):
@@ -71,7 +73,7 @@ def allowed_figures(res, facts, askc):
     for v in ctx()["ext"].values(): add_pct(v["pct"])
     # Home moves while the take records (10/1 midday: facts 2.3%, Home +1.99% minutes later): a figure Home shows counts as
     # verified when a cross-checked facts figure of the same kind is within the live tolerance, so the voice says the screen
-    tol = {"midday": 0.35, "close": 0.06, "preopen": 0.06, "korea-open": 0.35, "korea-close": 0.06}[ED]
+    tol = {"midday": 0.35, "close": 0.06, "preopen": 0.06, "korea-open": 0.35, "korea-midday": 0.35, "korea-close": 0.06}[ED]
     fv = [fval(v) for v in facts.get("figures", {}).values()] + [fval(v) for v in (facts.get("portfolio") or {}).values() if isinstance(v, str)]
     fv = [x for x in fv if x]
     tot = next((x[0] for x in [fval((facts.get("portfolio") or {}).get("total", ""))] if x), 0)
@@ -83,10 +85,10 @@ def allowed_figures(res, facts, askc):
                 if not f.get("ok"): continue
                 if (f.get("field") or "pct") == "pct":            # the live session move the page header shows
                     pd = ctx()["screen"].get(f"pos_{f.get('symbol')}", {}).get("day_move")
-                    if ED == "korea-open" and pd is not None and abs(pd - float(f["value"])) <= 0.35: add_pct(pd)
+                    if ED in KRM.LIVE_EDITIONS and pd is not None and abs(pd - float(f["value"])) <= 0.35: add_pct(pd)
                     continue
                 pm = ctx()["screen"].get(f"pos_{f.get('symbol')}", {}).get("range_move")
-                if pm is not None and abs(pm - float(f["value"])) <= (0.6 if ED == "korea-open" else 0.06): add_pct(pm)
+                if pm is not None and abs(pm - float(f["value"])) <= (0.6 if ED in KRM.LIVE_EDITIONS else 0.06): add_pct(pm)
     for f in ctx()["screen"].get("home", {}).get("figures", []):
         a = fval(f)
         if not a or not a[1]: continue
@@ -322,7 +324,7 @@ def check(story, res, facts, askc):
                 want = {"m1": "1M", "m3": "3M", "ytd": "YTD"}[wf]
                 if pr != want:
                     errs.append(f"item {i + 1}: {x['text']!r} speaks about the {want} window but the page shows the {pr or '?'} change "
-                                f"-> use the {KRM.RANGE[ED]} window ('{'over three months' if KRM.RANGE[ED] == '3M' else 'this month'}')")
+                                f"-> use the {KRM.RANGE[ED]} window ('{KRM.WIN_PHRASE[KRM.RANGE[ED]]}')")
                 elif dv and (pm is None or (pm > 0) != (dv > 0)):
                     errs.append(f"item {i + 1}: {x['text']!r} gives a direction the page's {pr} change ({pm}) does not show")
                 mv = None; dv = 0                         # the session check below does not apply to a window sentence
@@ -348,7 +350,7 @@ def check(story, res, facts, askc):
             f = next((f for f in r.get("figures", []) if f.get("field") == fld and f.get("ok") and KRM.is_kr(f.get("symbol", ""))), None)
             if f and not any(nums(x["text"]) for x in it["sentences"]):
                 errs.append(f"item {i + 1}: say its {KRM.RANGE[ED]} move in sentence 1 (the page shows it: {abs(f['value']):.1f}% "
-                            f"{'over three months' if fld == 'm3' else 'this month'}); trim other words to stay in budget")
+                            f"{KRM.WIN_PHRASE[KRM.RANGE[ED]]}); trim other words to stay in budget")
     allowed = allowed_figures(res, facts, askc)
     sents = [(f"item {i + 1}", s["text"]) for i, it in enumerate(story["items"]) for s in it["sentences"]]
     sents += [("portfolio", story["portfolio"]["text"]), ("ask answer", story["ask"]["answer_text"])]
@@ -629,7 +631,7 @@ def fallback(story, res, facts, askc):
 
 KR_GUIDE = ("" if not KR else f"""THE KOREA EDITION (v1.1.0, owner 10/1): for US investors with an AI-heavy portfolio, MID-TO-LONG TERM, never day to day.
   Each story page is filmed on the app's {KRM.RANGE[ED]} chart: its header reads "Price · {KRM.RANGE[ED]}" and the {KRM.RANGE[ED]} change. Lead
-  each Korean item with that window ('{"over three months" if KRM.RANGE[ED] == "3M" else "this month"}') and its WHY; the session move in
+  each Korean item with that window ('{KRM.WIN_PHRASE[KRM.RANGE[ED]]}') and its WHY; the session move in
   Seoul is secondary ('{"closed up 3.2% in Seoul" if ED == "korea-close" else "is up 1.1% so far in Seoul"}'). A US name's move is its last
   New York session. Say the names in full ("SK hynix", "Samsung Electronics", "Hanmi Semiconductor"). The portfolio line is the
   all-time gain Home shows ("Your portfolio is up 18% all time."): never a 'today' figure (Home's Today mixes the US and Korean

@@ -12,15 +12,16 @@ Proposal only: no launchd job is installed by the skill. The main session decide
 
 Weekends and US market holidays: `run.sh` asks the app's calendar first and exits 0 without doing anything.
 
-### The Korea editions (v1.1.0, owner 10/1: "2 more Korean focused ... mid-longer-term")
+### The Korea editions (v1.1.0, owner 10/1: "2 more Korean focused ... mid-longer-term"; v1.2.0 adds korea-midday: six Shorts a day, 3 US + 3 KR)
 
 | Edition | Start (KST) | Start (CT, CDT / CST) | Ready (CT) | KRX session | Pages filmed on | Ask on camera |
 |---|---|---|---|---|---|---|
 | `korea-open` | **9:32 AM** (KRX open + 32 min; the app's kr_open brief is written at 9:20) | 7:32 PM / 6:32 PM, the evening BEFORE (Sun-Thu) | ~8:00 PM / 7:00 PM | the day's session, live | 1M chart | "How exposed is my portfolio to memory chips?" |
+| `korea-midday` (v1.2.0) | **12:00 PM** (mid-session; Seoul has no lunch break) | 10:00 PM / 9:00 PM, the evening BEFORE (Sun-Thu) | ~10:25 PM / 9:25 PM | the day's session, live | YTD chart | "How much of my portfolio is in Korean stocks?" |
 | `korea-close` | **3:45 PM** (KRX close 3:30 + 15 min; kr_close brief at 3:40) | 1:45 AM / 12:45 AM (Mon-Fri) | ~2:10 AM / 1:10 AM | the finished session | 3M chart | "What's my AI chip concentration?" |
 
 Seoul has no daylight saving; Chicago does (CDT -> CST on Nov 1 2026, back on Mar 14 2027). The plists therefore fire
-EARLY in Chicago time (`korea-open` 18:30 Sun-Thu, `korea-close` 00:40 Mon-Fri) and the gate waits for the KST start, so
+EARLY in Chicago time (`korea-open` 18:30 Sun-Thu, `korea-midday` 20:55 Sun-Thu, `korea-close` 00:40 Mon-Fri) and the gate waits for the KST start, so
 the same plist fits both seasons. KRX holidays (the app's `calendar.ts` KR table, incl. substitute days: Oct 5 2026 for
 Gaecheonjeol on a Saturday, Oct 9 Hangul Day, Dec 25, Dec 31): `run.sh` exits 0, both editions skip (the long view is
 not run on a holiday in v1.1.0: it would have no session to anchor its stamp to). Delivery folders carry the KST session
@@ -78,7 +79,7 @@ Supabase CLI login, the Xcode simulator and `~/.private_keys` must be available)
 ```
 
 preopen: Hour 7 Minute 32; midday: Hour 11 Minute 35; close: Hour 15 Minute 2 (CT, the Mac's local time); korea-open:
-Weekday 0-4 Hour 18 Minute 30 and korea-close: Weekday 1-5 Hour 0 Minute 40 (the gate then waits for 9:32 / 15:45 KST). The script
+Weekday 0-4 Hour 18 Minute 30, korea-midday: Weekday 0-4 Hour 20 Minute 55 and korea-close: Weekday 1-5 Hour 0 Minute 40 (the gate then waits for 9:32 / 15:45 KST). The script
 itself skips holidays. A refused run leaves its work dir under `/tmp/assetly-shorts/` and exits 1; the main session
 should check `~/Library/Logs/assetly-shorts.log` and the delivery folder before posting. The Mac must be awake
 (`pmset repeat wakeorpoweron MTWRF 07:25:00` covers the first run).
@@ -88,7 +89,7 @@ should check `~/Library/Logs/assetly-shorts.log` and the delivery folder before 
 launchd runs `~/.local/bin/assetly-shorts-gate.sh <edition> --upload` (owned by the main session), not run.sh directly.
 The gate polls every 60 s until the INSTALLED `~/.claude/skills/assetly-shorts/SKILL.md` heading
 ("# Assetly market Shorts, vX.Y.Z") is >= `~/.config/assetly-shorts/min_version`, then execs run.sh; past the edition's
-deadline (preopen 8:45, midday 13:30, close 17:00 CT; korea-open 10:30 KST, korea-close 17:30 KST) it skips with exit 4 rather than run an old version.
+deadline (preopen 8:45, midday 13:30, close 17:00 CT; korea-open 10:30 KST, korea-midday 13:00 KST, korea-close 17:30 KST) it skips with exit 4 rather than run an old version.
 
 Releasing: develop in the repo mirror, validate with `--test` on a saved work dir, copy every file into the installed
 skill, and change the installed heading LAST (a waiting run starts the moment it reads the new version). Raise

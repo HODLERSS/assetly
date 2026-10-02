@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.2.0 (2026-10-02 KST, owner: Korean news sources, a third Korea edition, six Shorts a day)
+
+- **korea-midday**, a third Seoul edition (12:00 PM KST = 10:00 PM CDT / 9:00 PM CST the evening before, KRX trading days):
+  how Korea's AI-chip names stand THIS YEAR (pages on the YTD chart) and why, how they trade so far in Seoul, the read-through
+  for US chip names, mid/long term. Ask "How much of my portfolio is in Korean stocks?" (checked against the `korea` group
+  weight and the holdings). Account `+daily017`. Brief on camera: kr_open (the app has no midday Korea brief; kr_open is
+  the live one until 15:30 KST). Live-session tolerances shared with korea-open (`kr.LIVE_EDITIONS`); stamp "Seoul midday",
+  cover hero THIS YEAR, end card "Follow for Korea's chips, three times a day" (all three Korea editions). launchd
+  `com.hodlerss.assetly-shorts.korea-midday` (Sun-Thu 20:55 CT) behind the gate (waits for 12:00 KST, skips after 13:00 KST).
+- **Korean news sources** (`scripts/kr_news.py`): Yonhap English + Korean RSS, Korea Herald, BusinessKorea, Maeil Business,
+  Chosun Ilbo, and Naver Finance per-ticker news (m.stock.naver.com, each item under its press office). Publishers are
+  canonical (one newsroom one name: KED Global = Korea Economic Daily, Pulse = Maeil Business), a wire credit wins (a
+  Korea Times / Herald reprint of a Yonhap story, or a same-headline uncredited copy, is Yonhap, so it counts once), and an
+  aggregator (Naver, Daum, Google News) is never a publisher; Google News publishers go through the same canonicalizer.
+  Probed 10/1 and rejected: Hankyung RSS (Cloudflare 403; Hankyung still arrives via Naver), KED Global RSS (stale /
+  empty), JoongAng Daily and Pulse (no RSS), Naver Finance desktop (410). One request per source per run, a 25 s wall cap,
+  no login, no paywall. Korean-language headlines may be cited; every field is still written in plain English. The
+  10/2 19:32 korea-open had refused at research with only 2 items on Google News alone.
+- **Stale-session guard** (the app's 10/2 fix ff99849 / ae4562a, now in the Shorts): Yahoo's KRX feed lags ~20 min, so
+  before the first bar of the day range=1d serves yesterday's bars. `kr.kr_quote_live` counts a bar only inside today's
+  KRX session (and Daum minute rows only from today), waits 2 x 20 s, then returns `stale` with no figures (the name's move
+  is refused). `facts.py` reads `portfolio.as_of` and withholds every day move the app's own `calendar.ts
+  withholdStaleMoves` places in an earlier session (refuses when that check cannot run); an Ask day move verifies only
+  when both feeds carry it for this session and agree (an app-only or second-feed-only day move no longer verifies).
+  Tested: Oct-1 15:30 KST row at 9:10 KST Oct 2 = stale, Oct-2 9:05 row = current; a fake stale Yahoo chart -> refused;
+  the live 10:50 KST quote -> both feeds at 10:13.
+- Q28 accepts an initialism heard letter by letter ("AI lifted" -> "hey i lifted", 10/2 korea-open, mix and dry track).
+
 ## v1.1.0 (2026-10-01, owner: track Korean semiconductor stocks, two Korea Shorts a day, mid-to-long term)
 
 - Storyline refuses an article before a company name ("The Boeing ...") and a possessive that drops its object

@@ -80,8 +80,8 @@ reviews. Every rule here is enforced by code where code can enforce it; the rest
 - Audience: US retail investors (25-45) with AI-heavy portfolios; Korean-American viewers second. The question each Short
   answers: what Korea's AI-chip names (SK hynix, Samsung Electronics, Hanmi Semiconductor and peers) say about the AI
   chip trade they already own, over weeks and months. Never day to day, never what to do, never a call on the US open.
-- Lead with the window the page shows (korea-open: "this month" on the 1M chart; korea-close: "over three months" on the
-  3M chart) and its cause; the Seoul session move is the second fact ("closed up 3.2% in Seoul"). A US name's move is
+- Lead with the window the page shows (korea-open: "this month" on the 1M chart; korea-midday (v1.2.0): "this year" on the
+  YTD chart; korea-close: "over three months" on the 3M chart) and its cause; the Seoul session move is the second fact ("closed up 3.2% in Seoul"). A US name's move is
   its last New York session.
 - Names in full, as the voice says them: "SK hynix" (SK is spoken as letters), "Samsung Electronics", "Hanmi
   Semiconductor"; the cover brackets the whole name ("[SK hynix] ...").
