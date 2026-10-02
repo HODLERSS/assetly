@@ -80,6 +80,12 @@ the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 5
   is not reused); the title may not repeat an earlier Short of the same date and edition (storyline); a relative `--dest`
   resolves under the app checkout (a new folder is created): `SHORTS_FOCUS=ai SHORTS_AVOID_SYMBOLS=NKE,TSLA run.sh midday
   --upload --dest docs/marketing/shorts/2026-10-02-midday-ai`.
+- **Research judge vs code-verified moves** (10/2 12:49 AI midday: 9 candidates -> 2 kept; the judge refused "~6%" in a READ
+  where a headline said 6.94%, Dell "~4.5%" vs 4%, Nebius "4%" vs 6.2%): the READ never carries a model-written percentage
+  (the prompt forbids it and verify() strips one before judging: "Shares rose about 6% on the deal." -> "Shares rose on the
+  deal."), and the judge is told, for every edition, that price moves and windows were checked in code on two feeds and
+  two histories and only the event, cause and fact are its to judge (korea-converge 0eb2426's clause, ungated). Replay of
+  the 12:49 pick: no drop on a percentage; the remaining drops are causes no two headlines state.
 - Schedule (owner 10/2): midday runs 9:00 CT (prestage 8:30), 30 minutes after the open.
 - **TikTok by API** ("make sure you can update tiktok too as you do in Youtube"): `app/scripts/tiktok/auth.py` (Login Kit
   for Desktop, hex-S256 PKCE, loopback `http://127.0.0.1:53683/callback/`, token file chmod 600, no secret printed);

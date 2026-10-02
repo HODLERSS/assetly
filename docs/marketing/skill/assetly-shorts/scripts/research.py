@@ -459,6 +459,8 @@ def main():
       prices rose for a third straight month."), what it means as a fact, or what comes next with its date ("Results are due
       October 23."). Never an opinion or forecast stated as fact, never advice. It must be something at least TWO different
       publishers' headlines state; if none is shared, use the market's reaction the quotes show ("Shares barely moved after hours.").
+      NO percentage in it: the session move is verified in code from two feeds and goes in "figures"; the read says the
+      direction ("Shares rose on the deal."), never "~6%".
     - "sentiment_ids": ids from AT LEAST TWO DIFFERENT publishers whose headline states that read or reaction
     - "figures": [{{"symbol": "MU", "field": "pct", "value": -1.84}}] every number the item needs, copied from QUOTES/MACRO ({FIG_FIELDS}); [] if none
     Rules: plain English, no jargon (never: thesis, tape, book, print, catalyst, guidance, capex, EPS, beta, multiple, bps),
@@ -593,6 +595,12 @@ def verify(items, byid, rowsym, macro):
     """Code checks (ids exist, two publishers each, figures agree across both feeds), then the judge."""
     kept, dropped = [], []
     for it in items:
+        # v1.4.0 (10/2 12:49 AI midday: 9 candidates -> 2 kept, the judge refusing "~6%" in a READ where a headline said
+        # 6.94%): the READ never carries a model-written percentage. The session move is code-verified (figures); the read
+        # keeps its direction and its fact, the number goes ("Shares rose about 6% on the deal." -> "Shares rose on the deal.")
+        if re.search(r"\d%", it.get("sentiment") or ""):
+            it["sentiment"] = re.sub(r"\s+", " ", re.sub(r"\s*(?:by\s+|of\s+)?(?:about\s+|nearly\s+|almost\s+|roughly\s+|over\s+|~)?"
+                                                     r"[+\-\u2212]?\d+(?:\.\d+)?%", "", it["sentiment"])).replace(" .", ".").strip()
         why = [byid[i] for i in it.get("why_ids", []) if i in byid]
         sen = [byid[i] for i in it.get("sentiment_ids", []) if i in byid]
         reasons = []
@@ -635,7 +643,11 @@ def verify(items, byid, rowsym, macro):
     jp = "For each claim, decide if the quoted headlines (and only them) support it. A claim is supported only if at least two of " \
          "its headlines, from different publishers, state it or clearly imply it. A WHY must also state a CAUSE (the reason " \
          "something moved or matters); a WHY that only restates the move ('shares fell to a low') is why_ok false. A SENTIMENT must " \
-         "be a FACT the headlines state (not an opinion or forecast presented as fact); otherwise sentiment_ok false. Return {\"verdicts\": [{\"n\": 1, \"why_ok\": true, " \
+         "be a FACT the headlines state (not an opinion or forecast presented as fact); otherwise sentiment_ok false. " + \
+         ("Price moves in a claim (percentages, 'rose', 'fell', 'over three months', 'this year', 'a slide', 'a rally') were "
+          "already checked in code against two quote feeds and two price histories: do NOT require a headline to state the "
+          "move or its window; judge only the rest of the claim (the event, its cause, the fact) against the headlines. ") + \
+         "Return {\"verdicts\": [{\"n\": 1, \"why_ok\": true, " \
          "\"why_support\": [\"h1\",\"h5\"], \"sentiment_ok\": true, \"sentiment_support\": [...], \"note\": \"...\"}]}.\n\n"
     for n, it in enumerate(kept, 1):
         jp += f"CLAIM {n} WHY: {it['why']}\n" + "".join(f"  {i}: {byid[i]['publisher']}: {byid[i]['title']}\n" for i in it["why_ids"] if i in byid)
