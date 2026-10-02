@@ -207,19 +207,23 @@ def main_facts():
 def main_ask():
     facts = jload(os.path.join(W, "facts.json")); ask = jload(os.path.join(W, "ask.json"))
     with Stage(W, "facts.ask"):
-        cands_pct, cands_usd = [], []
+        # v1.4.0 (lead 10/2: per-figure typing): dollar candidates are kept by kind, and a figure is checked against the kinds
+        # its own bullet speaks of (a day move only against day moves, a window only against windows, a value only against
+        # values). cands_usd = values, totals, groups, cash, dividends; day_c / win_c the typed moves
+        cands_pct, cands_usd, day_c, win_c = [], [], [], []
         f = facts
         for k, v in f["windows"].items():
             if not k.endswith("_app_base"): continue
             o = f["windows"].get(k.replace("_app_base", "_nasdaq_base"))
             if not o or not agree(v["pct"], o["pct"], 0.15):
                 continue                                # a window only one source can compute verifies nothing
-            cands_pct += [abs(v["pct"]), abs(v["pct_eq"]), abs(o["pct"]), abs(o["pct_eq"])]; cands_usd += [abs(v["usd"]), abs(o["usd"])]
+            cands_pct += [abs(v["pct"]), abs(v["pct_eq"]), abs(o["pct"]), abs(o["pct_eq"])]; win_c += [abs(v["usd"]), abs(o["usd"])]
         for c in f["checks"]:
             for side in ("app", "nasdaq"):
-                (cands_pct if "pct" in c["figure"] else cands_usd).append(abs(c[side]))
+                (cands_pct if "pct" in c["figure"] else day_c if c["figure"].startswith("day") else
+                 cands_usd if c["figure"] == "total" else win_c).append(abs(c[side]))
         for h in f["holdings"]:
-            cands_usd += [h["value"], abs(h["gain_usd"])]
+            cands_usd += [h["value"]]; win_c += [abs(h["gain_usd"])]
             cands_pct += [abs(x) for x in (h["gain_pct"], h["weight"]) if x is not None]
             # a day move verifies only when both feeds carry it for this session and agree (v1.2.0: alone, the app's
             # row could be yesterday's KRX move before the first bar, and the second feed's alone is one source)
@@ -232,7 +236,7 @@ def main_ask():
                 and h["day_pct_nasdaq"] is not None and KRM.krx_open_now() else 0
             for k, v in h.items():
                 if k.endswith("_usdA") and v is not None and h.get(k[:-1] + "N") is not None and abs(v - h[k[:-1] + "N"]) <= max(3, 0.01 * abs(v)):
-                    cands_usd += [abs(v), abs(h[k[:-1] + "N"])]
+                    win_c += [abs(v), abs(h[k[:-1] + "N"])]
                 if k.endswith("_app") and v is not None and h.get(k[:-4] + "_nasdaq") is not None and agree(v, h[k[:-4] + "_nasdaq"], 0.15 + lag * (1 + abs(v) / 100)):
                     cands_pct += [abs(v), abs(h[k[:-4] + "_nasdaq"])]
         for c in f["checks"]:
@@ -341,32 +345,41 @@ def main_ask():
                 # ... and at the answer's OWN moment: the percentages it shows next to each name (or for the whole book) times
                 # the shares x the previous close both feeds agree on. Prices move between the answer and this check (10/2
                 # midday: +3.2% in 6 min), the previous close does not: "+$9,181 (+3.79%)" = book x 3.79% = $9,182; "AMD
-                # (+3.7%) and Nvidia (+2.6%) contribute $2.8k" = $2,751. Each shown % must sit within 1 point of the live
-                # feeds' day move for that name (or the book's), so it is the app's quote, not a free number
+                # (+3.7%) and Nvidia (+2.6%) contribute $2.8k" = $2,751. Each shown % must pass the answer's own % check
+                # (two feeds, its rounding), so it is the app's quote, not a free number
                 prev = {}
                 for r in prow:
                     s_ = r["symbol"]; n0, c0 = nq.get(s_) or {}, cq.get(s_) or {}
                     pn = n0["last"] - n0["chg"] if n0.get("last") is not None and n0.get("chg") is not None else None
                     pc = c0.get("prev")
                     if pn and pc and abs(pn / pc - 1) <= 0.002: prev[s_] = float(r["qty"]) * pc
-                live_pct = {r["symbol"]: (cq.get(r["symbol"]) or {}).get("pct") for r in prow}
+                nowv = {r["symbol"]: float(r["qty"]) * ((cq.get(r["symbol"]) or {}).get("last") or 0) for r in prow}
+                # a shown % is used only when it passes the answer's own % check (two feeds, the shown rounding)
+                def pct_ok(t):
+                    t = t.replace("\u2212", "").replace("\u2011", "").lstrip("+-"); d_ = len(t.split(".")[1]) if "." in t else 0
+                    return any(abs(float(t) - c) <= 0.5 * 10 ** -d_ + 0.1 for c in cands_pct)
                 book_pct = 100 * sum(day[s_][-1] for s_ in day) / sum(prev.values()) if prev and len(day) == len(prow) else None
                 for seg in re.split(r"\u2022|\n", ans):
                     named = []
                     for s_, ks in names.items():
                         for k in ks:
-                            m = re.search(r"(?<![A-Za-z])" + re.escape(k) + r"(?![a-z])[^%$]{0,12}?\(?([+\-\u2212\u2011]?\d+(?:\.\d+)?)%", seg) if k and len(k) >= 2 else None
+                            # names case-blind ("Nvidia" for NVIDIA): the app writes them as people do
+                            m = re.search(r"(?<![A-Za-z])" + re.escape(k) + r"(?![a-z])[^%$]{0,12}?\(?([+\-\u2212\u2011]?\d+(?:\.\d+)?)%", seg,
+                                          re.I if len(k) >= 3 else 0) if k and len(k) >= 2 else None
                             if m and s_ in prev:
                                 pct = float(m.group(1).replace("\u2212", "-").replace("\u2011", "-"))
-                                if live_pct.get(s_) is not None and abs(abs(pct) - abs(live_pct[s_])) <= 1.0: named.append((m.start(), s_, pct)); break
+                                if pct_ok(m.group(1)): named.append((m.start(), s_, pct)); break
                     if named:
-                        run_ = 0.0
+                        # two conventions: the move on yesterday's value (the true day $), and the app Ask's own shortcut,
+                        # today's value x the day % (10/2 midday: "Applied Digital (+10%) lifts $2.5k" = $25.5k x 10%; the
+                        # book line used the first). Both are holdings x two feeds; the second overstates by the move itself
+                        run_, run2 = 0.0, 0.0
                         for _, s_, pct in sorted(named):
-                            run_ += prev[s_] * pct / 100; live_usd.append(abs(run_))
+                            run_ += prev[s_] * pct / 100; run2 += nowv[s_] * pct / 100; live_usd += [abs(run_), abs(run2)]
                     elif book_pct is not None and len(prev) == len(prow):
                         for m in re.finditer(r"([+\-\u2212]?\d+(?:\.\d+)?)%", seg):
                             pct = abs(float(m.group(1).replace("\u2212", "-")))
-                            if abs(pct - abs(book_pct)) <= 1.0: live_usd.append(sum(prev.values()) * pct / 100)
+                            if pct_ok(m.group(1)) and abs(pct - abs(book_pct)) <= 1.5: live_usd.append(sum(prev.values()) * pct / 100)
                 log(f"ask: take-time day $ from holdings x Nasdaq + CNBC: {len(day)}/{len(prow)} holdings agree, {len(live_usd)} readings")
             except Exception as e:                       # noqa: BLE001 (the checks below still run)
                 log(f"ask: take-time day $ recompute failed: {str(e)[:100]}")
@@ -378,6 +391,18 @@ def main_ask():
                       for n in rest(W, f"news?select=source,title,summary&symbol=in.({syms})&order=published_at.desc&limit=400")]
         except Exception:                                # noqa: BLE001
             pass
+        WIN_W = r"\b(week|month|1W|1M|3M|6M|1Y|YTD|this year|year|years|all[- ]time|since|past \d+|\d+[- ]day|quarter|overall|gain on|cost)\b"
+        LVL_W = r"\b(worth|value[sd]?|position|holds?|holding|total|cash|dividends?|bucket|exposure|weight|of your (?:assets|portfolio)|invested|=)\b"
+        DAY_W = r"\b(today|so far|day|session|moving|mover|lifts?|adds?|contribut\w*|drags?|drops?|gains?|loses?|losing|falls?|rises?|up|down)\b"
+        segs = [(m_.start(), m_.end()) for m_ in re.finditer(r"[^\u2022\n]+", ans)]
+        def kinds(pos):
+            """the kinds of dollar figure this bullet speaks of: window words win over day words; none found = any kind"""
+            seg = next((ans[a:b] for a, b in segs if a <= pos < b), ans)
+            k = set()
+            if re.search(WIN_W, seg, re.I): k.add("win")
+            if re.search(LVL_W, seg, re.I): k.add("level")
+            if not k and (re.search(DAY_W, seg, re.I) or re.search(r"\btoday\b|moving", ask.get("question", ""), re.I)): k.add("day")
+            return k or {"day", "win", "level"}
         found, verified, unverified = [], [], []
         for m in re.finditer(r"([+\-−]?\$[\d,]+(?:\.\d+)?(?:\s?[kKmMbB]\b)?)|([+\-−]?\d+(?:\.\d+)?%)", ans):
             tok = m.group(0); found.append(tok)
@@ -389,8 +414,10 @@ def main_ask():
             else:
                 mult = 1e3 if re.search(r"[kK]$", tok) else 1e6 if re.search(r"[mM]$", tok) else 1e9 if re.search(r"[bB]$", tok) else 1
                 v *= mult
-                ok = any(abs(v - c) <= max(3, 0.006 * c) for c in cands_usd)
-                if not ok and live_usd:
+                kd = kinds(m.start())
+                pool = (cands_usd if "level" in kd else []) + (day_c if "day" in kd else []) + (win_c if "win" in kd else [])
+                ok = any(abs(v - c) <= max(3, 0.006 * c) for c in pool)
+                if not ok and live_usd and "day" in kd:
                     # the shown rounding ("$2.8k": half of 0.1k) plus the live band
                     num = tok.split()[0].rstrip("kKmMbB"); dec = len(num.split(".")[1]) if "." in num else 0
                     half = 0.5 * 10 ** -dec * mult if mult > 1 else 0.5

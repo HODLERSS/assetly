@@ -183,6 +183,7 @@ def restates(s1, s2):
 EXT_WORDS = {"PRE-MARKET": r"\b(premarket|pre-market)\b", "AFTER HOURS": r"\b(after hours|after-hours)\b"}
 EXT_MAX_AGE = float(os.environ.get("SHORTS_EXT_MAX_AGE_MIN", "15"))    # a chip's quote must be this fresh at the take
 _CTX = {}
+_USE: dict = {}
 
 
 def ctx():
@@ -204,6 +205,25 @@ def item_shot(r):
     sym = next((x for x in r.get("symbols", []) if f"pos_{x}" in win), None)
     if sym: return f"pos_{sym}", win[f"pos_{sym}"]["figures"], sym
     return "brief+news", (win.get("brief", {}).get("figures", []) + win.get("news", {}).get("figures", [])), None
+
+
+def usable(res):
+    """v1.4.0 (10/2 midday: research picked APLD +10.6% on both feeds, but the recorded page showed -5.19% and no day move;
+    12 rounds and the fallback burned on it): the verified items whose beat can show them. A midday / close stock item whose
+    held page is in the take must show a day move with the verified move's sign; the others pass. When that leaves fewer
+    than three, every item stays (the checks then say what to change)."""
+    if "usable" in _USE: return _USE["usable"]
+    ok = []
+    for i, r in enumerate(res["items"]):
+        shot, _, sym = item_shot(r)
+        mv = ctx()["screen"].get(shot, {}).get("day_move") if sym else None
+        fig = next((f.get("value") for f in r.get("figures", []) if f.get("symbol") == sym and f.get("field", "pct") == "pct"), None)
+        if ED in ("midday", "close") and sym and r.get("kind") in ("stock", "earnings") and fig is not None and \
+                (mv is None or abs(mv) < 0.05 or (mv > 0) != (fig > 0)):
+            log(f"item {i} ({r['cover']}) left out: its page shows {mv} for a verified {fig:+.2f}% move"); continue
+        ok.append(i)
+    _USE["usable"] = set(ok) if len(ok) >= 3 else set(range(len(res["items"])))
+    return _USE["usable"]
 
 
 def plain_line(t):
@@ -407,6 +427,8 @@ def check(story, res, facts, askc):
         errs.append(f"timing: none of the {ED} words appear -> start item 1's first sentence with {LEAD[ED]!r}")
     for m in re.finditer(TIMING[ED]["never"], all_spoken, re.I): errs.append(f"timing: '{m.group(0)}' is wrong for the {ED} edition")
     for i, it in enumerate(story["items"]):
+        if isinstance(it.get("n"), int) and it["n"] not in usable(res):
+            errs.append(f"item {i + 1}: its page in the take does not show its day move -> use one of the verified items n={sorted(usable(res))}")
         if len(it["sentences"]) != 2: errs.append(f"item {i + 1}: needs exactly 2 sentences (why, then the read)")
         elif restates(it["sentences"][0]["text"], it["sentences"][1]["text"]):
             r = res["items"][it["n"]]
@@ -591,17 +613,33 @@ SWAP = [(r"\bguidance\b", "outlook"), (r"\bcatalysts\b", "drivers"), (r"\bcataly
 EXT_RE_ = re.compile(r"\s*\b(?:in\s+)?(?:premarket|pre-market|after[- ]hours|after the bell|late|extended)(?:\s+trading)?\b", re.I)
 
 
-def clean_verified(text, syms):
-    """A verified sentence made speakable by the checks' own rules: banned words swapped for plain ones, and, when no fresh
+def clean_verified(text, r):
+    """A verified sentence made speakable by the checks' own rules: banned words swapped for plain ones; when no fresh
     two-feed chip backs an extended-hours claim for its names, the extended-hours words and their figure dropped (the claim
-    is then the move's cause, which two publishers state)."""
+    is then the move's cause, which two publishers state); and any other figure its shot does not show dropped with its
+    unit (10/2 midday: "75 MW" refused every round: not on screen, and MW is an acronym the voice stumbles on)."""
+    syms = r.get("symbols") or []
     for pat, rep_ in SWAP:
         text = re.sub(pat, lambda m: rep_.capitalize() if m.group(0)[:1].isupper() else rep_, text, flags=re.I)
     if EXT_RE_.search(text) and not any(s_ in ctx()["ext"] for s_ in syms):
         text = EXT_RE_.sub("", text)
         text = re.sub(r"\s*(?:by\s+)?(?:about\s+|nearly\s+|almost\s+)?[+\-\u2212]?\d[\d.,]*%", "", text)
         text = re.sub(r"\s{2,}", " ", text).replace(" .", ".").replace(" ,", ",").strip()
-    return text
+    figs = item_shot(r)[1]; ex = any(s_ in ctx()["ext"] for s_ in syms)
+    FIG = r"[+\-\u2212]?\$?\d[\d,]*(?:\.\d+)?(?:\s?(?:%|billion|million|trillion|[BMK]\b))?"
+    def off(t):        # figures the shot does not show (a year, a quarter, a model number like "Forge 1" are not figures)
+        return [m.group(0) for m in re.finditer(FIG, t) if not re.fullmatch(r"(?:19|20)\d\d|[1-4]", m.group(0).strip())
+                and not re.search(r"\b(?:Q|Forge|Gemini|Llama|M|GPT-?)\s?$", t[:m.start()]) and not shows(m.group(0), figs)]
+    if ex or not off(text): return text
+    # first choice: the sentence cut at a clause boundary before the figure, when the head still says something (>= 4 words)
+    for sep in (" with ", ", ", " as ", " after ", " and ", " on "):
+        head = text.split(sep)[0].strip().rstrip(".")
+        if sep in text and len(head.split()) >= 4 and not off(head): return head + "."
+    # else: the figure, its unit and the small words that only carried it ("of 486,532", "another 75 MW", "250 MW of")
+    UNIT = r"(?:\s?(?:percent|MW|GW|GWh|TWh|megawatts?|gigawatts?|units|shares|vehicles|cars|people|jobs))?"
+    for m in list(re.finditer(r"(?:\b(?:of|with|by|another|about|nearly|almost|over|some)\s+)*" + FIG + UNIT + r"(?:\s+of\b)?", text))[::-1]:
+        if off(m.group(0)): text = text[:m.start()] + text[m.end():]
+    return re.sub(r"\s{2,}", " ", text).replace(" .", ".").replace(" ,", ",").strip()
 
 
 def fallback(story, res, facts, askc):
@@ -610,7 +648,7 @@ def fallback(story, res, facts, askc):
     to templates from the cross-checked figures. Returns (story, errs, words); it can still fail, and then the run refuses."""
     story = copy.deepcopy(story) if isinstance(story, dict) else {}
     if not isinstance(story.get("items"), list) or len(story["items"]) < 3:
-        story["items"] = [{"n": i} for i in range(min(3, len(res["items"])))]
+        story["items"] = [{"n": i} for i in sorted(usable(res))[:3]]
     for k, v in (("portfolio", {"eyebrow": "MY PORTFOLIO", "text": ""}), ("ask", {"answer_text": ""})):
         if not isinstance(story.get(k), dict): story[k] = v
     story.setdefault("cover", [res["items"][it.get("n", 0)]["cover"] for it in story["items"][:3]])
@@ -638,11 +676,16 @@ def fallback(story, res, facts, askc):
         n = it.get("n", i) if isinstance(it.get("n"), int) and 0 <= it.get("n") < len(res["items"]) else i
         # v1.4.0: a READ that attributes ("Analysts say ...", research from before v1.4.0) is never spoken: the next verified
         # item whose read is direct takes the slot; if there is none the check refuses as before
-        if attributed(res["items"][n]["sentiment"]):
+        if attributed(res["items"][n]["sentiment"]) or n not in usable(res):
             used = {x.get("n") for x in story["items"] if isinstance(x, dict)}
-            n = next((k for k, rr in enumerate(res["items"]) if k not in used and not attributed(rr["sentiment"])), n)
+            n = next((k for k, rr in enumerate(res["items"]) if k not in used and k in usable(res) and not attributed(rr["sentiment"])), n)
         r = dict(res["items"][n]); eb = it.get("sentences") if len(it.get("sentences") or []) == 2 else [{}, {}]
-        r["why"], r["sentiment"] = (clean_verified(r[k], r.get("symbols") or []) for k in ("why", "sentiment"))
+        r["why"], r["sentiment"] = (clean_verified(r[k], r) for k in ("why", "sentiment"))
+        if attributed(r["sentiment"]):
+            # no direct verified read for this slot: the move its page shows, said plainly (a figure the viewer reads there)
+            shot, _, sym = item_shot(r); mv = ctx()["screen"].get(shot, {}).get("day_move") if sym else None
+            if mv is not None and abs(mv) >= 0.05 and ED in ("midday", "close"):
+                r["sentiment"] = f"Shares are {'up' if mv > 0 else 'down'} {abs(mv):.1f}% {'so far today' if ED == 'midday' else 'today'}."
         story["items"][i] = {"n": n, "sentences": [
             {"eyebrow": (eb[0].get("eyebrow") or r["cover"].rstrip(".")).upper()[:26], "text": r["why"]},
             {"eyebrow": (eb[-1].get("eyebrow") or "THE READ").upper()[:26], "text": r["sentiment"]}]}
@@ -746,6 +789,7 @@ def main():
     res = jload(os.path.join(W, "research.json")); facts = jload(os.path.join(W, "facts.json")); askc = jload(os.path.join(W, "ask-check.json"))
     n_items = 3                     # three items fit 30 s with the portfolio and Ask beats at a natural pace
     with Stage(W, "storyline.llm"):
+        USE = usable(res)
         sys_p = ("You write the voice-over for a 25-second YouTube Short for general retail investors, for the Assetly app. "
                  "Plain, warm, specific, never hype. Every claim comes from the facts given.")
         # v1.4.0: an attributed read (research from before v1.4.0) is an opinion: "read" is null, never restated as fact
@@ -754,13 +798,13 @@ def main():
 VERIFIED MARKET ITEMS (ranked; each WHY and READ is already backed by two publishers; reuse their wording closely):
 {json.dumps([{"n": i, "kind": it["kind"], "symbols": it["symbols"], "cover": it["cover"], "why": it["why"],
               "read": None if attributed(it["sentiment"]) else it["sentiment"],
-              "figures": [{"symbol": f["symbol"], "pct": f["value"]} for f in it.get("figures", [])]} for i, it in enumerate(res["items"])], indent=0)}
+              "figures": [{"symbol": f["symbol"], "pct": f["value"]} for f in it.get("figures", [])]} for i, it in enumerate(res["items"]) if i in USE], indent=0)}
 Company names to say (never tickers; letters only where shown, like IBM): {json.dumps(say_names(facts))}
 
 THE PORTFOLIO (the app's own numbers; the narration calls it "Your portfolio", never "my"): {json.dumps(facts["portfolio"])}
 {"BEFORE THE OPEN the portfolio's 'today' figure is the PREVIOUS session: say 'yesterday' (or the weekday), never 'today'." if ED == "preopen" else ""}
 ON SCREEN (read off the recorded take; every figure you speak during a shot must be one the viewer can read in it):
-  each item's shot: {json.dumps({str(i): item_shot(it)[1] for i, it in enumerate(res["items"])})}
+  each item's shot: {json.dumps({str(i): item_shot(it)[1] for i, it in enumerate(res["items"]) if i in USE})}
   the portfolio line plays over Home, which shows: {json.dumps(ctx()["screen"].get("home", {}).get("figures", []))}
 FRESH EXTENDED-HOURS QUOTES (two feeds agree; the edit draws a labelled chip with this value and time next to the shot):
   {json.dumps({s: {"label": v["label"], "pct": round(v["pct"], 2), "asof": v["asof"]} for s, v in ctx()["ext"].items()}) or "none: speak only what the app shows"}

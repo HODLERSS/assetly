@@ -59,6 +59,16 @@ the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 5
   feeds) x shares x the previous close both feeds agree on. On the 10/2 midday take: book x 3.79% = $9,182 (shown
   $9,181), AMD 3.7% + Nvidia 2.6% = $2,751 (shown $2.8k): 11/11 verified; a planted "$3.4k" still refuses. Band: 2% or
   $25 plus the shown rounding.
+- **Ask $ typed per figure** (lead 10/2): a dollar figure is checked only against the kinds its bullet speaks of (day moves;
+  windows: week / month / YTD / all time; values: worth / position / total / cash), so it can no longer pass by landing near
+  an unrelated figure (a planted "+$9,900" had matched AMD's 3-month $9,933; now refused). The answer-moment readings
+  carry both conventions: the move on yesterday's value and the app Ask's own "today's value x day %" ("Applied Digital
+  (+10%) lifts $2.5k" = $25.5k x 10%); names match case-blind ("Nvidia" for NVIDIA). 10/2 midday take: 11/11 verified.
+- **Items the take cannot show are left out before the writer starts** (10/2 midday: APLD +10.6% on both feeds, its page
+  showed -5.19%, 12 rounds + the fallback burned on it): storyline.usable() drops a midday / close stock item whose held
+  page shows no day move or the opposite sign, from the prompt, the fallback and the checks (when >= 3 remain). The fallback
+  also cuts a verified sentence at a clause before any figure its shot does not show (or drops the figure with its unit:
+  "250 MW of"), and replaces an attributed read with the move the page shows ("Shares are up 10.6% so far today.").
 - Schedule (owner 10/2): midday runs 9:00 CT (prestage 8:30), 30 minutes after the open.
 - **TikTok by API** ("make sure you can update tiktok too as you do in Youtube"): `app/scripts/tiktok/auth.py` (Login Kit
   for Desktop, hex-S256 PKCE, loopback `http://127.0.0.1:53683/callback/`, token file chmod 600, no secret printed);
