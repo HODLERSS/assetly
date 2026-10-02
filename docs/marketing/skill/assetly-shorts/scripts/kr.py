@@ -35,6 +35,17 @@ ASKQ = {"korea-open": "How exposed is my portfolio to memory chips?", "korea-mid
         "korea-close": "What's my AI chip concentration?"}
 
 
+def window_close(page, verified, ed):
+    """Does the page's window change (its chart header) show the same move as the verified window figure? A finished
+    session: within 0.06 pt. Live (korea-open / korea-midday): the price moves between research and the take, and a
+    window's change moves by that price change times (1 + window), so the test is RELATIVE: the two imply prices within
+    0.6% of each other (10/2 korea-midday: SK hynix YTD +181.7% at research, +182.80% on the page 12 min later, a 0.39%
+    price move, refused on a fixed 0.6-pt test; 8 storyline rounds oscillated between "say it" and "not on screen")."""
+    if page is None or verified is None or (page > 0) != (verified > 0): return False
+    if ed not in LIVE_EDITIONS: return abs(page - verified) <= 0.06
+    return abs((1 + page / 100) / (1 + verified / 100) - 1) <= 0.006
+
+
 def is_kr(sym):
     return str(sym).endswith((".KS", ".KQ")) or sym == "^KS11"
 

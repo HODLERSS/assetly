@@ -126,7 +126,8 @@ def first_visible(take, t0, t1, pattern, step=0.1):
 # it near the old pace (~2.55-2.8 w/s). SHORTS_VOICE=mixed restores 1.12 for the gpt-audio items and the question.
 T_GPT = 1.12 if os.environ.get("SHORTS_VOICE", "minjae") == "mixed" else 1.06
 FOLLOW = "Follow for the open, midday and close"     # the end card's one CTA: true (three editions every trading day)
-FOLLOW_KR = "Follow for Korea's chips, three times a day"   # v1.2.0: open, midday and close every KRX trading day
+FOLLOW_KR = "Follow for Korea's chips, 3 times a day"   # v1.2.0: open, midday and close every KRX trading day; "three"
+# spelled out ran to x 974 on the centred end card, past the 950 safe edge (10/2 korea-midday Q10): <= ~40 characters
 if KR: FOLLOW = FOLLOW_KR
 HERO_MIN = 1.0                                       # a smaller move is not a thumbnail hook: the headline cover stays
 BAIT = {"#viral", "#fyp", "#foryou", "#foryoupage", "#trending", "#explore", "#viralshorts", "#shortsfeed"}
@@ -152,7 +153,7 @@ def cover_hero(story, res, beats, ext):
             sc = scr.get(f"pos_{sym}") or {}
             v, fld = sc.get("range_move"), KRM.RANGE_FIELD.get(sc.get("range") or "")
             fig = next((f for f in ref.get("figures", []) if f.get("symbol") == sym and f.get("field") == fld and f.get("ok")), None)
-            if v is None or not fig or (v > 0) != (fig["value"] > 0) or abs(v - fig["value"]) > (0.6 if ED in KRM.LIVE_EDITIONS else 0.06): continue
+            if not fig or not KRM.window_close(v, fig["value"], ED): continue
             label, src = {"m1": "PAST MONTH", "m3": "PAST 3 MONTHS", "ytd": "THIS YEAR"}[fld], f"{sym} page {sc.get('range')} {v:+.2f}% vs histories {fig['feed1']:+.2f}/{fig['feed2']:+.2f}"
         elif ch.get("label") and sym in ext:
             v, label, src = float(ext[sym]["pct"]), ch["label"], f"{ch['label'].lower()} chip ({sym}, two feeds)"

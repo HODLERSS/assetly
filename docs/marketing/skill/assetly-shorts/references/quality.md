@@ -63,7 +63,7 @@ Korea follow line. KRX figures come from Yahoo and Daum's KRX days (kr.py), wind
 USDKRW and CNBC's KRW= (facts refuses when the two rates differ by more than 0.4%).
 
 v1.2.0: `korea-midday` reads like korea-open (live session tolerances) with "this year" / "at midday" (Q25), "Seoul midday"
-(Q31), the YTD header (Q33) and THIS YEAR (Q38); Q39 the line "Follow for Korea's chips, three times a day". Stale-session
+(Q31), the YTD header (Q33) and THIS YEAR (Q38); Q39 the line "Follow for Korea's chips, 3 times a day". Stale-session
 guard: a day move counts only when it was printed in the current session (the app's calendar.ts `withholdStaleMoves`;
 Yahoo's KRX feed lags ~20 min, so before the first bar a row still holds yesterday's move): facts withholds it, kr.py's live
 quote waits and then refuses it, and an Ask day move verifies only when both feeds carry it and agree. Q28 accepts an

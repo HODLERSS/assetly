@@ -49,7 +49,7 @@ start, or refuses. No check was removed or loosened to get there.
   for US chip names, mid/long term. Ask "How much of my portfolio is in Korean stocks?" (checked against the `korea` group
   weight and the holdings). Account `+daily017`. Brief on camera: kr_open (the app has no midday Korea brief; kr_open is
   the live one until 15:30 KST). Live-session tolerances shared with korea-open (`kr.LIVE_EDITIONS`); stamp "Seoul midday",
-  cover hero THIS YEAR, end card "Follow for Korea's chips, three times a day" (all three Korea editions). launchd
+  cover hero THIS YEAR, end card "Follow for Korea's chips, 3 times a day" (all three Korea editions). launchd
   `com.hodlerss.assetly-shorts.korea-midday` (Sun-Thu 20:55 CT) behind the gate (waits for 12:00 KST, skips after 13:00 KST).
 - **Korean news sources** (`scripts/kr_news.py`): Yonhap English + Korean RSS, Korea Herald, BusinessKorea, Maeil Business,
   Chosun Ilbo, and Naver Finance per-ticker news (m.stock.naver.com, each item under its press office). Publishers are
@@ -69,6 +69,13 @@ start, or refuses. No check was removed or loosened to get there.
   Tested: Oct-1 15:30 KST row at 9:10 KST Oct 2 = stale, Oct-2 9:05 row = current; a fake stale Yahoo chart -> refused;
   the live 10:50 KST quote -> both feeds at 10:13.
 - Q28 accepts an initialism heard letter by letter ("AI lifted" -> "hey i lifted", 10/2 korea-open, mix and dry track).
+- From the first korea-midday (10/2 22:00 CDT, delivered on the 5th pass): an Ask window mid-session may differ between the
+  feeds by the measured price lag (the gap between their day moves, capped 0.35); a live page window counts as the verified
+  one when the two imply prices within 0.6% (`kr.window_close`, was a fixed 0.6 pt: SK hynix YTD +181.7% vs +182.80% on the
+  page oscillated 8 rounds); korea-midday never forces a YTD figure into a line (three-digit figures blew the voiced budget
+  for 24 rounds; the cover hero shows it); an OpenRouter reply cut at its 4,000-token cap (`finish_reason: length`, 6 of 11
+  Sonnet rounds, ~33 s each) is retried with the full budget; the Korea end card is "Follow for Korea's chips, 3 times a
+  day" ("three" spelled out ran past the safe edge, Q10).
 
 ## v1.1.0 (2026-10-01, owner: track Korean semiconductor stocks, two Korea Shorts a day, mid-to-long term)
 

@@ -81,7 +81,7 @@ def allowed_figures(res, facts, askc):
     fv = [x for x in fv if x]
     tot = next((x[0] for x in [fval((facts.get("portfolio") or {}).get("total", ""))] if x), 0)
     # Korea, live session (korea-open): the page's 1M change moves with the price between research and the take; a page
-    # change within 0.6 pt of the verified window figure of the same name is the figure the viewer reads, so it is the one said
+    # change that shows the same move as the verified window figure (kr.window_close) is the figure the viewer reads, so it is the one said
     if KR:
         for it in res["items"]:
             for f in it.get("figures", []):
@@ -91,7 +91,7 @@ def allowed_figures(res, facts, askc):
                     if ED in KRM.LIVE_EDITIONS and pd is not None and abs(pd - float(f["value"])) <= 0.35: add_pct(pd)
                     continue
                 pm = ctx()["screen"].get(f"pos_{f.get('symbol')}", {}).get("range_move")
-                if pm is not None and abs(pm - float(f["value"])) <= (0.6 if ED in KRM.LIVE_EDITIONS else 0.06): add_pct(pm)
+                if KRM.window_close(pm, float(f["value"]), ED): add_pct(pm)
     for f in ctx()["screen"].get("home", {}).get("figures", []):
         a = fval(f)
         if not a or not a[1]: continue
@@ -346,13 +346,21 @@ def check(story, res, facts, askc):
                             f"-> rewrite it with the item's own wording (WHY: {r['why']!r}; READ: {r['sentiment']!r})")
     if KR:
         # the long view is the point (owner, 10/1): a Korea item whose page shows a verified window change says it
-        fld = KRM.RANGE_FIELD[KRM.RANGE[ED]]
+        # korea-midday (v1.2.0): YTD figures are three digits ("182.8%" is six spoken words) and the rule fought the voiced
+        # budget (10/2: 3 x 8 rounds alternating "say its YTD move" / "cut 2 words", refused). There a window figure is
+        # optional: "rose this year" carries the window and the cover hero shows the page's YTD figure
+        fld, said = KRM.RANGE_FIELD[KRM.RANGE[ED]], False
         for i, it in enumerate(story["items"]):
             try: r = res["items"][it["n"]]
             except (IndexError, KeyError, TypeError): continue
             f = next((f for f in r.get("figures", []) if f.get("field") == fld and f.get("ok") and KRM.is_kr(f.get("symbol", ""))), None)
+            if f and ED == "korea-midday": continue
+            if f: said = True
             if f and not any(nums(x["text"]) for x in it["sentences"]):
-                errs.append(f"item {i + 1}: say its {KRM.RANGE[ED]} move in sentence 1 (the page shows it: {abs(f['value']):.1f}% "
+                # live: the page's own header figure, the one the viewer reads (and the one allowed_figures accepts)
+                pm = ctx()["screen"].get(f"pos_{f['symbol']}", {}).get("range_move")
+                shown = pm if KRM.window_close(pm, float(f["value"]), ED) else f["value"]
+                errs.append(f"item {i + 1}: say its {KRM.RANGE[ED]} move in sentence 1 (the page shows it: {abs(shown):.1f}% "
                             f"{KRM.WIN_PHRASE[KRM.RANGE[ED]]}); trim other words to stay in budget")
     allowed = allowed_figures(res, facts, askc)
     sents = [(f"item {i + 1}", s["text"]) for i, it in enumerate(story["items"]) for s in it["sentences"]]
@@ -634,7 +642,7 @@ def fallback(story, res, facts, askc):
 
 KR_GUIDE = ("" if not KR else f"""THE KOREA EDITION (v1.1.0, owner 10/1): for US investors with an AI-heavy portfolio, MID-TO-LONG TERM, never day to day.
   Each story page is filmed on the app's {KRM.RANGE[ED]} chart: its header reads "Price · {KRM.RANGE[ED]}" and the {KRM.RANGE[ED]} change. Lead
-  each Korean item with that window ('{KRM.WIN_PHRASE[KRM.RANGE[ED]]}') and its WHY; the session move in
+  each Korean item with that window ('{KRM.WIN_PHRASE[KRM.RANGE[ED]]}') and its WHY{" (YTD figures are long to say: at most ONE, in item 1, and only if the budget allows; 'rose this year' without a figure is fine)" if ED == "korea-midday" else ""}; the session move in
   Seoul is secondary ('{"closed up 3.2% in Seoul" if ED == "korea-close" else "is up 1.1% so far in Seoul"}'). A US name's move is its last
   New York session. Say the names in full ("SK hynix", "Samsung Electronics", "Hanmi Semiconductor"). The portfolio line is the
   all-time gain Home shows ("Your portfolio is up 18% all time."): never a 'today' figure (Home's Today mixes the US and Korean

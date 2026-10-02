@@ -323,7 +323,7 @@ def main():
         fw = set(re.findall(r"[a-z]+", fol.lower()))
         hit = lambda rr: bool(fw) and len(fw & set(re.findall(r"[a-z]+", " ".join(r[0] for r in rr).lower()))) >= 0.8 * len(fw)
         beg = re.search(r"\b(like and subscribe|smash|hit (the )?like|subscribe now)\b", " ".join(r[0] for r in r1 + r2), re.I)
-        ok39 = fol in ("Follow for the open, midday and close", "Follow for Korea's chips, three times a day") and hit(r1) and hit(r2) and not beg
+        ok39 = fol in ("Follow for the open, midday and close", "Follow for Korea's chips, 3 times a day") and hit(r1) and hit(r2) and not beg
         row("Q39", "End card: the one follow line (true: three editions every trading day) readable for >= 1 s, no like/subscribe begging",
             ok39, f"\"{fol}\" at {L - 1.05:.2f}s {'read' if hit(r1) else 'NOT read'}, at {L - 0.05:.2f}s {'read' if hit(r2) else 'NOT read'}"
                   + (f"; BEGGING '{beg.group(0)}'" if beg else ""))
