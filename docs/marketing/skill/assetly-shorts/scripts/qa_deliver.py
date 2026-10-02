@@ -128,7 +128,9 @@ def main():
         # a compound heard split or joined ("premarket" -> "pre market", "rollout" -> "roll out"), figures set aside
         words_of = lambda z: "".join(w for w in z.split() if not (re.search(r"\d", w) or w in NUMW))
         exn = lambda z: re.sub(r"(^|\s)x(?=\s|dividend|$)", r"\1ex", z)           # "ex-dividend" heard as "x dividend"
-        joined = lambda x, y: bool(words_of(x)) and words_of(exn(x)) == words_of(exn(y))
+        # an index spoken letter-by-letter (10/2 preopen: "S and P five hundred" heard "SP 500"): drop "and" between letters
+        sandp = lambda z: re.sub(r"\b([a-z]) and ([a-z])\b", r"\1\2", z)
+        joined = lambda x, y: bool(words_of(x)) and words_of(sandp(exn(x))) == words_of(sandp(exn(y)))
         # an initialism heard letter by letter (10/2 korea-open: "AI lifted Micron" -> "hey i lifted", mix AND dry track):
         # every heard word must be that letter's name or a sound-alike of it, one per letter
         caps = {w.lower() for w in re.findall(r"\b[A-Z]{2,4}\b", spoken)}
