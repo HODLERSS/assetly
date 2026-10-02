@@ -155,6 +155,37 @@ def _claude_cli(system, prompt, timeout):
     return j["result"]
 
 
+CLAUDE_LOG = os.path.expanduser("~/.config/assetly-shorts/claude-calls.log")
+CLAUDE_LIMIT = os.path.expanduser("~/.config/assetly-shorts/claude-limit")
+
+
+def _claude_gate(work):
+    """None when a claude -p call may go out, else why not. Lead 10/2 (the owner's Claude window also serves the main
+    session and the US Shorts): SHORTS_CLAUDE_MAX caps the calls per run (counted in <work>/claude-calls.txt), and after a
+    usage-limit error no claude call goes out for an hour (CLAUDE_LIMIT marker): the run uses MARA / SambaNova instead."""
+    try:
+        if time.time() - os.path.getmtime(CLAUDE_LIMIT) < 3600: return "the Claude usage limit was hit < 1 h ago"
+    except OSError:
+        pass
+    cap = os.environ.get("SHORTS_CLAUDE_MAX")
+    if cap:
+        f = os.path.join(work, "claude-calls.txt")
+        n = int(open(f).read() or 0) if os.path.exists(f) else 0
+        if n >= int(cap): return f"SHORTS_CLAUDE_MAX={cap} calls used this run"
+    return None
+
+
+def _claude_count(work):
+    try:
+        f = os.path.join(work, "claude-calls.txt")
+        n = int(open(f).read() or 0) if os.path.exists(f) else 0
+        open(f, "w").write(str(n + 1))
+        with open(CLAUDE_LOG, "a") as g:                 # the daily tally (lead's cost guardrail)
+            g.write(f"{datetime.now(CT):%Y-%m-%d %H:%M:%S} CT {os.path.basename(sys.argv[0])} {os.path.basename(work)}\n")
+    except OSError:
+        pass
+
+
 def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, prefer="mara"):
     """Returns parsed JSON from the model. prefer="claude" (the script writer): claude-cli, MARA, SambaNova; else MARA,
     SambaNova, claude-cli. ("openrouter" is read as "claude": OpenRouter is no longer used, v1.4.0.)"""
@@ -186,6 +217,9 @@ def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, pr
             try:
                 if name in force: raise RuntimeError(f"forced failure (SHORTS_LLM_FORCE_FAIL={','.join(sorted(force))})")
                 if name == "claude":
+                    why = _claude_gate(work)
+                    if why: raise RuntimeError(f"claude skipped: {why}")
+                    _claude_count(work)
                     c = _claude_cli(system + " Respond with ONE JSON object only, first character '{'.", prompt, to)
                 else:
                     body = {"model": model, "temperature": temperature, "max_tokens": max_tokens,
@@ -203,7 +237,10 @@ def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, pr
             except Exception as e:                   # noqa: BLE001
                 last = e; log(f"llm {name} attempt {attempt + 1} failed after {time.time() - t0:.0f}s: {str(e)[:160]}")
                 # a forced failure, a bad key or no credit: retrying the same provider cannot help, go to the next one at once
-                if name in force or re.search(r"-> (401|402|403) ", str(e)) or "empty result" in str(e): break
+                if name == "claude" and re.search(r"usage limit|limit · resets|rate limit", str(e), re.I):
+                    try: open(CLAUDE_LIMIT, "w").write(str(e)[:200])
+                    except OSError: pass
+                if name in force or re.search(r"-> (401|402|403) |claude skipped|usage limit|limit · resets", str(e)) or "empty result" in str(e): break
                 if isinstance(e, ValueError) and "empty sequence" in str(e):      # no JSON in the reply: next provider at once
                     _NOJSON[name] = _NOJSON.get(name, 0) + 1; break
     raise RuntimeError(f"every model failed: {last}")
