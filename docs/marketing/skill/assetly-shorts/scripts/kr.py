@@ -140,6 +140,14 @@ def in_session(at, session_date):
     return at.strftime("%Y-%m-%d") == session_date and 540 <= m <= 935
 
 
+def _daum_close(sym, session_date):
+    try:
+        row = daum_days(sym, 1).get(session_date)
+        return {"last2": row[0], "pct2": round(100 * (row[0] / row[1] - 1), 2)} if row else {}
+    except Exception:                                # noqa: BLE001
+        return {}
+
+
 def kr_quote(sym, session_date):
     """Two KRX feeds for the session dated `session_date` (KST): {last, pct (Yahoo), last2, pct2 (Daum), live}."""
     live = krx_open_now() and kst_now().strftime("%Y-%m-%d") == session_date
@@ -151,6 +159,19 @@ def kr_quote(sym, session_date):
     out = {"live": live}
     try:
         meta, closes = yahoo_chart(sym, "5d", "1d")
+        # the finished session's close (v1.2.0; 10/2 15:46 KST korea-close refused, "feeds disagree" on 6 of 9 names):
+        # Yahoo lags ~20 min, so just after 15:30 its daily bar for today is still an intraday price (SK hynix 1,843,000
+        # vs the KRX close 1,841,000). Today's bar counts only once Yahoo has the closing print (regularMarketTime at or
+        # after 15:30 KST); wait for it (30 s steps, <= 6 min), then leave the figure out
+        if session_date == kst_now().strftime("%Y-%m-%d") and kst_now().hour * 60 + kst_now().minute >= 930:
+            for i in range(12):
+                t = meta.get("regularMarketTime")
+                if t and datetime.fromtimestamp(t, KST) >= datetime.fromisoformat(session_date + " 15:30").replace(tzinfo=KST): break
+                if i == 11:
+                    log(f"yahoo {sym}: no closing print yet ({datetime.fromtimestamp(t, KST):%H:%M} KST)" if t else f"yahoo {sym}: no market time")
+                    return {**out, "stale": "Yahoo has no closing print yet"} | _daum_close(sym, session_date)
+                if i == 0: log(f"yahoo {sym}: waiting for the closing print")
+                time.sleep(30); meta, closes = yahoo_chart(sym, "5d", "1d")
         ks = sorted(closes)
         if ks and ks[-1] == session_date and len(ks) >= 2:
             out.update(last=closes[ks[-1]], prev=closes[ks[-2]], pct=round(100 * (closes[ks[-1]] / closes[ks[-2]] - 1), 2))
