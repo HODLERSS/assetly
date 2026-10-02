@@ -89,6 +89,13 @@ the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 5
   attributed read with the page's own move, and an attributed READ is never offered as a rewrite hint. screen.py adds a
   `home_movers` window. Full test (10/2 midday work dir, --from story, claude -p): DELIVERED, all checks incl. Q43 / Q44,
   377 s.
+- **Avoided names stay out of the book and the Ask line** (10/2 midday-ai2: research clean, but the book's core still held
+  NVDA, AMZN, AVGO, TSM, AMD, so the Ask led with "NVDA (+1.7%) hit a record high" and the Short said "Nvidia is up 1.7%
+  today"): design_book refills the core from other AI leaders (MU ARM ANET MRVL LRCX AMAT KLAC ASML QCOM VRT DELL HPE CRWD
+  PLTR) when SHORTS_AVOID_SYMBOLS is set, and the account seed follows the book; storyline refuses an Ask line naming an
+  avoided ticker or name and points at the clean lines. Unit tests on the ai2 work dir: 5 seeds, 0 avoided names in the
+  book (HPE ARM DELL NBIS + KLAC ASML LRCX VRT QCOM/MU/ANET); its recorded Ask line 3 (NVDA, AMZN) is refused, lines
+  [0, 1] offered.
 - **Extra editions** (owner 10/2, an AI-focused midday at 10:30 CT): `SHORTS_FOCUS=ai` (the pick wants >= 5 of 6 AI items,
   verified AI items lead and non-AI ones are dropped when three AI items stand) and `SHORTS_AVOID_SYMBOLS=NKE,TSLA` (never
   candidates, an item citing one is dropped, kept out of the book); such a run designs its own book (the slot's prestage

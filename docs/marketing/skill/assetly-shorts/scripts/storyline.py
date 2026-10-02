@@ -507,6 +507,12 @@ def check(story, res, facts, askc):
         errs.append(f"ask answer: 'line' must be the number of the visible answer line it quotes (0-{len(lines) - 1})")
     else:
         lt = lines[k]["text"]; lf = nums(lt)
+        # v1.4.0 (10/2 midday-ai2): an extra edition never voices an Ask line about a name an earlier Short told today
+        av = {x.strip().upper() for x in os.environ.get("SHORTS_AVOID_SYMBOLS", "").split(",") if x.strip()}
+        hit = [a for a in av if re.search(r"(?<![A-Za-z])" + re.escape(a) + r"(?![A-Za-z])", lt) or
+               (facts.get("names", {}).get(a) and re.search(r"\b" + re.escape(facts["names"][a]) + r"\b", lt, re.I))]
+        ok_lines = [i for i, r_ in enumerate(lines) if not any(re.search(r"(?<![A-Za-z])" + re.escape(a) + r"(?![A-Za-z])", r_["text"]) for a in av)]
+        if hit: errs.append(f"ask answer: line {k} is about {sorted(hit)}, told in an earlier Short today -> quote another line {ok_lines}")
         say = say_names(facts)
         lt_said = lt + " " + " ".join(say.get(x, short_name(tick.get(x, x))) for x in re.findall(r"\b[A-Z]{2,5}\b", lt) if x in tick)
         for f in nums(at):

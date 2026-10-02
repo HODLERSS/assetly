@@ -22,6 +22,7 @@ W = sys.argv[1]
 SEED = int(sys.argv[sys.argv.index("--seed") + 1]) if "--seed" in sys.argv else None
 rng = random.Random(SEED)
 CORE = ["NVDA", "MSFT", "GOOGL", "AVGO", "TSM", "AMZN", "META", "AMD", "AAPL"]
+CORE_ALT = ["MU", "ARM", "ANET", "MRVL", "LRCX", "AMAT", "KLAC", "ASML", "QCOM", "VRT", "DELL", "HPE", "CRWD", "PLTR"]   # v1.4.0
 NO_HOLD: set = set()     # stories told without holding the name (none by default)
 
 
@@ -122,6 +123,11 @@ def main():
         avoid = {x.strip().upper() for x in os.environ.get("SHORTS_AVOID_SYMBOLS", "").split(",") if x.strip()}
         story = [s for s in story if s not in avoid]; hot = [s for s in hot if s not in avoid]
         core_list = CORE
+        if avoid:
+            # 10/2 midday-ai2: the core (NVDA, AVGO, TSM, AMD, AMZN) still came from CORE although every one was avoided, so the
+            # Ask answered about Nvidia and the Short said "Nvidia is up 1.7% today". Avoided names never enter the book; the
+            # core is refilled from other AI leaders a long-term tech holder plausibly owns
+            core_list = [s for s in CORE + CORE_ALT if s not in avoid and s not in story + hot]
         fx = 1.0
         if res.get("edition") in KRM.KR_EDITIONS:
             # Korea editions (v1.1.0): a US investor's AI book that also holds Korea's memory leaders. SK hynix and Samsung
@@ -141,7 +147,7 @@ def main():
         core = sorted([s for s in core_list if s not in story + hot and (q.get(s) or {}).get("last")], key=lambda s: -day(s))
         n_core = 5 if len(story) <= 3 else 4
         picks = core[:max(2, n_core - 1)] + [rng.choice(core[max(2, n_core - 1):])] if len(core) > n_core else core
-        names = list(dict.fromkeys(story + hot + picks))[:11]
+        names = [s for s in dict.fromkeys(story + hot + picks) if s not in avoid][:11]
         total = rng.uniform(175_000, 265_000)
         cash = rng.choice([4000, 5000, 6000, 7500, 8000])
         # weights: story names 7-12%, hot 4-7%, the rest of the money across the core, the day's best core name largest
