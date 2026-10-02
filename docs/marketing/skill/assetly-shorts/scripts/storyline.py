@@ -355,6 +355,9 @@ def check(story, res, facts, askc):
             except (IndexError, KeyError, TypeError): continue
             f = next((f for f in r.get("figures", []) if f.get("field") == fld and f.get("ok") and KRM.is_kr(f.get("symbol", ""))), None)
             if f and ED == "korea-midday": continue
+            # Korea-first (10/2): with three Korean items, a window figure in each blew the word budget (korea-close v2:
+            # 5 rounds, refused); the first Korean item says it, the rest may say the window without a figure
+            if f and said: continue
             if f: said = True
             if f and not any(nums(x["text"]) for x in it["sentences"]):
                 # live: the page's own header figure, the one the viewer reads (and the one allowed_figures accepts)
@@ -367,7 +370,10 @@ def check(story, res, facts, askc):
     sents += [("portfolio", story["portfolio"]["text"]), ("ask answer", story["ask"]["answer_text"])]
     words = sum(len(t.split()) for _, t in sents) + len(askc["question"].split())
     if words > story.get("_budget", BUDGET):
-        longest = max(sents, key=lambda x: len(x[1].split()))
+        # Korea: never point the cut at the line carrying the window figure the check requires (10/2 korea-close: 12
+        # rounds alternating "say 15.8%" / "shorten 'SK hynix fell 15.8% ...'")
+        cut_from = [x for x in sents if not (KR and nums(x[1]))] or sents
+        longest = max(cut_from, key=lambda x: len(x[1].split()))
         errs.append(f"{words} spoken words, budget {story.get('_budget', BUDGET)}: cut at least {words - story.get('_budget', BUDGET)} words "
                     f"-> shorten {longest[0]} ({len(longest[1].split())} words: {longest[1]!r}) first; keep every fact you keep exact")
     if not 3 <= len(story["items"]) <= 5: errs.append(f"{len(story['items'])} market items, need 3 to 5")
@@ -388,7 +394,7 @@ def check(story, res, facts, askc):
     audits = ear_audit([t for _, t in sents] + [askc["question"]])
     spoken = sum(n for _, n in audits)
     if spoken > SPOKEN_MAX:                              # figures read long: "5.8%" is four spoken words (10/1: 73 -> 30.3 s)
-        longest = max(zip(sents, audits), key=lambda x: x[1][1])
+        longest = max([z for z in zip(sents, audits) if not (KR and nums(z[0][1]))] or list(zip(sents, audits)), key=lambda x: x[1][1])
         errs.append(f"{spoken} words once figures are read aloud ('5.8%' = 'five point eight percent'), max {SPOKEN_MAX}: cut "
                     f"{spoken - SPOKEN_MAX} -> shorten {longest[0][0]} ({longest[0][1]!r}); fewer figures read shorter")
     for (where, t), (a, _) in zip(sents, audits):
@@ -404,9 +410,26 @@ def check(story, res, facts, askc):
             r = res["items"][it["n"]]
             errs.append(f"item {i + 1}: sentence 2 only restates sentence 1 ({it['sentences'][1]['text']!r}) -> replace it with the "
                         f"attributed read, e.g. {r['sentiment']!r} shortened")
+        # (a thin read, "Analysts cite demand.", is the judge's call, not a word count: a 5-word floor looped the
+        # 10/2 korea-midday rebuild 12 rounds against the 52-word budget)
         elif not re.search(r"\b(analysts?|commentators?|investors?|traders?|shares|the stock|markets?|economists?|strategists?|wall street|critics|fans|users|observers|futures|policymakers|officials|fed|bond traders|yields|economists|the market)\b",
                            it["sentences"][1]["text"], re.I):
             errs.append(f"item {i + 1}: the second sentence must be the attributed read (analysts/investors/traders/shares...)")
+    if KR:
+        # Korea-first (owner, 10/2): item 1 and at least two of the three items are KRX listings (or the KOSPI); US names
+        # only as read-through context
+        krs = [any(KRM.is_kr(s) for s in (res["items"][it["n"]].get("symbols") or [])) if isinstance(it.get("n"), int)
+               and it["n"] < len(res["items"]) else False for it in story["items"]]
+        spare = [n for n, r in enumerate(res["items"]) if any(KRM.is_kr(s) for s in r.get("symbols") or [])]
+        if not krs or not krs[0] or sum(krs) < 2:
+            errs.append(f"Korea-first: item 1 and at least 2 of the 3 items must be Korean listings -> use verified items n={spare} "
+                        f"(US names only as the third item or as context)")
+    # fluency (owner review 10/2: "Broadcom reportedly got Samsung Electronics memory favors. Analysts see gap closing.")
+    for k, it in enumerate(story["items"]):
+        for x in it["sentences"]:
+            t = x["text"]
+            if re.search(r"got.*favou?rs|(see|sees|expect|expects)\s+(gap|demand|growth|margin|price|prices)\s+\w+ing", t, re.I):
+                errs.append(f"item {k + 1}: {t!r} is not natural English (a missing article or an odd phrase) -> say it as a person would")
     for it in story["items"]:
         for x in it["sentences"]:
             if len(x["eyebrow"]) > 26: errs.append(f"eyebrow {x['eyebrow']!r} over 26 characters (use the short name)")
@@ -514,6 +537,33 @@ def check(story, res, facts, askc):
         if re.search(r"\b(won|beat|signed|landed|took|lost)\s+[A-Z][\w&.-]*'s\s+\w+\.\s*$", t):
             errs.append(f"{where}: '{t}' drops what the possessive refers to -> say it in full ('won a $20B Navy fighter contract')")
     return errs, words
+
+
+def judge(story, res, askc):
+    """A native-speaker editor's pass over a draft every code check passed (owner review 10/2): each spoken line must be
+    natural, grammatical English; each item's read must add a concrete fact or view (not restate the why, not "Analysts
+    cite demand."); the spoken Ask answer must answer the typed question; a Korea Short must say what it means for a US
+    investor's AI-heavy portfolio somewhere. Returns problems as rewrite instructions ([] = pass, or the judge failed)."""
+    lines = [f"item {k + 1}, sentence {j + 1}: {x['text']}" for k, it in enumerate(story["items"]) for j, x in enumerate(it["sentences"])]
+    lines += [f"portfolio: {story['portfolio']['text']}", f"ask question: {askc['question']}", f"ask answer: {story['ask']['answer_text']}"]
+    reads = "\n".join(f"item {k + 1} sources say: WHY {res['items'][it['n']]['why']!r}; READ {res['items'][it['n']]['sentiment']!r}"
+                      for k, it in enumerate(story["items"]))
+    jp = ("Lines of a 25-second market video for US retail investors, read aloud:\n" + "\n".join(lines) + "\n\nWhat the sources say:\n" + reads +
+          "\n\nJudge strictly, as a native English-speaking editor:\n"
+          "1. fluent: would a native speaker say this line exactly so? (articles present, no odd phrasing like 'got memory favors' or "
+          "'see gap closing', no headline-ese)\n"
+          "2. read_adds: for each item, does sentence 2 add a concrete new fact or view (a target, an estimate, a flow, a risk, what "
+          "it means for holders) rather than restating sentence 1 or saying something generic ('Analysts cite demand.')?\n"
+          "3. answers: does the ask answer directly answer the ask question (the figure it asks for)?\n" +
+          ("4. read_through: does at least one line say what it means for a US investor's AI chip holdings (context, not advice)?\n" if KR else "") +
+          'Return {"problems": [{"where": "item 2, sentence 2", "issue": "...", "fix": "a natural rewrite using only facts above"}]} '
+          "with [] when every line passes. Never suggest advice or a forecast.")
+    try:
+        v = llm(W, "You are a strict copy editor. Natural, concrete, correct English only.", jp, max_tokens=3000, temperature=0,
+                timeout=60, prefer="openrouter")
+    except RuntimeError as e:
+        log(f"storyline judge failed ({str(e)[:80]}): code checks stand"); return []
+    return [f"{p.get('where', '?')}: {p.get('issue', '')} -> {p.get('fix', '')}" for p in v.get("problems") or [] if isinstance(p, dict)]
 
 
 def short_title(covers):
@@ -642,7 +692,7 @@ def fallback(story, res, facts, askc):
 
 KR_GUIDE = ("" if not KR else f"""THE KOREA EDITION (v1.1.0, owner 10/1): for US investors with an AI-heavy portfolio, MID-TO-LONG TERM, never day to day.
   Each story page is filmed on the app's {KRM.RANGE[ED]} chart: its header reads "Price · {KRM.RANGE[ED]}" and the {KRM.RANGE[ED]} change. Lead
-  each Korean item with that window ('{KRM.WIN_PHRASE[KRM.RANGE[ED]]}') and its WHY{" (YTD figures are long to say: at most ONE, in item 1, and only if the budget allows; 'rose this year' without a figure is fine)" if ED == "korea-midday" else ""}; the session move in
+  each Korean item with that window ('{KRM.WIN_PHRASE[KRM.RANGE[ED]]}') and its WHY{" (YTD figures are long to say: at most ONE, in item 1, and only if the budget allows; 'rose this year' without a figure is fine)" if ED == "korea-midday" else " (the figure in item 1; later items may name the window without one)"}; the session move in
   Seoul is secondary ('{"closed up 3.2% in Seoul" if ED == "korea-close" else "is up 1.1% so far in Seoul"}'). A US name's move is its last
   New York session. Say the names in full ("SK hynix", "Samsung Electronics", "Hanmi Semiconductor"). The portfolio line is the
   all-time gain Home shows ("Your portfolio is up 18% all time."): never a 'today' figure (Home's Today mixes the US and Korean
@@ -751,6 +801,10 @@ sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashe
             except Exception as e:                       # noqa: BLE001  (a malformed shape is a failed round)
                 errs, words = [f"malformed: {e}"], 0
             log(f"storyline round {rnd + 1} ({time.time() - t0:.0f}s): {words} words, {len(errs)} problems {errs[:6]}")
+            if not errs and os.environ.get("SHORTS_JUDGE", "1" if KR else "0") != "0":   # Korea editions first (10/2)
+                errs = judge(story, res, askc)
+                log(f"storyline judge: {len(errs)} problems {errs[:4]}")
+                if errs: story["_judged"] = errs
             if not errs:
                 break
             if best is None or len(errs) <= len(best[1]) and not errs[0].startswith("malformed"):

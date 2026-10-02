@@ -313,11 +313,12 @@ def main():
             safe = bool(cov) and all(r[1] >= 60 and r[3] <= 960 for r in cov)
             name_ok = any(hero["name"].lower() in r[0].lower() for r in r0)
             same_dir = (hero["value"] > 0) == (hero["dir"] == "up")
-            ok38 = lab_ok and in_beat and bool(cov) and safe and name_ok and same_dir
+            kr_ok = ED not in KRM.KR_EDITIONS or KRM.is_kr(hero.get("sym", ""))     # v1.3.x: a Korea Short's hero is a KRX listing
+            ok38 = lab_ok and in_beat and bool(cov) and safe and name_ok and same_dir and kr_ok
             row("Q38", "Cover hero: one verified move, readable on frame 0 (safe zone), labelled with its window, and the same figure readable in that item's beat",
                 ok38, f"{hero['name']} {hero['fig']} {hero['label']} ({hero['src']}); frame 0 {'reads it' if cov else 'does NOT read it'}"
                       f"{'' if safe else ' OUTSIDE x 60-960'}; beat {hero['beat'] + 1} {'shows it' if in_beat else 'does NOT show it'}"
-                      f"{'' if lab_ok else '; WRONG label'}{'' if name_ok else '; name not read'}")
+                      f"{'' if lab_ok else '; WRONG label'}{'' if name_ok else '; name not read'}{'' if kr_ok else '; NOT a KRX listing'}")
         else:
             row("Q38", "Cover hero: one verified move, readable on frame 0 (safe zone), labelled with its window, and the same figure readable in that item's beat",
                 True, "no hero (no move >= 1% that its page or a chip shows and both feeds confirm): the headline cover")

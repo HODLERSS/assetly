@@ -269,9 +269,17 @@ def main_ask():
             # then "Samsung raises it to ~68%"): the app picks the members, so the check follows the answer's own order:
             # running sums of the listed holdings' values (each verified on two feeds) in order of first mention
             tot = next((c["app"] for c in f["checks"] if c["figure"] == "total"), None)
+            # how the answer may name a holding: ticker, code, short and Korean name, and the name's first word when no other
+            # holding shares it ("Samsung" for Samsung Electronics, 10/2 korea-close: "(AMD, NVDA, TSM, SK hynix, Samsung, MU)")
+            def nm_keys(h):
+                full = [(f.get("names") or {}).get(h["symbol"], ""), KRM.KR_NAMES.get(h["symbol"], "")]
+                firsts = {n.split()[0] for n in full if n and len(n.split()) > 1}
+                others = {w for g in f["holdings"] if g is not h for w in " ".join([(f.get("names") or {}).get(g["symbol"], ""),
+                          KRM.KR_NAMES.get(g["symbol"], "")]).split()}
+                return {h["symbol"], h["symbol"].split(".")[0], *full, *(w for w in firsts if w not in others and len(w) >= 4)}
             pos = []
             for h in f["holdings"]:
-                keys = {h["symbol"], h["symbol"].split(".")[0], (f.get("names") or {}).get(h["symbol"], ""), KRM.KR_NAMES.get(h["symbol"], "")}
+                keys = nm_keys(h)
                 hits = [m.start() for k in keys if k and len(k) >= 2 for m in re.finditer(r"(?<![A-Za-z])" + re.escape(k) + r"(?![a-z])", ans)]
                 if hits: pos.append((min(hits), h))
             run_a = run_b = 0.0
@@ -284,8 +292,7 @@ def main_ask():
             cash = (tot - sum(h["value"] for h in f["holdings"])) if tot else None
             if cash is not None and cash >= 1: cands_usd.append(cash)
             for seg in re.split(r"\u2022|\n|\s-\s", ans):
-                inseg = sorted((p_ - 0, h) for p_, h in [(min([m.start() for k in {h["symbol"], h["symbol"].split(".")[0],
-                               (f.get("names") or {}).get(h["symbol"], ""), KRM.KR_NAMES.get(h["symbol"], "")} if k and len(k) >= 2
+                inseg = sorted((p_ - 0, h) for p_, h in [(min([m.start() for k in nm_keys(h) if k and len(k) >= 2
                                for m in re.finditer(r"(?<![A-Za-z])" + re.escape(k) + r"(?![a-z])", seg)] or [-1]), h) for h in f["holdings"]] if p_ >= 0)
                 if len(inseg) < 2 or not tot: continue
                 sa = sb = 0.0

@@ -147,6 +147,9 @@ def cover_hero(story, res, beats, ext):
         if not m: continue
         sym = m.group(1)
         ch = b.get("chip") or {}
+        # Korea editions are Korea-first (owner, 10/2: the korea-midday thumbnail led with "Micron +284.5%"): the hero is
+        # a KRX listing or nothing
+        if KR and not KRM.is_kr(sym): continue
         if KR:
             # Korea editions: the page is filmed on the 1M / 3M chart, so the hero is that window's change as the page's own
             # header reads it, and both histories agree with it (research figure of the same field)

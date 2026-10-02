@@ -395,12 +395,16 @@ def main():
             have = {tuple(i.get("symbols", [])) for i in kept}
             kept += [i for i in k2 if tuple(i.get("symbols", [])) not in have]
             dropped = d2 + [d for d in dropped if tuple(d.get("symbols", [])) not in {tuple(i.get("symbols", [])) for i in k2}]
-    if len(kept) < 3 and not REVERIFY:
+    # Korea editions are Korea-first (owner, 10/2): at least two kept items about KRX listings (or the KOSPI)
+    kr_n = lambda its: sum(1 for i in its if any(KRM.is_kr(s) for s in i.get("symbols", [])))
+    if (len(kept) < 3 or (KR and kr_n(kept) < 2)) and not REVERIFY:
         # one fresh pick before refusing: other stories, or the same ones told only with what two publishers state
         with Stage(W, "research.second_pick"):
             note = ("\n\nA first pick kept only these items: " + "; ".join(i["cover"] for i in kept) + ". These FAILED verification "
                     "(do not repeat them as written): " + "; ".join(f"{d.get('cover')} ({'; '.join(d.get('drop', []))[:160]})" for d in dropped)
-                    + ". Pick 6 items again; each WHY and READ must be stated by two different publishers' headlines, word for word close.")
+                    + ". Pick 6 items again; each WHY and READ must be stated by two different publishers' headlines, word for word close."
+                    + (" At least 4 of the 6 must be about KRX listings (SK hynix, Samsung Electronics, Hanmi Semiconductor and peers, "
+                       "or the KOSPI), using the Korean newsrooms' headlines too." if KR else ""))
             pick2 = llm(W, "You are a careful markets editor for a 25-second video. You only state what the cited headlines and quotes support.", prompt + note)
             k2, d2 = verify(pick2.get("items", []), byid, rowsym, macro)
             have = {tuple(i.get("symbols", [])) or (i["cover"],) for i in kept}
@@ -414,6 +418,8 @@ def main():
     log(f"kept {len(kept)} items: " + " | ".join(i["cover"] for i in kept))
     if len(kept) < 3:
         sys.exit(f"REFUSE: only {len(kept)} research items survived verification (need 3)")
+    if KR and kr_n(kept) < 2:
+        sys.exit(f"REFUSE: only {kr_n(kept)} verified items are about KRX listings (a Korea Short needs 2 of its 3)")
 
 
 UP = r"(?:rose|rises|climbed|jumped|jumps|gained|rallied|advanced|popped|pops|higher|up)"

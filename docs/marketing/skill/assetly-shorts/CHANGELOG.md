@@ -68,6 +68,16 @@ start, or refuses. No check was removed or loosened to get there.
   when both feeds carry it for this session and agree (an app-only or second-feed-only day move no longer verifies).
   Tested: Oct-1 15:30 KST row at 9:10 KST Oct 2 = stale, Oct-2 9:05 row = current; a fake stale Yahoo chart -> refused;
   the live 10:50 KST quote -> both feeds at 10:13.
+- Korea-first and fluency (owner review 10/2, not yet released: committed, NOT installed): research keeps >= 2 KRX items
+  (else a second pick asking for 4 of 6, else refuse); storyline wants item 1 and 2 of 3 items KRX, the window figure only in
+  the first Korean item, budget-cut hints never aimed at the line carrying it; the cover hero is a KRX listing or none (Q38
+  checks it); code patterns for odd phrasing ("got ... favors", "see gap closing"); an LLM editor pass on a draft that
+  passed every code check (fluent native English, a read that adds a concrete fact or view, the Ask line answers the
+  question, a read-through for US AI-chip holders), Korea editions only (`SHORTS_JUDGE`); the Ask matches a holding by its
+  name's unique first word ("Samsung"). Tested 10/2 03:00 CDT on the korea-close and korea-midday work dirs: research came
+  back Korea-first (5 of 5 items), but the storyline did not converge in 5 attempts (52-word budget vs long Korean names,
+  verified-wording traceability and the window figure), so neither rebuild shipped. Needs an owner call before the next
+  KRX session (see the report).
 - Q37 never samples the last beat inside the 0.6 s cross-fade to the end card (10/2 korea-close: 90% of a 3.3 s beat read the
   dimming phone as top 1393 and refused a finished Short; delivered on a QA re-run).
 - Ask (Korea): a bullet that lists holdings and their total ("Foundry/fab: TSM $36,736, Samsung $8,177 = $44,913 (24.8%)",
