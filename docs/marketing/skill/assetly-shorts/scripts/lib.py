@@ -353,6 +353,21 @@ ATTRIB = re.compile(r"\b(?:commentators?|observers?|pundits|market watchers)\b|\
                     re.I)
 
 
+# v1.4.1 (10/2 close: "Up $5,096 this week, 2.0%." / "One month: up 10.2%." over "1W: +$5,096 (+2.0%)" / "1M: +$23,544
+# (+10.2%)" read as not following, in the storyline and in Q32): the app's window labels said as words. ONE table for both
+# checks (storyline's Ask-follow and qa_deliver's Q32)
+WIN_SAY = [(r"\b1W\b|\bwk\b", " one week this past "), (r"\b1M\b|\bmo\b", " one month this past "),
+           (r"\b3M\b", " three months past "), (r"\b6M\b", " six months past "),
+           (r"\bYTD\b", " this year to date "), (r"\b1Y\b", " one year past ")]
+WIN_FREE = {"over", "gaine", "lost", "rose", "fell", "down", "up"}      # sign / window words a paraphrase may add (5-letter stems)
+
+
+def say_windows(text):
+    """'1W: +$5,096' -> ' one week this past : +$5,096' (the app's window labels as a voice says them)."""
+    for pat, rp in WIN_SAY: text = re.sub(pat, rp, text)
+    return text
+
+
 def attributed(text):
     """The third-party attribution in a line, or None (v1.4.0: the read is ours, direct and factual)."""
     m = ATTRIB.search(text or "")

@@ -519,7 +519,11 @@ def check(story, res, facts, askc):
             if not shows(f, lf): errs.append(f"ask answer: '{f}' is not in answer line {k} ({lt!r}) -> use that line's own figures")
         stem = lambda w: re.sub(r"[^a-z]", "", w.lower())[:5]
         aw = [stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]+", at) if len(w) >= 3 and w.lower() not in STOP]
-        have = {stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]+", lt_said)} | {"your", "port"}
+        # 10/2 close: "Over one month, your portfolio gained 10.2%." over "1M: +$23,544 (+10.2%)" read as not following;
+        # the app's window labels are said as words (same table as Q32), and the sign / window words are free
+        from lib import say_windows, WIN_FREE
+        lt_said = say_windows(lt_said)
+        have = {stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]+", lt_said)} | {"your", "port", "portf"} | WIN_FREE
         if aw and sum(w in have for w in aw) / len(aw) < 0.6:
             errs.append(f"ask answer: {at!r} does not follow answer line {k} ({lt!r}) -> quote it or paraphrase it closely")
     if len(at.split()) < 4 or (ED in ("midday", "close") and not re.search(r"\b(up|down|flat|gained|lost|rose|fell)\b", at, re.I)):

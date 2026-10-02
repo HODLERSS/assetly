@@ -17,6 +17,9 @@
 - **Q32 reads the app's window labels as spoken** (10/2 15:02 close refused: "Up $5,096 this week, 2.0%." over "Solid stretch.
   1W: +$5,096 (+2.0%)" was "follows False"): 1W / wk -> week, 1M / mo -> month, 3M, 6M, YTD, 1Y; "down" is a sign word.
   Regrade of that close's work dir: Q32 PASS.
+  The storyline's Ask-follow check had the same blind spot ("Over one month, your portfolio gained 10.2%." refused against
+  "1M: +$23,544 (+10.2%)"; the lead hot-patched it 10/2): both now use ONE table, lib.say_windows / lib.WIN_FREE (sign and
+  window words free, "portf" the stem of portfolio). `scripts/test_follow.py [<close work dir>]`: 6/6 PASS on the 10/2 close.
 - **A refused scheduled run says so**: run.sh's exit notifies on the Mac ("<edition> NOT delivered" + the last REFUSE line)
   and appends docs/marketing/shorts/refusals.log (not for --test, not when delivered).
 - Not changed (checked 10/2): the close's take-1 Ask "TER (+12.7%, +$1,529)", "HPE (+10.2%, +$976)", "-$720" were refused
