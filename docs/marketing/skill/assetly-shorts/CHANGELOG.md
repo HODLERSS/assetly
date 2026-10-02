@@ -14,6 +14,14 @@
   phone-verified); "thumbnail": "set" / the error in youtube-upload.json; exit 3 with the video up on failure (run.sh keeps
   the upload record and prints the one-line fix); `--thumbnail-only <videoId> <png>`. shorts-craft.md's claim that the
   scope could not do it is corrected. TikTok keeps the first frame.
+- **Q32 reads the app's window labels as spoken** (10/2 15:02 close refused: "Up $5,096 this week, 2.0%." over "Solid stretch.
+  1W: +$5,096 (+2.0%)" was "follows False"): 1W / wk -> week, 1M / mo -> month, 3M, 6M, YTD, 1Y; "down" is a sign word.
+  Regrade of that close's work dir: Q32 PASS.
+- **A refused scheduled run says so**: run.sh's exit notifies on the Mac ("<edition> NOT delivered" + the last REFUSE line)
+  and appends docs/marketing/shorts/refusals.log (not for --test, not when delivered).
+- Not changed (checked 10/2): the close's take-1 Ask "TER (+12.7%, +$1,529)", "HPE (+10.2%, +$976)", "-$720" were refused
+  correctly: the app's own windowUsd (value - value/(1+pct), intel.ts) on the held values gives TER $2,330, HPE $1,312,
+  APP -$2,339, the same as facts' two-feed window dollars (typed "window"); the answer's dollars were the app LLM's own.
 
 ## v1.4.0 (2026-10-02, owner: five requests on look, voice, music, research and TikTok)
 

@@ -240,10 +240,17 @@ def main():
         said = " ".join(w for c in (lines_d[-1].get("cues", []) if lines_d else []) for w in c.get("show", []))
         stem = lambda w: re.sub(r"[^a-z]", "", w.lower())[:5]
         filler = set("and the are was were its with for about each also than rose fell gained lost climbed slipped dropped jumped "
-                     "rises falls higher lower today this that".split())
+                     "rises falls higher lower today this that down".split())    # a sign said as a word ("up" / "down")
         ws = lambda x: [stem(w) for w in re.findall(r"[A-Za-z][A-Za-z'-]{2,}", x) if w.lower() not in filler]
         nm = facts.get("names", {})                    # a ticker on screen is said as its name ("NKE" -> "Nike")
-        qset = set(ws(quote + " " + " ".join(nm.get(x, "") for x in re.findall(r"\b[A-Z]{2,5}\b", quote)))) | {"your", "portf"}
+        # the app's window labels as a voice says them (10/2 close: "Up $5,096 this week, 2.0%." over "1W: +$5,096 (+2.0%)"
+        # read as not following): 1W this week, 1M this month, 3M three months, YTD this year, 1Y past year, wk / mo
+        WIN_SAY = [(r"\b1W\b|\bwk\b", " week "), (r"\b1M\b|\bmo\b", " month "), (r"\b3M\b", " three months "),
+                   (r"\b6M\b", " six months "), (r"\bYTD\b", " this year "), (r"\b1Y\b", " past year ")]
+        def say_q(t):
+            for pat, rp in WIN_SAY: t = re.sub(pat, rp, t)
+            return t
+        qset = set(ws(say_q(quote) + " " + " ".join(nm.get(x, "") for x in re.findall(r"\b[A-Z]{2,5}\b", quote)))) | {"your", "portf"}
         follow = bool(quote) and ws(said) and sum(w in qset for w in ws(said)) / len(ws(said)) >= 0.6 and \
             all(shows(f, figs_of([quote])) for f in figs_of([said]) if re.search(r"[%$]", f))
         ocr_ans = " ".join(seen[-1]) if seen else ""

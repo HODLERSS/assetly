@@ -94,7 +94,15 @@ echo "assetly-shorts v${VER:-?}: $ED $DATE test=$TEST seed=$SEED work=$W -> $DST
 START_TS=$(date +%s); DEADLINE_S="${SHORTS_DEADLINE_S:-1200}"
 export SHORTS_T0="$START_TS" SHORTS_DEADLINE_S="$DEADLINE_S"
 WD=""
-trap 'rc=$?; [ -n "$WD" ] && kill "$WD" 2>/dev/null; echo "exit $rc after $(( $(date +%s) - START_TS ))s (budget ${DEADLINE_S}s)"' EXIT
+# v1.4.1 (10/2: the 15:02 close refused and nobody noticed): a scheduled (non-test) run that ends without delivering says so on
+# the Mac, with the last REFUSE line; a refusal record goes next to the deliveries (docs/marketing/shorts/refusals.log)
+notify_refusal() {
+  [ "$1" = 0 ] || [ "$TEST" = 1 ] || [ -e "$W/delivered" ] || {
+    R=$(grep -h "REFUSE" "$W/run.log" 2>/dev/null | tail -1 | cut -c1-150 | tr '"' "'")
+    echo "$(date '+%F %T') $ED $DATE exit $1: ${R:-see $W/run.log}" >> "$APP/docs/marketing/shorts/refusals.log" 2>/dev/null
+    osascript -e "display notification \"${R:-exit $1, see run.log}\" with title \"Assetly Shorts: $ED NOT delivered\"" 2>/dev/null || true; }
+}
+trap 'rc=$?; [ -n "$WD" ] && kill "$WD" 2>/dev/null; echo "exit $rc after $(( $(date +%s) - START_TS ))s (budget ${DEADLINE_S}s)"; notify_refusal $rc' EXIT
 trap 'echo "deadline: stopped at $(( $(date +%s) - START_TS ))s"; exit 1' USR1
 bash "$SK/watchdog.sh" $$ "$W" "$DEADLINE_S" & WD=$!; disown "$WD" 2>/dev/null || true
 left() { echo $(( START_TS + DEADLINE_S - $(date +%s) )); }
