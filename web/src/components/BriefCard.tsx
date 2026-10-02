@@ -18,7 +18,7 @@ import { noteBriefOpened } from "../lib/push";
 // Section labels are plain words, not desk slang ("The tape now", "Desk view", "Tripwire" read as jargon
 // to a retail reader; r1 + r2 design audits).
 const ED_META: Record<BriefEdition, { title: string; tape: string; positions: string; desk: string; watch: string; read: string; chip: string }> = {
-  morning: { title: "Morning Brief", tape: "Overnight", positions: "Your positions", desk: "Our read", watch: "Watch", read: "Read · 2 min", chip: "Morning" },
+  morning: { title: "Pre-market Brief", tape: "Overnight", positions: "Your positions", desk: "Our read", watch: "Watch", read: "Read · 2 min", chip: "Pre-market" },
   midday: { title: "Midday Pulse", tape: "Right now", positions: "Your positions", desk: "Our read", watch: "Watch", read: "Read · 2 min", chip: "Midday" },
   close: { title: "Closing Note", tape: "Today", positions: "Your positions", desk: "Our read", watch: "Watch", read: "Read · 2 min", chip: "Close" },
   assessment: { title: "Portfolio Assessment", tape: "Your portfolio", positions: "Quality read", desk: "Structure & risk", watch: "What would change it", read: "Read · 2 min", chip: "Assessment" },

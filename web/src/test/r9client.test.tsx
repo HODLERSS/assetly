@@ -183,6 +183,6 @@ describe("10 Home's briefs are chosen by edition and session, not by write time 
     render(<App api={stubApi({ getDailyBriefs: vi.fn().mockResolvedValue(briefs) })} />);
     const card = await screen.findByTestId("brief-card");
     expect(within(card).getByRole("button", { name: "Close" }).getAttribute("aria-pressed")).toBe("true");
-    expect(within(card).getByRole("button", { name: "Morning" }).getAttribute("aria-pressed")).toBe("false");   // every edition of the day is a chip (r10)
+    expect(within(card).getByRole("button", { name: "Pre-market" }).getAttribute("aria-pressed")).toBe("false");   // every edition of the day is a chip (r10)
   });
 });

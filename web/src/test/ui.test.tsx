@@ -414,7 +414,7 @@ describe("U39 morning brief", () => {
     render(<App api={api} />);
     await screen.findByTestId("net-worth");
     const card = await screen.findByTestId("brief-card");
-    expect(card.textContent).toContain("Morning Brief");
+    expect(card.textContent).toContain("Pre-market Brief");
     expect(card.textContent).toContain("37% of your book");
     expect(screen.queryByTestId("brief-body")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: /read · 2 min/i }));
@@ -444,7 +444,7 @@ describe("U39 morning brief", () => {
     const card = await screen.findByTestId("brief-card");
     expect(card.textContent).toContain("Closing Note");
     expect(card.textContent).toContain("Close lede: day settled.");
-    await userEvent.click(screen.getByRole("button", { name: "Morning" }));
+    await userEvent.click(screen.getByRole("button", { name: "Pre-market" }));
     expect((await screen.findByTestId("brief-card")).textContent).toContain("Morning lede here.");
   });
 });
@@ -1369,8 +1369,8 @@ describe("U48 portfolio assessment card", () => {
     expect(body.textContent).toContain("Structure & risk");
     expect(screen.getByTestId("brief-horizon").textContent).toContain("Next 3 years");
     expect(screen.getAllByTestId("brief-idea")).toHaveLength(2);
-    await userEvent.click(screen.getByRole("button", { name: "Morning" }));
-    expect((await screen.findByTestId("brief-card")).textContent).toContain("Morning Brief");
+    await userEvent.click(screen.getByRole("button", { name: "Pre-market" }));
+    expect((await screen.findByTestId("brief-card")).textContent).toContain("Pre-market Brief");
   });
 });
 
@@ -1497,7 +1497,7 @@ describe("U51 mini player", () => {
   it("keeps playing when the user moves to another tab, and the bar goes with them", async () => {
     const api = withAudio();
     const bar = await startListening(api);
-    expect(bar.textContent).toContain("Morning Brief");
+    expect(bar.textContent).toContain("Pre-market Brief");
     const playsBefore = play.mock.calls.length;
     const pausesBefore = pause.mock.calls.length;
 
@@ -1632,7 +1632,7 @@ describe("U47 device voice when there is no MP3", () => {
     render(<App api={api} />);
     const card = await screen.findByTestId("brief-card");
     expect(within(card).getByRole("button", { name: "Listen to your brief" })).toBeTruthy();
-    await userEvent.click(within(card).getByRole("button", { name: "Morning" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Pre-market" }));
     const card2 = await screen.findByTestId("brief-card");
     expect(within(card2).queryByTestId("brief-listen")).toBeNull();
   });

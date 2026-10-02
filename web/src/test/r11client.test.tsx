@@ -171,7 +171,7 @@ describe("m3 (native): the card keeps the edition being read across a remount", 
     const api = stubApi({ getDailyBriefs: vi.fn().mockResolvedValue([b("morning", at(8), "Morning lede."), b("close", at(1), "Close lede.")]) });
     const first = render(<BriefCard api={api} held={["RDDT"]} />);
     const card = await screen.findByTestId("brief-card");
-    await userEvent.click(within(card).getByRole("button", { name: "Morning" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Pre-market" }));
     first.unmount();
     (api.getDailyBriefs as ReturnType<typeof vi.fn>).mockResolvedValue([b("morning", at(8), "Morning lede."), b("midday", at(4), "Midday lede."), b("close", at(1), "Close lede.")]);
     render(<BriefCard api={api} held={["RDDT"]} />);

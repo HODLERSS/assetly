@@ -177,7 +177,7 @@ const earNumbers = (t: string) => earWords(t)
 // The fallback ships to a real listener whenever the model wanes, so it obeys the same laws as the written
 // script: bottom line first, only the two positions that matter, no stat line read aloud, no laundry list.
 function fallbackScript(s: Sections, dayLine: string, edition: string): string {
-  const greet = edition === "kr_open" ? `Korea is open. Here's your Korea open pulse for ${dayLine}.` : edition === "kr_close" ? `Korea has closed. Here's your Korea closing note for ${dayLine}.` : edition === "weekend" ? `Hi, it's ${dayLine}. Here's your weekend read.` : edition === "assessment" ? `Hi, it's ${dayLine}. Here's your portfolio assessment.` : edition === "close" ? `Good evening, it's ${dayLine}. Here's your closing note.` : edition === "midday" ? `It's ${dayLine}, midday. Here's your pulse.` : `Good morning, it's ${dayLine}. Here's your brief.`;
+  const greet = edition === "kr_open" ? `Korea is open. Here's your Korea open pulse for ${dayLine}.` : edition === "kr_close" ? `Korea has closed. Here's your Korea closing note for ${dayLine}.` : edition === "weekend" ? `Hi, it's ${dayLine}. Here's your weekend read.` : edition === "assessment" ? `Hi, it's ${dayLine}. Here's your portfolio assessment.` : edition === "close" ? `Good evening, it's ${dayLine}. Here's your closing note.` : edition === "midday" ? `It's ${dayLine}, midday. Here's your pulse.` : `Good morning, it's ${dayLine}. Here's your pre-market brief.`;
   const say = (t: string) => earNumbers(String(t ?? "").trim());
   const firstSentence = (t: string) => (String(t ?? "").split(/(?<=[.!?])\s+/)[0] ?? "").trim();
   const top = (s.positions ?? []).slice(0, 2);   // two names, not a walkthrough
@@ -249,7 +249,7 @@ export async function composeScript(p: ComposeInput): Promise<ComposeResult> {
       const wk = dayLine.split(",")[0];
       const greetR = ed === "kr_open" ? `Good morning. Korea just opened, and it's ${wk} there.` : ed === "kr_close" ? `Korea has closed for ${wk}. Here's how your Korean stocks did.`
         : ed === "weekend" ? `Hi, it's ${wk}. Here's your weekend read.` : ed === "assessment" ? `Hi. Here's a first look at your portfolio.`
-        : ed === "close" ? `Good evening, it's ${wk}. Here's how the day ended.` : ed === "midday" ? `Good afternoon, it's ${wk}. Here's your midday check.` : `Good morning, it's ${wk}. Here's your brief.`;
+        : ed === "close" ? `Good evening, it's ${wk}. Here's how the day ended.` : ed === "midday" ? `Good afternoon, it's ${wk}. Here's your midday check.` : `Good morning, it's ${wk}, before the US open. Here's your pre-market brief.`;
       const restatePrompt = `Here is today's ${isAssess ? "portfolio assessment" : "portfolio brief"} card, already checked for accuracy:\n${JSON.stringify(s)}\n
 Write what a warm, clear personal financial reporter would SAY reading this card aloud to its owner. Return STRICT JSON {"spoken": str}.
 - It is spoken right after this greeting, so do NOT greet or introduce it: "${greetR}"
@@ -341,7 +341,7 @@ Never tell them to buy, sell, trim, add or rotate. Never say "keep an eye on". N
       };
       const period = (x: string) => (/[.!?]$/.test(x) ? x : x + ".");
       const weekday = dayLine.split(",")[0];
-      const greet = ed === "kr_open" ? `Korea is open, it's ${weekday} there. Here's your Korea open pulse.` : ed === "kr_close" ? `Korea has closed for ${weekday}. Here's your Korea closing note.` : ed === "weekend" ? `Hi, it's ${weekday}. Here's your weekend read.` : ed === "morning" ? `Good morning, it's ${weekday}.` : `Good afternoon, it's ${weekday}.`;
+      const greet = ed === "kr_open" ? `Korea is open, it's ${weekday} there. Here's your Korea open pulse.` : ed === "kr_close" ? `Korea has closed for ${weekday}. Here's your Korea closing note.` : ed === "weekend" ? `Hi, it's ${weekday}. Here's your weekend read.` : ed === "morning" ? `Good morning, it's ${weekday}, before the US open.` : `Good afternoon, it's ${weekday}.`;
       for (let a = 0; a < 3 && !spoken; a++) {
         lastTry = a === 2;
         const raw = await askModel(key, "You write the parts of a spoken investment brief. Output only the JSON.", slotPrompt, 6000, a === 0 ? 45000 : 40000, "gpt-oss-120b");

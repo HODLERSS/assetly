@@ -206,7 +206,7 @@ describe("10 an older edition picked while its narration is on the way", () => {
     const getDailyBriefs = vi.fn().mockResolvedValue([mk("morning", "Morning.", mAt, null), mk("midday", "Midday.", dAt, "u/midday.mp3")]);
     render(<App api={stubApi({ getDailyBriefs })} />);
     const card = await screen.findByTestId("brief-card");
-    await userEvent.click(within(card).getByRole("button", { name: "Morning" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Pre-market" }));
     expect(within(card).queryByTestId("brief-listen")).toBeNull();
     getDailyBriefs.mockResolvedValue([mk("morning", "Morning.", mAt, "u/morning.mp3"), mk("midday", "Midday.", dAt, "u/midday.mp3")]);
     await act(async () => { await vi.advanceTimersByTimeAsync(61_000); });

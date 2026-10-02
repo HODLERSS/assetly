@@ -102,7 +102,7 @@ export function apnsHeaders(jwt: string, bundleId: string, m: Message): Record<s
 
 /** The push IS the shortest brief: the lede has already been through BLUF, the diet and the tier map. */
 const ED_TITLE: Record<string, string> = {
-  morning: "Morning brief", midday: "Midday pulse", close: "Closing note", assessment: "Your portfolio assessment",
+  morning: "Pre-market brief", midday: "Midday pulse", close: "Closing note", assessment: "Your portfolio assessment",
   weekend: "Weekend read", kr_open: "Korea open", kr_close: "Korea close",
 };
 export const pushCopy = (edition: string, lede: string): { title: string; body: string } => {
