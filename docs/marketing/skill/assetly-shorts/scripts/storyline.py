@@ -201,10 +201,11 @@ def ctx():
 
 def item_shot(r):
     """The screen.json window an item's beat uses (compose: the held story name's page, else the brief / News)."""
-    win = ctx()["screen"]
-    sym = next((x for x in r.get("symbols", []) if f"pos_{x}" in win), None)
-    if sym: return f"pos_{sym}", win[f"pos_{sym}"]["figures"], sym
-    return "brief+news", (win.get("brief", {}).get("figures", []) + win.get("news", {}).get("figures", [])), None
+    from screen import item_window
+    shot, figs, sym, mv = item_window(ctx()["screen"], r, ED)
+    if shot.startswith("home_mover_"):      # the Movers row stands in for the page (v1.4.0): its own window, its own move
+        ctx()["screen"].setdefault(shot, {"figures": figs, "day_move": mv, "texts": figs})
+    return shot, figs, sym
 
 
 def usable(res):
@@ -363,7 +364,8 @@ def check(story, res, facts, askc):
             miss = [w for w in unsupported_words(x["text"], corpus) if w not in names]
             if names or len(miss) > 1 or (miss and len(x["text"].split()) < 5):
                 errs.append(f"item {i + 1}: words the verified sources never say: {names + miss} in {x['text']!r} "
-                            f"-> rewrite it with the item's own wording (WHY: {r['why']!r}; READ: {r['sentiment']!r})")
+                            f"-> rewrite it with the item's own wording (WHY: {r['why']!r}"
+                            + ("" if attributed(r["sentiment"]) else f"; READ: {r['sentiment']!r}") + ")")   # an opinion is never offered
     if KR:
         # the long view is the point (owner, 10/1): a Korea item whose page shows a verified window change says it
         # korea-midday (v1.2.0): YTD figures are three digits ("182.8%" is six spoken words) and the rule fought the voiced
@@ -433,7 +435,7 @@ def check(story, res, facts, askc):
         elif restates(it["sentences"][0]["text"], it["sentences"][1]["text"]):
             r = res["items"][it["n"]]
             errs.append(f"item {i + 1}: sentence 2 only restates sentence 1 ({it['sentences'][1]['text']!r}) -> replace it with the "
-                        f"direct read, e.g. {r['sentiment']!r} shortened")
+                        + (f"direct read, e.g. {r['sentiment']!r} shortened" if not attributed(r["sentiment"]) else "direct read: a fact from the item's WHY or the move its page shows"))
         # (a thin read is the judge's call, not a word count: a 5-word floor looped the 10/2 korea-midday rebuild 12 rounds
         # against the 52-word budget)
         # v1.4.0 (owner 10/2: "instead of saying commentators said this, be more direct. don't use third-party word like that"):

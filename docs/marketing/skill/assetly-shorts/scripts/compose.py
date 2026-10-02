@@ -216,6 +216,7 @@ def main():
     amk, atake = (at.get("marks") or mk), at.get("take", "take60.mp4")
     vis = [r for r in (jload(os.path.join(W, "ask.json"), {}) or {}).get("answer_rects", []) if r.get("visible") and re.search(r"[A-Za-z0-9]", r["text"])]
     held = {b["symbol"] for b in acct.get("book", [])}
+    scr_w = (jload(os.path.join(W, "screen.json"), {}) or {}).get("windows", {})
     with Stage(W, "compose"):
         lines, beats, cue = [], [], 0
         gpt = ["marin", "cedar"]
@@ -234,7 +235,16 @@ def main():
                 if cc:
                     log(f"{sym}: its intelligence card contradicts both feeds ({cc[0][:90]}...): the item goes on the brief/News instead")
                     sym = None
-            if sym:
+            # v1.4.0: when the held page does not show the day move but Home's Movers row does (10/2 midday APLD), the beat
+            # is that row, outlined (the same decision storyline made: screen.item_window)
+            from screen import item_window
+            shot_w = item_window(scr_w, ref, ED)[0] if sym else None
+            if sym and shot_w == f"home_mover_{sym}" and "home_movers" in mk:
+                t0 = mk["home_movers"] - 0.2
+                b = {"take": "take60.mp4", "start": round(t0, 2), "focus_src": FOCUS["home"], "note": f"{sym}: Home Movers row (its page shows no day move)"}
+                _, box = first_visible(os.path.join(W, "take60.mp4"), t0, mk.get("home_end", t0 + 3.0), [sym, "%"])
+                if box: b["highlight"] = {"src_box": box, "pad": 8, "until": round(max(0.6, mk.get("home_end", t0 + 3.0) - t0 - 0.15), 2)}
+            elif sym:
                 b = {"take": "take60.mp4", "start": round(mk[f"pos_{sym}_chart"] + 0.5, 2), "focus_src": FOCUS["pos"], "note": f"{sym} page, chart then scroll"}
             else:
                 src = macro_src.pop(0) if macro_src else "news"

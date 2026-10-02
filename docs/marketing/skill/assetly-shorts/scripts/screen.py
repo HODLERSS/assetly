@@ -94,6 +94,35 @@ def day_move(texts):
     return None
 
 
+def mover_row(texts, sym):
+    """Home's "Movers" row for a holding ('APLD Applied Digital' then '+9.93% (+$2.3K)'): (pct, [shown figures]) or None."""
+    for i, t in enumerate(texts):
+        if re.match(r"^" + re.escape(sym) + r"\b", t.strip()):
+            for u in texts[i + 1:i + 4]:   # the Movers row (% next), or a Positions row (shares, value, then %)
+                m = re.search(r"([+\-\u2212]\d+(?:\.\d+)?)%(?:\s*\(([+\-\u2212]\$[\d.,]+[KMB]?)\))?", u)
+                if m:
+                    return float(m.group(1).replace("\u2212", "-")), [m.group(1) + "%"] + ([m.group(2)] if m.group(2) else [])
+    return None
+
+
+def item_window(win, r, ed):
+    """(shot, figures, sym, day move) an item's beat shows: its held page; or (v1.4.0, 10/2 midday: APLD +10.6% on both feeds,
+    its page showed -5.19%, a return figure, and no day move, while Home's Movers row read +9.93%) Home's Movers row for it
+    when the page shows no day move or the opposite sign and that row agrees in sign with the verified move; else the brief
+    and News. Shared by storyline (what may be said) and compose (where the beat goes)."""
+    sym = next((x for x in r.get("symbols", []) if f"pos_{x}" in win), None)
+    if sym:
+        pg = win[f"pos_{sym}"]; mv = pg.get("day_move")
+        fig = next((f.get("value") for f in r.get("figures", []) if f.get("symbol") == sym and f.get("field", "pct") == "pct"), None)
+        if ed in ("midday", "close") and fig is not None and (mv is None or abs(mv) < 0.05 or (mv > 0) != (fig > 0)):
+            for k in ("home_movers", "home"):
+                row = mover_row((win.get(k) or {}).get("texts", []), sym)
+                if row and (row[0] > 0) == (fig > 0):
+                    return f"home_mover_{sym}", row[1], sym, row[0]
+        return f"pos_{sym}", pg["figures"], sym, mv
+    return "brief+news", (win.get("brief", {}).get("figures", []) + win.get("news", {}).get("figures", [])), None, None
+
+
 RANGEHEAD = re.compile(r"\bPrice\s*[·•.\-]?\s*(1W|1M|3M|6M|YTD|1Y|2Y|5Y)\b")
 
 
@@ -152,6 +181,8 @@ def windows(ed, mk, story_syms):
     for s in story_syms:
         if f"pos_{s}_chart" in mk: w[f"pos_{s}"] = [mk[f"pos_{s}_chart"] + 0.5, mk[f"pos_{s}_chart"] + 6.0]
     if "home_top" in mk: w["home"] = [mk["home_top"] + 1.0, mk["home_top"] + 5.0]
+    # v1.4.0: Home's "Movers" rows, the beat an item goes to when its own page does not show the day move
+    if "home_movers" in mk: w["home_movers"] = [mk["home_movers"] - 0.2, mk.get("home_end", mk["home_movers"] + 3.0)]
     if "brief_open" in mk: w["brief"] = [mk["brief_open"] + 0.6, mk.get("brief_end", mk["brief_open"] + 8)]
     if "news" in mk: w["news"] = [mk["news"] + 0.2, mk.get("news_end", mk["news"] + 6)]
     if "ask_answer" in mk: w["ask_a"] = [mk["ask_answer"] + 0.3, mk.get("ask_end", mk["ask_answer"] + 7)]
