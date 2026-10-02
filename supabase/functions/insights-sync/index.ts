@@ -3,7 +3,7 @@
 // action into 3-5 opinionated bullets plus one-line takes for 7D/30D/60D/1Y/2Y.
 // Stored in public.insights; rendered clearly separated from raw news. Fixture mode for tests.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf } from "../_shared/calendar.ts";
+import { TZ, OPEN_MIN, zonedParts, marketState, sessionLine, dayTag, marketOf, dayMoveCurrent, withholdStaleMoves } from "../_shared/calendar.ts";
 import {
   adviceHits, aliasesFor, booksKorean, CARD_PLAIN, cardCopyHits, dayMoveMismatches, deliveriesEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixPriceConfusions,
   YTD, dividendContradictions, fixWeights, historicalClaims, isEarningsCallTitle, noviceGloss, unattributedDollars, overlap, periodReturnMismatches, tidyNumbers, unsupportedCauses, levelMismatches, type LiveFact, mentionedSymbols, pctText, plainScrub, PORTFOLIO_PLAIN, type PosFact, usableNews, wrongDeliveriesDates,
@@ -389,6 +389,8 @@ Deno.serve(async (req) => {
       const wr = await windowReturns(admin, symbol, WINDOWS.map(([, d]) => d), Date.now(), mktOf(symbol));
       const perf = Object.fromEntries(WINDOWS.map(([k, d]) => [k, pctText(wr.pct[d] ?? null)]));
       const { data: quote } = await admin.from("prices").select("price,change_pct,currency,as_of").eq("symbol", symbol).maybeSingle();
+      // 10/2: a quote not yet printed in the session the clock is on carries no day move
+      if (quote && quote.change_pct !== null && !dayMoveCurrent(quote.as_of, mktOf(symbol))) quote.change_pct = null;
       // the live quote, unless the history holds a newer tick (a quote row the minute job stopped updating
       // must not put Bitcoin "near $78K" when it trades at $83.7K)
       const quoteFresh = quote?.price !== null && quote?.price !== undefined && (!wr.last || +new Date(String(quote.as_of ?? 0)) >= +new Date(wr.last.ts) - 5 * 60000);
@@ -490,8 +492,9 @@ trend: ONE sentence, max 20 words, covering the recent move and the longer-term 
   // ---- portfolio-level insights: per user, their actual mix ----
   let pWrote = 0;
   // one user's refresh reads one user's rows (the connect path used to pull every portfolio in the project)
-  const pfQ = admin.from("portfolio").select("user_id, symbol, kind, account, currency, qty, price, value, change_pct, nickname, name");
+  const pfQ = admin.from("portfolio").select("user_id, symbol, kind, account, currency, qty, price, value, change_pct, nickname, name, as_of");
   const { data: pf } = onlyUser ? await pfQ.eq("user_id", onlyUser) : await pfQ;
+  withholdStaleMoves((pf ?? []) as { symbol: string; change_pct: number | null; as_of: string | null; kind: string | null; currency: string | null }[]);   // 10/2: moves belong to their session
   const byUser = new Map<string, NonNullable<typeof pf>>();
   for (const r of pf ?? []) {
     if (onlyUser && r.user_id !== onlyUser) continue;

@@ -10,7 +10,7 @@
 //  2. EVERY NUMBER CARRIES ITS LABEL. Share price vs position value, the session a day move belongs to,
 //     the currency, and "not enough price history yet" instead of a window that silently reused a shorter one.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { dayTag, isTradingDay, marketOf, marketState, weekdayOf } from "../_shared/calendar.ts";
+import { ctxMarketOf, dayTag, isTradingDay, marketOf, marketState, weekdayOf, withholdStaleMoves } from "../_shared/calendar.ts";
 import { dividendLine, dividendRows, ensureHistory, refreshDividends, windowReturns, windowReturnsBatch } from "../_shared/history.ts";
 import { bearerOf, userIdFrom } from "../_shared/auth.ts";
 import { breakerState, chat, laneStartMs, LatencyWindow } from "../_shared/llm.ts";
@@ -260,6 +260,8 @@ async function handle(req: Request, best: { answer?: () => Response } = {}): Pro
     admin.from("profiles").select("investor,base_currency,display_kr").eq("id", uid).maybeSingle(),
     admin.from("prices").select("symbol,price").like("symbol", "USD___"),
   ]);
+  // 10/2: a day move counts only in the session it was printed in (a 9:21 KST read reused Oct 1's Korean moves as Oct 2's)
+  withholdStaleMoves((rows ?? []) as { symbol: string; change_pct: number | null; as_of: string | null; kind: string | null; currency: string | null }[]);
   const READER = readerBlock(prof?.investor as Investor | null);
   const fxMap = new Map<string, number>([["USD", 1], ["KRW", 1380]]);
   for (const r of fxRows ?? []) { const v = Number(r.price); if (v > 0) fxMap.set(String(r.symbol).slice(3), v); }
@@ -337,7 +339,7 @@ async function handle(req: Request, best: { answer?: () => Response } = {}): Pro
       asP(admin.from("filings").select("form,filed_at,title").eq("symbol", sym).order("filed_at", { ascending: false }).limit(6)),
       asP(admin.from("transcripts").select("title,published_at,content").eq("symbol", sym).order("published_at", { ascending: false, nullsFirst: false }).limit(4)),
     ]) as unknown as Promise<typeof deepNone>, CAP, deepNone)));
-  const pIdx = capped(asP(admin.from("prices").select("symbol,price,change_pct").in("symbol", ["^GSPC", "NQ=F", "^KS11"])) as unknown as Promise<{ data: { symbol: string; price: number; change_pct: number | null }[] | null }>, CAP, { data: [] });
+  const pIdx = capped(asP(admin.from("prices").select("symbol,price,change_pct,as_of").in("symbol", ["^GSPC", "NQ=F", "^KS11"])).then((r) => { withholdStaleMoves(((r as { data?: unknown }).data ?? []) as { symbol: string; change_pct: number | null; as_of: string | null }[], new Date(), (x) => ctxMarketOf(x.symbol)); return r; }) as unknown as Promise<{ data: { symbol: string; price: number; change_pct: number | null }[] | null }>, CAP, { data: [] });
   // the model key: from the environment, this isolate's cache, or the vault (read in the same stage, capped)
   const envKey = Deno.env.get("MARA_API_KEY") ?? "";
   const pKey: Promise<string> = envKey || keyCache ? Promise.resolve(envKey || keyCache)

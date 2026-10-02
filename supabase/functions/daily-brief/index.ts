@@ -12,8 +12,8 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { chat } from "../_shared/llm.ts";
 import { fixGainAsDayMove, fixGrossAsNet, fixQuotedPrices } from "../_shared/prices.ts";
-import { fixNamedWeights, fixNoteWeight, fixRecoveryClaims, ledeFallback, PLAIN_WORDS_RULE, repairMangledFigures, type WeightFact } from "../_shared/brief_guards.ts";
-import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, type MarketState } from "../_shared/calendar.ts";
+import { dropAwaitingMoves, fixNamedWeights, fixNoteWeight, fixRecoveryClaims, ledeFallback, PLAIN_WORDS_RULE, repairMangledFigures, type WeightFact } from "../_shared/brief_guards.ts";
+import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, withholdStaleMoves, awaitingTag, ctxMarketOf, type MarketState } from "../_shared/calendar.ts";
 import {
   superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, tidyClauseEndings, krxDollarTargets, taxRemarkClaims, bondValueClaims, isTaxAdvantaged, plainForBeginner, roundBookTotal, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
@@ -557,11 +557,14 @@ Deno.serve(async (req) => {
 
   // ---- shared market context (deterministic) ----
   const ctxSyms = ["ES=F", "NQ=F", "^VIX", "^KS11", "^GSPC", "USDKRW"];
-  const { data: ctxPrices } = await admin.from("prices").select("symbol,price,change_pct").in("symbol", [...ctxSyms, ...LEADERS]);
+  const { data: ctxPrices } = await admin.from("prices").select("symbol,price,change_pct,as_of").in("symbol", [...ctxSyms, ...LEADERS]);
+  // 10/2: an index or rate's day move counts only inside the session it belongs to (KOSPI at 9:21 KST still carried Oct 1's +1.9%)
+  const ctxAwaiting = withholdStaleMoves((ctxPrices ?? []) as { symbol: string; change_pct: number | null; as_of: string | null }[], new Date(), (r) => ctxMarketOf(r.symbol));
   const px = new Map((ctxPrices ?? []).map((p) => [p.symbol, { price: Number(p.price), chg: p.change_pct === null ? null : Number(p.change_pct) }]));
   const fmtCtx = (sy: string, label: string) => {
     const p = px.get(sy);
-    return p ? `${label} ${p.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}${p.chg !== null ? ` (${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%)` : ""}` : null;
+    const opening = ctxAwaiting.has(sy) && ctxMarketOf(sy) !== null && marketState(ctxMarketOf(sy)!).phase === "open";
+    return p ? `${label} ${p.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}${p.chg !== null ? ` (${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%)` : opening ? " (previous close; awaiting today's first prints, no day move yet)" : ""}` : null;
   };
   // KOSPI and the won rate only reach books that hold something Korean: a USD-only reader never sees won
   const krCtx = (korean: boolean) => korean ? [fmtCtx("^KS11", "KOSPI"), fmtCtx("USDKRW", "USDKRW")] : [];
@@ -581,7 +584,12 @@ Deno.serve(async (req) => {
   const leaderHeads = (leaderNews ?? []).filter((n) => usableNews(n, aliasesFor(n.symbol))).slice(0, 7).map((n) => `- ${n.symbol}: ${String(n.title).slice(0, 90)}`).join("\n");
 
   // ---- users ----
-  const { data: pf } = await admin.from("portfolio").select("user_id, symbol, kind, account, currency, qty, price, value, change_pct, nickname, name, cost_basis, total_gl");
+  const { data: pf } = await admin.from("portfolio").select("user_id, symbol, kind, account, currency, qty, price, value, change_pct, nickname, name, cost_basis, total_gl, as_of");
+  // A day move belongs to the session it was printed in. 10/2 owner: the 9:21 AM KST Korea Open said "Korean stocks surged,
+  // adding about $11k" on Oct 1's moves (SK hynix +3.2%, Samsung Pref +4.8%): Yahoo's KRX feed runs ~20 minutes behind, so
+  // at 9:20 the rows still held the previous close. Every move not printed in the session the clock is on is withheld
+  // here, once, so no figure, P&L, guard fact or day_by_symbol downstream can present it as today's.
+  const awaitingDay = withholdStaleMoves((pf ?? []) as { symbol: string; change_pct: number | null; as_of: string | null; kind: string | null; currency: string | null }[]);
   const { data: invRows } = await admin.from("profiles").select("id, investor");
   const invBy = new Map<string, Investor | null>((invRows ?? []).map((r) => [String(r.id), r.investor as Investor | null]));
   const byUser = new Map<string, NonNullable<typeof pf>>();
@@ -789,9 +797,24 @@ Deno.serve(async (req) => {
       const noteSplit = beginner ? " Write the note as TWO sentences of at most 14 words each (about 20 to 26 words in total), never one long sentence and never a single short one." : "";
       const [HZ1, HZ2] = HZ_LABELS[longestHz(toArr((invBy.get(uid) as Investor | null | undefined)?.horizon, ["3-10y"]))] ?? HZ_LABELS["3-10y"];
       if (krEdition && !assets.some((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"))) continue;   // no Korean sleeve, no Korea edition
+      // 10/2: the 9:20 KST run lands before the first KRX prints reach the ~20-minute-delayed feed. A clock run with no
+      // Korean name traded yet waits for the 9:45 sweep (assetly-brief-kr-open-sweep) instead of writing an empty open;
+      // from 9:40 it writes regardless, with the untraded names labelled as awaiting their first trades.
+      if (edition === "kr_open" && !force && !fixture) {
+        const krS0 = marketState("KR");
+        const krNames = assets.filter((r) => r.symbol.endsWith(".KS") || r.symbol.endsWith(".KQ"));
+        if (krS0.phase === "open" && krS0.minutesIn < 40 && krNames.every((r) => awaitingDay.has(r.symbol))) {
+          errors.push(`${uid.slice(0, 8)}: kr_open deferred, no Korean trade in the feed yet (${krS0.minutesIn} min in)`);
+          continue;
+        }
+      }
       const holdings = assets.filter((r) => !r.symbol.startsWith("$"))
         .sort((a, b) => usd(Number(b.value ?? 0), b.currency) - usd(Number(a.value ?? 0), a.currency));
       const korean = booksKorean(rows);
+      // names whose day move was withheld (no trade yet in the session the clock is on): no sentence may move them
+      const awaitingNames = holdings.filter((r) => awaitingDay.has(r.symbol)).map((r) => ({ names: [krName(r.symbol, r.nickname, r.name), ...aliasesFor(r.symbol, r.name)] }));
+      const krSleeve = holdings.filter((r) => /\.(?:KS|KQ)$/.test(r.symbol));
+      const krAllAwaiting = krSleeve.length > 0 && krSleeve.every((r) => awaitingDay.has(r.symbol));
       // headlines are judged again at read time (rows stored before news-sync's gate still hold option chains
       // and stories about other companies): these are the names that make a story about each holding
       const akaOf = (sy: string) => { const h = holdings.find((x) => x.symbol === sy); return aliasesFor(sy, h?.name); };
@@ -816,13 +839,14 @@ Deno.serve(async (req) => {
         // a won-priced stock is quoted in won (9/28: SK hynix's $1,295 USD equivalent came back as "₩1,300")
         const pxT = px === null ? "n/a" : r.currency === "KRW" ? `₩${Math.round(Number(r.price)).toLocaleString("en-US")} (about $${Math.round(px).toLocaleString("en-US")})`
           : "$" + (px >= 1000 ? Math.round(px).toLocaleString("en-US") : px.toFixed(2));
-        const chg = r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%";
+        const waiting = awaitingDay.has(r.symbol);
+        const chg = r.change_pct === null ? (waiting ? "none yet" : "n/a") : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%";
         // 10/1 owner: "MARA's -5.5% slide reduces portfolio value by $177,500" used the since-purchase loss as the day's
         // move. The day's dollar change is stated beside the day %, and the lifetime figure is labelled as lifetime.
         const cp = r.change_pct === null ? null : Number(r.change_pct) / 100;
         const dayUsd = cp === null || cp <= -1 ? null : v - v / (1 + cp);
         const dayUsdT = dayUsd === null ? "" : ` (${dayUsd >= 0 ? "+" : "-"}$${Math.round(Math.abs(dayUsd)).toLocaleString("en-US")} on the day)`;
-        return `${nm}: position value $${Math.round(v)} (${(v / total * 100).toFixed(1)}% of assets), share price ${pxT}, day ${chg}${dayUsdT} [${dayTag(marketOf(r.symbol, r.kind, r.currency))}], gain or loss SINCE PURCHASE $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))} (all-time, never a day's move)`;
+        return `${nm}: position value $${Math.round(v)} (${(v / total * 100).toFixed(1)}% of assets), share price ${pxT}, day ${chg}${dayUsdT} [${waiting ? awaitingTag(marketOf(r.symbol, r.kind, r.currency)) : dayTag(marketOf(r.symbol, r.kind, r.currency))}], gain or loss SINCE PURCHASE $${Math.round(usd(Number(r.total_gl ?? 0), r.currency))} (all-time, never a day's move)`;
       }).join("\n");
       // EXPOSURE by type, computed in code (round 5: a lede called VOO's 46.4% "US equity exposure"; US equity was
       // VOO + AAPL + KO = 69.2%). Every stated exposure figure is checked against these.
@@ -1383,8 +1407,10 @@ Return STRICT JSON {"name": "${dispN}", "changed": str, "watch": str}. changed: 
         const usS = marketState("US"), krS = marketState("KR");
         const sessTag = (st: MarketState, seoul: boolean) => isLiveTape(st) ? `today's ${seoul ? "Korean " : ""}session` : `${weekdayOf(st.lastSessionDate)}'s ${seoul ? "Korean " : ""}session, closed ${spanText(st.hoursSinceClose)} ago`;
         // two markets, two sessions: a Friday 3:30 PM CT note must not fold a Korea close from 14 hours earlier into "today"
+        // a sleeve whose every move is withheld has NO day result yet (never "+$0", which reads as a flat session)
+        const krPnlT = krRows.length && krRows.every((r) => awaitingDay.has(r.symbol)) ? "no trades in our feed yet, awaiting the first trades (no day result to state)" : fmtP(pnlOf(krRows));
         const pnlLine = krRows.length
-          ? `DAY P&L, US and crypto names (${sessTag(usS, false)}): ${fmtP(pnlOf(assets.filter((r) => !krRows.includes(r))))}; Korean names (${sessTag(krS, true)}): ${fmtP(pnlOf(krRows))}`
+          ? `DAY P&L, US and crypto names (${sessTag(usS, false)}): ${fmtP(pnlOf(assets.filter((r) => !krRows.includes(r))))}; Korean names (${sessTag(krS, true)}): ${krPnlT}`
           : `DAY P&L: ${fmtP(dayPnl)} (${dayPnl >= 0 ? "+" : ""}${dayPct.toFixed(1)}%)`;
         const mSec = morningRow ? morningRow.sections as Sections : null;
         const morningCtx = mSec ? `THIS MORNING'S BRIEF (build on it, never repeat a sentence from it): lede "${mSec.lede}" \u00b7 tape "${mSec.overnight}" \u00b7 desk view "${mSec.desk_view}" \u00b7 watches: ${mSec.positions.map((p) => `${p.name}: ${p.watch}`).join("; ")}` : "(no morning brief today; write standalone, no references to an earlier note)";
@@ -1410,7 +1436,7 @@ ${morningCtx}`;
         const shape = `Return STRICT JSON:\n{"lede": str, "overnight": str, "positions": [{"name": str, "note": str, "watch": str}], "desk_view": str, "calendar": [str]}`;
         const usOpensIn = spanText(usS.hoursToNextOpen);   // usS / krS come from the DAY P&L split above
         const writerPrompt = edition === "kr_open"
-          ? `Write the ${briefDate} KOREA OPEN PULSE (published about 20 minutes into the KRX session, 9:20 AM Korea time on ${dayName(briefDate)}) for ONE investor who holds Korean names alongside a US book. Tell them how their Korean names opened, what news is moving them, and how the last US session frames the day. The US market opens in ${usOpensIn}.
+          ? `Write the ${briefDate} KOREA OPEN PULSE (published ${krS.phase === "open" ? `${krS.minutesIn} minutes into the KRX session, which opened at 9:00 AM Korea time` : "before the KRX open"} on ${dayName(briefDate)}) for ONE investor who holds Korean names alongside a US book. Tell them how their Korean names opened, what news is moving them, and how the last US session frames the day. The US market opens in ${usOpensIn}.
 
 ${dataBlock}
 
@@ -1422,6 +1448,7 @@ desk_view: what the Korea open changes about the book's direction; the Korean ho
 calendar: 0-3 items: the KRX close (3:30 PM KST) if a Korean catalyst lands today, the next US session with its date, dated earnings from NEXT EARNINGS ESTIMATES.
 KR-SESSION LAW: "today" means the Korean session. Every US figure belongs to the US session named in SESSIONS and is past tense ("in Friday's session"), never "today".
 QUIET-BOOK LAW: if no Korean name moved more than 1.5% and there is no fresh news, SAY the open is quiet in one clause and make the next catalyst the centerpiece. Never invent levels.
+AWAITING LAW: a Korean name whose day is "none yet" has NOT traded in our feed: write that it is awaiting the first trades, give it NO day number, and never call it up, down, surging or falling. If every Korean name is awaiting, the lede is about what to watch at the open, never a gain or loss.
 ${STYLE_RULES}\n${READER}`
           : edition === "kr_close"
           ? `Write the ${briefDate} KOREA CLOSING NOTE (published after the 3:30 PM KST close on ${dayName(briefDate)}; the US market opens in ${usOpensIn}) for ONE investor who holds Korean names alongside a US book. Settle what the Korean session meant for their Korean holdings and arm them for the US open.
@@ -2174,12 +2201,14 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
       // words, each weight on its own holding, recovery arithmetic, no mangled figure; and the lede is never empty.
       if (!backfillOnly) {
         const g = (t: string) => { const x = plainScrub(repairMangledFigures(fixRecoveryClaims(fixNamedWeights(String(t ?? ""), finalWeights))), PORTFOLIO_PLAIN); return x.trim() ? x : String(t ?? ""); };
-        sections.lede = g(sections.lede); sections.overnight = g(sections.overnight); sections.desk_view = g(sections.desk_view);
-        if (sections.horizon) sections.horizon = g(sections.horizon);
-        sections.ideas = (sections.ideas ?? []).map(g);
+        // 10/2: a move claimed for a name with no trade yet in today's session is deleted (an emptied lede falls back below)
+        const ga = (t: string) => dropAwaitingMoves(g(t), awaitingNames, krAllAwaiting);
+        sections.lede = ga(sections.lede); sections.overnight = ga(sections.overnight); sections.desk_view = ga(sections.desk_view);
+        if (sections.horizon) sections.horizon = ga(sections.horizon);
+        sections.ideas = (sections.ideas ?? []).map(ga);
         // a note is about its own holding: a bare weight in it is that holding's ("35.0% concentration" at 21.4%)
         const ownOf = (name: string) => finalWeights.find((f) => f.names.some((n) => n && n.toLowerCase() === String(name ?? "").toLowerCase()));
-        sections.positions = sections.positions.map((p) => ({ ...p, note: fixNoteWeight(g(p.note), ownOf(p.name), finalWeights), watch: p.watch ? g(p.watch) : p.watch }));
+        sections.positions = sections.positions.map((p) => ({ ...p, note: fixNoteWeight(ga(p.note).trim() || (ga(p.note) === String(p.note ?? "") ? "" : "No trade yet in today's session; awaiting the first trades."), ownOf(p.name), finalWeights), watch: p.watch ? ga(p.watch) : p.watch }));
       }
       if (!String(sections.lede ?? "").trim()) sections.lede = fallbackLede();
       // round 8: signed figures use the true minus sign, as the client renders them

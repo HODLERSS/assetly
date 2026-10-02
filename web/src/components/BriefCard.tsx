@@ -37,12 +37,16 @@ const signOf = (v: number, dead: number) => (Math.abs(v) < dead ? 0 : v > 0 ? 1 
 
 // ET with its label, as every other market time in the app ("Prices as of 4:00 PM ET"); a device-local clock with
 // no zone sat beside them (r9 designer m-3). The day is judged in New York too.
-const ET = "America/New_York";
-function clock(iso: string, now: Date): string {
+const ET = "America/New_York", KST = "Asia/Seoul";
+// A Korea edition is timed in Korea, with ET beside it: "Written at 8:21 PM" read as a night-time Korea Open to an owner
+// in the US (10/2); it is "9:21 AM KST · 8:21 PM ET", 21 minutes after the 9:00 AM KRX open.
+const krEd = (e: BriefEdition) => e === "kr_open" || e === "kr_close";
+function clock(iso: string, now: Date, edition?: BriefEdition): string {
   const d = new Date(iso);
-  const t = marketClock(iso, "US");
-  const day = (x: Date) => x.toLocaleDateString("en-US", { timeZone: ET });
-  return day(d) === day(now) ? t : `${d.toLocaleDateString("en-US", { weekday: "short", timeZone: ET })} ${t}`;
+  const tz = edition && krEd(edition) ? KST : ET;
+  const t = tz === KST ? `${marketClock(iso, "KR")} · ${marketClock(iso, "US")}` : marketClock(iso, "US");
+  const day = (x: Date) => x.toLocaleDateString("en-US", { timeZone: tz });
+  return day(d) === day(now) ? t : `${d.toLocaleDateString("en-US", { weekday: "short", timeZone: tz })} ${t}`;
 }
 
 /** Whether a brief still describes the book on screen, and the line that dates it when it doesn't.
@@ -80,7 +84,7 @@ export function briefFreshness(brief: DailyBrief, opts: { now?: Date; liveDayPct
   if (briefBasis(brief, book, opts.totalUsd ?? null).stale) return { stale: true, note: BOOK_CHANGED_NOTE, bookChanged: true };
   if (!INTRADAY.has(brief.edition)) return { stale: false, note: null };
   const at = s.as_of || brief.generated_at;
-  const when = clock(at, now);
+  const when = clock(at, now, brief.edition);
   const earlierDay = new Date(at).toDateString() !== now.toDateString();
   const live = opts.liveDayPct;
   const flipped = typeof s.day_sign === "number" && typeof live === "number" && Number.isFinite(live)

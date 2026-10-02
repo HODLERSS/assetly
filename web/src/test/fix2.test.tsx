@@ -322,6 +322,13 @@ describe("F6 a brief is dated against the live book", () => {
     expect(briefFreshness(midday({ day_sign: 1 }, "2026-09-24T16:31:00Z"), { now, liveDayPct: 1 }).stale).toBe(true);
     expect(briefFreshness({ ...midday({}), edition: "close" }, { now }).note).toBeNull();
   });
+  it("10/2: a Korea Open is timed in Korea with ET beside it (9:21 AM KST, not a bare 8:21 PM)", () => {
+    const kr: DailyBrief = { ...midday({ day_sign: 1 }, "2026-10-02T00:21:43Z"), brief_date: "2026-10-02", edition: "kr_open" };
+    const f = briefFreshness(kr, { now: new Date("2026-10-02T00:30:00Z"), liveDayPct: 0.5 });
+    expect(f.note).toBe("Written at 9:21 AM KST · 8:21 PM ET.");
+    // US editions keep ET alone
+    expect(briefFreshness(midday({ day_sign: 1 }), { now, liveDayPct: 0.6 }).note).not.toMatch(/KST/);
+  });
   it("an assessment written for other holdings says which", () => {
     const a = assessment({ sections: { ...assessment().sections, held: ["NVDA"] } });
     expect(briefFreshness(a, { held: ["NVDA", "VOO", "TSLA"] })).toEqual({ stale: true, note: "Written before your latest changes.", bookChanged: true });

@@ -168,6 +168,29 @@ export function fixRecoveryClaims(text: string): string {
   return changed ? out.join(" ") : src;
 }
 
+// A day-move claim: a move verb, a signed percent, or a day dollar figure ("adding about $11k").
+const MOVE_CLAIM = /\b(?:rose|rise[sn]?|rising|fell|fall(?:s|ing)?|drop(?:s|ped|ping)?|climb(?:s|ed|ing)?|gain(?:s|ed|ing)?|slip(?:s|ped|ping)?|jump(?:s|ed|ing)?|surg(?:e|es|ed|ing)|soar(?:s|ed|ing)?|sank|sink(?:s|ing)?|tumbl(?:e|es|ed|ing)|rall(?:y|ies|ied|ying)|declin(?:e|es|ed|ing)|slid(?:e|es|ing)?|plung(?:e|es|ed|ing)|advanc(?:e|es|ed|ing)|dipp?(?:s|ed|ing)?|eas(?:es|ed|ing)|lost|los(?:es|ing)|add(?:s|ed|ing)? (?:about |roughly |nearly |some )?[$₩]|opened (?:higher|lower|up|down)|(?:up|down|higher|lower) \d)|[+\-−]\d+(?:\.\d+)?\s?%|\d+(?:\.\d+)?\s?% (?:gain|drop|rise|fall|move|jump|surge|slide|decline|rally|loss)\b/i;
+const AWAITING_OK = /\b(?:awaiting|await|yet to (?:trade|print|open)|no trades?|not (?:yet )?traded|has(?:n't| not) traded|before (?:the|its) first trade|first trades?)\b/i;
+const KR_GROUP = /\b(?:Korean|Korea(?:'s)?|KOSPI)\s*(?:stocks?|holdings|names|shares|positions|equities|market|tape|open|sleeve)?\b/i;
+
+/** 10/2 owner: "Korean stocks surged, adding about $11k" at 9:21 AM KST, when not one Korean name had traded in the feed
+ *  (the figures were Oct 1's). A sentence that claims a day move for a holding withheld as "awaiting the first trades"
+ *  (calendar.ts withholdStaleMoves) is dropped, and so is one about the Korean group when EVERY Korean name is awaiting.
+ *  A sentence that itself says the name is awaiting its first trades stands. Deletes only; never writes a figure. */
+export function dropAwaitingMoves(text: string, awaiting: { names: string[] }[], krAllAwaiting = false): string {
+  const src = String(text ?? "");
+  if (!awaiting.length || !MOVE_CLAIM.test(src)) return src;
+  const facts = awaiting.map((a) => ({ names: a.names, weight: 0 }));
+  let changed = false;
+  const out = splitSentences(src).filter((s) => {
+    if (!MOVE_CLAIM.test(s) || AWAITING_OK.test(s)) return true;
+    const hit = namedIn(s, facts).length > 0 || (krAllAwaiting && KR_GROUP.test(s));
+    if (hit) changed = true;
+    return !hit;
+  });
+  return changed ? out.join(" ") : src;
+}
+
 // Camel-cased brands that legitimately end in a capital letter after lower-case letters; none ends in B/M/K/T today,
 // but a name added here is never treated as a mangled figure.
 const CAMEL_OK = new Set<string>([]);

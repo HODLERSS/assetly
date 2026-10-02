@@ -88,6 +88,49 @@ export function dayTag(mkt: Mkt | null, now = new Date()): string {
   return `${dayName(s.lastSessionDate)} ${who} session, past (not today)`;
 }
 
+/** The session a quote printed at `asOf` belongs to: the trading day whose open it follows. A print stamped before the
+ *  open, or on a weekend or holiday, belongs to the session before it. */
+export function quoteSession(asOf: string, mkt: Mkt): string {
+  const z = zonedParts(new Date(asOf), TZ[mkt]);
+  return isTradingDay(mkt, z.ymd) && z.minutes >= OPEN_MIN[mkt] ? z.ymd : prevTradingDay(mkt, z.ymd);
+}
+
+/** Does a stored day move describe the session its market's figures stand for right now (marketState.lastSessionDate:
+ *  today's once the market has opened, else the last completed session)? Caught 2026-10-02: a 9:21 AM KST Korea Open
+ *  said "Korean stocks surged" on Oct 1's +3.2% / +4.8%, because Yahoo's KRX feed runs about 20 minutes behind and at
+ *  9:20 the prices rows still held the previous close. A move that fails this is NOT today's and must never be shown as
+ *  one: callers withhold it ("awaiting the first trades"). Crypto and FX (mkt null) roll by the clock: current when
+ *  printed in the last 3 hours. No timestamp = not current. */
+export function dayMoveCurrent(asOf: string | null | undefined, mkt: Mkt | null, now = new Date()): boolean {
+  const t = asOf ? Date.parse(asOf) : NaN;
+  if (!Number.isFinite(t)) return false;
+  if (mkt === null) return now.getTime() - t < 3 * 3600000;
+  return quoteSession(asOf!, mkt) === marketState(mkt, now).lastSessionDate;
+}
+
+/** The label for a day figure withheld by dayMoveCurrent, in place of dayTag. */
+export function awaitingTag(mkt: Mkt | null, now = new Date()): string {
+  if (!mkt) return "no fresh price in the last 3 hours: NO day move to report";
+  const s = marketState(mkt, now);
+  const who = mkt === "US" ? "US" : "Korean";
+  if (s.phase === "open") return `today's ${weekdayOf(s.ymd)} ${who} session is ${s.minutesIn} min in, but no trade has reached our feed yet: awaiting the first trades, NO day move to report`;
+  return `no price yet from the ${dayName(s.lastSessionDate)} ${who} session: NO day move to report`;
+}
+
+/** Withhold every day move that is not the current session's (dayMoveCurrent), in place, and return the symbols withheld.
+ *  Run on rows read from `prices`/`portfolio` before any day figure is built from them. */
+export function withholdStaleMoves<R extends { symbol: string; change_pct: number | null; as_of?: string | null; kind?: string | null; currency?: string | null }>(rows: R[], now = new Date(), mktOf: (r: R) => Mkt | null = (r) => marketOf(r.symbol, r.kind, r.currency)): Set<string> {
+  const out = new Set<string>();
+  for (const r of rows) {
+    if (r.change_pct === null || r.change_pct === undefined || r.symbol.startsWith("$") || r.kind === "cash" || r.kind === "debt") continue;
+    if (!dayMoveCurrent(r.as_of ?? null, mktOf(r), now)) { r.change_pct = null; out.add(r.symbol); }
+  }
+  return out;
+}
+
+/** The market whose session a context symbol's day figure belongs to: KOSPI is Korean, futures and FX roll by the clock. */
+export const ctxMarketOf = (sy: string): Mkt | null => sy === "^KS11" || /\.(?:KS|KQ)$/.test(sy) ? "KR" : sy.endsWith("=F") || /^USD[A-Z]{3}$/.test(sy) || sy.endsWith("=X") || sy.endsWith("-USD") ? null : "US";
+
 /** Round 9: each edition has an ET (or KST) session window, and nothing is generated outside it. A "Midday" was written at
  *  5:32 PM ET and a "Morning" at 8:02 PM ET (00:02 UTC), so Home opened on them instead of the Close. The clock also ran
  *  on UTC minutes, which moves every edition an hour once daylight time ends (a 20:05 UTC "close" is 3:05 PM EST).
