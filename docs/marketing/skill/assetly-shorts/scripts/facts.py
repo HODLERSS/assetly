@@ -278,6 +278,22 @@ def main_ask():
             for _, h in sorted(pos, key=lambda x: x[0]):
                 run_a += h["value"]; run_b += h.get("value_n") or h["value"]
                 if tot: cands_usd += [run_a, run_b]; cands_pct += [100 * run_a / tot, 100 * run_b / tot]
+            # ... and the same per bullet (10/2 korea-close, two takes refused: "Foundry/fab: TSM $36,736, Samsung $8,177 =
+            # $44,913 (24.8%)", "Non-chip: GOOGL, MSFT, cash $7,500 = $48,666"): each bullet's own named holdings, summed
+            # in its order, plus the cash row when the bullet names cash. Only names the bullet lists, never any subset
+            cash = (tot - sum(h["value"] for h in f["holdings"])) if tot else None
+            if cash is not None and cash >= 1: cands_usd.append(cash)
+            for seg in re.split(r"\u2022|\n|\s-\s", ans):
+                inseg = sorted((p_ - 0, h) for p_, h in [(min([m.start() for k in {h["symbol"], h["symbol"].split(".")[0],
+                               (f.get("names") or {}).get(h["symbol"], ""), KRM.KR_NAMES.get(h["symbol"], "")} if k and len(k) >= 2
+                               for m in re.finditer(r"(?<![A-Za-z])" + re.escape(k) + r"(?![a-z])", seg)] or [-1]), h) for h in f["holdings"]] if p_ >= 0)
+                if len(inseg) < 2 or not tot: continue
+                sa = sb = 0.0
+                for _, h in sorted(inseg, key=lambda x: x[0]):
+                    sa += h["value"]; sb += h.get("value_n") or h["value"]
+                    cands_usd += [sa, sb]; cands_pct += [100 * sa / tot, 100 * sb / tot]
+                if cash and re.search(r"\bcash\b", seg, re.I):
+                    cands_usd += [sa + cash, sb + cash]; cands_pct += [100 * (sa + cash) / tot, 100 * (sb + cash) / tot]
         heads = [{"publisher": h["publisher"], "title": h["title"]} for h in jload(os.path.join(W, "research-data.json"))["headlines"]]
         # plus the app's own stored news for the holdings (title + summary, many publishers): the same pool Ask read
         syms = ",".join(h["symbol"] for h in f["holdings"])

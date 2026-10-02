@@ -68,6 +68,9 @@ start, or refuses. No check was removed or loosened to get there.
   when both feeds carry it for this session and agree (an app-only or second-feed-only day move no longer verifies).
   Tested: Oct-1 15:30 KST row at 9:10 KST Oct 2 = stale, Oct-2 9:05 row = current; a fake stale Yahoo chart -> refused;
   the live 10:50 KST quote -> both feeds at 10:13.
+- Ask (Korea): a bullet that lists holdings and their total ("Foundry/fab: TSM $36,736, Samsung $8,177 = $44,913 (24.8%)",
+  "Non-chip: GOOGL, MSFT, cash $7,500 = $48,666") verifies against the running sum of THAT bullet's named holdings (each on
+  two feeds) plus the cash row when it names cash; never an arbitrary subset. 10/2 korea-close had refused two takes on it.
 - korea-close waits for Yahoo's closing print: 10/2 15:46 KST the launchd korea-close refused ("feeds disagree" on 6 of 9
   names; Yahoo's daily bar was still a ~15:03-15:2x intraday price, e.g. SK hynix 1,843,000 vs the KRX close 1,841,000).
   `kr.kr_quote` counts today's finished-session bar only once Yahoo's regularMarketTime is at or after 15:30 KST, waits in
