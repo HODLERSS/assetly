@@ -488,7 +488,7 @@ describe("F10 Home, Settings, Ask, sign-out", () => {
     expect(screen.getByTestId("signed-in-as").textContent).toBe("first.run@example.com");
     expect(screen.getByTestId("markets-row").textContent).toBe("US · Korea");
     expect(document.body.textContent).toContain(`Version${pkg.version}`);
-    expect(pkg.version).toBe("1.0.3");
+    expect(pkg.version).toBe("1.0.4");
   });
   it("sign-out sweeps this user's hints and pending state from the device", async () => {
     localStorage.setItem("assetly-next-steps", "armed");
