@@ -91,7 +91,8 @@ the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 5
   Oklo, NuScale, Rocket Lab also flagged AI. AI names rank by |move| x (1 + front-page mentions) (front pages now read
   before the pick); SHORTS_FOCUS=ai takes the top 22 AI movers (+4 by move) and reads headlines for all 22. Test 12:54
   (AI focus, big tech avoided): 22 candidates (AVGO TER HPE NVDA ARM RKLB COHR DELL CRDO NBIS ONTO ...), 309 headlines,
-  4 kept, 50 s.
+  4 kept, 50 s. With SHORTS_FOCUS=ai the pick proposes 8 items (>= 7 AI). Full avoid list test (AAPL MSFT GOOGL GOOG AMZN META
+  NVDA TSLA AVGO ORCL AMD TSM NKE APLD): 0 avoided names in the 22 candidates, the headlines, the 8 picked, the 3 kept or hot.
 - Schedule (owner 10/2): midday runs 9:00 CT (prestage 8:30), 30 minutes after the open.
 - **TikTok by API** ("make sure you can update tiktok too as you do in Youtube"): `app/scripts/tiktok/auth.py` (Login Kit
   for Desktop, hex-S256 PKCE, loopback `http://127.0.0.1:53683/callback/`, token file chmod 600, no secret printed);

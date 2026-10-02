@@ -237,8 +237,9 @@ KR_PICK = """Pick the 6 most useful things a US retail investor with an AI-heavy
     Korean-language (Yonhap, Maeil Business, Naver Finance's press offices): cite them like any other, but write every field in
     plain English and claim only what the Korean headline itself says (translate faithfully, add nothing)."""
 FOCUS_PICK = ("""
-    AI FOCUS (this Short is the AI edition): at least 5 of the 6 items must be about AI names (QUOTES rows with "ai": true;
-    prefer ai_rank 1-10 and front_page > 0); at most one macro item. Name the company in each cover.""" if FOCUS == "ai" else "") + \
+    AI FOCUS (this Short is the AI edition): pick 8 items, not 6 (the wider AI field gives more to verify); at least 7 of the 8
+    must be about AI names (QUOTES rows with "ai": true; prefer ai_rank 1-22 and front_page > 0); at most one macro item.
+    Name the company in each cover.""" if FOCUS == "ai" else "") + \
     (f"""
     DO NOT USE these names (an earlier Short today already told them): {', '.join(sorted(AVOID))}.""" if AVOID else "")
 FIG_FIELDS = ("pct = the session move; for the long view use field \"" + KRM.RANGE_FIELD[KRM.RANGE[ED]] + "\" (the app pages show the "
