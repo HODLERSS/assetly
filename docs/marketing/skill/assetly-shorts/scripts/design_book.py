@@ -118,6 +118,9 @@ def main():
                     story.append(s)
         story = story[:4]
         hot = [s for s in res.get("hot", []) if s not in story][:2]
+        # v1.4.0 (an extra AI edition): names an earlier Short told today stay out of the book too
+        avoid = {x.strip().upper() for x in os.environ.get("SHORTS_AVOID_SYMBOLS", "").split(",") if x.strip()}
+        story = [s for s in story if s not in avoid]; hot = [s for s in hot if s not in avoid]
         core_list = CORE
         fx = 1.0
         if res.get("edition") in KRM.KR_EDITIONS:

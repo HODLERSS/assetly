@@ -30,6 +30,11 @@ import kr_news as KRN
 ED, DATE, W = sys.argv[1], sys.argv[2], sys.argv[3]
 REVERIFY = "--reverify" in sys.argv
 EXCL = set(sys.argv[sys.argv.index("--exclude") + 1].split(",")) if "--exclude" in sys.argv else set()
+# v1.4.0 (owner 10/2, an extra AI-focused midday): SHORTS_AVOID_SYMBOLS names stories an earlier Short of the day already
+# told (they never become candidates, and an item citing one is dropped); SHORTS_FOCUS=ai asks for AI names only
+AVOID = {x.strip().upper() for x in os.environ.get("SHORTS_AVOID_SYMBOLS", "").split(",") if x.strip()}
+EXCL |= AVOID
+FOCUS = os.environ.get("SHORTS_FOCUS", "").lower()
 os.makedirs(W, exist_ok=True)
 KR = ED in KRM.KR_EDITIONS                   # v1.1.0: the Seoul editions (Korean AI-chip names, long windows)
 
@@ -225,6 +230,11 @@ KR_PICK = """Pick the 6 most useful things a US retail investor with an AI-heavy
     (earnings, a results date) only when a headline states the date. Never a price target, never what to do. Some HEADLINES are
     Korean-language (Yonhap, Maeil Business, Naver Finance's press offices): cite them like any other, but write every field in
     plain English and claim only what the Korean headline itself says (translate faithfully, add nothing)."""
+FOCUS_PICK = ("""
+    AI FOCUS (this Short is the AI edition): at least 5 of the 6 items must be about AI names (QUOTES rows with "ai": true;
+    prefer ai_rank 1-10 and front_page > 0); at most one macro item. Name the company in each cover.""" if FOCUS == "ai" else "") + \
+    (f"""
+    DO NOT USE these names (an earlier Short today already told them): {', '.join(sorted(AVOID))}.""" if AVOID else "")
 FIG_FIELDS = ("pct = the session move; for the long view use field \"" + KRM.RANGE_FIELD[KRM.RANGE[ED]] + "\" (the app pages show the "
               + KRM.RANGE[ED] + " change) with the value from win." + KRM.RANGE_FIELD[KRM.RANGE[ED]] + ".a; no other window field") if KR else \
     "pct of the session for this edition"
@@ -436,7 +446,7 @@ def main():
     HEADLINES (id [query] publisher (time): title):
     {compact_heads}
 
-    {KR_PICK if KR else US_PICK}
+    {KR_PICK if KR else US_PICK}{FOCUS_PICK}
     For each item:
     - "kind": "stock" | "macro" | "earnings" | "calendar"
     - "symbols": the tickers it is about ([] for pure macro)
@@ -512,12 +522,20 @@ def main():
             rows = [rs[x] for x in it.get("symbols", []) if x in rs]
             mv = next((f.get("value") for f in it.get("figures", []) if f.get("ok") and f.get("field", "pct") == "pct"), None)
             if mv is None and rows: mv = rows[0].get("pct_feed1")
-            front = max([r.get("front_page", 0) for r in rows] or [0]); ai = any(r.get("ai") for r in rows)
+            front = max([r.get("front_page", 0) for r in rows] or [0]); ai = any(x in AI for x in it.get("symbols", []))
             big_neg = mv is not None and mv < 0 and (mv <= -5 or front >= 2)
             score = i - 1.2 * ai - 0.5 * min(front, 3) - (0.6 if (mv or 0) > 0 else 0) + (0.6 if (mv or 0) < 0 and not big_neg else 0)
             return {"pick": i + 1, "ai": ai, "front_page": front, "move": mv, "score": round(score, 2)}
         for i, it in enumerate(kept): it["rank_note"] = rank_note(i, it)
         kept.sort(key=lambda it: it["rank_note"]["score"])
+        if FOCUS == "ai":
+            # the AI edition: AI items first, and the rest dropped when three AI items stand (the storyline tells three)
+            ai_k = [it for it in kept if it["rank_note"]["ai"]]
+            if len(ai_k) >= 3:
+                dropped += [{**it, "drop": ["AI focus: not an AI name"]} for it in kept if not it["rank_note"]["ai"]]
+                kept = ai_k
+            else:
+                kept.sort(key=lambda it: not it["rank_note"]["ai"])
         log("ranked: " + " | ".join(f"{it['cover']} ({it['rank_note']})" for it in kept))
     for d in dropped: log("DROP", d.get("cover"), d.get("drop"))
     res = {"edition": ED, "date": DATE, "asof_et": data["asof_et"], "context": pick.get("context", ""),
@@ -585,6 +603,7 @@ def verify(items, byid, rowsym, macro):
         if attributed(it.get("sentiment")):          # v1.4.0: the read is ours, direct (owner 10/2)
             reasons.append(f"sentiment: third-party attribution '{attributed(it.get('sentiment'))}' (say the fact directly, in our own voice)")
         reasons += direction_conflicts(it, rowsym)
+        if AVOID & set(it.get("symbols", [])): reasons.append(f"avoided: {sorted(AVOID & set(it.get('symbols', [])))} told earlier today")
         figs = []
         for f in it.get("figures", []):
             s, v = f.get("symbol"), f.get("value")

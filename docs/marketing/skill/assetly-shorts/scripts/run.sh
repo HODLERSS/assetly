@@ -80,7 +80,9 @@ rm -f "$W/delivering" "$W/delivered" "$W/deadline"
 if [ "$TEST" = 1 ]; then
   K=1; while [ -e "$APP/docs/marketing/shorts/$DATE-$ED-test$K" ]; do K=$((K+1)); done; DST="$APP/docs/marketing/shorts/$DATE-$ED-test$K"
 else DST="$APP/docs/marketing/shorts/$DATE-$ED"; fi
-[ -n "${DSTO:-}" ] && DST="$DSTO"                       # --dest: rebuild into an existing delivery folder
+[ -n "${DSTO:-}" ] && DST="$DSTO"                       # --dest: rebuild into an existing delivery folder, or a new one
+case "$DST" in /*) ;; *) DST="$APP/${DST#app/}" ;; esac  # v1.4.0: a relative --dest is under the app checkout (the run cd's away)
+export SHORTS_DEST="$DST"                                 # storyline: an earlier Short's title is the other folders', not this one's
 exec > >(tee -a "$W/run.log") 2>&1
 VER=$(sed -n 's/^# Assetly market Shorts, v\([0-9.]*\).*/\1/p' "$SK/SKILL.md" 2>/dev/null | head -1)
 echo "assetly-shorts v${VER:-?}: $ED $DATE test=$TEST seed=$SEED work=$W -> $DST (code frozen at $SHORTS_FROZEN)"
@@ -129,7 +131,8 @@ PY
   return $rc; }
 cd "$SK"
 pre_alive() { [ -e "$PRE/running" ] && kill -0 "$(cat "$PRE/running" 2>/dev/null)" 2>/dev/null; }
-pre_fresh() { python3 -c "import json,time,sys;m=json.load(open('$PRE/prestage-ready.json'));sys.exit(0 if time.time()-m['ts']<7200 and m.get('account')=='$ACCTN' else 1)" 2>/dev/null; }
+# v1.4.0: an extra edition (SHORTS_FOCUS / SHORTS_AVOID_SYMBOLS) designs its own book: the slot's prestage is not reused
+pre_fresh() { [ -z "${SHORTS_FOCUS:-}${SHORTS_AVOID_SYMBOLS:-}" ] || return 1; python3 -c "import json,time,sys;m=json.load(open('$PRE/prestage-ready.json'));sys.exit(0 if time.time()-m['ts']<7200 and m.get('account')=='$ACCTN' else 1)" 2>/dev/null; }
 # a fresh prestage (same account, <= 120 min, finished): the edition's brief is written on it now, beside research; if the
 # fresh research keeps the prestaged book as is, that brief is the one the take films (account.py --early-brief)
 EB=""
@@ -147,7 +150,7 @@ if want book; then
     kill "$(cat "$PRE/running" 2>/dev/null)" 2>/dev/null || true; pkill -TERM -f "$PRE" 2>/dev/null || true
     sleep 1; rm -f "$PRE/prestage-ready.json"
   fi
-  BASE=""; [ -s "$PRE/prestage-ready.json" ] && BASE="--base $PRE"
+  BASE=""; [ -s "$PRE/prestage-ready.json" ] && [ -z "${SHORTS_FOCUS:-}${SHORTS_AVOID_SYMBOLS:-}" ] && BASE="--base $PRE"
   st book 30 python3 design_book.py "$W" --seed "$SEED" $BASE
 fi
 ACCT_RAN=0

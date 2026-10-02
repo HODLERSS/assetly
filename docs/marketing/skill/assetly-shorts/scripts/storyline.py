@@ -208,6 +208,18 @@ def item_shot(r):
     return shot, figs, sym
 
 
+def earlier_titles(res):
+    """Titles of the Shorts already delivered for this date and edition (docs/marketing/shorts/<date>-<edition>*/)."""
+    import glob
+    from lib import APP
+    out = []
+    for f in glob.glob(os.path.join(APP, "docs/marketing/shorts", f"{res.get('date')}-{ED}*", "youtube-metadata.json")):
+        if "-test" in f or os.path.abspath(os.path.dirname(f)) == os.path.abspath(os.environ.get("SHORTS_DEST", "/nonexistent")): continue
+        t = (jload(f, {}) or {}).get("title")
+        if t: out.append(t)
+    return out
+
+
 def usable(res):
     """v1.4.0 (10/2 midday: research picked APLD +10.6% on both feeds, but the recorded page showed -5.19% and no day move;
     12 rounds and the fallback burned on it): the verified items whose beat can show them. A midday / close stock item whose
@@ -511,6 +523,10 @@ def check(story, res, facts, askc):
         for m in re.finditer(r"\d+\.\d{2,}%", t): errs.append(f"{where}: {m.group(0)}: one decimal for percentages")
     # owner, 10/1: short and catchy, no edition label ("Midday:", "After the bell") and no date
     if len(story["title"]) > 50: errs.append(f"title is {len(story['title'])} chars (max 50): make it shorter and punchier")
+    # v1.4.0 (owner 10/2, a second midday the same day): the title never repeats an earlier Short of the same date and edition
+    for prev_t in earlier_titles(res):
+        if story["title"].strip().lower() == prev_t.lower() or story["title"].split()[:1] == prev_t.split()[:1]:
+            errs.append(f"title {story['title']!r} repeats today's earlier Short ({prev_t!r}): lead with another company")
     if re.search(r"\b(before the bell|pre-?open|midday|after the bell|at the close|close:|seoul open|seoul close)|\|\s*\w{3} \d", story["title"], re.I):
         errs.append("title: no edition label or date -> just the hook, e.g. 'Micron pops, Boeing lands $20B'")
     if len(story["cover"]) != 3: errs.append("cover needs exactly 3 lines")

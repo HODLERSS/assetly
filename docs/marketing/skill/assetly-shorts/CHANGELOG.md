@@ -74,6 +74,12 @@ the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 5
   attributed read with the page's own move, and an attributed READ is never offered as a rewrite hint. screen.py adds a
   `home_movers` window. Full test (10/2 midday work dir, --from story, claude -p): DELIVERED, all checks incl. Q43 / Q44,
   377 s.
+- **Extra editions** (owner 10/2, an AI-focused midday at 10:30 CT): `SHORTS_FOCUS=ai` (the pick wants >= 5 of 6 AI items,
+  verified AI items lead and non-AI ones are dropped when three AI items stand) and `SHORTS_AVOID_SYMBOLS=NKE,TSLA` (never
+  candidates, an item citing one is dropped, kept out of the book); such a run designs its own book (the slot's prestage
+  is not reused); the title may not repeat an earlier Short of the same date and edition (storyline); a relative `--dest`
+  resolves under the app checkout (a new folder is created): `SHORTS_FOCUS=ai SHORTS_AVOID_SYMBOLS=NKE,TSLA run.sh midday
+  --upload --dest docs/marketing/shorts/2026-10-02-midday-ai`.
 - Schedule (owner 10/2): midday runs 9:00 CT (prestage 8:30), 30 minutes after the open.
 - **TikTok by API** ("make sure you can update tiktok too as you do in Youtube"): `app/scripts/tiktok/auth.py` (Login Kit
   for Desktop, hex-S256 PKCE, loopback `http://127.0.0.1:53683/callback/`, token file chmod 600, no secret printed);
