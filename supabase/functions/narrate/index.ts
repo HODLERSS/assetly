@@ -8,6 +8,7 @@
 import { composeScript, speechName, type Sections } from "./compose.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { readerLevel } from "../_shared/intel.ts";
+import { isDemoEmail } from "../_shared/demo.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -105,7 +106,7 @@ Deno.serve(async (req) => {
   if (!key) { const { data } = await admin.rpc("get_secret", { secret_name: "mara_api_key" }); key = data ?? ""; }
   if (!ek) return json({ ok: false, error: "tts not configured" }, 500);
   const { data: au } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-  const testIds = new Set((au?.users ?? []).filter((u) => u.email?.endsWith("assetly.test")).map((u) => u.id));
+  const testIds = new Set((au?.users ?? []).filter((u) => isDemoEmail(u.email)).map((u) => u.id));
   const voice = Deno.env.get("ELEVEN_VOICE_ID") ?? "JBFqnCBsd6RMkjVDRZzb";
 
   const scriptOnly = body.script_only === true;
@@ -120,7 +121,7 @@ Deno.serve(async (req) => {
   }
   let narrated = 0; const errors: string[] = []; const scripts: Record<string, string> = {};
   for (const row of rows) {
-    // Test accounts never spend TTS credits by default. An OPERATOR holding the internal token can opt a
+    // Test and demo accounts (Shorts, App Review, showcase) never spend TTS credits by default. An OPERATOR holding the internal token can opt a
     // run in (body.tts_test) to produce real audio for a demo, which is the only way to hear a fixture book.
     if (!scriptOnly && testIds.has(row.user_id) && !(isInternal && body.tts_test === true)) continue;
     // 9/28: a restated script with rewrites can take ~100s; never START a row after 45s of a 150s budget

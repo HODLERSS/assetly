@@ -25,6 +25,7 @@ import {
 import { dividendLine, dividendRows, windowReturns } from "../_shared/history.ts";
 import { userIdFrom } from "../_shared/auth.ts";
 import { earningsFilings } from "../_shared/filings.ts";
+import { isDemoEmail } from "../_shared/demo.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -603,9 +604,9 @@ Deno.serve(async (req) => {
   for (const r of fxRows ?? []) { const v = Number(r.price); if (v > 0) fxMap.set(String(r.symbol).slice(3), v); }
   let userIds = [...byUser.keys()];
   if (!onlyEmail && !fixture) {
-    // cron runs never touch test accounts (no token spend, no interference with battery fixtures)
+    // cron runs never touch test or demo accounts (no token or TTS spend, no interference with battery fixtures)
     const { data: au } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-    const testIds = new Set((au?.users ?? []).filter((u) => u.email?.endsWith("assetly.test")).map((u) => u.id));
+    const testIds = new Set((au?.users ?? []).filter((u) => isDemoEmail(u.email)).map((u) => u.id));
     userIds = userIds.filter((id) => !testIds.has(id));
   }
   if (onlyUserId) userIds = byUser.has(onlyUserId) ? [onlyUserId] : [];
