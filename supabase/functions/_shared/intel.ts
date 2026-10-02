@@ -3854,11 +3854,18 @@ export function fixHoldingDayDollars(text: string, rows: { names: string[]; dayU
     if (/\b(?:week|month|quarter|year|YTD|since|all[- ]time|bought|cost|basis|dividends?|income|worth|valued|position value)\b|이번 주|한 달|배당/i.test(sen)) return sen;
     if (!/\b(?:today|on the day|so far|session|day's|lifts?|lifted|adds?|added|drags?|dragged|contribut\w*|gains?|gained|loses?|lost)\b|오늘/i.test(sen)) return sen;
     const named = rows.filter((r) => r.dayUsd !== null && r.names.some((n) => n && n.length >= 2 && nameIn(sen, n)));
-    if (named.length !== 1) return sen;
-    const row = named[0], want = row.dayUsd!;
+    if (!named.length) return sen;
+    // one holding named: its first dollar figure within 40 characters; several (10/2 "APLD (+$1,049) and AVGO (+$966)"):
+    // only a figure ATTACHED to each name ("Name (+$X", "Name +$X", "Name (+5.1%, +$X"), so no figure is given to the wrong name
+    let out = sen;
+    for (const row of named) out = fixOne(out, row, named.length === 1 ? 40 : 12);
+    return out;
+  }).join(" "));
+  function fixOne(sen: string, row: { names: string[]; dayUsd: number | null; valueUsd: number }, gap: number): string {
+    const want = row.dayUsd!;
     for (const nm of new Set(row.names)) {
       if (!nm || nm.length < 2) continue;
-      const re = new RegExp(`((?:^|[^A-Za-z0-9])${esc(nm)}(?![A-Za-z0-9])[^$]{0,40}?)([+\u2212-]?)\\$(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)(\\s?[Kk](?![a-z]))?`);
+      const re = new RegExp(`((?:^|[^A-Za-z0-9])${esc(nm)}(?![A-Za-z0-9])[^$;]{0,${gap}}?)([+\u2212-]?)\\$(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)(\\s?[Kk](?![a-z]))?`);
       const m = re.exec(sen);
       if (!m) continue;
       const v = Number(m[3].replace(/,/g, "")) * (m[4] ? 1e3 : 1);
@@ -3868,7 +3875,7 @@ export function fixHoldingDayDollars(text: string, rows: { names: string[]; dayU
       return sen.slice(0, m.index) + m[1] + fmt(want, m[2], m[4]) + sen.slice(m.index + m[0].length);
     }
     return sen;
-  }).join(" "));
+  }
 }
 
 /** "NVDA's current price $224.58" (Thursday's close; Friday's close $225.07 is the current price): a current-price claim

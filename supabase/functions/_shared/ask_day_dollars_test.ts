@@ -14,3 +14,11 @@ Deno.test("values, rounding, multi-holding and longer windows are left alone", (
   for (const s of ["Applied Digital is worth $25,500.", "Applied Digital gained $2,300 today.",
     "AMD and APLD lifted the book $3.4k today.", "APLD is up 40% this year, a $7,300 gain."]) assertEquals(fix(s), s);
 });
+
+Deno.test("several holdings in one sentence: each attached figure is set to its own day $", () => {
+  const rows2 = [{ names: ["APLD"], dayUsd: 1049, valueUsd: 21915 }, { names: ["AVGO"], dayUsd: 943, valueUsd: 35307 }];
+  assertEquals(fixHoldingDayDollars("AI capacity boost lifts APLD (+$1,049) and AVGO (+$966) today.", rows2),
+    "AI capacity boost lifts APLD (+$1,049) and AVGO (+$943) today.");
+  assertEquals(fixHoldingDayDollars("APLD (+5.1%, +$1,049) and AVGO (+2.7%, +$966) lead today.", rows2),
+    "APLD (+5.1%, +$1,049) and AVGO (+2.7%, +$943) lead today.");
+});

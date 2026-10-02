@@ -417,7 +417,7 @@ async function handle(req: Request, best: { answer?: () => Response } = {}): Pro
       `shares ${Number(r.qty ?? 0)}`,
       `position value ${money(valUsd)} (${weight(valUsd)} of assets)`,
       // 10/2 Shorts QA: Ask said "Applied Digital (+10%) lifts $2.5k" (today's value x %); the day $ is the prior value x % ($2,319)
-      `day ${r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%" + ` (${signedUsd(dayOf(r))} today: use this dollar figure as-is, never position value x day %)`} [${dayTag(mk)}]`,
+      `day ${r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%" + ` (${signedUsd(dayOf(r))} today: use this dollar figure as-is, never position value x day %; state it with the day %, e.g. \"APLD (+5.1%, +$1,049)\")`} [${dayTag(mk)}]`,
       `avg cost ${money(Number(r.avg_cost ?? 0), cur)}/share`,
       `total gain/loss ${signedUsd(usd(Number(r.total_gl ?? 0), cur))} since purchase`,
     ];
