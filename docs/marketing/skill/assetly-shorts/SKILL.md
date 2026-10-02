@@ -3,7 +3,7 @@ name: assetly-shorts
 description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, commentary in Minjae's voice, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day plus three Korea AI-chip editions per KRX trading day (korea-open, korea-midday, korea-close); uploads only with --upload (YouTube private; TikTok via API or the queue).
 ---
 
-# Assetly market Shorts, v1.4.0
+# Assetly market Shorts, v1.4.1
 
 Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratch every run, **each delivered within 20
 minutes of its run's start** (owner 10/1: "make sure you build each clip within 20 minutes max ... this time limit is
@@ -141,3 +141,5 @@ queue only on failure. The owner's one-time setup and `auth.py` sign-in, the off
    on the last frame, cuts on the bed's grid; Q43.
 4. **AI first, front pages, positive first** in research (craft.md "What gets picked").
 5. **TikTok by API** like YouTube (references/tiktok.md).
+6. **Custom thumbnail** (v1.4.1): a dedicated, grid-readable render of the cover's hero (Q46), set on YouTube by upload.py
+   (references/shorts-craft.md "The thumbnail").

@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.4.1 (2026-10-02, owner: "every Short gets a click-optimized custom thumbnail, uploaded to YouTube automatically")
+
+- `scripts/thumbnail.py` + `web/ios/App/marketing/make-thumbnail.py`: a dedicated 1080x1920 thumbnail (not frame 0) from
+  day.json's cover hero: company name, giant verified move with a drawn arrow (green / red; amber arrow on Korea), window
+  label, a 2-4 word hook from that story's cover (dropped when it repeats the figure), edition chip, Assetly mark; text
+  only in y 420-1500; the hero beat's frame blurred at 15% behind; < 2 MB. compose renders it; qa keeps it (frame 0 only
+  stands in when it is missing, and then Q46 fails).
+- **Q46**: name + hero figure OCR-readable at 180x320, only verified figures (hero, or the story's WHY / cover), text bbox in
+  the band, < 2 MB. 10/2 midday replay: PASS ("Tesla ▲ +5.1% SO FAR TODAY jumps", 216 kB, text y 584-1490).
+- upload.py: `thumbnails.set` after the upload with the same youtube.upload token (the scope allows it; the channel is
+  phone-verified); "thumbnail": "set" / the error in youtube-upload.json; exit 3 with the video up on failure (run.sh keeps
+  the upload record and prints the one-line fix); `--thumbnail-only <videoId> <png>`. shorts-craft.md's claim that the
+  scope could not do it is corrected. TikTok keeps the first frame.
+
 ## v1.4.0 (2026-10-02, owner: five requests on look, voice, music, research and TikTok)
 
 No core rule was loosened: every spoken figure on screen in its beat, two sources per claim, second person, real footage,

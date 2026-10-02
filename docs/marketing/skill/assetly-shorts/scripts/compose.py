@@ -11,7 +11,7 @@ Beats: each item on its holding's position page (1D chart, then the scroll to th
 scrolling to the movers), the question on the Ask composer as it is typed, the answer on the real answer, held into
 the end card. One camera language: the same 1.3x push on every beat, cuts on the bed's eighth-note grid (v1.4.0: 0.25 s US, 0.234 s Korea).
 """
-import json, os, re, sys
+import json, os, re, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import Stage, jdump, jload, log, rest
 import kr as KRM
@@ -354,6 +354,18 @@ def main():
             log("cover hero: none (no move >= 1% that the page or a chip shows and both feeds confirm): the headline cover")
         os.makedirs(OUT, exist_ok=True)
         jdump(day, os.path.join(OUT, "day.json"))
+        # v1.4.0 (owner 10/2): the custom YouTube thumbnail, the cover's own story (hero name, verified move, hook), rendered
+        # for the grid; the take's frame of the hero's beat sits behind at low weight. Graded by Q46, set by upload.py
+        try:
+            import thumbnail as TH
+            hb = next((b for it, b in zip(story["items"], beats) if hero and hero.get("name", "").lower() in
+                       " ".join(res["items"][it["n"]].get("symbols", []) + [res["items"][it["n"]].get("cover", "")]).lower()), beats[0] if beats else None)
+            bgp = os.path.join(OUT, "thumb_bg.png")
+            if hb: subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{hb['start'] + 0.8:.2f}", "-i", os.path.join(W, hb["take"]),
+                                   "-frames:v", "1", bgp], check=False)
+            TH.render(OUT, bgp if os.path.exists(bgp) else None)
+        except Exception as e:                           # noqa: BLE001 (Q46 refuses a Short without one)
+            log(f"thumbnail failed: {str(e)[:160]}")
         tags = " ".join(reach_hashtags(story.get("hashtags", [])))
         # v1.4.0 (owner-approved channel plan 10/2, answers/channel/20261002_channel_optimization.md section 5): a searchable
         # "<Company> stock" second line, the narration disclosure, the assetly.minjae.co about page

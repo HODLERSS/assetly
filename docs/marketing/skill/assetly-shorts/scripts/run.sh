@@ -261,8 +261,13 @@ echo "publish hint: $(head -1 "$DST/publish-at.txt"); playlist: $PL"
 if [ "$UPLOAD" = 1 ]; then
   if [ "$TEST" = 1 ]; then echo "--upload ignored on a --test run"; exit 0; fi
   SLUG="$DATE-$ED"
-  if ! python3 "$APP/scripts/youtube/upload.py" "$DST/assetly-short-$SLUG-upload.mp4" "$DST/youtube-metadata.json" --privacy private \
-       $([ -n "$PUBAT" ] && echo "--publish-at ${PUBAT%% *}") > "$W/upload.json" 2> "$W/upload.err"; then
+  UPRC=0; python3 "$APP/scripts/youtube/upload.py" "$DST/assetly-short-$SLUG-upload.mp4" "$DST/youtube-metadata.json" --privacy private \
+       $([ -n "$PUBAT" ] && echo "--publish-at ${PUBAT%% *}") > "$W/upload.json" 2> "$W/upload.err" || UPRC=$?
+  # v1.4.0: the video went up but thumbnails.set failed (exit 3 with the video's id): the upload stands, the thumbnail is reported
+  if [ $UPRC != 0 ] && python3 -c "import json,sys;sys.exit(0 if json.load(open('$W/upload.json')).get('id') else 1)" 2>/dev/null; then
+    cp "$W/upload.json" "$DST/youtube-upload.json"; echo "uploaded (private): $(cat "$W/upload.json")"
+    echo "THUMBNAIL NOT SET (the video is up): set it with python3 $APP/scripts/youtube/upload.py --thumbnail-only <id> $DST/thumbnail.png"; YT_RC=3
+  elif [ $UPRC != 0 ]; then
     if grep -qiE "invalid_grant|401|unauthorized|expired|revoked|youtube_token" "$W/upload.err"; then
       echo "UPLOAD FAILED: YouTube authorization is no longer valid (the Google app is in Testing, so refresh tokens expire after 7 days)."
       echo "  Fix: run python3 $APP/scripts/youtube/auth.py once, then: python3 $APP/scripts/youtube/upload.py $DST/assetly-short-$SLUG-upload.mp4 $DST/youtube-metadata.json"

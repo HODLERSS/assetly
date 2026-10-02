@@ -341,7 +341,36 @@ def main():
             ok40, f"{len(hs)} hashtags {hs}; {len(meta.get('tags', []))} tags" + (f"; BAIT {bait}" if bait else ""))
         # frame 0 IS the thumbnail: delivered as thumbnail.png for YouTube Studio (custom Shorts thumbnail where the channel
         # has it) and TikTok's cover picker; on the phone the owner picks the first frame
-        if os.path.exists(f0): shutil.copy2(f0, os.path.join(ST, "thumbnail.png"))
+        # v1.4.0: compose renders a dedicated thumbnail (thumbnail.py); frame 0 only stands in when it is missing (and Q46 fails)
+        tpng = os.path.join(ST, "thumbnail.png")
+        if os.path.exists(f0) and not os.path.exists(tpng + ".json"): shutil.copy2(f0, tpng)
+        # Q46 (v1.4.0, owner 10/2): the thumbnail works at grid size and says only verified things: name + hero figure
+        # OCR-readable after a 180x320 downscale, every figure on it a verified one (the cover hero's, or a figure in that
+        # story's two-publisher WHY), all text inside the centre band y 420-1500, file < 2 MB
+        tj = jload(tpng + ".json", {}) or {}
+        det46, ok46 = [], bool(tj)
+        if tj:
+            from screen import ocr as _ocr
+            small = os.path.join(B, "thumb_180x320.png"); up = os.path.join(B, "thumb_180_up.png")
+            run("ffmpeg", "-v", "error", "-y", "-i", tpng, "-vf", "scale=180:320:flags=area", small)
+            run("ffmpeg", "-v", "error", "-y", "-i", small, "-vf", "scale=720:1280:flags=bicubic", up)   # the eye sees it at grid size; OCR reads it enlarged
+            seen = " ".join(r[0] for r in (_ocr([up]) or [[]])[0])
+            spec = jload(tpng + ".spec.json", {}) or {}
+            norm_ = lambda t: re.sub(r"[^a-z0-9.%]", "", t.lower().replace("\u2212", "-"))
+            need = [x for x in (spec.get("name"), (spec.get("fig") or "").lstrip("+-\u2212")) if x]
+            miss = [x for x in need if norm_(x) not in norm_(seen)]
+            verified_f = {norm_((day.get("hero") or {}).get("fig", "")).lstrip("+-")} | {norm_(f) for f in re.findall(r"\$?\d[\d,.]*(?:%|[BMK]\b)?",
+                          " ".join(r_["why"] + " " + r_["cover"] for r_ in res["items"]))}
+            # the claims on it: the figure and the hook (the edition chip's date and the window label are not figures)
+            on = re.findall(r"\$?\d[\d,.]*(?:%|\s?[BMK]W?\b)?", " ".join([spec.get("fig", ""), spec.get("hook", "")]))
+            unver = [f for f in on if norm_(f).lstrip("+-") not in verified_f and norm_(f).replace("mw", "") not in verified_f]
+            bb = tj.get("bbox") or [0, 0, 0, 9999]; inband = bb[1] >= 420 and bb[3] <= 1500
+            size_ok = os.path.getsize(tpng) < 2_000_000
+            ok46 = not miss and not unver and inband and size_ok
+            det46 = [f"read at 180x320: {seen[:80]!r}", f"missing {miss}" if miss else "name + figure readable",
+                     f"figures {on}" + (f", UNVERIFIED {unver}" if unver else ""), f"text y {bb[1]}-{bb[3]}", f"{os.path.getsize(tpng) / 1e3:.0f} kB"]
+        row("Q46", "Thumbnail: name + hero figure readable at 180x320, only verified figures, text inside y 420-1500, < 2 MB", ok46,
+            "; ".join(det46) if det46 else "no rendered thumbnail (thumbnail.png.json missing)")
         # Q30 the data time-stamp: on EVERY frame in the same top-left spot (cover, every beat, the end card), its text is the
         # snapshot the figures come from (research quotes, within 5 min), and the edition label is this edition's
         st = day.get("stamp") or {}

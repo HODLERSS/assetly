@@ -37,9 +37,23 @@ What the skill applies from current Shorts guidance, and where:
 - Delete-and-reupload a Short that stalls under ~100 views in 48 h: the owner publishes; a re-upload is the owner's call
   (and duplicate uploads can read as spam). Not automated.
 - Warming up a new account before posting (likes, comments): the owner's account, never automated.
-- Custom thumbnail upload by API: `thumbnails.set` needs the youtube / youtube.force-ssl scope (our token is
-  youtube.upload only). `thumbnail.png` (= frame 0) is delivered; Studio on desktop can take it where the channel has
-  custom Shorts thumbnails, and in the phone app the owner picks the first frame.
+- (Corrected 10/2, v1.4.1.) Custom thumbnails ARE set by API: `thumbnails.set` accepts the youtube.upload scope (Google's
+  docs list youtube.upload, youtube, youtube.force-ssl, youtubepartner; tested 10/2: 200 on riy91dwCI8c) and the channel is
+  phone-verified (custom thumbnails unlocked). See "The thumbnail" below.
+
+## The thumbnail (v1.4.1, owner 10/2: "click-optimized custom thumbnail ... uploaded to YouTube automatically")
+- A dedicated render, not frame 0 (`scripts/thumbnail.py` -> `web/ios/App/marketing/make-thumbnail.py`), the cover's own
+  story: the hero company name, a GIANT verified move with a drawn arrow (gain green / loss red; the arrow amber on Korea
+  editions), its window label, and a 2-4 word hook from that story's checked cover line (dropped when it only repeats the
+  figure). About 7 words. The edition chip + date small at the top of the block, the Assetly mark small at the bottom;
+  the same template on every Short; the take's frame of the hero beat behind it, blurred at ~15%.
+- Every text pixel inside the centre band y 420-1500 (grid, search and 4:5 crops keep it; nothing in the top 200 px or
+  the bottom third's feed overlay). < 2 MB PNG.
+- Q46 grades it: name + hero figure OCR-readable after a 180x320 downscale, only verified figures (the hero's, or one in
+  the story's two-publisher WHY / cover), text inside the band, size. Frame 0 of the video stays the cover with the same
+  hero, so the feed (which shows the video) and the grid (which shows the thumbnail) tell one story.
+- upload.py sets it after the upload (`thumbnails.set`); a failure is recorded in youtube-upload.json and the run exits 3
+  with the video up. `upload.py --thumbnail-only <videoId> <png>` sets one by hand. TikTok keeps the first frame.
 
 Sources: unifab.ai/resource/youtube-aspect-ratio, imagevideofit.com/guides/youtube-shorts-safe-zone,
 blitzcutai.com/blog/best-caption-size-youtube-shorts-2026, postlinkapp.com/blog/youtube-shorts-size-and-dimensions,
