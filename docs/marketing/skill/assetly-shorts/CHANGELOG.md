@@ -6,7 +6,8 @@
   day.json's cover hero: company name, giant verified move with a drawn arrow (green / red; amber arrow on Korea), window
   label, a 2-4 word hook from that story's cover (dropped when it repeats the figure), edition chip, Assetly mark; text
   only in y 420-1500; the hero beat's frame blurred at 15% behind; < 2 MB. compose renders it; qa keeps it (frame 0 only
-  stands in when it is missing, and then Q46 fails).
+  stands in when it is missing, and then Q46 fails). Owner review 10/2: the background frame is texture only (downscaled,
+  blurred, 10% weight; the first version's ghost headlines competed with the hero) and Q46 OCRs it alone: no word allowed.
 - **Q46**: name + hero figure OCR-readable at 180x320, only verified figures (hero, or the story's WHY / cover), text bbox in
   the band, < 2 MB. 10/2 midday replay: PASS ("Tesla ▲ +5.1% SO FAR TODAY jumps", 216 kB, text y 584-1490).
 - upload.py: `thumbnails.set` after the upload with the same youtube.upload token (the scope allows it; the channel is

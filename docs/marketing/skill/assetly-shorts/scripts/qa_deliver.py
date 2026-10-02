@@ -366,10 +366,14 @@ def main():
             unver = [f for f in on if norm_(f).lstrip("+-") not in verified_f and norm_(f).replace("mw", "") not in verified_f]
             bb = tj.get("bbox") or [0, 0, 0, 9999]; inband = bb[1] >= 420 and bb[3] <= 1500
             size_ok = os.path.getsize(tpng) < 2_000_000
-            ok46 = not miss and not unver and inband and size_ok
+            # the background layer alone carries no readable word (owner 10/2: ghost headlines competed with the hero)
+            bgl = tpng + ".bg.png"
+            ghost = [r[0] for r in ((_ocr([bgl]) or [[]])[0] if os.path.exists(bgl) else []) if re.search(r"[A-Za-z]{2,}|\d", r[0])]
+            ok46 = not miss and not unver and inband and size_ok and os.path.exists(bgl) and not ghost
             det46 = [f"read at 180x320: {seen[:80]!r}", f"missing {miss}" if miss else "name + figure readable",
-                     f"figures {on}" + (f", UNVERIFIED {unver}" if unver else ""), f"text y {bb[1]}-{bb[3]}", f"{os.path.getsize(tpng) / 1e3:.0f} kB"]
-        row("Q46", "Thumbnail: name + hero figure readable at 180x320, only verified figures, text inside y 420-1500, < 2 MB", ok46,
+                     f"figures {on}" + (f", UNVERIFIED {unver}" if unver else ""), f"text y {bb[1]}-{bb[3]}", f"{os.path.getsize(tpng) / 1e3:.0f} kB",
+                     ("background: no readable word" if not ghost else f"background GHOST TEXT {ghost[:4]}") if os.path.exists(bgl) else "no background layer"]
+        row("Q46", "Thumbnail: name + hero figure readable at 180x320, only verified figures, text inside y 420-1500, < 2 MB, no word in the background", ok46,
             "; ".join(det46) if det46 else "no rendered thumbnail (thumbnail.png.json missing)")
         # Q30 the data time-stamp: on EVERY frame in the same top-left spot (cover, every beat, the end card), its text is the
         # snapshot the figures come from (research quotes, within 5 min), and the edition label is this edition's

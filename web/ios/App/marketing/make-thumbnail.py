@@ -30,9 +30,12 @@ def grotesk(size, weight=800):
 
 img = Image.new("RGB", (W, H), GROUND)
 if spec.get("bg") and os.path.exists(spec["bg"]):
-    # the app's screen behind, quiet: blurred, dimmed to ~15%, so it reads as context and never competes with the figure
-    bg = Image.open(spec["bg"]).convert("RGB").resize((W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(6))
-    img = Image.blend(img, bg, 0.15)
+    # the app's screen behind, as texture only (owner 10/2: the first version's ghost words competed with the hero): a heavy
+    # blur on a downscaled copy and ~10% weight, so no word survives; Q46 OCRs this background layer and wants none
+    bg = Image.open(spec["bg"]).convert("RGB").resize((W // 8, H // 8), Image.LANCZOS).filter(ImageFilter.GaussianBlur(4)) \
+        .resize((W, H), Image.BICUBIC).filter(ImageFilter.GaussianBlur(24))
+    img = Image.blend(img, bg, 0.10)
+img.save(OUT + ".bg.png")                      # the background alone (Q46: no readable word)
 txt = Image.new("RGBA", (W, H), (0, 0, 0, 0)); d = ImageDraw.Draw(txt)
 texts, figures, blocks = [], [], []
 
