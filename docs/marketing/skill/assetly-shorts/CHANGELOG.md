@@ -68,6 +68,11 @@ start, or refuses. No check was removed or loosened to get there.
   when both feeds carry it for this session and agree (an app-only or second-feed-only day move no longer verifies).
   Tested: Oct-1 15:30 KST row at 9:10 KST Oct 2 = stale, Oct-2 9:05 row = current; a fake stale Yahoo chart -> refused;
   the live 10:50 KST quote -> both feeds at 10:13.
+- Korea-first hard gates (10/2 03:20 CDT, installed): Q42 (item 1 and >= 2 of 3 items KRX) and Q38's KRX-hero rule, verified
+  failing on the delivered EEaqNFClCCY; no Korean item is forced to SAY its window figure (the page header and the KRX hero
+  show it); Korean names said as people do ("Samsung", "Hanmi"); reads must state what and why. lib.llm retries an
+  OpenRouter 402 "fewer max_tokens" inside what the balance affords. OpenRouter credit ran out at ~03:06 CDT 10/2: every
+  storyline then ran on MiniMax-M3, which did not converge on the Korea rebuilds.
 - Korea-first and fluency (owner review 10/2, not yet released: committed, NOT installed): research keeps >= 2 KRX items
   (else a second pick asking for 4 of 6, else refuse); storyline wants item 1 and 2 of 3 items KRX, the window figure only in
   the first Korean item, budget-cut hints never aimed at the line carrying it; the cover hero is a KRX listing or none (Q38

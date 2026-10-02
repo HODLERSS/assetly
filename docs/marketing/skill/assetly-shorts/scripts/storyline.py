@@ -354,7 +354,9 @@ def check(story, res, facts, askc):
             try: r = res["items"][it["n"]]
             except (IndexError, KeyError, TypeError): continue
             f = next((f for f in r.get("figures", []) if f.get("field") == fld and f.get("ok") and KRM.is_kr(f.get("symbol", ""))), None)
-            if f and ED == "korea-midday": continue
+            # v1.3.x Korea-first: no Korean item is forced to SAY its window figure (the page header and the KRX cover hero
+            # show it); 10/2 korea-close: 5 rebuilds never converged between "say 15.8%" and the 52-word budget
+            if f: continue
             # Korea-first (10/2): with three Korean items, a window figure in each blew the word budget (korea-close v2:
             # 5 rounds, refused); the first Korean item says it, the rest may say the window without a figure
             if f and said: continue
@@ -694,7 +696,9 @@ KR_GUIDE = ("" if not KR else f"""THE KOREA EDITION (v1.1.0, owner 10/1): for US
   Each story page is filmed on the app's {KRM.RANGE[ED]} chart: its header reads "Price · {KRM.RANGE[ED]}" and the {KRM.RANGE[ED]} change. Lead
   each Korean item with that window ('{KRM.WIN_PHRASE[KRM.RANGE[ED]]}') and its WHY{" (YTD figures are long to say: at most ONE, in item 1, and only if the budget allows; 'rose this year' without a figure is fine)" if ED == "korea-midday" else " (the figure in item 1; later items may name the window without one)"}; the session move in
   Seoul is secondary ('{"closed up 3.2% in Seoul" if ED == "korea-close" else "is up 1.1% so far in Seoul"}'). A US name's move is its last
-  New York session. Say the names in full ("SK hynix", "Samsung Electronics", "Hanmi Semiconductor"). The portfolio line is the
+  New York session. Say the names as people do: "SK hynix", "Samsung", "Hanmi" (the full names cost words the 30 s does not have). Each read
+  states WHAT the view is and WHY ("Analysts expect memory prices to keep rising into 2028."), never a bare label ("Commentators
+  call it cheap."). The portfolio line is the
   all-time gain Home shows ("Your portfolio is up 18% all time."): never a 'today' figure (Home's Today mixes the US and Korean
   sessions). Never what to do, never a forecast for the US open: context ("Investors watch Micron's memory read-through.").
   Examples of the density wanted:

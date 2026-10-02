@@ -396,6 +396,12 @@ def main():
                 f"{el:.0f} s ({el / 60:.1f} min) of {dl:.0f} s")
         else:
             row("Q41", f"Delivered within the {dl / 60:.0f}-minute budget", True, "graded outside run.sh: not measured")
+        # Q42 Korea-first (owner, 10/2): a Korea Short leads with KRX listings: item 1 and at least 2 of its 3 items are
+        # about a .KS / .KQ name (or the KOSPI); US names only as read-through. Other editions: not applicable
+        if ED in KRM.KR_EDITIONS:
+            kr_items = [any(KRM.is_kr(s_) for s_ in (res["items"][it["n"]].get("symbols") or [])) for it in story["items"]]
+            row("Q42", "Korea-first: item 1 and >= 2 of 3 items are KRX listings", bool(kr_items) and kr_items[0] and sum(kr_items) >= 2,
+                f"{sum(kr_items)} of {len(kr_items)} items KRX: " + ", ".join(res["items"][it["n"]]["cover"] for it in story["items"]))
     order = lambda k: int(k[0][1:])
     rows.sort(key=order)
     failed = [r for r in rows if r[2] == "FAIL"]

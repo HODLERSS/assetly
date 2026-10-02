@@ -69,3 +69,9 @@ Yahoo's KRX feed lags ~20 min, so before the first bar a row still holds yesterd
 quote waits and then refuses it, and an Ask day move verifies only when both feeds carry it and agree. Q28 accepts an
 initialism heard letter by letter ("AI" -> "hey i"). Korean newsrooms count as publishers under their ORIGINAL name
 (kr_news.py; a Yonhap reprint counts once, never "Naver").
+
+Korea-first (owner review 10/2, hard gates): Q38 also fails a Korea Short whose cover hero is not a .KS / .KQ listing
+(compose never picks one: no KRX hero means the headline cover); Q42 fails unless item 1 and at least 2 of the 3 items are
+about KRX listings (or the KOSPI). Research refuses with fewer than 2 verified KRX items; storyline rejects a non-Korea-first
+draft and, on Korea editions, runs an LLM editor pass (natural English, a read that states what and why, the Ask line answers
+the question, a read-through for US AI-chip holders) on any draft that passed every code check.

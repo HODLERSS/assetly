@@ -141,14 +141,15 @@ def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, pr
     tries.sort(key=lambda t: _NOJSON.get(t[0], 0) >= 2)
     last = None
     for name, url, key, model in tries:
-        cut = False
+        cut, afford = False, None
         for attempt in range(2):
             t0 = time.time()
             try:
                 # OpenRouter reserves credit for max_tokens up front: 16000 got a 402 on a low balance (10/1 close) while
                 # a storyline reply is ~1-2k tokens; Sonnet does not need the reasoning headroom M3 does. A reply still cut at
                 # that cap (finish_reason "length") gets the full budget on the retry (10/2 korea-midday)
-                mt = min(max_tokens, int(os.environ.get("SHORTS_OR_MAX_TOKENS", "8000"))) if name == "openrouter" and not cut else max_tokens   # v1.3.0: 4000 truncated Sonnet replies (no JSON, 10/1-2)
+                mt = min(max_tokens, int(os.environ.get("SHORTS_OR_MAX_TOKENS", "8000"))) if name == "openrouter" and not cut else max_tokens
+                if afford: mt = afford   # v1.3.0: 4000 truncated Sonnet replies (no JSON, 10/1-2)
                 body = {"model": model, "temperature": temperature, "max_tokens": mt,
                         "response_format": {"type": "json_object"},
                         "messages": [{"role": "system", "content": system + " Respond with ONE JSON object only, first character '{'."},
@@ -173,6 +174,11 @@ def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, pr
             except Exception as e:                   # noqa: BLE001
                 last = e; log(f"llm {name} attempt {attempt + 1} failed after {time.time() - t0:.0f}s: {str(e)[:160]}")
                 # out of credits / bad key: retrying the same provider cannot help, go to the next one at once
+                # ... except a 402 that only asks for fewer max_tokens (10/2 03:06: a low OpenRouter balance refused every 8000-token
+                # storyline call, so every round fell to M3, which never converged): retry once inside what the balance affords
+                m_af = re.search(r"can only afford (\d+)", str(e)) if "402" in str(e) else None
+                if m_af and not afford and int(m_af.group(1)) >= 1500:
+                    afford = int(m_af.group(1)) - 50; continue
                 if re.search(r"-> (401|402|403) ", str(e)): break
                 if isinstance(e, ValueError) and "empty sequence" in str(e):      # no JSON in the reply: next provider at once
                     _NOJSON[name] = _NOJSON.get(name, 0) + 1; break
