@@ -131,6 +131,19 @@ export function withholdStaleMoves<R extends { symbol: string; change_pct: numbe
 /** The market whose session a context symbol's day figure belongs to: KOSPI is Korean, futures and FX roll by the clock. */
 export const ctxMarketOf = (sy: string): Mkt | null => sy === "^KS11" || /\.(?:KS|KQ)$/.test(sy) ? "KR" : sy.endsWith("=F") || /^USD[A-Z]{3}$/.test(sy) || sy.endsWith("=X") || sy.endsWith("-USD") ? null : "US";
 
+/** The "(as of …)" tag on a daily note's live dollar figures, in the clock of the session the edition is about. 10/2: a
+ *  regenerated Korea Open read "SK Hynix's 0.4% rise adds $1,100 (as of the 4:00 PM ET close)", because the tag was
+ *  chosen by the US clock alone (at 8:45 PM ET the US market is past its close). Korea editions are tagged in KST: the
+ *  Korea Open with the time it was read, the Korea Close with the 3:30 PM KST close. US editions keep the ET rule: the
+ *  4:00 PM ET close once the US session is over (or for the close edition), else the time read. */
+export function liveFigureLabel(edition: string, now = new Date()): string {
+  const clock = (tz: string) => now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz });
+  if (edition === "kr_close") return "as of the 3:30 PM KST close";
+  if (edition === "kr_open") return marketState("KR", now).phase === "post" ? "as of the 3:30 PM KST close" : `as of ${clock(TZ.KR)} KST`;
+  const us = marketState("US", now).phase;
+  return edition === "close" || us === "post" || us === "closed" ? "as of the 4:00 PM ET close" : `as of ${clock(TZ.US)} ET`;
+}
+
 /** Round 9: each edition has an ET (or KST) session window, and nothing is generated outside it. A "Midday" was written at
  *  5:32 PM ET and a "Morning" at 8:02 PM ET (00:02 UTC), so Home opened on them instead of the Close. The clock also ran
  *  on UTC minutes, which moves every edition an hour once daylight time ends (a 20:05 UTC "close" is 3:05 PM EST).

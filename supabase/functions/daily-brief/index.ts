@@ -13,7 +13,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { chat } from "../_shared/llm.ts";
 import { fixGainAsDayMove, fixGrossAsNet, fixQuotedPrices } from "../_shared/prices.ts";
 import { dropAwaitingMoves, fixNamedWeights, fixNoteWeight, fixRecoveryClaims, ledeFallback, PLAIN_WORDS_RULE, repairMangledFigures, type WeightFact } from "../_shared/brief_guards.ts";
-import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, withholdStaleMoves, awaitingTag, ctxMarketOf, type MarketState } from "../_shared/calendar.ts";
+import { TZ, zonedParts, ymdShift, nextTradingDay, marketState, editionWindow, clockEdition, strandedEdition, dayName, weekdayOf, spanText, isLiveTape, sessionLine, dayTag, marketOf, withholdStaleMoves, awaitingTag, ctxMarketOf, liveFigureLabel, type MarketState } from "../_shared/calendar.ts";
 import {
   superlativeClaims, periodReturnMismatches, YTD, productVersionClaims, holdingIncomeClaims, softVerdicts, fixLevelClaims, fixDropIncome, nameFunds, fixDanglingThisMeans, relabelPeriodClaims, tidyClauseEndings, krxDollarTargets, taxRemarkClaims, bondValueClaims, isTaxAdvantaged, plainForBeginner, roundBookTotal, plainLeverage, lowYieldIncomeClaims, mergeParens, fixFragments, dropFuturesAfterClose, fixThemeShares, dropYieldPurpose, fixNoteOpener, wordWatch, codeRisk, plainCompanyName, cleanIdea, illogicalConcentration, dayTargetClaims, fixScopeLabels, fixBookMove, fixWhatItMeans, fixThemeHeavy, themeClaims, ideaContradictions, cleanNote, ungroundedEvents, ungroundedEventSentences, ungroundedCauses, aliasesFor, booksKorean, brokenSentences, repairDrops, liveEditions, themeOf, buildPortfolioParagraph, fixWeights, splitSentences, fixAgreement, promoClaims, returnForecasts, offRiskIdea, fixExposure, type Exposure, deDirect, dropEcho, earningsEstimate, earningsLine, EVIDENCE_LAW, fixArticles, fixGlossArticles, liveNotYesterday, offLensIdea,
   canonicalCalendar, datesIn, dedupePhrases, historicalClaims, wrongEarningsMonths, deliveriesEstimate, noviceGloss, strengthAsRisk, tidyNumbers,
@@ -408,7 +408,9 @@ function repairSections(src: Sections, ests: { names: string[]; label: string; e
   // a collapsed appositive can leave a comma between a subject and its verb ("The market's fear gauge, fell 3.3%")
   const unComma = (t: string) => t.replace(/(^|[.!?]\s+)([A-Z][^,.!?]{2,50}),\s+(fell|rose|jumped|slipped|climbed|dropped|gained|lost|added|edged|dipped|sank|rallied)\b/g, "$1$2 $3");
   // round 9: a figure fixed at the 4:00 PM close carried the clock time it was read ("(as of 7:31 PM ET)")
-  const closeLabel = (t: string) => t.replace(/\(as of (\d{1,2}):(\d{2}) (AM|PM) ET\)/g, (m, h, mi, ap) => {
+  // 10/2: a stored Korea edition tagged its KST figures with a US clock ("(as of the 4:00 PM ET close)"); retagged in KST
+  const krLbl = edition === "kr_close" ? "(as of the 3:30 PM KST close)" : edition === "kr_open" && asOf ? `(${liveFigureLabel("kr_open", asOf)})` : null;
+  const closeLabel = (t: string) => krLbl ? t.replace(/\(as of (?:the 4:00 PM ET close|\d{1,2}:\d{2} (?:AM|PM) ET)\)/g, krLbl) : t.replace(/\(as of (\d{1,2}):(\d{2}) (AM|PM) ET\)/g, (m, h, mi, ap) => {
     const mins = (Number(h) % 12 + (ap === "PM" ? 12 : 0)) * 60 + Number(mi);
     return edition === "close" || edition === "kr_close" || mins >= 16 * 60 ? "(as of the 4:00 PM ET close)" : m;
   });
@@ -2040,11 +2042,10 @@ lede <= 28 words as a consequence for the reader; overnight <= 50 words with >= 
         // round 7: the book's live day gain and total, stated in a daily note, carry the time they were read (the header
         // above the note moves on: "$211 gain … $116,500" under +$319 / $116,620)
         if (edition !== "assessment" && edition !== "weekend") {
-          const at = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
           // round 8: a close edition read "gained $9,400 (as of 7:31 PM ET)" for a figure fixed at the 4:00 PM close,
-          // and a fresh close lede whose $211 was the stats block's figure (not today's recomputed $319) got no label
-          const closed = edition === "close" || marketState("US").phase === "post" || marketState("US").phase === "closed";
-          const lbl = closed ? "as of the 4:00 PM ET close" : `as of ${at} ET`;
+          // and a fresh close lede whose $211 was the stats block's figure (not today's recomputed $319) got no label.
+          // 10/2: the tag follows the edition's own session (a Korea Open's figures are KST, never "the 4:00 PM ET close")
+          const lbl = liveFigureLabel(edition);
           const stated = [...String(sections.lede ?? "").matchAll(/\b(?:gain(?:ed|s)?|los(?:s|t|es)|lifts?|lifted|up|down|adds?|added|to)\s+(?:about\s+|roughly\s+)?[+\-−]?\$(\d{1,3}(?:,\d{3})+|\d+)/gi)].map((m) => Number(m[1].replace(/,/g, "")));
           const figsLive = [Math.round(dayUsd), Math.round(total), Math.round(netWorth), ...stated];
           sections.lede = mergeParens(labelLiveFigures(sections.lede, figsLive, lbl)); sections.overnight = mergeParens(labelLiveFigures(sections.overnight, figsLive, lbl)); sections.desk_view = mergeParens(labelLiveFigures(sections.desk_view, figsLive, lbl));

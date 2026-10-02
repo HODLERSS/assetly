@@ -5,7 +5,8 @@
 // (brief_guards.ts dropAwaitingMoves).
 // Run: deno test -A supabase/functions/_shared/session_guard_test.ts
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { awaitingTag, ctxMarketOf, dayMoveCurrent, quoteSession, withholdStaleMoves } from "./calendar.ts";
+import { awaitingTag, ctxMarketOf, dayMoveCurrent, liveFigureLabel, quoteSession, withholdStaleMoves } from "./calendar.ts";
+import { labelLiveFigures } from "./intel.ts";
 import { dropAwaitingMoves } from "./brief_guards.ts";
 
 const AT_0921_KST = new Date("2026-10-02T00:21:43Z");   // the stored kr_open's generated_at
@@ -108,4 +109,20 @@ Deno.test("dropAwaitingMoves keeps weights, awaiting statements, and names that 
   const g = "Korean stocks rose 0.4% in the first minutes.";
   assertEquals(dropAwaitingMoves(g, AWAIT.slice(0, 1), false), g);
   assertEquals(dropAwaitingMoves(g, [], true), g);
+});
+
+Deno.test("regression 10/2: a Korea Open's dollar figures are tagged in KST, never with the US close", () => {
+  const at = new Date("2026-10-02T00:45:00Z");   // 9:45 AM KST = 8:45 PM ET, the US market past its close
+  assertEquals(liveFigureLabel("kr_open", at), "as of 9:45 AM KST");
+  const lede = "SK Hynix's 0.4% rise adds $1,100 to your portfolio.";
+  const out = labelLiveFigures(lede, [1100], liveFigureLabel("kr_open", at));
+  assertEquals(out, "SK Hynix's 0.4% rise adds $1,100 (as of 9:45 AM KST) to your portfolio.");
+  assert(!/ET close/.test(out));
+  assertEquals(liveFigureLabel("kr_close", new Date("2026-10-02T06:45:00Z")), "as of the 3:30 PM KST close");
+});
+
+Deno.test("US editions keep the ET rule", () => {
+  assertEquals(liveFigureLabel("midday", new Date("2026-10-01T16:31:00Z")), "as of 12:31 PM ET");
+  assertEquals(liveFigureLabel("close", new Date("2026-10-01T20:40:00Z")), "as of the 4:00 PM ET close");
+  assertEquals(liveFigureLabel("morning", new Date("2026-10-01T12:30:00Z")), "as of 8:30 AM ET");
 });
