@@ -452,7 +452,9 @@ def write_sources(ST, res, facts, askc, story, byid):
         L.append(f"- **Read:** {r['sentiment']}")
         L += [f"  - {byid[i]['publisher']} ({byid[i]['et']}): [{byid[i]['title']}]({byid[i]['link']})" for i in r["sentiment_ids"] if i in byid]
         for f in r.get("figures", []):
-            L.append(f"- **Figure:** {f['symbol']} {f['value']:+.2f}% (CNBC {f.get('feed1')}, second feed {f.get('feed2')})")
+            src = ("Yahoo", "Daum") if KRM.is_kr(f["symbol"]) else ("CNBC", "Nasdaq")      # the two feeds that figure was read from
+            if f.get("field") in ("m1", "m3", "ytd"): src = ("Yahoo history", src[1] + " history")    # kr.windows: Yahoo + Daum / Nasdaq
+            L.append(f"- **Figure:** {f['symbol']} {f['value']:+.2f}%{' ' + f['field'] if f.get('field') not in (None, 'pct') else ''} ({src[0]} {f.get('feed1')}, {src[1]} {f.get('feed2')})")
         L.append(f"- **Spoken:** {' '.join(s['text'] for s in it['sentences'])}\n")
     L.append("## Portfolio figures (app vs Nasdaq recompute)\n\n| Figure | App | Nasdaq | Kept |\n|---|---|---|---|")
     L += [f"| {c['figure']} | {c['app']:,.2f} | {c['nasdaq']:,.2f} | {'yes' if c['ok'] else 'DROPPED'} |" for c in facts["checks"]]
