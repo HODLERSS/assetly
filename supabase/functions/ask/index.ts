@@ -22,7 +22,7 @@ import {
   dayMoveMismatches, earningsEstimate, type LiveFact, plainDataWords, tidyNumbers, unsupportedCauses, wrongDividendAmounts, wrongEarningsMonths,
   buildHusk, dayMoveDump, labelClosedMoves, wrongDividendTiming, circularCauses, fixFractions,
   sanitize, staleNewsTitle, perLine, splitSentences, periodReturnMismatches, spanOfMonth, spanOfMonthKo, holdingRankClaims, superlativeClaims, costBasisClaims, targetBandClaims, misattributedCauses, fixGroupShares, unicodeMinus, themeOf, holdingRankPremise, YTD, labelEstimatedDates, paymentLagClaims, promoCharacterisations, targetPaceClaims, isRankQuestion, isSellQuestion, koNamesFor, suggestionHits, digitsForWritten, diversifiedClaims, dropInstructionEcho,
-  readerLevel, stripHonestBlock, driversLead, krxDollarTargets, isDividendRankQuestion, dividendRankClaims, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, dropLeadEchoes, labelWholeBookPct, fixOrphanShares, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
+  readerLevel, stripHonestBlock, driversLead, krxDollarTargets, isDividendRankQuestion, dividendRankClaims, mergeLeadAndFallback, isHonestFallback, cashDragClaims, unheldTickersIn, stripLeadFragment, bookWindowLead, ensureLeads, isPerformanceQuestion, honestFallback, fixEquityBaseClaims, fixGroupSharePctFirst, TECH_GROUP_LABEL, fixBookDayClaims, fixHoldingDayDollars, fixCurrentPriceClaims, sessionDayLine, intentAnswer, questionIntent, type IntentRow, fixDayTags, flatClaims, relabelPeriodClaims, stripUngroundedMoodCauses, targetMismatchClaims, nonSessionDatedMoves, portfolioSummaryLead, askedCount, unescapeBreaks, dualClassFacts, dualClassClaims, relativeGapClaims, companySizeClaims, groupShareFirstClaims, pointContributionClaims, productVersionClaims, directionCauseClaims, rankPositionClaims, isForecastQuestion, softVerdicts, smallMoveCauses, orderingClaims, metricSuperlativeClaims, peFigures, crossMetricClaims, wonConversionClaims, marketLead, dividendLead, countClaims, isScenarioRankQuestion, danglingAfterDrop, bothDateClaims, centrality, computedDataLead, statesLead, dropLeadEchoes, labelWholeBookPct, fixOrphanShares, windowDollarMismatches, questionWindows, headlineOk, type PerfRow, isDecisionFrame, isDataRankQuestion, isVerdictQuestion, JUDGE_POLICY, judgeItems, applyJudge,
   TECH_THEMES,
 } from "../_shared/intel.ts";
 
@@ -382,6 +382,20 @@ async function handle(req: Request, best: { answer?: () => Response } = {}): Pro
   const divPending = held.filter((r) => r.kind !== "crypto" && !divRows.get(r.symbol)?.div_as_of).length;   // coins are never checked
   const divFacts = divLines.map((x) => ({ names: [nameOf(x.r), ...aliasesFor(x.r.symbol, x.r.name)], amounts: x.d.amounts }));
 
+  // round 8 newcomer: a lot bought in today's session moves from its COST, not the prior close (Home's rule, web
+  // portfolio.ts withSameDayLots): Ask said "+$20 today" for an NVDA lot bought at the close while Home booked $0
+  const dayOf = (r: (typeof held)[number]): number => {
+    if (r.change_pct === null) return 0;
+    const f = 1 + Number(r.change_pct) / 100, v = Number(r.value ?? 0);
+    const mk = marketOf(r.symbol, r.kind, r.currency);
+    const session = mk ? marketState(mk).lastSessionDate : null;
+    const fresh = session ? sameDayLots.filter((l) => l.holding_id === (r as { holding_id?: string }).holding_id && !!l.acquired_on && l.acquired_on >= session) : [];
+    if (!fresh.length || f <= 0 || !Number(r.qty)) return usd(v * (Number(r.change_pct) / 100) / f, r.currency);
+    const qNew = fresh.reduce((s2, l) => s2 + Number(l.qty), 0);
+    const px = Number(r.price ?? 0);
+    const native = (v - v / f) * Math.max(0, Number(r.qty) - qNew) / Number(r.qty) + fresh.reduce((s2, l) => s2 + Number(l.qty) * (px - Number(l.cost_per_share)), 0);
+    return usd(native, r.currency);
+  };
   const stats: string[] = [];
   let totNow = 0;
   const moved: Record<number, { then: number; now: number; missing: string[] }> = { 7: { then: 0, now: 0, missing: [] }, 30: { then: 0, now: 0, missing: [] }, 90: { then: 0, now: 0, missing: [] }, 365: { then: 0, now: 0, missing: [] }, [YTD]: { then: 0, now: 0, missing: [] } };
@@ -402,7 +416,8 @@ async function handle(req: Request, best: { answer?: () => Response } = {}): Pro
       ...(sharesOut.get(r.symbol) && px !== null ? [`company market cap about ${bigMoney(usd(px, cur) * sharesOut.get(r.symbol)!.n)} (${bigCount(sharesOut.get(r.symbol)!.n)} shares outstanding, SEC filing)`] : []),
       `shares ${Number(r.qty ?? 0)}`,
       `position value ${money(valUsd)} (${weight(valUsd)} of assets)`,
-      `day ${r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%"} [${dayTag(mk)}]`,
+      // 10/2 Shorts QA: Ask said "Applied Digital (+10%) lifts $2.5k" (today's value x %); the day $ is the prior value x % ($2,319)
+      `day ${r.change_pct === null ? "n/a" : (Number(r.change_pct) >= 0 ? "+" : "") + Number(r.change_pct).toFixed(1) + "%" + ` (${signedUsd(dayOf(r))} today: use this dollar figure as-is, never position value x day %)`} [${dayTag(mk)}]`,
       `avg cost ${money(Number(r.avg_cost ?? 0), cur)}/share`,
       `total gain/loss ${signedUsd(usd(Number(r.total_gl ?? 0), cur))} since purchase`,
     ];
@@ -428,20 +443,6 @@ async function handle(req: Request, best: { answer?: () => Response } = {}): Pro
   // the total (round 5: Samsung's Wednesday move was counted in Friday's "today" during KRX's Chuseok break)
   const tradesToday = (r: (typeof held)[number]) => { const mk = marketOf(r.symbol, r.kind, r.currency); return mk === null || marketState(mk).tradingToday; };
   const closedToday = held.filter((r) => !tradesToday(r)).map((r) => nameOf(r));
-  // round 8 newcomer: a lot bought in today's session moves from its COST, not the prior close (Home's rule, web
-  // portfolio.ts withSameDayLots): Ask said "+$20 today" for an NVDA lot bought at the close while Home booked $0
-  const dayOf = (r: (typeof held)[number]): number => {
-    if (r.change_pct === null) return 0;
-    const f = 1 + Number(r.change_pct) / 100, v = Number(r.value ?? 0);
-    const mk = marketOf(r.symbol, r.kind, r.currency);
-    const session = mk ? marketState(mk).lastSessionDate : null;
-    const fresh = session ? sameDayLots.filter((l) => l.holding_id === (r as { holding_id?: string }).holding_id && !!l.acquired_on && l.acquired_on >= session) : [];
-    if (!fresh.length || f <= 0 || !Number(r.qty)) return usd(v * (Number(r.change_pct) / 100) / f, r.currency);
-    const qNew = fresh.reduce((s2, l) => s2 + Number(l.qty), 0);
-    const px = Number(r.price ?? 0);
-    const native = (v - v / f) * Math.max(0, Number(r.qty) - qNew) / Number(r.qty) + fresh.reduce((s2, l) => s2 + Number(l.qty) * (px - Number(l.cost_per_share)), 0);
-    return usd(native, r.currency);
-  };
   const bookDayUsd = held.filter(tradesToday).reduce((a, r) => a + dayOf(r), 0);
   const bookDayPct = totNow - bookDayUsd > 0 ? bookDayUsd / (totNow - bookDayUsd) * 100 : 0;
   // r12 C / r13 M1(b): on a weekend or holiday "today +$0" is no answer: the last session's figures, labelled with the
@@ -1128,6 +1129,7 @@ HARD LIMIT: ${complex ? "170 words; this is a multi-part question, so give each 
     guarded = fixDayTags(guarded, held.map((r) => ({ names: namesOfR(r), dayPct: r.change_pct === null ? null : Number(r.change_pct) })));
     // r13 intelligence M2: the whole-book day figure is Home's; a "current price" is the latest price, not the prior close
     guarded = fixBookDayClaims(guarded, { usd: sessDay, pct: sessPct }, held.map((r) => ({ names: namesOfR(r) })));
+    guarded = fixHoldingDayDollars(guarded, held.map((r) => ({ names: namesOfR(r), dayUsd: r.change_pct === null ? null : dayOf(r), valueUsd: usd(Number(r.value ?? 0), r.currency) })));
     // final M2: a stocks-and-funds base that counted crypto
     guarded = fixEquityBaseClaims(guarded, held.filter((r) => r.kind !== "crypto" && !/-USD$/.test(r.symbol)).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0),
       held.filter((r) => r.kind === "crypto" || /-USD$/.test(r.symbol)).reduce((a, r) => a + usd(Number(r.value ?? 0), r.currency), 0));

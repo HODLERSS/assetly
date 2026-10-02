@@ -3845,6 +3845,32 @@ export function fixBookDayClaims(text: string, day: { usd: number; pct: number }
   }).join(" "));
 }
 
+/** 10/2 Shorts QA: "Applied Digital (+10%) lifts $2.5k" was today's value x the day % ($25.5k x 10%); the day's dollar
+ *  move is the PRIOR value x % ($2,319, Home's figure). A day-dollar figure stated right after ONE named holding is set
+ *  to that holding's day $. A position value, a longer window, cost basis or dividends are never touched. */
+export function fixHoldingDayDollars(text: string, rows: { names: string[]; dayUsd: number | null; valueUsd: number }[]): string {
+  const fmt = (v: number, sg: string, k: string | undefined) => `${sg ? (v >= 0 ? "+" : "−") : ""}$${k ? (Math.abs(v) / 1000).toFixed(1) + k.trim() : Math.round(Math.abs(v)).toLocaleString("en-US")}`;
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => {
+    if (/\b(?:week|month|quarter|year|YTD|since|all[- ]time|bought|cost|basis|dividends?|income|worth|valued|position value)\b|이번 주|한 달|배당/i.test(sen)) return sen;
+    if (!/\b(?:today|on the day|so far|session|day's|lifts?|lifted|adds?|added|drags?|dragged|contribut\w*|gains?|gained|loses?|lost)\b|오늘/i.test(sen)) return sen;
+    const named = rows.filter((r) => r.dayUsd !== null && r.names.some((n) => n && n.length >= 2 && nameIn(sen, n)));
+    if (named.length !== 1) return sen;
+    const row = named[0], want = row.dayUsd!;
+    for (const nm of new Set(row.names)) {
+      if (!nm || nm.length < 2) continue;
+      const re = new RegExp(`((?:^|[^A-Za-z0-9])${esc(nm)}(?![A-Za-z0-9])[^$]{0,40}?)([+\u2212-]?)\\$(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)(\\s?[Kk](?![a-z]))?`);
+      const m = re.exec(sen);
+      if (!m) continue;
+      const v = Number(m[3].replace(/,/g, "")) * (m[4] ? 1e3 : 1);
+      if (Math.abs(v - row.valueUsd) <= row.valueUsd * 0.03) return sen;          // the position's value, not a move
+      // rounding only: "$2.3k" is within $50, a full figure within 2% (the value-x-% error is the day % itself, 10% at +10%)
+      if (Math.abs(v - Math.abs(want)) <= (m[4] ? 50 : Math.max(10, Math.abs(want) * 0.02))) return sen;
+      return sen.slice(0, m.index) + m[1] + fmt(want, m[2], m[4]) + sen.slice(m.index + m[0].length);
+    }
+    return sen;
+  }).join(" "));
+}
+
 /** "NVDA's current price $224.58" (Thursday's close; Friday's close $225.07 is the current price): a current-price claim
  *  that states the previous close is set to the latest price. */
 export function fixCurrentPriceClaims(text: string, facts: { names: string[]; price: number | null; prevClose: number | null }[]): string {
