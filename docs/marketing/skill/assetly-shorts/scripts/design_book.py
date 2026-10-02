@@ -33,7 +33,7 @@ def range52(sym):
         except Exception:                                # noqa: BLE001
             return None, None
     try:
-        d = json.loads(get(f"https://api.nasdaq.com/api/quote/{sym}/info?assetclass=stocks", tries=2))["data"]
+        d = json.loads(get(f"https://api.nasdaq.com/api/quote/{sym}/info?assetclass=stocks", timeout=8, tries=2))["data"]   # a design input, not a shown figure: never wait long (v1.3.0)
         lo, hi = [_num(x) for x in d["keyStats"]["fiftyTwoWeekHighLow"]["value"].split(" - ")]
         return lo, hi
     except Exception:                                    # noqa: BLE001
@@ -46,8 +46,70 @@ def nice_qty(value, price):
     return max(step, int(round(q / step)) * step)
 
 
+def story_names(res):
+    story = []
+    for it in res["items"]:
+        for s in it.get("symbols", []):
+            if it.get("kind") in ("stock", "earnings") and s not in story and s not in NO_HOLD:
+                story.append(s)
+    return story[:4]
+
+
+def from_prestage(base, res):
+    """v1.3.0 (the 20-minute budget): reuse the book the prestage run seeded ~30 min ago when it holds the day's story
+    names, or add up to two missing story names to it (sized by the same rules: 8-12%, a falling story 3.5-6%), so the
+    account needs no reset and no full re-sync. Returns False (design afresh) when the prestage is missing, stale, for
+    another account, or would need more than two names."""
+    import time
+    meta = jload(os.path.join(base, "prestage-ready.json"), {})
+    age = (time.time() - meta.get("ts", 0)) / 60
+    if not meta or age > float(os.environ.get("SHORTS_PRESTAGE_MAX_AGE_MIN", "120")) or meta.get("account") != res.get("_account"):
+        log(f"book: no usable prestage in {base} (age {age:.0f} min, {meta.get('account')} vs {res.get('_account')})"); return False
+    book = jload(os.path.join(base, "book.json")); plan = jload(os.path.join(base, "book-plan.json"))
+    held = {b["symbol"] for b in book}
+    story = story_names(res); missing = [s for s in story if s not in held]
+    if len(missing) > 2:
+        log(f"book: prestaged book misses {missing}: design afresh"); return False
+    added = []
+    if missing:
+        q = cnbc([s for s in missing if not KRM.is_kr(s)])
+        rows = {r["symbol"]: r for r in jload(os.path.join(W, "research-data.json")).get("candidates", [])}
+        fx = 1.0
+        if any(KRM.is_kr(s) for s in missing):
+            fx = float(next(r["price"] for r in sb_rest(W, "prices?select=symbol,price&symbol=eq.USDKRW")))
+        for s in missing:
+            if KRM.is_kr(s) and s in rows and rows[s].get("last"):
+                q[s] = {"last": rows[s]["last"] / fx, "pct": rows[s].get("pct_feed1"), "krw": rows[s]["last"]}
+        tot = plan["total"]
+        for s in missing:
+            px = (q.get(s) or {}).get("last"); dp = (q.get(s) or {}).get("pct") or 0.0
+            if not px: log(f"book: no quote for {s}: design afresh"); return False
+            w = rng.uniform(0.08, 0.12) if dp >= 0 else rng.uniform(0.035, 0.06)
+            w = min(w, max(0.02, (295_000 - tot) / max(tot, 1)))          # stay inside $150-300k
+            qty = nice_qty(tot * w, px); lp = (q.get(s) or {}).get("krw") or px
+            lo, hi = range52(s); lo = lo or lp * 0.55; hi = hi or lp; top = min(lp * 0.92, hi)
+            cost = round(rng.uniform(lo, max(lo, top)) if top > lo else lo, 2)
+            if KRM.is_kr(s): cost = float(round(cost, -2))
+            book.insert(len(book) - 1, {"symbol": s, "qty": qty, "cost": cost, **({"name": KRM.KR_NAMES[s]} if s in KRM.KR_NAMES else {})})
+            plan["positions"].append({"symbol": s, "qty": qty, "price": px, "value": round(qty * px), "day_pct": dp, "cost": cost,
+                                      "range52": [lo, hi], "role": "story"})
+            tot += round(qty * px); added.append(s)
+        plan["total"] = round(tot)
+    plan["story"] = story; plan["prestaged"] = {"age_min": round(age), "added": added}
+    if not 150_000 <= plan["total"] <= 300_000:
+        log(f"book: prestaged book would be ${plan['total']:,}: design afresh"); return False
+    jdump(book, os.path.join(W, "book.json")); jdump(plan, os.path.join(W, "book-plan.json"))
+    jdump({"reuse": True, "age_min": round(age), "added": added, "from": base}, os.path.join(W, "prestage.json"))
+    log(f"book: prestaged {age:.0f} min ago, reused" + (f" with {added} added" if added else " as is") + f"; story {story}")
+    return True
+
+
 def main():
     res = jload(os.path.join(W, "research.json"))
+    if "--base" in sys.argv:
+        res["_account"] = os.environ.get("SHORTS_ACCOUNT_N")
+        with Stage(W, "book.prestaged"):
+            if from_prestage(sys.argv[sys.argv.index("--base") + 1], res): return
     with Stage(W, "book.design"):
         story = []
         for it in res["items"]:

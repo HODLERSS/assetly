@@ -43,7 +43,10 @@ SPOKEN_CAPS = {"AI", "US", "UK", "EU", "CEO", "CFO", "ETF", "ETFs", "VIX", "AMD"
 LEAD = {"preopen": "Before the bell,", "midday": "At midday,", "close": "At the close,",   # the fallback's timing phrase
         "korea-open": "In Seoul,", "korea-midday": "In Seoul,", "korea-close": "In Seoul,"}
 LEAD_SHORT = {"preopen": "Premarket,", "midday": "Midday,", "close": "Today,", "korea-open": "In Seoul,", "korea-midday": "In Seoul,", "korea-close": "In Seoul,"}
-STORY_CAP_S, STORY_ROUNDS = 360, 8                     # storyline rounds: at most 8, inside 6 minutes
+STORY_CAP_S, STORY_ROUNDS = 360, 12                    # storyline rounds: at most 12, inside the time cap (v1.3.0: was 8; the
+                                                        # cap, from the budget, is what bounds them: Sonnet rounds take 8-30 s)
+# v1.3.0: run.sh lowers the cap to what the 20-minute budget leaves after compose + build + qa (never above 6 minutes)
+STORY_CAP_S = min(STORY_CAP_S, int(float(os.environ.get("SHORTS_STORY_CAP_S", STORY_CAP_S))))
 # SHORTS_BUDGET / SHORTS_SPOKEN_MAX: run.sh lowers both when a build measures over 30 s (10/1 midday: 31.0 s)
 _KRB = sys.argv[1:2] and sys.argv[1].startswith("korea")              # Korea lines carry longer names and window phrases:
 BUDGET = int(os.environ.get("SHORTS_BUDGET", 52 if _KRB else 56))      # 10/1 korea-close tests: 56 words 31.9 s, 52 words 30.8 s, 50 fit; 49 never converged

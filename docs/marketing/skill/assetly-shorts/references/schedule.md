@@ -6,8 +6,8 @@ Proposal only: no launchd job is installed by the skill. The main session decide
 
 | Edition | Must be ready | Start (CT) | Start (ET) | Why |
 |---|---|---|---|---|
-| preopen | 8:00 AM CT (9:00 ET, 30 min before the open) | **7:32 AM** | 8:32 AM | the app writes the Morning Brief only from 8:00 AM ET; premarket quotes are live from 4:00 AM ET; ~22 min end to end |
-| midday | 12:00 PM CT (1:00 PM ET) | **11:35 AM** | 12:35 PM | the Midday Pulse window is the session; ~22 min |
+| preopen | **done before 7:30 AM CT** (owner, 10/1) | **6:50 AM** | 7:50 AM | premarket quotes are live from 4:00 AM ET; the app's Morning Brief window opens at 8:00 AM ET, so a brief written before 8:00 ET goes through the internal out-of-window path (account.py `--out-of-window`, automatic); <= 20 min budget, done by 7:10 |
+| midday | 12:00 PM CT (1:00 PM ET) | **11:35 AM** | 12:35 PM | the Midday Pulse window is the session; <= 20 min budget |
 | close | as soon as possible after 3:00 PM CT (4:00 PM ET) | **3:02 PM** | 4:02 PM | the Closing Note window opens at 4:00 PM ET; both quote feeds carry the official close by ~4:01 |
 
 Weekends and US market holidays: `run.sh` asks the app's calendar first and exits 0 without doing anything.
@@ -28,6 +28,46 @@ not run on a holiday in v1.1.0: it would have no session to anchor its stamp to)
 date (`2026-10-02-korea-open`), so the gate's "already delivered" check uses the Seoul date for these two.
 The Mac must be awake: `pmset repeat` holds only one wake time (07:25 for the pre-open); the evening run is normally
 covered by use, the 00:40 run is not unless the Mac stays awake (`caffeinate` in the plist only helps once it starts).
+
+## The 20-minute budget (v1.3.0, owner 10/1: "make sure you build each clip within 20 minutes max")
+
+Every run delivers within `SHORTS_DEADLINE_S` = 1200 s of its start or refuses (watchdog.sh; Q41). A prestage ~30 min
+before each slot does the slow account work, so the run itself only verifies and refreshes.
+
+| Edition | Prestage (CT, its own launchd job) | Run start (CT) | Hard deadline (CT) |
+|---|---|---|---|
+| preopen | 6:20 AM Mon-Fri | 6:50 AM | 7:10 AM |
+| midday | 11:05 AM Mon-Fri | 11:35 AM | 11:55 AM |
+| close | 2:32 PM Mon-Fri | 3:02 PM | 3:22 PM |
+| korea-open | fires 6:00 PM Sun-Thu, the gate waits for 9:02 AM KST | 9:32 AM KST (7:32 PM CDT / 6:32 PM CST) | start + 20 min |
+| korea-midday | fires 8:25 PM Sun-Thu, the gate waits for 11:30 AM KST | 12:00 PM KST (10:00 PM CDT / 9:00 PM CST) | start + 20 min |
+| korea-close | fires 12:05 AM Mon-Fri, the gate waits for 3:15 PM KST | 3:45 PM KST (1:45 AM CDT / 12:45 AM CST) | start + 20 min |
+
+Per stage, seconds (`budget.json`, the quality report's budget table). "Before" = the 10/1 3:02 PM close (clean, no
+retake, 23.5 min); "after" = the v1.3.0 validation run (10/1 22:24 close --test, prestage 91 min old, one story name added, first Ask
+take passed): DELIVERED 41/41 in 970 s. Earlier v1.3.0 test runs: 708 s and 634 s refused correctly (an Ask retake had no
+room), 852 s and 807 s refused in the storyline (fixed: OpenRouter max_tokens, 12 rounds); the hard stop was tested at a 45 s deadline.
+
+| Stage | Before (10/1 close) | Budget (v1.3.0) | After (v1.3.0, measured) | What changed |
+|---|---|---|---|---|
+| research (data + LLM + verify + repair) | 125 | 160 | 158 | unchanged (external feeds; a provider that returns no JSON is demoted at once) |
+| book | 18 | 30 | 4 | the prestaged book reused (up to two story names added) |
+| account (seed / refresh) | 271 | 30 | 10 | prestage did the seed + insights + filings; the run refreshes prices + news only |
+| brief (write + check), beside facts | 84 (+ ~75 in the seed) | 170 | 161 (a name added: its insights + the brief); ~0-20 when the book is kept (early brief) | the brief is written and checked beside the facts stage |
+| facts | 61 | 60 | 18 | lookups, quotes and dividends side by side |
+| record (take + align) | 260 | 270 | 260 (take 237 + align 23) | align: the 60 fps take, saturation probe and scene scan in parallel (58 -> ~21 s) |
+| Ask check | 92 | 20 | 7 | dividends side by side |
+| screen | 23 | 40 | 33 | |
+| storyline | 78 | 100 (cap = budget left - 230, <= 360) | 106 | Sonnet first; no-JSON provider demoted |
+| compose | 36 | 40 | 36 | |
+| build | 351 | 160 | 137 | ElevenLabs lines in parallel; make-spot beats in parallel + geq on strips (bit-identical, 251 -> ~70 s); subtitles on 8 workers (32 -> 5 s) |
+| qa | 40 | 50 | 34 | + Q41 |
+| **total** | **1410 (23.5 min)** | **1200 hard** | **970 (16.2 min), DELIVERED 41/41** | |
+
+Retry rules: another Ask take only with >= 595 s left (a take ~265 + the ~330 after it); a re-tighten or storyline only
+with >= 290 s left; a duck rebuild or the Q28 remix only with >= 150 s left. Otherwise the run refuses at once (no late
+delivery, no skipped check). A busy external feed (Nasdaq, an LLM) can still push a run over: it then refuses, and the
+schedule's next edition is unaffected.
 
 ## Measured latency (9/30 test runs, seconds)
 
@@ -78,8 +118,10 @@ Supabase CLI login, the Xcode simulator and `~/.private_keys` must be available)
 </array>
 ```
 
-preopen: Hour 7 Minute 32; midday: Hour 11 Minute 35; close: Hour 15 Minute 2 (CT, the Mac's local time); korea-open:
-Weekday 0-4 Hour 18 Minute 30, korea-midday: Weekday 0-4 Hour 20 Minute 55 and korea-close: Weekday 1-5 Hour 0 Minute 40 (the gate then waits for 9:32 / 15:45 KST). The script
+preopen: Hour 6 Minute 50 (owner 10/1: done before 7:30 CT); midday: Hour 11 Minute 35; close: Hour 15 Minute 2 (CT, the Mac's local time); korea-open:
+Weekday 0-4 Hour 18 Minute 30, korea-midday: Weekday 0-4 Hour 20 Minute 55 and korea-close: Weekday 1-5 Hour 0 Minute 40 (the gate then waits for 9:32 / 12:00 / 15:45 KST).
+v1.3.0 prestage jobs (`<edition>-prestage`, gate `--prestage`): preopen 6:20, midday 11:05, close 14:32 (Mon-Fri); korea-open
+Weekday 0-4 18:00, korea-midday Weekday 0-4 20:25, korea-close Weekday 1-5 0:05 (the gate waits for the KST start - 30 min). The script
 itself skips holidays. A refused run leaves its work dir under `/tmp/assetly-shorts/` and exits 1; the main session
 should check `~/Library/Logs/assetly-shorts.log` and the delivery folder before posting. The Mac must be awake
 (`pmset repeat wakeorpoweron MTWRF 07:25:00` covers the first run).

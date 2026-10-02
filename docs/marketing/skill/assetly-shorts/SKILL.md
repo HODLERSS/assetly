@@ -3,9 +3,11 @@ name: assetly-shorts
 description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, commentary in Minjae's voice, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day plus three Korea AI-chip editions per KRX trading day (korea-open, korea-midday, korea-close); uploads only with --upload (YouTube private; TikTok via API or the queue).
 ---
 
-# Assetly market Shorts, v1.2.0
+# Assetly market Shorts, v1.3.0
 
-Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratch every run:
+Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratch every run, **each delivered within 20
+minutes of its run's start** (owner 10/1: "make sure you build each clip within 20 minutes max ... this time limit is
+important"; v1.3.0, see "The 20-minute budget" below):
 
 | Edition | Ready by | Covers | App brief | Ask on camera (default) |
 |---|---|---|---|---|
@@ -40,6 +42,7 @@ launchd setup: `references/schedule.md`.
 ~/.claude/skills/assetly-shorts/scripts/run.sh preopen --date 2026-10-01 --test --seed 4
 ~/.claude/skills/assetly-shorts/scripts/run.sh close --work /tmp/assetly-shorts/<run> --from story   # resume at a stage
 ~/.claude/skills/assetly-shorts/scripts/run.sh close --upload        # + private upload after the gate passes (never with --test)
+~/.claude/skills/assetly-shorts/scripts/run.sh close --prestage      # ~30 min before the slot: research + book + account seed (v1.3.0)
 ~/.claude/skills/assetly-shorts/scripts/run.sh korea-close --date 2026-10-01 --test   # a Korea edition (date = the KST session)
 ```
 
@@ -55,6 +58,30 @@ Delivers to `app/docs/marketing/shorts/<date>-<edition>/` (`-test<k>` for `--tes
 `asr-transcript.txt`. **It refuses (exit 1, nothing copied to docs/) if any automatic metric fails.** Upload is opt-in (`--upload`,
 private only) and the main session decides when the schedule turns it on.
 
+## The 20-minute budget (v1.3.0)
+
+`SHORTS_DEADLINE_S` (default 1200) from the moment run.sh starts. Validation (10/1 close --test): 16.2 min with a story name added to the
+prestaged book, ~13-14 min when the book is kept; one Ask retake fits only when the first take ends with >= ~10 min
+left, otherwise the run refuses (never late). How it holds:
+
+- **Prestage** (`run.sh <edition> --prestage`, its own launchd job ~30 min before the slot): research + book + the
+  account's full seed and every sync (the ~5-6 min of insights and filings), no brief. At run time the fresh research is
+  compared with the prestaged book: every story name held = reuse; up to two missing = added to the book
+  (`design_book.py --base`, same sizing rules) with filings + insights for those names only; else the full reset seed.
+  The account stage then refreshes prices + news (~15 s instead of ~6 min). The edition's brief is written on the prestaged
+  account at the run's start, beside research (`account.py --early-brief`); when the book needed a name added, it is
+  rewritten after the add, beside the facts stage.
+- **Parallel where nothing depends on it**: the brief check runs beside the facts stage; the facts lookups, Nasdaq quotes
+  and dividends run side by side; the 60 fps take, the saturation probe and the scene scan read the recording at the same
+  time; every line's first ElevenLabs take is requested at once; make-spot.py renders the beats in parallel processes and
+  its scrim / highlight geq work on their own strips (bit-identical frames, 170 s -> 35 s); subtitle frames on 8 workers.
+- **Every retry checks the clock** before it starts (another Ask take ~265 s + the ~330 s after it; a storyline round; a
+  re-tighten; a duck rebuild; the Q28 remix) and refuses rather than start one it cannot finish. The storyline's cap is what
+  the budget leaves after compose + build + qa (never above 6 min); Sonnet first, MiniMax-M3 fallback.
+- **watchdog.sh** stops the run at the deadline (never mid-copy to docs/), frees the simulator lock, notifies, exit 1:
+  nothing late is delivered. **Q41** grades the total wall time; `quality-report.md` carries each stage's budget vs actual
+  (`budget.json`). The checks themselves are unchanged: when the budget cannot hold a check, the run refuses.
+
 ## The stages (scripts/)
 
 | Stage | Script | Judgment (LLM) | Hard checks (code) |
@@ -69,7 +96,7 @@ private only) and the main session decides when the schedule turns it on.
 | story | `storyline.py` | OpenRouter (Claude Sonnet 5.5; M3 fallback; `SHORTS_STORY_MODEL=mara` flips it) writes cover, item lines (why, then read), the portfolio line ("Your portfolio"), the Ask line (quoting one numbered, visible answer line), title, description | figures only from the verified set; Q13 words + tape/book/print/demo; no tickers of candidate/held names (names said as letters, IBM / NASA / AMD, are fine); claim-carrying words traceable to sources (reaction words free); edition timing words; <= 15 words a sentence; <= 56 spoken words; up to 8 rounds of explicit rewrite instructions inside 6 min, every spoken figure readable in its shot (the app's screen per `screen.json`, or a fresh pre-market / after-hours quote said with its label word, shown on a chip); no first person; then a verified-wording fallback that fits the budget and leads with the edition's timing phrase, then refuse |
 | compose | `compose.py` | - | the labelled PRE-MARKET / AFTER HOURS chip (the Short's own overlay, value + quote time, top-right corner block like the stamp) on any beat whose line says it; the quoted answer line outlined (`highlight.src_box` from the UI test's element frames) and pushed to; voices (owner, 10/1): EVERY line in the app's brief voice (the Minjae ElevenLabs clone; voice-lines.py `SHORTS_VOICE=minjae`, the default), OpenRouter gpt-audio marin/cedar only as the per-line backup when ElevenLabs fails (`SHORTS_VOICE=mixed` restores the old marin/cedar items + gpt-audio question); tempo 1.06 on every line (1.12 only in mixed); beats from the marks; one push on every beat |
 | build | repo `web/ios/App/marketing/shorts/make-short.sh` | - | speakable() + earAudit() on every line; voices, word-synced subtitles with story eyebrows, speaking pills, Apple Loops bed, duck, -14 LUFS / <= -1.5 dBTP, proof frames, Q1-Q19 |
-| qa | `qa_deliver.py` | - | Q21-Q40 (references/quality.md; Q32 answer quoted + visible + outlined, Q33 every spoken figure readable in its beat, Q34 one moment: every time shown <= corner stamp, no live quote in a pre-open Short; Q35 chips / tags in the top-right corner block, clear of the phone; Q38 the cover hero is a verified move read on frame 0 and in its beat; Q39 the end-card follow line; Q40 reach metadata), writes the report and the sources, delivers or refuses |
+| qa | `qa_deliver.py` | - | Q21-Q41 (references/quality.md; Q32 answer quoted + visible + outlined, Q33 every spoken figure readable in its beat, Q34 one moment: every time shown <= corner stamp, no live quote in a pre-open Short; Q35 chips / tags in the top-right corner block, clear of the phone; Q38 the cover hero is a verified move read on frame 0 and in its beat; Q39 the end-card follow line; Q40 reach metadata), writes the report and the sources, delivers or refuses |
 
 ## What still needs a person (or the agent running the skill)
 

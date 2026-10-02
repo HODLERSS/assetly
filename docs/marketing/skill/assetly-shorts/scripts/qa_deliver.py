@@ -268,7 +268,10 @@ def main():
         t = tm["hook"]
         for i, bt in enumerate(tm["beats"]):
             for frac in (0.5, 0.9):
-                at = t + bt["dur"] * frac; png = os.path.join(B, f"q37_b{i + 1}_{frac}.png")
+                # never inside the 0.4 s slide to the next beat (10/1 v1.3.0 test: a 1.5 s beat sampled at 1.35 s read the
+                # sliding phone as a 74 px drop): the latest frame of a beat is 0.25 s before its cut
+                at = t + (min(bt["dur"] * frac, bt["dur"] - 0.25) if i < len(tm["beats"]) - 1 else bt["dur"] * frac)
+                png = os.path.join(B, f"q37_b{i + 1}_{frac}.png")
                 run("ffmpeg", "-v", "error", "-y", "-ss", f"{at:.2f}", "-i", final, "-frames:v", "1", png)
                 if not os.path.exists(png): continue
                 a = _np.asarray(_Img.open(png).convert("RGB")).astype(_np.int16).sum(2)
@@ -279,8 +282,11 @@ def main():
                 top = y - 0.118 * (xr - xl); g = int(a[1000, 3])
                 txt37 = _np.where((a[198:500] > g + 40).sum(1) >= 2)[0]
                 tb = 198 + int(txt37.max()) if len(txt37) else None
-                tops.append(top); det37.append(f"b{i + 1}@{frac}: top {top:.0f}" + (f", text {tb}" if tb else ""))
-                if tb: gaps.append(top - tb)
+                # the subtitles' last line always ends on one row (SUB_BOTTOM, ~467): a lower "text bottom" than ~440 is the
+                # eyebrow alone at a cue handover (10/1 v1.3.0 test: 325 at 9.0 s, mid-swap), not a gap; no gap is read there
+                handover = tb is not None and tb < 440
+                tops.append(top); det37.append(f"b{i + 1}@{frac}: top {top:.0f}" + (f", text {tb}" if tb else "") + (" (cue handover: no line)" if handover else ""))
+                if tb and not handover: gaps.append(top - tb)
             t += bt["dur"]
         ok37 = bool(tops) and max(tops) - min(tops) <= 16 and (not gaps or max(gaps) - min(gaps) <= 16)
         row("Q37", "Framing: the phone's top edge on one row in every beat (+-8 px) and the subtitle-to-phone gap the same (+-8 px)",
@@ -379,6 +385,14 @@ def main():
         row("Q15", "Brand (Schibsted Grotesk, dark ground, accent, icon card, App Store CTA)", True, "fixed by the toolchain (make-cards.py / make-spot.py)")
         row("Q16", "Proof frames exported (view them before posting)", len(glob.glob(os.path.join(ST, "proof", "*.png"))) >= 8,
             f"{len(glob.glob(os.path.join(ST, 'proof', '*.png')))} frames in proof/ (make-short's 7 + one mid-beat frame per beat)")
+        # Q41 the 20-minute budget (v1.3.0, owner 10/1): the run's wall time from its start to this grade, against the deadline
+        t0r, dl = os.environ.get("SHORTS_T0"), float(os.environ.get("SHORTS_DEADLINE_S", "1200"))
+        if t0r:
+            el = __import__("time").time() - float(t0r)
+            row("Q41", f"Delivered within the {dl / 60:.0f}-minute budget (wall time from the run's start to the grade)", el + 10 <= dl,
+                f"{el:.0f} s ({el / 60:.1f} min) of {dl:.0f} s")
+        else:
+            row("Q41", f"Delivered within the {dl / 60:.0f}-minute budget", True, "graded outside run.sh: not measured")
     order = lambda k: int(k[0][1:])
     rows.sort(key=order)
     failed = [r for r in rows if r[2] == "FAIL"]
@@ -390,7 +404,13 @@ def main():
     rep += ["", "## Latency per stage (seconds)", "", "| Stage | Seconds |", "|---|---|"]
     rep += [f"| {k} | {v['secs']:.0f} |" for k, v in lat.items()]
     tot = sum(v["secs"] for v in lat.values())
-    rep += [f"| **total** | **{tot:.0f}** ({tot / 60:.1f} min) |", "",
+    rep += [f"| **total** | **{tot:.0f}** ({tot / 60:.1f} min) |", ""]
+    bj = jload(os.path.join(W, "budget.json"), {})
+    if bj:
+        rep += ["## The 20-minute budget per stage (seconds; run.sh)", "", "| Stage | Budget | Actual | Runs |", "|---|---|---|---|"]
+        rep += [f"| {k} | {v['budget']} | {v['secs']}{' (over)' if v['secs'] > v['budget'] * max(1, v['runs']) else ''} | {v['runs']} |" for k, v in bj.items()]
+        rep += [f"| **all** | **{sum(v['budget'] for v in bj.values())}** | **{sum(v['secs'] for v in bj.values())}** | |", ""]
+    rep += [
             "Not measurable here: how the voices sound against the bed (listen once before posting)."]
     open(os.path.join(ST, "quality-report.md"), "w").write("\n".join(rep) + "\n")
     write_sources(ST, res, facts, askc, story, bymap)
@@ -398,6 +418,7 @@ def main():
     log(f"{status}: {len(rows) - len(failed)}/{len(rows)}" + (f" failing {[r[0] for r in failed]}" if failed else ""))
     if failed:
         sys.exit(1)
+    open(os.path.join(W, "delivering"), "w").close()      # watchdog.sh never stops a run mid-copy
     os.makedirs(DST, exist_ok=True)
     for f in os.listdir(ST):
         s = os.path.join(ST, f)
@@ -408,6 +429,7 @@ def main():
     for i, ln in enumerate(day["lines"]):
         src = os.path.join(B, f"line{i}.wav")
         if os.path.exists(src): shutil.copy2(src, os.path.join(DST, "voice", f"line{i}-{ln['voice']}.wav"))
+    open(os.path.join(W, "delivered"), "w").close(); os.remove(os.path.join(W, "delivering"))
     log(f"delivered -> {DST}")
 
 

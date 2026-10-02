@@ -122,19 +122,24 @@ const briefCall = async () => {
   }
   return fn("daily-brief", body, extra);
 };
+// --sync-only A,B (the Shorts' 20-minute budget, v1.3.0): the account was seeded ~30 min earlier by the prestage run, so
+// filings + insights run only for these symbols (the names added since; "" = none). Prices and news always run for the
+// whole book: the brief must read the live prices and the day's news. --no-brief: the prestage seeds without the brief
+// (the brief is the edition's own, written at run time inside its window).
+const syncOnly = arg("--sync-only");
+const deep = syncOnly === null ? syms : syncOnly.split(",").map((s) => s.trim()).filter((s) => syms.includes(s));
 if (process.argv.includes("--brief-only")) {
   await briefCall();
 } else if (!process.argv.includes("--no-content")) {
-  await fn("price-sync", { symbols: syms });
-  await fn("news-sync", { symbols: syms });
+  await Promise.all([fn("price-sync", { symbols: syms }), fn("news-sync", { symbols: syms })]);
   // filings give the brief its earnings dates: without them a holding that reports tonight reads as
   // "no earnings on the calendar" (9/30, MU)
-  await fn("filings-sync", { symbols: syms });
+  if (deep.length) await fn("filings-sync", { symbols: deep });
   // insights-sync on ~10 symbols hits WORKER_RESOURCE_LIMIT; three at a time fits
   // each request stays at three symbols (the per-request limit); the requests themselves run side by side
-  const groups = []; for (let i = 0; i < syms.length; i += 3) groups.push(syms.slice(i, i + 3));
+  const groups = []; for (let i = 0; i < deep.length; i += 3) groups.push(deep.slice(i, i + 3));
   await Promise.all(groups.map((g) => fn("insights-sync", { symbols: g, user_id: uid })));
-  await briefCall();
+  if (!process.argv.includes("--no-brief")) await briefCall();
 }
 
 const book = await rest(`portfolio?select=symbol,qty,price,value,change_pct,total_gl&user_id=eq.${uid}`);

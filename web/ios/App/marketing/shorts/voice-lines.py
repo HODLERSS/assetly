@@ -38,6 +38,19 @@ from faster_whisper import WhisperModel
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 asr = WhisperModel("small.en", device="cpu", compute_type="int8")
 
+# v1.3.0 (the 20-minute budget): every line's first ElevenLabs take is requested side by side before the loop (was one
+# after another); a line whose request failed is rendered in the loop exactly as before (and its gpt-audio backup still applies)
+PRE = set()
+if os.environ.get("SHORTS_VOICE", "minjae") == "minjae" and os.environ.get("VO_PARALLEL", "1") == "1":
+    import concurrent.futures as _cf
+    def _pre(i, ln):
+        open(f"line{i}.txt", "w").write(ln["say"])
+        r = subprocess.run(["python3", f"{HERE}/tts.py", f"line{i}.txt", f"line{i}_el"], capture_output=True, text=True)
+        return i if r.returncode == 0 and os.path.exists(f"line{i}_el.mp3") else None
+    with _cf.ThreadPoolExecutor(max_workers=int(os.environ.get("VO_JOBS", "4"))) as _ex:
+        PRE = {x for x in _ex.map(lambda a: _pre(*a), [(i, ln) for i, ln in enumerate(day["lines"]) if not ln.get("reuse")]) if x is not None}
+    print(f"voices: {len(PRE)}/{len(day['lines'])} first takes fetched in parallel", file=sys.stderr)
+
 subs, mix, starts, at = [], [], [], LEAD
 for i, ln in enumerate(day["lines"]):
     v = ln["voice"]; raw = f"line{i}_raw.wav"
@@ -53,7 +66,8 @@ for i, ln in enumerate(day["lines"]):
         elif v == "minjae":
             open(f"line{i}.txt", "w").write(ln["say"])
             try:
-                run("python3", f"{HERE}/tts.py", f"line{i}.txt", f"line{i}_el"); run("ffmpeg", "-v", "error", "-y", "-i", f"line{i}_el.mp3", raw)
+                if not (take == 0 and i in PRE): run("python3", f"{HERE}/tts.py", f"line{i}.txt", f"line{i}_el")
+                run("ffmpeg", "-v", "error", "-y", "-i", f"line{i}_el.mp3", raw)
             except subprocess.CalledProcessError:
                 print(f"line {i}: ElevenLabs failed; OpenRouter gpt-audio {alt} reads it (backup)", file=sys.stderr)
                 v = alt; run("python3", f"{M}/make-voiceover.py", raw, v, env=dict(os.environ, VO_LINE=ln["say"], VO_PACE=ln.get("pace", PACE)))

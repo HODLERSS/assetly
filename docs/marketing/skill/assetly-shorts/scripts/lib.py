@@ -10,6 +10,16 @@ from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York"); CT = ZoneInfo("America/Chicago")
 APP = os.environ.get("ASSETLY_APP", "/Users/minjaelee/Documents/_Claude/AI/stockAnalysis/app")
+CODE = os.environ.get("SHORTS_CODE", APP)     # where the seed + build scripts are read from (a worktree for a --test of new code)
+
+
+# ---- the 20-minute budget (v1.3.0, owner 10/1: "build each clip within 20 minutes max") -------------------------
+def budget_left():
+    """Seconds left before the run's hard deadline (run.sh exports SHORTS_T0 and SHORTS_DEADLINE_S); a large number
+    when a script runs on its own."""
+    t0 = os.environ.get("SHORTS_T0")
+    if not t0: return 1e9
+    return float(t0) + float(os.environ.get("SHORTS_DEADLINE_S", "1200")) - time.time()
 SB = "https://hhdpthrfmsdmxdrfckxq.supabase.co"; REF = "hhdpthrfmsdmxdrfckxq"
 SKILL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
@@ -104,6 +114,9 @@ def rest(work, path, method="GET", body=None):
 
 
 # ---- LLM: MARA Cloud MiniMax-M3 first (the app's own model and key), OpenRouter as the fallback -------
+_NOJSON: dict = {}
+
+
 def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, prefer="mara"):
     """Returns parsed JSON from the model. Tries MARA MiniMax-M3, then OpenRouter (anthropic/claude-sonnet-5.5)."""
     tries = []
@@ -122,6 +135,10 @@ def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, pr
         tries.append(("openrouter", "https://openrouter.ai/api/v1/chat/completions", ork,
                       os.environ.get("SHORTS_OR_MODEL", "anthropic/claude-sonnet-5.5")))
     if prefer == "openrouter": tries.reverse()
+    # a reply with no JSON object goes straight to the next provider (no second attempt); a provider that did that twice in
+    # this process goes last for the rest of it (10/2 korea-open: OpenRouter Sonnet 5 x "max() arg is an empty sequence" at
+    # ~32 s each, 2.5 min of the budget). Once is not enough: Sonnet is what converges the storyline (v1.3.0 test 4)
+    tries.sort(key=lambda t: _NOJSON.get(t[0], 0) >= 2)
     last = None
     for name, url, key, model in tries:
         for attempt in range(2):
@@ -129,12 +146,13 @@ def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, pr
             try:
                 # OpenRouter reserves credit for max_tokens up front: 16000 got a 402 on a low balance (10/1 close) while
                 # a storyline reply is ~1-2k tokens; Sonnet does not need the reasoning headroom M3 does
-                mt = min(max_tokens, 4000) if name == "openrouter" else max_tokens
+                mt = min(max_tokens, int(os.environ.get("SHORTS_OR_MAX_TOKENS", "8000"))) if name == "openrouter" else max_tokens   # v1.3.0: 4000 truncated Sonnet replies (no JSON, 10/1-2)
                 body = {"model": model, "temperature": temperature, "max_tokens": mt,
                         "response_format": {"type": "json_object"},
                         "messages": [{"role": "system", "content": system + " Respond with ONE JSON object only, first character '{'."},
                                      {"role": "user", "content": prompt}]}
-                r = post(url, body, {"Authorization": f"Bearer {key}"}, timeout=timeout)
+                # one hung call must not eat the budget: never wait past what the run can spend on it
+                r = post(url, body, {"Authorization": f"Bearer {key}"}, timeout=max(20, min(timeout, int(budget_left() - 240))))
                 c = r["choices"][0]["message"]["content"] or ""
                 c = re.sub(r"(?s)<think>.*?</think>", "", c).strip()
                 # a reasoning model can quote a small object before its answer: keep the LARGEST object in the reply
@@ -152,6 +170,8 @@ def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, pr
                 last = e; log(f"llm {name} attempt {attempt + 1} failed after {time.time() - t0:.0f}s: {str(e)[:160]}")
                 # out of credits / bad key: retrying the same provider cannot help, go to the next one at once
                 if re.search(r"-> (401|402|403) ", str(e)): break
+                if isinstance(e, ValueError) and "empty sequence" in str(e):      # no JSON in the reply: next provider at once
+                    _NOJSON[name] = _NOJSON.get(name, 0) + 1; break
     raise RuntimeError(f"every model failed: {last}")
 
 

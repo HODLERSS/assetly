@@ -89,7 +89,9 @@ def main_facts():
             if not q.get("last2"): return {}
             prev = q["last2"] / (1 + q["pct2"] / 100)
             return {"last": q["last2"] / FX["two"], "pct": q["pct2"], "chg": (q["last2"] - prev) / FX["two"]}
-        nq = {r["symbol"]: second(r) for r in eq}
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as ex:      # one quote per holding, side by side (v1.3.0)
+            nq = dict(zip([r["symbol"] for r in eq], ex.map(second, eq)))
         n_total = cash + sum(float(r["qty"]) * (nq[r["symbol"]].get("last") or 0) for r in eq)
         n_day = sum(float(r["qty"]) * (nq[r["symbol"]].get("chg") or 0) for r in eq)
         n_gl = sum(float(r["qty"]) * ((nq[r["symbol"]].get("last") or 0) - float(r["avg_cost"])) for r in eq)
@@ -136,15 +138,19 @@ def main_facts():
             CUTS += [("week" + sfx, today - timedelta(days=7)), ("month" + sfx, months_back(today, 1)), ("d30" + sfx, today - timedelta(days=30)),
                      ("m3" + sfx, today - timedelta(days=90)), ("m3cal" + sfx, months_back(today, 3)), ("y1" + sfx, today - timedelta(days=365)),
                      ("ytd" + sfx, today.replace(month=1, day=1) - timedelta(days=1))]
-        for r in eq:
-            s = r["symbol"]; h = history(s, 400)
+        # v1.3.0 (the 20-minute budget): the ~300 lookups (holdings x window cuts) run side by side, same queries, same results
+        def one(r):
+            s = r["symbol"]; h = history(s, 400); out = {}
             for lab, dt in CUTS:
                 ymd = str(dt)
                 ph = rest(W, f"price_history?select=ts,price&symbol=eq.{s}&ts=lte.{ymd}T23:59:59Z&order=ts.desc&limit=1")
                 a = float(ph[0]["price"]) if ph else None
                 if a is not None and r.get("currency") == "KRW": a /= FX["app"]
-                b = base_at(h, ymd)
-                win.setdefault(s, {})[lab] = {"app_base": a, "nasdaq_base": b}
+                out[lab] = {"app_base": a, "nasdaq_base": base_at(h, ymd)}
+            return s, out
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            for s, out in ex.map(one, eq): win.setdefault(s, {}).update(out)
         port = {}
         for lab, _ in CUTS:
             for src in ("app_base", "nasdaq_base"):
@@ -241,17 +247,22 @@ def main_ask():
             if abs(a - b) <= max(50, 0.004 * a): cands_usd += [a, b]
         # dividends ("~$3.30 to your 22 shares"): the Nasdaq dividend history x the shares held, a second source for the app's math
         qty = {r["symbol"]: float(r["qty"]) for r in rest(W, f"portfolio?select=symbol,qty&user_id=eq.{jload(os.path.join(W, 'account.json'))['uid']}")}
-        for sym, q in qty.items():
-            if sym.startswith("$") or KRM.is_kr(sym): continue
+        def divs(item):                                  # one Nasdaq request per holding, side by side (v1.3.0)
+            sym, q = item; got = []
+            if sym.startswith("$") or KRM.is_kr(sym): return got
             try:
                 dv = json.loads(get(f"https://api.nasdaq.com/api/quote/{sym}/dividends?assetclass=stocks", tries=1))["data"]
                 rows = ((dv.get("dividends") or {}).get("rows") or [])[:1]
                 for amt in [_num(rows[0].get("amount"))] if rows else []:
-                    if amt: cands_usd += [amt, amt * q]
+                    if amt: got += [amt, amt * q]
                 ann = _num(dv.get("annualizedDividend"))
-                if ann: cands_usd += [ann, ann * q]
+                if ann: got += [ann, ann * q]
             except Exception:                            # noqa: BLE001
                 pass
+            return got
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            for got in ex.map(divs, list(qty.items())): cands_usd += got
         ans = ask["answer"]
         if KR:
             # a bucket the answer builds from names it lists ("AI chip bucket ~58% ($151,873): NVDA, AMD, TSM, MU, SK hynix",

@@ -1,4 +1,4 @@
-# Quality gate (v1.0.7: Q1-Q40)
+# Quality gate (v1.3.0: Q1-Q41)
 
 The canonical list is `app/docs/marketing/SHORTS_QUALITY.md` (Q1-Q20 from the 9/30 Shorts, Q21-Q29 added by v1.0).
 `run.sh` measures every automatic row and refuses to deliver when any fails.
@@ -41,6 +41,7 @@ The canonical list is `app/docs/marketing/SHORTS_QUALITY.md` (Q1-Q20 from the 9/
 | Q38 | cover hero (when there is one): a verified move (page day move both feeds agree with, or the beat's labelled chip) readable by OCR on frame 0 inside x 60-960, the edition's window label, and the same figure readable in that item's beat | day.json `hero`, OCR of frame 0 and the beat's frames |
 | Q39 | end card: the one follow line ("Follow for the open, midday and close") read by OCR at L-1.05 s and L-0.05 s (>= 1 s), no like/subscribe begging | OCR of the end frames |
 | Q40 | reach metadata: no hashtag in the title, 3-5 hashtags with #Shorts first and no bait, hidden tags name the cover's companies | youtube-metadata.json |
+| Q41 | the 20-minute budget (v1.3.0, owner 10/1): wall time from the run's start to the grade + 10 s <= SHORTS_DEADLINE_S (1200) | run.sh's clock (SHORTS_T0); watchdog.sh refuses a run that reaches the deadline before it delivers |
 | Q29 | no loading skeleton / blank screen mid-beat | saturation (home screen) and edge density (blank) on proof/beat*.png at 25/50/90% |
 
 Verification rules worth remembering:

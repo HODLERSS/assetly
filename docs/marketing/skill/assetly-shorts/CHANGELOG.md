@@ -1,5 +1,47 @@
 # Changelog
 
+## v1.3.0 (2026-10-01, owner: "make sure you build each clip within 20 minutes max ... this time limit is important")
+
+Every edition (preopen, midday, close, korea-open, korea-close, and korea-midday) delivers within 20 minutes of its run's
+start, or refuses. No check was removed or loosened to get there.
+
+- **Hard deadline**: `SHORTS_DEADLINE_S` (1200) from run.sh's start. `scripts/watchdog.sh` stops the run at the deadline
+  (never mid-copy to docs/: `delivering` / `delivered` markers), stops every process the run started, frees the simulator
+  lock this run held (record.py writes its work dir into the lock), notifies, and run.sh exits 1. Q41 grades the wall time;
+  `budget.json` + the quality report carry each stage's budget vs actual; run.log prints `budget: <stage> Ns of Bs · Ls left`.
+- **Retries check the clock first** (`room`): another Ask take needs ~595 s (take ~265 + ~330 after it), a storyline or a
+  re-tighten ~290 s, a duck rebuild / the Q28 remix ~150 s; otherwise the run refuses at once. The storyline's cap is what
+  the budget leaves after compose + build + qa (<= 6 min); lib.llm never waits past the budget; a brief regeneration only
+  when the budget holds it.
+- **Prestage** (`run.sh <ed> --prestage`, own launchd job ~30 min before the slot; the gate passes `--prestage` and, for
+  the Korea editions, waits for the KST start - 30 min): research + book + the account's full seed with every sync, no brief.
+  At run time `design_book.py --base` reuses that book when it holds the fresh story names (adds up to two, same sizing
+  rules), and the account refreshes prices + news only (`seed-daily-demo.mjs --sync-only <added> --no-brief`); a missing,
+  stale (> 120 min), failed or still-running prestage (stopped after 3 min) means the full reset seed, as before.
+- **The brief off the critical path**: with a fresh prestage the edition's brief is written at the run's start beside
+  research (`account.py --early-brief`, on the prestaged book); if research keeps that book it is the brief the take films,
+  otherwise it is rewritten after the add. Either way the check (and a regeneration) runs beside the facts stage
+  (`account.py --seed-only` / `--brief-check`).
+- **Parallel I/O**: facts' window lookups, Nasdaq quotes and dividends (8 workers); record.align runs the 60 fps encode,
+  the saturation probe and the scene scan at once (58 -> ~21 s, identical marks/ask.json); voice-lines.py requests every
+  line's first ElevenLabs take at once (a failed one renders in the loop as before, backup intact).
+- **Build**: make-spot.py renders the beats in parallel processes and runs the scrim / highlight geq on their own strips
+  (frames bit-identical to v1.2 on the 10/1 close plan; beats 170 -> 35 s); make-fill-subtitles.py renders frames on 8
+  workers (identical PNGs, 32 -> 5 s). Final encodes unchanged (SSIM checks unchanged).
+- lib.llm: OpenRouter max_tokens 4000 -> 8000 (`SHORTS_OR_MAX_TOKENS`): 4000 truncated Sonnet's storyline replies ("max()
+  arg is an empty sequence", ~32 s each, then M3 took over and never converged: 12 rounds, refused; with 8000 Sonnet passed
+  in 2 rounds / 37 s on the same take). A reply with no JSON goes straight to the next provider; twice = last for the run.
+- storyline: up to 12 rounds (was 8), bounded by the budget-derived time cap.
+- run.sh: the duck remedy also runs after a re-tightened build (it only ran after the first build: test 4 refused with
+  ~14 min left), and only reads that build's own log lines.
+- Q37 reads no subtitle gap on a frame at a cue handover (only the eyebrow on screen, text bottom ~325 instead of the
+  fixed ~467 row); the phone-top half of the check is unchanged.
+- design_book: the 52-week range lookup (a design input, not a shown figure) waits 8 s at most.
+- Q37 samples a beat no later than 0.25 s before its cut (a 1.5 s beat sampled inside the slide read as a 74 px drop).
+- Schedule: preopen starts 6:50 CT (owner 10/1: done before 7:30 CT); prestage plists at 6:20 / 11:05 / 14:32 CT, korea-open
+  fires 18:00 Sun-Thu, korea-close 00:05 Mon-Fri (references/schedule.md, budget table).
+- `SHORTS_CODE`: read the seed and build scripts from another checkout (a worktree --test of new code).
+
 ## v1.2.0 (2026-10-02 KST, owner: Korean news sources, a third Korea edition, six Shorts a day)
 
 - **korea-midday**, a third Seoul edition (12:00 PM KST = 10:00 PM CDT / 9:00 PM CST the evening before, KRX trading days):

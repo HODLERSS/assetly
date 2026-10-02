@@ -123,7 +123,7 @@ LEAD, HOLD, FADE = 0.12, 0.12, 0.15      # hold 0.12: the second line must be go
 LEAD_WORD, SWEEP = 0.06, 0.09          # highlight leads the onset by 60 ms; the sweep across a word takes 90 ms
 blank = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 n = int(round(TOTAL * FPS))
-for fi in range(n):
+def render(fi):
     t = fi / FPS; img = None
     for c in cues:
         t0, t1 = c["at"] - LEAD, c["at"] + c["dur"] + HOLD
@@ -158,4 +158,13 @@ for fi in range(n):
             lit.alpha_composite(Image.composite(cur, blank, mask))
         img.alpha_composite(lit)
     (img or blank).save(os.path.join(out, f"{fi:05d}.png"))
+
+
+# every frame is independent: render them on forked workers (v1.3.0, the 20-minute budget; 32 s -> ~5 s), same pixels
+import multiprocessing as _mp
+_k = int(os.environ.get("SUB_JOBS", max(1, min(8, (os.cpu_count() or 4) // 2))))
+if _k > 1:
+    with _mp.get_context("fork").Pool(_k) as _p: _p.map(render, range(n), chunksize=32)
+else:
+    for fi in range(n): render(fi)
 print(f"{n} frames -> {out}")

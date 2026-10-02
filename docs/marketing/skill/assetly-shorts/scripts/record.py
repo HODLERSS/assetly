@@ -58,14 +58,20 @@ def main():
         import time
         for _ in range(240):
             try:
-                os.mkdir(lock); break
+                os.mkdir(lock); open(os.path.join(lock, "owner"), "w").write(W); break    # watchdog.sh frees it on a deadline
             except FileExistsError:
-                if time.time() - os.path.getmtime(lock) > 900: os.rmdir(lock)   # a stale lock from a killed run
+                if time.time() - os.path.getmtime(lock) > 900:                 # a stale lock from a killed run
+                    try: os.remove(os.path.join(lock, "owner"))
+                    except OSError: pass
+                    os.rmdir(lock)
                 else: time.sleep(5)
     try:
         _main_take_and_align(acct, res, syms, q)
     finally:
-        if os.path.isdir(lock) and "--align-only" not in sys.argv: os.rmdir(lock)
+        if os.path.isdir(lock) and "--align-only" not in sys.argv:
+            try: os.remove(os.path.join(lock, "owner"))
+            except OSError: pass
+            os.rmdir(lock)
 
 
 def _main_take_and_align(acct, res, syms, q):
@@ -93,7 +99,14 @@ def _main_take_and_align(acct, res, syms, q):
         rec0 = None
         for line in open(os.path.join(W, "disp.reclog")):
             if "Recording started" in line: rec0 = float(line.split()[0])
-        cuts, d = scene_changes(os.path.join(W, "disp.mov"))
+        # v1.3.0 (the 20-minute budget): the 60 fps take, the saturation probe and the scene scan each read the whole display
+        # recording; they run side by side instead of one after another (same commands, same outputs)
+        dm = os.path.join(W, "disp.mov"); part = os.path.join(W, "take60.part.mp4")
+        enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-i", dm, "-vf", "fps=60", "-fps_mode", "cfr", "-c:v", "libx264",
+                                "-crf", "12", "-preset", "fast", "-pix_fmt", "yuv420p", "-an", part])
+        satp = subprocess.Popen(["ffprobe", "-v", "error", "-f", "lavfi", "-i", f"movie={dm},fps=2,scale=120:-1,signalstats",
+                                 "-show_entries", "frame_tags=lavfi.signalstats.SATAVG", "-of", "csv=p=0"], stdout=subprocess.PIPE, text=True)
+        cuts, d = scene_changes(dm)
         rel = {m["name"]: m["t"] - rec0 for m in mk["marks"]}
         # Anchor the clock on every screen change the test causes. On a quiet Mac the recorder stamp alone is right to
         # ~0.02 s (9/30 take 1: every tap's change 0.14-0.18 s after its mark); on a busy one the display recording drifts
@@ -107,8 +120,7 @@ def _main_take_and_align(acct, res, syms, q):
         # to the peak that keeps its interval from the previous match (+-1.2 s); keep the seed that explains the most events.
         # A prior from the end of the take: the test ends right after "ask_end" and the app leaves the screen, so the
         # iOS home screen (high colour saturation; the app is a dark low-saturation UI) starts ~0.3-0.7 s after it.
-        sat = [float(x) for x in subprocess.run(["ffprobe", "-v", "error", "-f", "lavfi", "-i", f"movie={os.path.join(W, 'disp.mov')},fps=2,scale=120:-1,signalstats",
-               "-show_entries", "frame_tags=lavfi.signalstats.SATAVG", "-of", "csv=p=0"], capture_output=True, text=True).stdout.replace(",", " ").split()]
+        sat = [float(x) for x in satp.communicate()[0].replace(",", " ").split()]
         j = len(sat) - 1
         while j > 0 and sat[j] > 20: j -= 1
         prior = ((j + 1) / 2 - rel["ask_end"] - 0.5) if "ask_end" in rel and len(sat) - 1 - j >= 4 else 0.0
@@ -146,8 +158,6 @@ def _main_take_and_align(acct, res, syms, q):
         log(f"anchors {[(round(t, 1), round(l, 2)) for t, l in anchors]}")
         log(f"clock: median lag {off:+.2f}s, spread {best[0]:.2f}s over {len(lags)} anchors; marks: " + ", ".join(f"{k}={v}" for k, v in marks.items()))
         jdump({"offset": off, "fit_error": best[0], "marks": marks, "cuts": cuts}, os.path.join(W, "marks.json"))
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", os.path.join(W, "disp.mov"), "-vf", "fps=60", "-fps_mode", "cfr", "-c:v", "libx264",
-                        "-crf", "12", "-preset", "fast", "-pix_fmt", "yuv420p", "-an", os.path.join(W, "take60.mp4")], check=True)
         # the answer as the app showed it: the texts between the question bubble and the answer's own foot
         texts = mk.get("texts", [])
         qi = max([i for i, t in enumerate(texts) if t.strip() == mk["question"].strip()], default=-1)
@@ -159,7 +169,7 @@ def _main_take_and_align(acct, res, syms, q):
         fr, win = mk.get("frames") or [], mk.get("window") or [0, 0]
         if fr and win[0]:
             px = int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width", "-of", "csv=p=0",
-                                     os.path.join(W, "take60.mp4")], capture_output=True, text=True).stdout.strip() or 0)
+                                     dm], capture_output=True, text=True).stdout.strip() or 0)   # take60 = disp.mov at 60 fps, same size
             k = px / win[0] if px else 3.0
             fq = max([i for i, f in enumerate(fr) if f[0].strip() == mk["question"].strip()], default=-1)
             ff = [i for i, f in enumerate(fr) if i > fq and f[0].strip() == "Not financial advice"]
@@ -178,6 +188,9 @@ def _main_take_and_align(acct, res, syms, q):
             for g in rects:
                 bx = g["boxes"]; g["box"] = [min(b[0] for b in bx), min(b[1] for b in bx), max(b[2] for b in bx), max(b[3] for b in bx)]
                 g["visible"] = g["box"][1] >= 0 and g["box"][3] <= 0.84 * win[1] * k
+        if enc.wait() != 0:
+            sys.exit("REFUSE: the 60 fps take could not be written")
+        os.replace(part, os.path.join(W, "take60.mp4"))
         jdump({"question": mk["question"], "answer_lines": ans, "answer": " ".join(ans), "all_texts": texts, "answer_rects": rects},
               os.path.join(W, "ask.json"))
         log(f"ask: {mk['question']!r} -> {len(ans)} lines: {' '.join(ans)[:200]}; {sum(r['visible'] for r in rects)}/{len(rects)} line boxes visible")

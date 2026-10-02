@@ -36,7 +36,11 @@ def probe(f):
     o = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries",
                         "stream=width,height,nb_frames,color_range", "-of", "json", f], capture_output=True, text=True).stdout
     return json.loads(o)["streams"][0]
-ENC = ["-c:v", "libx264", "-crf", "12", "-preset", "medium", "-pix_fmt", "yuv420p", "-r", str(FPS)]
+# intermediates (v1.3.0, the 20-minute budget): near-lossless at a fast preset. crf 10 veryfast carries more bits than the old
+# crf 12 medium, so nothing is lost before the one final encode (veryslow, or make-short's stamp pass), which is unchanged.
+ENC = ["-c:v", "libx264", "-crf", os.environ.get("SPOT_INT_CRF", "12"), "-preset", os.environ.get("SPOT_INT_PRESET", "medium"),
+       "-pix_fmt", "yuv420p", "-r", str(FPS)]
+JOBS = int(os.environ.get("SPOT_JOBS", max(1, min(6, (os.cpu_count() or 4) // 2))))   # beats rendered side by side
 
 # ---- phone geometry, per make-hero-clip.sh -----------------------------------------------------
 TOP, CAP_H, CAP_SIZE, PAD = (28, 168, 58, 100) if H > W else (18, 140, 50, 100)
@@ -89,7 +93,7 @@ def ease_expr(z, tvar="t"):
     u2 = f"clip(({tvar}-{c:.3f})/{max(d-c,1e-3):.3f},0,1)"
     return f"({ss(u1)}-{ss(u2)})"
 
-def phone_chain(dur, zoom=None, freeze=False, highlight=False, enter=None, hl_until=None):
+def phone_chain(dur, zoom=None, freeze=False, highlight=False, enter=None, hl_until=None, hl_xy=(0, 0)):
     src = "trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/(" + str(FPS) + "*TB)," if freeze else ""
     hl = ""
     if zoom and highlight:
@@ -97,7 +101,7 @@ def phone_chain(dur, zoom=None, freeze=False, highlight=False, enter=None, hl_un
         # hl_until (render time): the highlight goes off before the screen scrolls away from what it outlines (10/1 Home)
         cut = ("*lt(T,%.3f)" % hl_until) if hl_until else ""
         hl = (f"[4:v]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*{ease_expr(zoom, 'T')}{cut}'[hl];"
-              f"[ph][hl]overlay=0:0:format=auto:shortest=1[ph2];")
+              f"[ph][hl]overlay={hl_xy[0]}:{hl_xy[1]}:format=auto:shortest=1[ph2];")
     if zoom:
         # A push INTO a subject: the focus point f (canvas px) travels to the target t (stage centre by
         # default) while the scale goes 1 -> S, both on the same eased parameter E, so the camera path
@@ -128,7 +132,7 @@ def phone_chain(dur, zoom=None, freeze=False, highlight=False, enter=None, hl_un
                   f"color=c={BG}:s={W}x{H}:r={FPS}:d={dur:.3f}[g2];"
                   f"[g2][phz]overlay=x='{kx:.2f}*{E}':y='{ky:.2f}*{E}{rise}':eval=frame:shortest=1[zm];"
                   f"[3:v]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*{Eg}'[sc];"
-                  f"[zm][sc]overlay=0:0:format=auto:shortest=1,format=yuv420p")
+                  f"[zm][sc]overlay=0:{SC_Y}:format=auto:shortest=1,format=yuv420p")
     else:
         motion = (f"[ph]scale=w='trunc({W}*(1+{PUSH}*t/{dur:.3f})/2)*2':h='trunc({H}*(1+{PUSH}*t/{dur:.3f})/2)*2':eval=frame,"
                   f"crop={W}:{H},format=yuv420p")
@@ -153,7 +157,11 @@ else:
     for yy in range(y0, H):
         a = 255 if yy >= y1 else int(255 * ((yy - y0) / (y1 - y0)) ** 1.6)
         for xx in range(W): _px[xx, yy] = _bg + (a,)
-_sc.save(f"{T}/scrim.png")
+# only the rows the scrim covers go into the filtergraph (its per-pixel geq was most of a beat's render time; v1.3.0): the
+# same pixels, laid at their own offset
+_bb = _sc.getchannel("A").getbbox() or (0, 0, W, 2)
+SC_Y = _bb[1] - _bb[1] % 2; _y2 = min(H, _bb[3] + _bb[3] % 2)
+_sc.crop((0, SC_Y, W, _y2)).save(f"{T}/scrim.png")
 
 parts = []
 # ---- hook ----------------------------------------------------------------------------------------
@@ -181,6 +189,7 @@ if hook:
 
 # ---- beats ---------------------------------------------------------------------------------------
 caps = []          # (start, end, text) on the product timeline
+jobs, checks = [], []   # (beat, out, frames, ffmpeg args): rendered in parallel after the loop
 t_cursor = hook["dur"] if hook else 0.0
 for i, b in enumerate(plan["beats"]):
     d = b["dur"]; out = f"{T}/p{i}.mp4"
@@ -207,7 +216,7 @@ for i, b in enumerate(plan["beats"]):
         z = b.get("zoom")
         if z and z.get("out"): assert z["out"][1] <= d + 1e-6, f"beat {i}: zoom must settle before the beat ends"
         if z and not z.get("out"): assert i == len(plan["beats"]) - 1, f"beat {i}: a held zoom is only for the last beat, which dissolves into the card"
-        hl_in = []
+        hl_in = []; hl_xy = (0, 0)
         if z and b.get("highlight"):
             # a rounded accent frame with a faint fill around the line being spoken, in canvas px
             hlc = b["highlight"]; pad = hlc.get("pad", 10)
@@ -230,6 +239,11 @@ for i, b in enumerate(plan["beats"]):
             else:
                 x0, y0, x1, y1 = hlc["box"]
                 dr.rounded_rectangle([x0, y0, x1, y1], radius=hlc.get("radius", 9), fill=acc + (34,), outline=acc + (230,), width=2)
+            # cropped to its own box (even offsets, for the 4:2:0 overlay): geq then touches a strip, not the canvas
+            hb = img.getchannel("A").getbbox() or (0, 0, 2, 2)
+            hx, hy = max(0, hb[0] - 2) // 2 * 2, max(0, hb[1] - 2) // 2 * 2
+            hx2, hy2 = min(W, (hb[2] + 3) // 2 * 2), min(H, (hb[3] + 3) // 2 * 2)
+            img = img.crop((hx, hy, hx2, hy2)); hl_xy = (hx, hy)
             img.save(f"{T}/hl{i}.png"); hl_in = ["-framerate", str(FPS), "-loop", "1", "-t", f"{d_render:.3f}", "-i", f"{T}/hl{i}.png"]
         # zoom / entrance times are in beat time; the render starts `head` earlier
         zr = None
@@ -237,14 +251,23 @@ for i, b in enumerate(plan["beats"]):
             zr = dict(z); zr["in"] = [z["in"][0] + head, z["in"][1] + head]
             if z.get("out"): zr["out"] = [z["out"][0] + head, z["out"][1] + head]
         en = dict(b["enter"], delay=head) if b.get("enter") else None
-        ff("-ss", f"{b['start'] - head:.3f}", "-i", b["src"], "-i", f"{T}/mask.png", "-i", f"{T}/frame.png", "-framerate", str(FPS), "-loop", "1", "-t", f"{d_render:.3f}", "-i", f"{T}/scrim.png", *hl_in,
-           "-filter_complex", "[0:v]" + phone_chain(d_render, zr, b.get("freeze", False), bool(hl_in), en, hl_until=((b["highlight"]["until"] + head) if hl_in and b["highlight"].get("until") else None)) + "[v]", "-map", "[v]", "-frames:v", str(frames(d_render)), *ENC, out)
+        jobs.append((i, out, frames(d_render), [
+           "-ss", f"{b['start'] - head:.3f}", "-i", b["src"], "-i", f"{T}/mask.png", "-i", f"{T}/frame.png", "-framerate", str(FPS), "-loop", "1", "-t", f"{d_render:.3f}", "-i", f"{T}/scrim.png", *hl_in,
+           "-filter_complex", "[0:v]" + phone_chain(d_render, zr, b.get("freeze", False), bool(hl_in), en, hl_until=((b["highlight"]["until"] + head) if hl_in and b["highlight"].get("until") else None), hl_xy=hl_xy) + "[v]", "-map", "[v]", "-frames:v", str(frames(d_render)), *ENC, out]))
         print(f"beat {i}: {b['src'].split('/')[-1]} @{b['start']}s +{d}s" + ("  frozen" if b.get("freeze") else "") + ((f"  zoom x{z['to']} in {z['in']} " + (f"out {z['out']}" if z.get('out') else "held into the card")) if z else ""))
-    n = int(probe(out)["nb_frames"]); assert n == frames(d_render), f"beat {i}: {n} frames, wanted {frames(d_render)}"
+        checks.append((i, out, frames(d_render)))
+    if b.get("flip"): checks.append((i, out, frames(d_render)))
     parts.append(out)
     if b.get("caption"): caps.append((t_cursor, t_cursor + b.get("caption_dur", d), b["caption"]))   # caption_dur: hand over to a subtitle mid-beat
     t_cursor += d
 PRODUCT = t_cursor
+import concurrent.futures as _cf
+_t0 = __import__("time").time()
+with _cf.ThreadPoolExecutor(max_workers=JOBS) as _ex:
+    for _f in [_ex.submit(ff, *a) for _, _, _, a in jobs]: _f.result()
+print(f"beats: {len(jobs)} rendered {JOBS} at a time in {__import__('time').time() - _t0:.1f}s")
+for i, out, want in checks:
+    n = int(probe(out)["nb_frames"]); assert n == want, f"beat {i}: {n} frames, wanted {want}"
 
 # Beats join with a screen-to-screen SLIDE centred on the cut (the reference's move), or a plain cut
 # where the next beat is the same screen (live scroll -> its frozen frame). Each sliding beat was
