@@ -7,7 +7,7 @@
    AI software, power, popular retail names, plus today's large-cap earnings reporters) from TWO independent
    quote feeds (CNBC quote service, Nasdaq quote API). The US economic calendar and the earnings calendar from
    Nasdaq. Headlines from Google News RSS (publisher, time, link) for every candidate and for the macro queries.
-2. Judgment, LLM (MARA MiniMax-M3, OpenRouter fallback): rank 3-5 items for this edition; for each, WHY it moved
+2. Judgment, LLM (MARA MiniMax-M3, then SambaNova M3, then claude -p): rank 3-5 items for this edition; for each, WHY it moved
    or matters and the READ (field "sentiment"; v1.4.0: a direct fact in the Short's own voice, never "analysts say"),
    each citing headline ids from at least two publishers. v1.4.0 ranking: the session's top 10 AI movers are always
    candidates, the CNBC / Bloomberg / Reuters / MarketWatch front pages give each name its salience (and their

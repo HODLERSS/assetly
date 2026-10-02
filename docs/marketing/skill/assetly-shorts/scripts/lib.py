@@ -113,76 +113,122 @@ def rest(work, path, method="GET", body=None):
     return post(f"{SB}/rest/v1/{path}", body, h)
 
 
-# ---- LLM: MARA Cloud MiniMax-M3 first (the app's own model and key), OpenRouter as the fallback -------
+# ---- LLM: claude -p (Sonnet, the owner's Claude subscription), MARA Cloud MiniMax-M3, SambaNova Cloud MiniMax-M3 ----------
+# v1.4.0 (owner 10/2: "Shorts script writer, can you use this claude session or claude -p? you shouldn't use openrouter for
+# sonnet"): OpenRouter is gone. The script writer (prefer="claude") tries claude-cli -> MARA -> SambaNova; research and the
+# judges (prefer="mara") keep MARA first: MARA -> SambaNova -> claude-cli. SHORTS_LLM_FORCE_FAIL="claude,mara" makes those
+# tiers fail at once (the fallback test: `python3 lib.py --selftest-llm`).
 _NOJSON: dict = {}
+CLAUDE_BIN = os.environ.get("SHORTS_CLAUDE_BIN", os.path.expanduser("~/.local/bin/claude"))
+
+
+def _largest_json(c):
+    """The LARGEST JSON object in a reply (a reasoning model can quote a small object before its answer); fences and
+    <think> blocks stripped. ValueError("max() arg is an empty sequence") when there is none."""
+    c = re.sub(r"(?s)<think>.*?</think>", "", c or "").strip()
+    c = re.sub(r"^```(?:json)?\s*|\s*```$", "", c)
+    dec, objs, i = json.JSONDecoder(), [], c.find("{")
+    while i != -1:
+        try:
+            o, n = dec.raw_decode(c[i:]); objs.append((n, o)); i = c.find("{", i + n)
+        except ValueError:
+            i = c.find("{", i + 1)
+    return max(objs, key=lambda x: x[0])[1]
+
+
+def _claude_cli(system, prompt, timeout):
+    """One `claude -p` call (Sonnet) from an empty temp dir (no CLAUDE.md, no tools, no MCP, no session saved). launchd's
+    environment is thin: HOME, USER and LOGNAME are passed explicitly (without USER the CLI finds no keychain login and
+    answers an EMPTY result with is_error false: treated as a failure). Never --bare (that wants an API key)."""
+    import tempfile
+    env = {"HOME": os.path.expanduser("~"), "USER": os.environ.get("USER") or os.path.basename(os.path.expanduser("~")),
+           "PATH": f"{os.path.dirname(CLAUDE_BIN)}:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"}
+    env["LOGNAME"] = os.environ.get("LOGNAME") or env["USER"]
+    with tempfile.TemporaryDirectory(prefix="shorts-claude-") as d:
+        r = subprocess.run([CLAUDE_BIN, "-p", "--model", os.environ.get("SHORTS_CLAUDE_MODEL", "sonnet"), "--output-format", "json",
+                            "--tools", "", "--strict-mcp-config", "--no-session-persistence", "--system-prompt", system],
+                           input=prompt, capture_output=True, text=True, cwd=d, env=env, timeout=timeout)
+    if r.returncode: raise RuntimeError(f"claude-cli exit {r.returncode}: {(r.stderr or r.stdout)[-160:]}")
+    j = json.loads(r.stdout)
+    if j.get("is_error"): raise RuntimeError(f"claude-cli error: {str(j.get('result'))[:160]}")
+    if not (j.get("result") or "").strip(): raise RuntimeError("claude-cli returned an empty result (login not found?)")
+    return j["result"]
 
 
 def llm(work, system, prompt, max_tokens=12000, temperature=0.2, timeout=150, prefer="mara"):
-    """Returns parsed JSON from the model. Tries MARA MiniMax-M3, then OpenRouter (anthropic/claude-sonnet-5.5)."""
+    """Returns parsed JSON from the model. prefer="claude" (the script writer): claude-cli, MARA, SambaNova; else MARA,
+    SambaNova, claude-cli. ("openrouter" is read as "claude": OpenRouter is no longer used, v1.4.0.)"""
+    if prefer == "openrouter": prefer = "claude"
+    force = {x.strip() for x in os.environ.get("SHORTS_LLM_FORCE_FAIL", "").split(",") if x.strip()}
     tries = []
     try:
         tries.append(("mara", "https://api.cloud.mara.com/v1/chat/completions", vault(work, "mara_api_key"), "MiniMax-M3"))
     except Exception as e:                           # noqa: BLE001
         log("mara key unavailable:", str(e)[:80])
     # SambaNova Cloud serves the same MiniMax-M3 (OpenAI-compatible). The key FILE wins: a stale SAMBANOVA_API_KEY in the
-    # shell env returns 401 (10/1). Added after OpenRouter ran out of credits (402) mid-storyline on 10/1.
+    # shell env returns 401 (10/1).
     snf = os.path.expanduser("~/.private_keys/sambanova.txt")
     if os.path.exists(snf) and open(snf).read().strip():
         tries.append(("sambanova", "https://api.sambanova.ai/v1/chat/completions", open(snf).read().strip(), "MiniMax-M3"))
-    orf = os.path.expanduser("~/.private_keys/openrouter.txt")
-    if os.environ.get("OPENROUTER_API_KEY") or os.path.exists(orf):
-        ork = os.environ.get("OPENROUTER_API_KEY") or next((l.split("=", 1)[1].strip() for l in open(orf) if l.startswith("key=")), "")
-        tries.append(("openrouter", "https://openrouter.ai/api/v1/chat/completions", ork,
-                      os.environ.get("SHORTS_OR_MODEL", "anthropic/claude-sonnet-5.5")))
-    if prefer == "openrouter": tries.reverse()
+    if os.path.exists(CLAUDE_BIN):
+        cl = ("claude", None, None, os.environ.get("SHORTS_CLAUDE_MODEL", "sonnet"))
+        if prefer == "claude": tries.insert(0, cl)
+        else: tries.append(cl)
     # a reply with no JSON object goes straight to the next provider (no second attempt); a provider that did that twice in
-    # this process goes last for the rest of it (10/2 korea-open: OpenRouter Sonnet 5 x "max() arg is an empty sequence" at
-    # ~32 s each, 2.5 min of the budget). Once is not enough: Sonnet is what converges the storyline (v1.3.0 test 4)
+    # this process goes last for the rest of it (10/2 korea-open: 5 x "max() arg is an empty sequence" ate 2.5 min)
     tries.sort(key=lambda t: _NOJSON.get(t[0], 0) >= 2)
     last = None
     for name, url, key, model in tries:
-        cut, afford = False, None
         for attempt in range(2):
             t0 = time.time()
+            # one hung call must not eat the budget: never wait past what the run can spend on it
+            to = max(20, min(timeout, int(budget_left() - 240)))
             try:
-                # OpenRouter reserves credit for max_tokens up front: 16000 got a 402 on a low balance (10/1 close) while
-                # a storyline reply is ~1-2k tokens; Sonnet does not need the reasoning headroom M3 does. A reply still cut at
-                # that cap (finish_reason "length") gets the full budget on the retry (10/2 korea-midday)
-                mt = min(max_tokens, int(os.environ.get("SHORTS_OR_MAX_TOKENS", "8000"))) if name == "openrouter" and not cut else max_tokens
-                if afford: mt = afford   # v1.3.0: 4000 truncated Sonnet replies (no JSON, 10/1-2)
-                body = {"model": model, "temperature": temperature, "max_tokens": mt,
-                        "response_format": {"type": "json_object"},
-                        "messages": [{"role": "system", "content": system + " Respond with ONE JSON object only, first character '{'."},
-                                     {"role": "user", "content": prompt}]}
-                # one hung call must not eat the budget: never wait past what the run can spend on it
-                r = post(url, body, {"Authorization": f"Bearer {key}"}, timeout=max(20, min(timeout, int(budget_left() - 240))))
-                c = r["choices"][0]["message"]["content"] or ""
-                if r["choices"][0].get("finish_reason") == "length":
-                    cut = True; raise RuntimeError(f"reply cut at max_tokens {mt} ({(r.get('usage') or {}).get('completion_tokens')} tokens)")
-                c = re.sub(r"(?s)<think>.*?</think>", "", c).strip()
-                # a reasoning model can quote a small object before its answer: keep the LARGEST object in the reply
-                dec, objs, i = json.JSONDecoder(), [], c.find("{")
-                while i != -1:
-                    try:
-                        o, n = dec.raw_decode(c[i:]); objs.append((n, o)); i = c.find("{", i + n)
-                    except ValueError:
-                        i = c.find("{", i + 1)
-                out = max(objs, key=lambda x: x[0])[1]
+                if name in force: raise RuntimeError(f"forced failure (SHORTS_LLM_FORCE_FAIL={','.join(sorted(force))})")
+                if name == "claude":
+                    c = _claude_cli(system + " Respond with ONE JSON object only, first character '{'.", prompt, to)
+                else:
+                    body = {"model": model, "temperature": temperature, "max_tokens": max_tokens,
+                            "response_format": {"type": "json_object"},
+                            "messages": [{"role": "system", "content": system + " Respond with ONE JSON object only, first character '{'."},
+                                         {"role": "user", "content": prompt}]}
+                    r = post(url, body, {"Authorization": f"Bearer {key}"}, timeout=to)
+                    c = r["choices"][0]["message"]["content"] or ""
+                    if r["choices"][0].get("finish_reason") == "length":
+                        raise RuntimeError(f"reply cut at max_tokens {max_tokens} ({(r.get('usage') or {}).get('completion_tokens')} tokens)")
+                out = _largest_json(c)
                 log(f"llm {name}/{model} {time.time() - t0:.0f}s ok")
                 out["_model"] = f"{name}/{model}"
                 return out
             except Exception as e:                   # noqa: BLE001
                 last = e; log(f"llm {name} attempt {attempt + 1} failed after {time.time() - t0:.0f}s: {str(e)[:160]}")
-                # out of credits / bad key: retrying the same provider cannot help, go to the next one at once
-                # ... except a 402 that only asks for fewer max_tokens (10/2 03:06: a low OpenRouter balance refused every 8000-token
-                # storyline call, so every round fell to M3, which never converged): retry once inside what the balance affords
-                m_af = re.search(r"can only afford (\d+)", str(e)) if "402" in str(e) else None
-                if m_af and not afford and int(m_af.group(1)) >= 1500:
-                    afford = int(m_af.group(1)) - 50; continue
-                if re.search(r"-> (401|402|403) ", str(e)): break
+                # a forced failure, a bad key or no credit: retrying the same provider cannot help, go to the next one at once
+                if name in force or re.search(r"-> (401|402|403) ", str(e)) or "empty result" in str(e): break
                 if isinstance(e, ValueError) and "empty sequence" in str(e):      # no JSON in the reply: next provider at once
                     _NOJSON[name] = _NOJSON.get(name, 0) + 1; break
     raise RuntimeError(f"every model failed: {last}")
+
+
+def _selftest_llm():
+    """python3 lib.py --selftest-llm: a tiny JSON prompt through each tier for real (claude-cli, MARA, SambaNova), forcing
+    the tiers above it to fail; prints the tier that answered and its latency. Exit 1 if any case fails."""
+    import tempfile
+    w = os.environ.get("SHORTS_SELFTEST_WORK") or tempfile.mkdtemp(prefix="shorts-llm-test-")
+    os.chmod(w, 0o700)
+    cases = [("", "claude", "claude"), ("claude", "claude", "mara"), ("claude,mara", "claude", "sambanova"),
+             ("", "mara", "mara"), ("mara", "mara", "sambanova"), ("mara,sambanova", "mara", "claude")]
+    bad = 0
+    for force, prefer, want in cases:
+        os.environ["SHORTS_LLM_FORCE_FAIL"] = force; t0 = time.time()
+        try:
+            o = llm(w, "You return tiny JSON.", 'Return {"ok": true, "n": 7}.', max_tokens=2000, timeout=90, prefer=prefer)
+            got = o.get("_model", "?").split("/")[0]; ok = o.get("ok") is True and o.get("n") == 7 and got == want
+        except Exception as e:                       # noqa: BLE001
+            got, ok = f"error {str(e)[:80]}", False
+        bad += not ok
+        print(f"{'PASS' if ok else 'FAIL'} prefer={prefer:<6} force_fail={force or '-':<15} -> {got:<10} {time.time() - t0:5.1f}s", flush=True)
+    os.environ.pop("SHORTS_LLM_FORCE_FAIL", None)
+    print("ALL PASS" if not bad else f"{bad} FAILED"); return 1 if bad else 0
 
 
 # ---- quotes from two independent feeds ---------------------------------------------------------------
@@ -318,3 +364,7 @@ console.log(JSON.stringify([...withholdStaleMoves(rows, now)]));""")
 
 def now_et():
     return datetime.now(ET)
+
+
+if __name__ == "__main__" and "--selftest-llm" in sys.argv:
+    sys.exit(_selftest_llm())

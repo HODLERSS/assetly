@@ -20,7 +20,7 @@
 #
 # Never uploads or posts. Keys stay in chmod-600 files inside the work dir (Supabase CLI + Vault get_secret) and are
 # never printed. Needs: the Supabase CLI logged in, Xcode, ffmpeg, python3 (numpy, Pillow, faster-whisper), node, and
-# ~/.private_keys/openrouter.txt.
+# the Claude Code CLI logged in (~/.local/bin/claude: the script writer, v1.4.0) and ~/.private_keys/sambanova.txt.
 set -euo pipefail
 # Run from a frozen copy: bash reads a script as it executes, so editing the skill mid-run broke a run (9/30,
 # "line 50: 0: command not found"). The scripts are copied once and the copy is what executes.

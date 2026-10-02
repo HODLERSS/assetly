@@ -30,6 +30,13 @@ the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 5
   near v1.3 size: 343 headlines cut M3's reply twice); the pick asks for >= 3 of 6 AI items and the positive story when two
   are comparable; verified US items are re-ranked in code (`rank_note`), a 5%+ or front-page drop keeps its place.
   Yahoo Finance's public RSS is stale (newest item Sep 24 on 10/2) and is not used.
+- **Script writer = claude -p, no OpenRouter** (owner 10/2: "you shouldn't use openrouter for sonnet"): lib.llm's tiers are
+  claude-cli (Sonnet on the owner's subscription, `~/.local/bin/claude -p`, empty temp cwd, HOME/USER/LOGNAME passed so it
+  runs under launchd, an empty result = failure) -> MARA M3 -> SambaNova M3 for the storyline and its judge
+  (prefer="claude"); research keeps MARA -> SambaNova -> claude. OpenRouter and its 402 afford-retry are removed (the
+  gpt-audio backup VOICE in voice-lines.py is separate and unchanged). `python3 lib.py --selftest-llm` forces each tier to
+  fail in turn (SHORTS_LLM_FORCE_FAIL) and proves the next answers valid JSON: 6/6 PASS from `env -i HOME PATH`, claude
+  2.4-2.7 s, MARA 0.9 s, SambaNova 1.6-1.8 s.
 - **TikTok by API** ("make sure you can update tiktok too as you do in Youtube"): `app/scripts/tiktok/auth.py` (Login Kit
   for Desktop, hex-S256 PKCE, loopback `http://127.0.0.1:53683/callback/`, token file chmod 600, no secret printed);
   post.py reads TikTok's error codes, falls back to the creator's inbox (`video.upload`) when an unaudited app may not

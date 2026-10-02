@@ -7,7 +7,7 @@
   price feeds are the CNBC quote service and the Nasdaq quote API; the app's own `prices` table (Yahoo via Supabase)
   is the second feed for ES=F / NQ=F / ^GSPC / ^VIX.
 - **MARA 502 "routing broker forward failed"** and a reasoning model that writes two JSON objects: `lib.llm()` retries,
-  then falls back to OpenRouter, and parses the first JSON object only (`raw_decode`).
+  then falls back (v1.4.0: claude -p / MARA / SambaNova, no OpenRouter), and keeps the largest JSON object.
 - **The judge is strict on purpose.** A sentiment only one publisher states is dropped; the repair round asks the model to
   pick a reaction two publishers state. Fewer than 3 surviving items refuses the run: re-run research later (more
   coverage lands within an hour of the close) or take the refusal.
@@ -46,3 +46,7 @@
 - **Home drifts while the take records (10/1 midday).** Facts at 10:2x had the day at $4,368, Home in the take showed
   +$3,965; with "spoken = on screen" AND "spoken = verified", nothing could pass. Home figures within the live tolerance
   of a cross-checked figure now count as verified.
+- **claude -p from launchd (v1.4.0).** The script writer runs `~/.local/bin/claude -p --model sonnet --output-format json
+  --tools "" --strict-mcp-config --no-session-persistence` from an empty temp dir. Without USER in the environment the CLI
+  finds no keychain login and returns an EMPTY result with is_error false: lib passes HOME / USER / LOGNAME itself and treats
+  an empty result as a failure (next tier). Never `--bare` (it wants an API key). Test: `python3 scripts/lib.py --selftest-llm`.

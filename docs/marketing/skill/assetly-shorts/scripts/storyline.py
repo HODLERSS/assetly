@@ -568,7 +568,7 @@ def judge(story, res, askc):
           "with [] when every line passes. Never suggest advice or a forecast.")
     try:
         v = llm(W, "You are a strict copy editor. Natural, concrete, correct English only.", jp, max_tokens=3000, temperature=0,
-                timeout=60, prefer="openrouter")
+                timeout=60, prefer="claude")
     except RuntimeError as e:
         log(f"storyline judge failed ({str(e)[:80]}): code checks stand"); return []
     return [f"{p.get('where', '?')}: {p.get('issue', '')} -> {p.get('fix', '')}" for p in v.get("problems") or [] if isinstance(p, dict)]
@@ -810,7 +810,7 @@ sentence 2 never restates sentence 1 (no second "shares rose" line), no em dashe
                 log(f"storyline: {STORY_CAP_S}s cap reached after {rnd} rounds"); break
             try:
                 story = llm(W, sys_p, prompt, max_tokens=16000, temperature=0.4, timeout=max(40, min(150, int(left))),
-                            prefer=os.environ.get("SHORTS_STORY_MODEL", "openrouter"))   # M3 reasons long: 8000 truncated its JSON
+                            prefer=os.environ.get("SHORTS_STORY_MODEL", "claude"))   # M3 reasons long: 8000 truncated its JSON
             except RuntimeError as e:
                 log(f"storyline round {rnd + 1}: no draft ({str(e)[:120]})"); continue
             if "items" not in story:                     # a reply wrapped in one key ({"story": {...}}, seen on tighten rounds)
