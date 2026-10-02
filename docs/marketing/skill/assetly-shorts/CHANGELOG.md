@@ -1,5 +1,42 @@
 # Changelog
 
+## v1.4.0 (2026-10-02, owner: five requests on look, voice, music, research and TikTok)
+
+No core rule was loosened: every spoken figure on screen in its beat, two sources per claim, second person, real footage,
+the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 50, the 20-minute budget, YouTube private.
+
+- **Korea looks different** ("make korea one a bit different from us one in color"): compose.py sets day.json `accent` /
+  `ground` / `theme`; make-short.sh exports `SHORTS_ACCENT` / `SHORTS_BG` and puts them in the plan; make-cards (cover
+  kicker, names, rule, end-card follow line and App Store pill), make-fill-subtitles (eyebrows), make-speaking (pills),
+  make-spot (canvas, scrim, answer outline) and compose's corner chips / tags read them. US: indigo on slate (unchanged).
+  Korea: amber (242,178,76) on a warm ground (29,23,17). Gain green / loss red unchanged.
+- **Direct voice** ("instead of saying commentators said this, be more direct"): `lib.ATTRIB` / `attributed()`. Research's
+  READ (field `sentiment`) is a fact in our own voice (scale, driver, what it means, what comes next with a date), refused
+  when attributed, and the judge rejects an opinion stated as fact. Storyline: the v1.0 check that REQUIRED "Analysts /
+  Investors ..." in sentence 2 is inverted (any attributed sentence is refused with a direct-fact rewrite instruction);
+  prompt, examples (placeholders, so no example fact is copied), the editor judge and KR_GUIDE rewritten; a pre-v1.4
+  attributed READ is handed to the model as null and the fallback never speaks it. **Q44** grades the narration.
+- **Music to the last frame** ("Music finishes a bit early ... make it more engaging"): the old bed's stems ended at bar 10
+  (24.0 s at 100 BPM), so a 29.7 s Short had 5.7 s with no music; and mix-spot-audio's sidechaincompress dropped the last
+  ~0.45 s on top (now padded + trimmed). music-short.json holds one bed per theme with `card` / `end` positions,
+  song-phase tiling, an end-card lift, a 1.0 s fade on the last frame, `duck_sc` 1.2 (0.7 gave -5.3 dB on the new beds),
+  and a per-stem `af` (Korea's full-mix loop has a speech-band dip; a snare roll into the card was dropped: it masked the
+  Ask answer, Q28 "chips -> apps"). The cut grid is the bed's eighth (0.25 s / 0.234 s), the card grows to end the Short
+  on a beat, the final mux fade is 0.5 s (was 1.2 s over the bed's 1.6 s). make-spot-music asserts coverage; **Q43**
+  grades it. run.sh's duck steps and the Q28 remix moved up to match (1.6 / 2.4, remix 2.0).
+- **AI first, front pages, positive first** (research.py): the session's top 10 AI movers are always candidates; CNBC (top
+  news, markets, tech), Bloomberg (markets, tech), MarketWatch and Reuters (Google News) front pages give each candidate a
+  `front_page` count and join the source pool (names they mention + the 12 newest macro headlines, so the pick prompt stays
+  near v1.3 size: 343 headlines cut M3's reply twice); the pick asks for >= 3 of 6 AI items and the positive story when two
+  are comparable; verified US items are re-ranked in code (`rank_note`), a 5%+ or front-page drop keeps its place.
+  Yahoo Finance's public RSS is stale (newest item Sep 24 on 10/2) and is not used.
+- **TikTok by API** ("make sure you can update tiktok too as you do in Youtube"): `app/scripts/tiktok/auth.py` (Login Kit
+  for Desktop, hex-S256 PKCE, loopback `http://127.0.0.1:53683/callback/`, token file chmod 600, no secret printed);
+  post.py reads TikTok's error codes, falls back to the creator's inbox (`video.upload`) when an unaudited app may not
+  Direct Post to a public account, never posts a Short twice, exits 0 / 3 / 4 / 5; `selftest.py` runs both against a
+  local mock (ALL PASS). run.sh posts to TikTok even when the YouTube upload fails (the run still exits 3), queues only on
+  3 / 4, never on 5 (uploaded, unconfirmed). references/tiktok.md: the owner's one-time setup.
+
 ## v1.3.0 (2026-10-01, owner: "make sure you build each clip within 20 minutes max ... this time limit is important")
 
 Every edition (preopen, midday, close, korea-open, korea-close, and korea-midday) delivers within 20 minutes of its run's

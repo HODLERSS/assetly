@@ -5,7 +5,7 @@
 
 Inputs: research.json (verified items), facts.json (portfolio figures the app shows, cross-checked), ask.json +
 ask-check.json (the real answer and its verified figures). The model writes: the cover (3 headline lines), one line
-per market item (sentence 1 = what happened and WHY, sentence 2 = the attributed market/community READ), the
+per market item (sentence 1 = what happened and WHY, sentence 2 = the READ, v1.4.0: a direct fact in our own voice), the
 portfolio line, the Ask answer line, and the YouTube title/description. Code then refuses anything that breaks the
 rules: a figure not in the verified set, advice/hype/jargon words, em dashes, "demo", tickers, edition-wrong timing
 words, more than 14 words in a sentence, or more than the word budget (the Short must end by 30.0 s). Failures go
@@ -15,7 +15,7 @@ Writes <work>/story.json.
 """
 import copy, json, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from lib import Stage, jdump, jload, llm, log
+from lib import Stage, attributed, jdump, jload, llm, log
 from screen import direction, fval, shows
 import kr as KRM
 
@@ -411,12 +411,17 @@ def check(story, res, facts, askc):
         elif restates(it["sentences"][0]["text"], it["sentences"][1]["text"]):
             r = res["items"][it["n"]]
             errs.append(f"item {i + 1}: sentence 2 only restates sentence 1 ({it['sentences'][1]['text']!r}) -> replace it with the "
-                        f"attributed read, e.g. {r['sentiment']!r} shortened")
-        # (a thin read, "Analysts cite demand.", is the judge's call, not a word count: a 5-word floor looped the
-        # 10/2 korea-midday rebuild 12 rounds against the 52-word budget)
-        elif not re.search(r"\b(analysts?|commentators?|investors?|traders?|shares|the stock|markets?|economists?|strategists?|wall street|critics|fans|users|observers|futures|policymakers|officials|fed|bond traders|yields|economists|the market)\b",
-                           it["sentences"][1]["text"], re.I):
-            errs.append(f"item {i + 1}: the second sentence must be the attributed read (analysts/investors/traders/shares...)")
+                        f"direct read, e.g. {r['sentiment']!r} shortened")
+        # (a thin read is the judge's call, not a word count: a 5-word floor looped the 10/2 korea-midday rebuild 12 rounds
+        # against the 52-word budget)
+        # v1.4.0 (owner 10/2: "instead of saying commentators said this, be more direct. don't use third-party word like that"):
+        # the inverse of the v1.0 rule that REQUIRED "Analysts / Investors ..." here: no sentence of the Short attributes its read
+        for j, x in enumerate(it["sentences"]):
+            if attributed(x["text"]):
+                errs.append(f"item {i + 1}: sentence {j + 1} {x['text']!r} attributes it to others ('{attributed(x['text'])}') -> say "
+                            f"the fact directly in our own voice (its scale, its driver, what it means, or what comes next with a date), "
+                            + (f"e.g. {res['items'][it['n']]['sentiment']!r}" if not attributed(res['items'][it['n']]['sentiment'])
+                               else "using only the item's verified facts") + "; never an opinion stated as fact")
     if KR:
         # Korea-first (owner, 10/2): item 1 and at least two of the three items are KRX listings (or the KOSPI); US names
         # only as read-through context
@@ -543,8 +548,8 @@ def check(story, res, facts, askc):
 
 def judge(story, res, askc):
     """A native-speaker editor's pass over a draft every code check passed (owner review 10/2): each spoken line must be
-    natural, grammatical English; each item's read must add a concrete fact or view (not restate the why, not "Analysts
-    cite demand."); the spoken Ask answer must answer the typed question; a Korea Short must say what it means for a US
+    natural, grammatical English; each item's read must add a concrete fact in the Short's own voice (not restate the why,
+    no "Analysts say ..." attribution, no opinion stated as fact); the spoken Ask answer must answer the typed question; a Korea Short must say what it means for a US
     investor's AI-heavy portfolio somewhere. Returns problems as rewrite instructions ([] = pass, or the judge failed)."""
     lines = [f"item {k + 1}, sentence {j + 1}: {x['text']}" for k, it in enumerate(story["items"]) for j, x in enumerate(it["sentences"])]
     lines += [f"portfolio: {story['portfolio']['text']}", f"ask question: {askc['question']}", f"ask answer: {story['ask']['answer_text']}"]
@@ -554,8 +559,9 @@ def judge(story, res, askc):
           "\n\nJudge strictly, as a native English-speaking editor:\n"
           "1. fluent: would a native speaker say this line exactly so? (articles present, no odd phrasing like 'got memory favors' or "
           "'see gap closing', no headline-ese)\n"
-          "2. read_adds: for each item, does sentence 2 add a concrete new fact or view (a target, an estimate, a flow, a risk, what "
-          "it means for holders) rather than restating sentence 1 or saying something generic ('Analysts cite demand.')?\n"
+          "2. read_adds: for each item, does sentence 2 add a concrete new FACT said directly in the video's own voice (the scale, "
+          "the driver, a flow, what it means, what comes next with a date) rather than restating sentence 1, attributing it to "
+          "others ('Analysts say ...', 'Commentators call it ...') or stating an opinion or forecast as fact?\n"
           "3. answers: does the ask answer directly answer the ask question (the figure it asks for)?\n" +
           ("4. read_through: does at least one line say what it means for a US investor's AI chip holdings (context, not advice)?\n" if KR else "") +
           'Return {"problems": [{"where": "item 2, sentence 2", "issue": "...", "fix": "a natural rewrite using only facts above"}]} '
@@ -607,6 +613,11 @@ def fallback(story, res, facts, askc):
     def verified(i):
         it = story["items"][i] if isinstance(story["items"][i], dict) else {}
         n = it.get("n", i) if isinstance(it.get("n"), int) and 0 <= it.get("n") < len(res["items"]) else i
+        # v1.4.0: a READ that attributes ("Analysts say ...", research from before v1.4.0) is never spoken: the next verified
+        # item whose read is direct takes the slot; if there is none the check refuses as before
+        if attributed(res["items"][n]["sentiment"]):
+            used = {x.get("n") for x in story["items"] if isinstance(x, dict)}
+            n = next((k for k, rr in enumerate(res["items"]) if k not in used and not attributed(rr["sentiment"])), n)
         r = res["items"][n]; eb = it.get("sentences") if len(it.get("sentences") or []) == 2 else [{}, {}]
         story["items"][i] = {"n": n, "sentences": [
             {"eyebrow": (eb[0].get("eyebrow") or r["cover"].rstrip(".")).upper()[:26], "text": r["why"]},
@@ -697,13 +708,13 @@ KR_GUIDE = ("" if not KR else f"""THE KOREA EDITION (v1.1.0, owner 10/1): for US
   each Korean item with that window ('{KRM.WIN_PHRASE[KRM.RANGE[ED]]}') and its WHY{" (YTD figures are long to say: at most ONE, in item 1, and only if the budget allows; 'rose this year' without a figure is fine)" if ED == "korea-midday" else " (the figure in item 1; later items may name the window without one)"}; the session move in
   Seoul is secondary ('{"closed up 3.2% in Seoul" if ED == "korea-close" else "is up 1.1% so far in Seoul"}'). A US name's move is its last
   New York session. Say the names as people do: "SK hynix", "Samsung", "Hanmi" (the full names cost words the 30 s does not have). Each read
-  states WHAT the view is and WHY ("Analysts expect memory prices to keep rising into 2028."), never a bare label ("Commentators
-  call it cheap."). The portfolio line is the
+  is a direct, concrete FACT in our own voice ("Memory prices rose for a third straight quarter."), never attributed to others
+  ("Analysts expect ...", "Commentators call it cheap." are refused) and never an opinion stated as fact. The portfolio line is the
   all-time gain Home shows ("Your portfolio is up 18% all time."): never a 'today' figure (Home's Today mixes the US and Korean
-  sessions). Never what to do, never a forecast for the US open: context ("Investors watch Micron's memory read-through.").
-  Examples of the density wanted:
-    "SK hynix fell 28.4% over three months as foreign funds sold Korean chips. Investors see sustained foreign selling."
-    "Micron posted record revenue on AI memory demand. Analysts say the demand stays strong."
+  sessions). Never what to do, never a forecast for the US open: context ("Micron's results show the same memory demand.").
+  Examples of the density wanted (style only, not facts):
+    "SK hynix fell 28.4% over three months as foreign funds sold Korean chips. <a verified fact: what comes next, with its date>."
+    "Micron posted record revenue on AI memory demand. <a verified fact: its scale or its driver>."
 """)
 
 
@@ -713,10 +724,12 @@ def main():
     with Stage(W, "storyline.llm"):
         sys_p = ("You write the voice-over for a 25-second YouTube Short for general retail investors, for the Assetly app. "
                  "Plain, warm, specific, never hype. Every claim comes from the facts given.")
+        # v1.4.0: an attributed read (research from before v1.4.0) is an opinion: "read" is null, never restated as fact
         base = f"""Edition: {LABEL[ED]} ({ED}). Tense rules: {json.dumps(TIMING[ED])} ("need": use at least one; "never": never use).
 
 VERIFIED MARKET ITEMS (ranked; each WHY and READ is already backed by two publishers; reuse their wording closely):
-{json.dumps([{"n": i, "kind": it["kind"], "symbols": it["symbols"], "cover": it["cover"], "why": it["why"], "read": it["sentiment"],
+{json.dumps([{"n": i, "kind": it["kind"], "symbols": it["symbols"], "cover": it["cover"], "why": it["why"],
+              "read": None if attributed(it["sentiment"]) else it["sentiment"],
               "figures": [{"symbol": f["symbol"], "pct": f["value"]} for f in it.get("figures", [])]} for i, it in enumerate(res["items"])], indent=0)}
 Company names to say (never tickers; letters only where shown, like IBM): {json.dumps(say_names(facts))}
 
@@ -734,23 +747,27 @@ THE ASK BEAT: the question typed on camera: {askc['question']!r}. The answer lin
 The spoken answer quotes ONE of these lines or paraphrases it closely, with exactly its figures; the edit highlights it.
 
 {KR_GUIDE if KR else ""}
-THE APPROVED STYLE (the 9/30 Short; match its density and tone, not its facts):
-  "Micron beat on AI memory demand, yet barely moved after hours. Commentators say it was priced in."
+THE APPROVED STYLE (the 9/30 Short, v1.4.0 direct reads; match its density and tone, not its facts):
+  "Micron beat on AI memory demand, yet barely moved after hours. <a verified fact: its scale, e.g. a record>."
   "Google's Gemini 4 beat rivals on most tests, but few can use it yet. Shares jumped over 3%, then closed up 0.9%."
-  "Meta slipped 1.8% as OpenAI launched a Muse rival. Analysts still back Muse."
+  "Meta slipped 1.8% as OpenAI launched a Muse rival. <a verified fact: what it means or what comes next, with a date>."
+  (<...> marks where the item's own verified READ goes; never copy an example's facts. An item whose "read" is null has no
+  usable read: write sentence 2 from its WHY's facts or the move its page shows, never from an opinion.)
 HOOK (Shorts practice: viewers decide in the first 1-2 s): item 1 is the most surprising verified fact, usually the biggest
 verified move or the most unexpected news, and the cover's first line is item 1. Lead with the fact itself, never a
 teaser, a question, "you won't believe" or a greeting. The Short ends on the real answer (no sign-off line: the end card
 carries the follow line).
 Each item: sentence 1 names the company, what happened AND the cause, with a figure when one is verified (an upcoming event,
 like a report or a data release, needs no cause: say what and when); sentence 2 is the
-read, starting with who holds it (Analysts / Commentators / Investors / Traders / Shares ...). Eyebrows are short:
+READ, said directly in our own voice as a confident, factual sentence: the scale (only a verified record or "biggest since"),
+the driver, what it means, or what comes next with its date. Never attribute it ("Analysts / Commentators / Investors say, see,
+call, cite ..." is refused), never an opinion or forecast stated as fact, never advice. Eyebrows are short:
 "HPE · RECORD", "MICRON · THE READ" (<= 26 characters).
 
 Write JSON:
 {{"items": [ {n_items} entries, the most useful for this edition, AI-focused but not only AI, in this shape:
    {{"n": <item n>, "sentences": [{{"eyebrow": "MICRON · AFTER THE BELL", "text": "<what happened and WHY, <= 13 words>"}},
-                                  {{"eyebrow": "MICRON · THE READ", "text": "<the attributed read or reaction, <= 8 words>"}}]}} ],
+                                  {{"eyebrow": "MICRON · THE READ", "text": "<the direct read: a verified fact in our own voice, <= 8 words>"}}]}} ],
  "portfolio": {{"eyebrow": "YOUR PORTFOLIO", "text": "<one sentence, <= 12 words, a TRUE note from the portfolio numbers Home shows: lean
                positive if the numbers allow, e.g. 'Your portfolio is up 28% all time.'>"}},
  "ask": {{"line": <the number of the visible answer line you quote>, "answer_text": "<<= 13 words: that line quoted or closely

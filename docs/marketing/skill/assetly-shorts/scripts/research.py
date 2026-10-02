@@ -8,7 +8,10 @@
    quote feeds (CNBC quote service, Nasdaq quote API). The US economic calendar and the earnings calendar from
    Nasdaq. Headlines from Google News RSS (publisher, time, link) for every candidate and for the macro queries.
 2. Judgment, LLM (MARA MiniMax-M3, OpenRouter fallback): rank 3-5 items for this edition; for each, WHY it moved
-   or matters and the market/community SENTIMENT, each citing headline ids from at least two publishers.
+   or matters and the READ (field "sentiment"; v1.4.0: a direct fact in the Short's own voice, never "analysts say"),
+   each citing headline ids from at least two publishers. v1.4.0 ranking: the session's top 10 AI movers are always
+   candidates, the CNBC / Bloomberg / Reuters / MarketWatch front pages give each name its salience (and their
+   headlines join the pool), and a positive story leads a comparable negative one (a big drop that is the story stays).
 3. Verification, code + a second LLM pass: cited ids must exist; >= 2 distinct publishers for the why and for the
    sentiment; every figure must agree across both quote feeds (and with the claim) or it is dropped; a judge
    call re-reads the cited headlines verbatim and must confirm support. Items that fail are dropped. Fewer than
@@ -20,7 +23,7 @@ import json, os, re, sys, time, urllib.parse, xml.etree.ElementTree as ET_
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from lib import (CT, ET, Stage, agree, cnbc, get, jdump, jload, llm, log, nasdaq, nasdaq_pre, rest)
+from lib import (CT, ET, Stage, agree, attributed, cnbc, get, jdump, jload, llm, log, nasdaq, nasdaq_pre, rest)
 import kr as KRM
 import kr_news as KRN
 
@@ -48,6 +51,10 @@ NAMES = {"GOOGL": "Google", "META": "Meta", "NVDA": "Nvidia", "MSFT": "Microsoft
          "IONQ": "IonQ", "RGTI": "Rigetti", "QBTS": "D-Wave", "JPM": "JPMorgan", "GS": "Goldman Sachs", "BAC": "Bank of America",
          "WMT": "Walmart", "COST": "Costco", "NKE": "Nike", "LLY": "Eli Lilly", "NVO": "Novo Nordisk", "UNH": "UnitedHealth",
          "XOM": "Exxon", "BA": "Boeing", "DIS": "Disney", "PYPL": "PayPal", "SOFI": "SoFi"}
+# v1.4.0 (owner 10/2: "prioritize AI news (like at least top 10 popular moves)"): the AI names whose session moves are ranked
+# first; the top 10 by move (dollar volume breaks ties) always join the candidates
+AI = set("""NVDA AVGO AMD MU TSM ARM SMCI ORCL MSFT META GOOGL PLTR AMZN MRVL ANET DELL HPE CRWV NBIS VRT ASML AMAT LRCX KLAC
+INTC QCOM IBM SNOW NOW CRM ADBE SOUN PATH TEM APP AAPL TSLA APLD IREN CIFR WULF CEG VST GEV ETN""".split())   # + AI power / data centers
 MACRO = ["ES=F", "NQ=F", "^GSPC", "^IXIC", "^VIX"]          # only levels with a second feed (app prices / Nasdaq COMP)
 KEY_ECON = re.compile(r"Nonfarm|Unemployment Rate|CPI|PCE|GDP|ISM|Jobless Claims|Retail Sales|FOMC|Fed (?:Chair|Governor)|Powell|"
                       r"Interest Rate Decision|JOLTS|Consumer Confidence|Michigan|PPI|Durable Goods|Payrolls|ADP", re.I)
@@ -71,6 +78,47 @@ def gnews(q, hours):
         if when >= cut and pub and title:
             out.append((title, pub, when, it.findtext("link")))
     return out
+
+
+# v1.4.0 (owner 10/2: "refer to CNBC, bloomberg some news channel and see what they are talking about in their headlines"):
+# the front pages' public RSS (no login, no paywall scraping). A name these lead with ranks higher, and their headlines join
+# the pool as citable sources (two publishers are still required for every claim). Reuters has no public feed: Google News
+# restricted to reuters.com stands in. Yahoo Finance's rssindex was probed 10/2 and is stale (newest item Sep 24, each under
+# another publisher), so MarketWatch's top stories stand in for the third newsroom.
+FRONT = [("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"), ("CNBC", "https://www.cnbc.com/id/10000664/device/rss/rss.html"),
+         ("CNBC", "https://www.cnbc.com/id/19854910/device/rss/rss.html"), ("Bloomberg", "https://feeds.bloomberg.com/markets/news.rss"),
+         ("Bloomberg", "https://feeds.bloomberg.com/technology/news.rss"), ("MarketWatch", "https://feeds.content.dowjones.io/public/rss/mw_topstories")]
+
+
+def front_pages(hours):
+    """[(title, publisher, utc datetime, link)] from the front-page feeds (+ Reuters via Google News), newer than `hours`."""
+    from concurrent.futures import ThreadPoolExecutor
+    cut = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    def one(pu):
+        pub, url = pu
+        try:
+            root = ET_.fromstring(get(url, tries=2, timeout=10))
+        except Exception as e:                                   # noqa: BLE001 (a missing front page costs only salience)
+            log(f"front page {pub} failed: {str(e)[:60]}"); return []
+        out = []
+        for it in root.iter("item"):
+            try:
+                when = parsedate_to_datetime(it.findtext("pubDate"))
+            except Exception:                                    # noqa: BLE001
+                continue
+            t = re.sub(r"\s+", " ", (it.findtext("title") or "").strip())
+            if t and when >= cut: out.append((t, pub, when, it.findtext("link")))
+        return out
+    with ThreadPoolExecutor(7) as ex:
+        got = list(ex.map(one, FRONT)); rt = ex.submit(gnews, "stocks site:reuters.com", hours).result()
+    return [h for g in got for h in g] + [h for h in rt if h[1].lower().startswith("reuters")]
+
+
+def mentions(title, sym):
+    """A front-page headline names this company (its spoken name or its ticker as a word)."""
+    nm = NAMES.get(sym, sym)
+    return bool(re.search(r"\b" + re.escape(nm) + r"(?:'s)?\b", title, re.I) or re.search(r"\b\(?" + re.escape(sym) + r"\)?\b", title))
 
 
 window_field = KRM.window_field
@@ -163,10 +211,16 @@ def kr_data(now):
 
 
 US_PICK = """Pick the 6 most useful things a general retail investor should know for this edition: AI-focused but not only AI (macro, Fed,
-    big earnings, sector moves, other hot stocks). Prefer stories with a clear WHY and a visible market or analyst reaction."""
+    big earnings, sector moves, other hot stocks). Prefer stories with a clear WHY and a concrete fact that puts them in context.
+    PRIORITIES (v1.4.0, owner 10/2), in order: (1) AI first: at least 3 of the 6 about the session's top AI movers (QUOTES rows with
+    "ai": true; "ai_rank" 1-10 = the biggest AI moves); (2) what the big newsrooms lead with: rows with "front_page" > 0 are named
+    in today's CNBC / Bloomberg / Reuters / MarketWatch front-page headlines (the more, the bigger the story); (3) when two
+    stories are comparable, prefer the POSITIVE one (a gain, a beat, a record, a deal, a launch). A big drop is still the story
+    when it is one (front-page news or a move of 5% or more): tell it plainly, never cheerlead, never hide it."""
 KR_PICK = """Pick the 6 most useful things a US retail investor with an AI-heavy portfolio should know from Korea's chip market for this
     edition: at least 3 items about Korean names (SK hynix, Samsung Electronics, Hanmi Semiconductor or a peer in QUOTES), the rest the
-    US chip names they move with or the KOSPI. Lead with the multi-week trend and its cause, not the day's noise. Each QUOTES row has
+    US chip names they move with or the KOSPI. Lead with the multi-week trend and its cause, not the day's noise. When two stories
+    are comparable, prefer the POSITIVE one (a gain, a record, a deal); a big drop that is THE story is still told, plainly. Each QUOTES row has
     "win": {"m1"|"m3"|"ytd": {"a": pct, "b": pct, "ok": both histories agree}}; use a window only where ok is true. Upcoming events
     (earnings, a results date) only when a headline states the date. Never a price target, never what to do. Some HEADLINES are
     Korean-language (Yonhap, Maeil Business, Naver Finance's press offices): cite them like any other, but write every field in
@@ -222,7 +276,10 @@ def main():
                     return q.get("ext_pct") if q.get("ext_type") else None   # PRE_MKT, POST_MKT, POST_MKT_PREV
                 return q.get("pct")
             ranked = sorted([s for s in uni if move(s) is not None], key=lambda s: -abs(move(s)))
-            cands = list(dict.fromkeys(ranked[:14] + [e["symbol"] for e in earn][:6] + ["NVDA", "MSFT", "GOOGL", "META", "AMZN", "AAPL"]))
+            dv = lambda s: (cq.get(s) or {}).get("last") and (cq.get(s) or {}).get("vol") and cq[s]["last"] * cq[s]["vol"] or 0
+            ai_top = sorted([s for s in uni if s in AI and move(s) is not None], key=lambda s: (-round(abs(move(s)), 1), -dv(s)))[:10]
+            # v1.4.0: the session's top 10 AI movers are always candidates, and lead the headline queries
+            cands = list(dict.fromkeys(ranked[:8] + ai_top + ranked[8:14] + [e["symbol"] for e in earn][:6] + ["NVDA", "MSFT", "GOOGL", "META", "AMZN", "AAPL"]))
             # second feed for every candidate
             def second(s):
                 n = nasdaq(s)
@@ -254,7 +311,8 @@ def main():
                     a, b, session = c.get("pct"), n.get("pct"), "regular" if ED == "close" else "live"
                 # live quotes are seconds apart mid-session; extended-hours lasts differ by venue (JBL 9/30 night: 0.97 vs 1.05)
                 ok = agree(a, b, {"close": 0.06, "midday": 0.35, "preopen": 0.2}[ED])
-                cand_rows.append({"symbol": s, "name": NAMES.get(s, c.get("name") or s), "last": c.get("last"),
+                cand_rows.append({"symbol": s, "name": NAMES.get(s, c.get("name") or s), "last": c.get("last"), "ai": s in AI,
+                                  "ai_rank": ai_top.index(s) + 1 if s in ai_top else None,
                                   "pct_feed1": a, "pct_feed2": b, "feeds_agree": ok, "session": session,
                                   "regular_pct": c.get("pct"), "high": c.get("high"), "low": c.get("low"), "prev": c.get("prev"),
                                   "app_pct": (app_px.get(s) or {}).get("change_pct"),
@@ -288,7 +346,22 @@ def main():
                         ("MACRO", "Federal Reserve rates"), ("MACRO", "AI stocks")]
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(8) as ex:                 # ~30 feeds: 2 min sequential, ~20 s in parallel
+                fp = ex.submit(front_pages, hours)
                 got = list(ex.map(lambda tq: (tq[0], gnews(tq[1], hours)), queries))
+                try:
+                    front = fp.result()
+                except Exception as e:                       # noqa: BLE001
+                    log(f"front pages failed: {str(e)[:80]}"); front = []
+            # the front pages: each headline under the candidate it names (else MACRO), and each candidate's salience
+            for r in cand_rows:
+                r["front_page"] = sum(1 for t, *_ in front if mentions(t, r["symbol"]))
+            # into the pool: every front headline that names a candidate, and the 12 newest of the rest as MACRO (the pick
+            # prompt stays near its v1.3 size: 343 headlines cut M3's reply at 12,000 tokens twice on 10/2, ~250-280 never did)
+            fr = [(next((r["symbol"] for r in cand_rows if mentions(t, r["symbol"])), "MACRO"), [(t, pub, when, link)]) for t, pub, when, link in front]
+            fr = [x for x in fr if x[0] != "MACRO"] + sorted([x for x in fr if x[0] == "MACRO"], key=lambda x: x[1][0][2], reverse=True)[:12]
+            got = fr + got
+            log(f"front pages: {len(front)} headlines ({', '.join(sorted({p for _, p, _, _ in front}))}); named: "
+                + ", ".join(f"{r['symbol']} {r['front_page']}" for r in sorted(cand_rows, key=lambda r: -r["front_page"]) if r["front_page"]))
             for tag, items in got:
                 for t, pub, when, link in items[:14]:
                     hid += 1
@@ -361,9 +434,12 @@ def main():
     - "cover": a 2-4 word headline for the title card, company or event name first, e.g. "Micron beats." / "Meta slips." / "Jobs report at 8:30."
     - "why": one plain sentence, <= 14 words: what happened and WHY (the cause), only what the cited headlines say
     - "why_ids": headline ids from AT LEAST TWO DIFFERENT publishers that state that cause
-    - "sentiment": one plain sentence, <= 9 words: the market or community READ of it, attributed ("Analysts ...", "Commentators ...",
-      "Investors ...") OR the market's reaction ("Shares barely moved after hours."). It must be something at least TWO different
-      publishers' headlines say; if only one says it, choose a reaction that two of them do state.
+    - "sentiment": THE READ, one plain sentence, <= 9 words, said directly in the video's own voice with NO attribution (never
+      "Analysts / Commentators / Investors / Traders say, see, call, cite, expect ...", never "according to"): a FACT that puts the
+      story in context: its scale ("Its biggest one-day gain since March." only if a headline states it), the driver ("Memory
+      prices rose for a third straight month."), what it means as a fact, or what comes next with its date ("Results are due
+      October 23."). Never an opinion or forecast stated as fact, never advice. It must be something at least TWO different
+      publishers' headlines state; if none is shared, use the market's reaction the quotes show ("Shares barely moved after hours.").
     - "sentiment_ids": ids from AT LEAST TWO DIFFERENT publishers whose headline states that read or reaction
     - "figures": [{{"symbol": "MU", "field": "pct", "value": -1.84}}] every number the item needs, copied from QUOTES/MACRO ({FIG_FIELDS}); [] if none
     Rules: plain English, no jargon (never: thesis, tape, book, print, catalyst, guidance, capex, EPS, beta, multiple, bps),
@@ -381,7 +457,8 @@ def main():
     if len(kept) < 4 and dropped:
         with Stage(W, "research.repair"):
             rp = "These items failed verification. For each, rewrite WHY and SENTIMENT so that each is stated by headlines from AT LEAST " \
-                 "TWO DIFFERENT publishers (use the ids below; pick a reaction two of them state if no opinion is shared), drop any figure " \
+                 "TWO DIFFERENT publishers (use the ids below; SENTIMENT is a direct fact in our own voice with no 'analysts / " \
+                 "commentators / investors say' attribution; use a reaction the quotes show if no fact is shared), drop any figure " \
                  "the feeds disagree on, or return null for the item if two publishers do not support it. Same JSON shape as before: " \
                  "{\"items\": [...]}. Same rules: plain English, no jargon, no advice/hype words, no em dashes.\n\n"
             for it in dropped:
@@ -410,6 +487,23 @@ def main():
             have = {tuple(i.get("symbols", [])) or (i["cover"],) for i in kept}
             kept += [i for i in k2 if (tuple(i.get("symbols", [])) or (i["cover"],)) not in have]
             dropped += d2
+    if not KR and kept:
+        # v1.4.0 (owner 10/2): the verified items in the order the storyline reads them: the LLM's pick, then AI first, front-page
+        # salience, and a positive story ahead of a comparable negative one. A drop of 5%+ or one the front pages lead with keeps
+        # its place (truthful, not cheerleading). Stable: equal scores keep the pick's order. Korea editions keep the pick's
+        # order (Korea-first is the storyline's gate).
+        rs = {r["symbol"]: r for r in cand_rows}
+        def rank_note(i, it):
+            rows = [rs[x] for x in it.get("symbols", []) if x in rs]
+            mv = next((f.get("value") for f in it.get("figures", []) if f.get("ok") and f.get("field", "pct") == "pct"), None)
+            if mv is None and rows: mv = rows[0].get("pct_feed1")
+            front = max([r.get("front_page", 0) for r in rows] or [0]); ai = any(r.get("ai") for r in rows)
+            big_neg = mv is not None and mv < 0 and (mv <= -5 or front >= 2)
+            score = i - 1.2 * ai - 0.5 * min(front, 3) - (0.6 if (mv or 0) > 0 else 0) + (0.6 if (mv or 0) < 0 and not big_neg else 0)
+            return {"pick": i + 1, "ai": ai, "front_page": front, "move": mv, "score": round(score, 2)}
+        for i, it in enumerate(kept): it["rank_note"] = rank_note(i, it)
+        kept.sort(key=lambda it: it["rank_note"]["score"])
+        log("ranked: " + " | ".join(f"{it['cover']} ({it['rank_note']})" for it in kept))
     for d in dropped: log("DROP", d.get("cover"), d.get("drop"))
     res = {"edition": ED, "date": DATE, "asof_et": data["asof_et"], "context": pick.get("context", ""),
            "hot": [s for s in pick.get("hot", []) if s in {r["symbol"] for r in cand_rows if r["feeds_agree"]}],
@@ -473,6 +567,8 @@ def verify(items, byid, rowsym, macro):
         two = lambda hs: len({h["publisher"] for h in hs}) >= 2 and len({re.sub(r"[^a-z0-9]", "", h["title"].lower())[:60] for h in hs}) >= 2
         if not two(why): reasons.append("why: fewer than 2 independent sources")
         if not two(sen): reasons.append("sentiment: fewer than 2 independent sources")
+        if attributed(it.get("sentiment")):          # v1.4.0: the read is ours, direct (owner 10/2)
+            reasons.append(f"sentiment: third-party attribution '{attributed(it.get('sentiment'))}' (say the fact directly, in our own voice)")
         reasons += direction_conflicts(it, rowsym)
         figs = []
         for f in it.get("figures", []):
@@ -503,7 +599,8 @@ def verify(items, byid, rowsym, macro):
         return kept, dropped
     jp = "For each claim, decide if the quoted headlines (and only them) support it. A claim is supported only if at least two of " \
          "its headlines, from different publishers, state it or clearly imply it. A WHY must also state a CAUSE (the reason " \
-         "something moved or matters); a WHY that only restates the move ('shares fell to a low') is why_ok false. Return {\"verdicts\": [{\"n\": 1, \"why_ok\": true, " \
+         "something moved or matters); a WHY that only restates the move ('shares fell to a low') is why_ok false. A SENTIMENT must " \
+         "be a FACT the headlines state (not an opinion or forecast presented as fact); otherwise sentiment_ok false. Return {\"verdicts\": [{\"n\": 1, \"why_ok\": true, " \
          "\"why_support\": [\"h1\",\"h5\"], \"sentiment_ok\": true, \"sentiment_support\": [...], \"note\": \"...\"}]}.\n\n"
     for n, it in enumerate(kept, 1):
         jp += f"CLAIM {n} WHY: {it['why']}\n" + "".join(f"  {i}: {byid[i]['publisher']}: {byid[i]['title']}\n" for i in it["why_ids"] if i in byid)

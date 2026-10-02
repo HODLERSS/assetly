@@ -19,9 +19,9 @@ The canonical list is `app/docs/marketing/SHORTS_QUALITY.md` (Q1-Q20 from the 9/
 | Q15 | brand | toolchain |
 | Q16 | proof frames exported (and looked at by the operator) | qa_deliver.py |
 | Q17 | no "demo" anywhere | qa-short.py |
-| Q18 | one push on every beat, cuts on the 0.3 s grid | qa-short.py (plan) |
+| Q18 | one push on every beat, cuts on the bed's eighth-note grid (plan "grid": 0.25 s US / 0.234 s Korea) | qa-short.py (plan) |
 | Q19 | >= 3 beats with real scrolling | qa-short.py (frame differencing) |
-| Q20 | insight: WHY + attributed READ, two sources each | research.py judge + qa_deliver.py |
+| Q20 | insight: WHY + a direct READ, two sources each | research.py judge + qa_deliver.py |
 | Q21 | Ask beat: typed question (>= 1.2 s), real answer (>= 2.5 s), answer figures verified | facts.py --ask, timing.json |
 | Q22 | portfolio-insight beat with a cross-checked figure | facts.json, day.json |
 | Q23 | 3-5 market items, two independent sources each | research.json |
@@ -75,3 +75,10 @@ Korea-first (owner review 10/2, hard gates): Q38 also fails a Korea Short whose 
 about KRX listings (or the KOSPI). Research refuses with fewer than 2 verified KRX items; storyline rejects a non-Korea-first
 draft and, on Korea editions, runs an LLM editor pass (natural English, a read that states what and why, the Ask line answers
 the question, a read-through for US AI-chip holders) on any draft that passed every code check.
+
+v1.4.0 (owner 10/2): **Q43** (qa-short.py) the bed covers the whole Short: music.wav has no 100 ms window under -45 dBFS
+up to the last 0.3 s, it is as long as the Short, the end card (after the last word) reads >= -32 dBFS and the last
+0.6-0.3 s >= -42 dBFS on the final file. **Q44** (qa_deliver.py) direct voice: no item sentence or portfolio line
+attributes its read (lib.ATTRIB: "commentators / observers / pundits" anywhere, "according to", analysts / Wall Street /
+investors / traders as the subject of a say / see / expect / call / cite verb; a fact naming them stays, "topped Wall
+Street estimates", a flow "foreign investors sold"); the Ask answer is the app's own words and is not graded here.

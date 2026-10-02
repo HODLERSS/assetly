@@ -9,11 +9,22 @@ reviews. Every rule here is enforced by code where code can enforce it; the rest
 - Show real numbers: total value, Today $ and %, All time, a holding's value and gain, the movers.
 - Research and design an interesting, believable portfolio BEFORE recording ($150-300k, the day's story names held).
 - Build from scratch every run (new research, new book, new take, new voices).
-- Insight, not headlines: each story says WHY it moved and the market or community READ, attributed
-  ("analysts", "commentators", "investors"), each on two sources.
+- Insight, not headlines: each story says WHY it moved and the READ, each on two sources. v1.4.0 (owner 10/2: "instead
+  of saying commentators said this, be more direct. don't use third-party word like that. you should gain credibility
+  from viewers yourself though not investment advice"): the READ is said in our own voice, a direct, confident FACT: the
+  scale (a verified record or "biggest since"), the driver, what it means, or what comes next with its date. Never
+  "Analysts / Commentators / Investors say, see, call, cite ...", never "according to", never an opinion or forecast
+  stated as fact, never advice. Refused in research, the storyline and the gate (Q44). Verification is unchanged: two
+  publishers for every READ.
 - Real scrolling footage: at least three beats scroll (Q19).
-- One camera language: the same push (1.3x, in 0.7 s, out 0.6 s, smootherstep) on every beat; cuts on the 0.3 s grid
-  (an eighth at 100 BPM); the last beat holds its push into the end card.
+- One camera language: the same push (1.3x, in 0.7 s, out 0.6 s, smootherstep) on every beat; cuts on the bed's eighth-note
+  grid (v1.4.0: 0.25 s at the US bed's 120 BPM, 0.234 s at Korea's 128; it was 0.3 s at 100 BPM); the last beat holds its
+  push into the end card.
+- Two looks (v1.4.0, owner 10/2: "make korea one a bit different from us one in color so people can understand the
+  difference"): US Shorts keep the app's indigo (139,152,224) on the cool slate ground (20,24,31); Korea Shorts carry
+  amber (242,178,76) on a warm ground (29,23,17): the cover kicker, company names and rule, eyebrows, speaking pills, the
+  answer outline, corner chips, the end card's follow line and App Store pill. Gain green and loss red are the same in both.
+  compose.py sets day.json "accent" / "ground" / "theme"; make-short.sh hands them to every renderer.
 - v1.0.7 (reach): when one of the three stories moved >= 1% and the viewer will read that move in its beat (the page,
   both feeds agreeing, or the labelled chip), the cover leads with it: the name, the move very large in the gain / loss
   colour, the window label (SO FAR TODAY / TODAY / PRE-MARKET / AFTER HOURS); the headlines stack smaller beneath.
@@ -57,6 +68,14 @@ reviews. Every rule here is enforced by code where code can enforce it; the rest
 - With one voice the speaking pills still show while the voice speaks; the eyebrows (MICRON · THE READ, YOUR PORTFOLIO, ASK
   ASSETLY, THE ANSWER) carry the hand-offs a second voice used to.
 - Hand-offs touch, never overlap (0.17 s gap); the bed ducks by sidechain, -6 to -12 dB.
+- The bed (v1.4.0, owner 10/2: "Music finishes a bit early. make sure music is optimal for the generated video. make it
+  more engaging"): one arrangement per theme in `web/ios/App/marketing/shorts/music-short.json`, built at the Short's
+  exact length. US: Indie Disco "Disco Pop" (bass, rhythm guitar, synth stabs; pad + lead guitar lift on the end card) on
+  "Electric Funk Beat", 120 BPM. Korea: Electro House "Classic Anthem Music" (speech-band dip) on "Four Four Beat" with clap
+  and topper lifts, 128 BPM. Every loop stays in phase with bar 0 ("phase": "song"), the bed runs to the last sample and
+  fades over its last 1.0 s, the Short's length is nudged (card 1.6-2.4 s) to end on a beat, the final mux fade is 0.5 s.
+  Duck key 1.2 (the denser beds). Q43 checks the bed has no gap and the end card is audible. The old bed's stems stopped at
+  bar 10 (24.0 s): a 29.7 s Short had 5.7 s without music.
 
 ## Picture
 
@@ -69,8 +88,16 @@ reviews. Every rule here is enforced by code where code can enforce it; the rest
 ## Words
 
 - Hook first: the cover carries the edition and the three headlines; the voice opens straight on the first story.
-- Item: sentence 1 = what happened and WHY (<= 13 words); sentence 2 = the attributed READ (<= 8 words).
+- Item: sentence 1 = what happened and WHY (<= 13 words); sentence 2 = the direct READ in our own voice (<= 8 words).
 - Company names, never tickers. Figures as digits on screen, as words in the voice.
+- What gets picked (v1.4.0, owner 10/2: "prioritize more positive news than negative ones. and prioritize AI news (like at
+  least top 10 popular moves) ... refer to CNBC, bloomberg ... and see what they are talking about in their headlines"):
+  the session's top 10 AI movers are always research candidates (`research.AI`, by move, dollar volume breaking ties); the
+  CNBC (top news, markets, tech), Bloomberg (markets, tech), MarketWatch and Reuters (Google News, reuters.com) front pages
+  give each name its salience and join the source pool (public RSS only; Yahoo Finance's feed was stale on 10/2); the pick
+  wants >= 3 of 6 AI items, front-page stories first, and the positive story when two are comparable; then the verified
+  items are re-ranked in code (AI, front page, positive), keeping a drop of 5%+ or a front-page drop in place: truthful,
+  not cheerleading. Two publishers per claim, unchanged.
 - Edition tense: pre-open "this morning / before the bell / futures"; midday "so far / this afternoon"; close
   "closed / today / after the bell".
 - About 55-60 spoken words in total (the Short must end by 30.0 s including the 2 s card).
@@ -89,4 +116,4 @@ reviews. Every rule here is enforced by code where code can enforce it; the rest
   their own calendar, so it mixes New York and Seoul and is never said.
 - The Ask is about exposure / concentration (memory chips, AI chips): the answer's bucket figures are checked as running
   sums of the holdings it lists, each holding's value verified on two feeds.
-- The end card: "Follow for Korea's chips, twice a day" (true on every KRX trading day).
+- The end card: "Follow for Korea's chips, 3 times a day" (true on every KRX trading day).

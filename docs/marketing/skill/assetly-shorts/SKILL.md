@@ -3,7 +3,7 @@ name: assetly-shorts
 description: Make, update, test or schedule Assetly's YouTube market Shorts (the 9:16 daily market videos with real app footage, commentary in Minjae's voice, the Ask feature on camera and the portfolio's numbers). Use when asked to make/build/run/refresh an Assetly Short, a pre-open / midday / close market video, the daily Short, or to change how those videos are researched, fact-checked, edited or scheduled. Three editions per US trading day plus three Korea AI-chip editions per KRX trading day (korea-open, korea-midday, korea-close); uploads only with --upload (YouTube private; TikTok via API or the queue).
 ---
 
-# Assetly market Shorts, v1.3.0
+# Assetly market Shorts, v1.4.0
 
 Three Shorts per US trading day, each 20-30 s (hard max 30.0), built from scratch every run, **each delivered within 20
 minutes of its run's start** (owner 10/1: "make sure you build each clip within 20 minutes max ... this time limit is
@@ -86,7 +86,7 @@ left, otherwise the run refuses (never late). How it holds:
 
 | Stage | Script | Judgment (LLM) | Hard checks (code) |
 |---|---|---|---|
-| research | `research.py` (+ `kr_news.py` for Korea) | MARA MiniMax-M3 (OpenRouter fallback) ranks 6 items: cover, WHY, attributed READ, cited headline ids | two quote feeds agree (CNBC + Nasdaq; extended hours on both); >= 2 independent sources (two publishers, two headlines) for WHY and READ (Korea: Google News + Korean newsrooms and Naver Finance under the ORIGINAL publisher, a Yonhap reprint counts once); direction and strength words vs the feeds; a judge call re-reads the cited headlines and must confirm; one repair round; < 3 items = refuse |
+| research | `research.py` (+ `kr_news.py` for Korea) | MARA MiniMax-M3 (OpenRouter fallback) ranks 6 items: cover, WHY, a direct READ (a fact in our own voice, never "analysts say"; v1.4.0), cited headline ids; AI first (the top 10 AI movers are always candidates), CNBC / Bloomberg / MarketWatch / Reuters front-page salience, positive over a comparable negative (v1.4.0) | two quote feeds agree (CNBC + Nasdaq; extended hours on both); >= 2 independent sources (two publishers, two headlines) for WHY and READ (Korea: Google News + Korean newsrooms and Naver Finance under the ORIGINAL publisher, a Yonhap reprint counts once); direction and strength words vs the feeds; a judge call re-reads the cited headlines and must confirm; one repair round; < 3 items = refuse |
 | book | `design_book.py` | - | ~$150-300k; story names held (a falling story small); AI leaders; hot names; cost inside each 52-week range; leans positive only when the day's real moves allow |
 | account | `account.py` | - | seeds `minjae.m.lee+daily0NN` ("My portfolio"; close 11, preopen 12, midday 13) through the real pipeline; checks the brief for jargon / edition-wrong words / "demo" and regenerates up to twice |
 | facts | `facts.py` | - | every portfolio figure the app shows recomputed from Nasdaq; disagreement drops it; 7/30-day windows from app history and Nasdaq history |
@@ -95,8 +95,8 @@ left, otherwise the run refuses (never late). How it holds:
 | screen | `screen.py` | - | Vision OCR of the take over each beat's window (`screen.json`: what the viewer can read); fresh two-feed extended-hours quotes for chips (`ext.json`, <= 15 min before the take ends) |
 | story | `storyline.py` | OpenRouter (Claude Sonnet 5.5; M3 fallback; `SHORTS_STORY_MODEL=mara` flips it) writes cover, item lines (why, then read), the portfolio line ("Your portfolio"), the Ask line (quoting one numbered, visible answer line), title, description | figures only from the verified set; Q13 words + tape/book/print/demo; no tickers of candidate/held names (names said as letters, IBM / NASA / AMD, are fine); claim-carrying words traceable to sources (reaction words free); edition timing words; <= 15 words a sentence; <= 56 spoken words; up to 8 rounds of explicit rewrite instructions inside 6 min, every spoken figure readable in its shot (the app's screen per `screen.json`, or a fresh pre-market / after-hours quote said with its label word, shown on a chip); no first person; then a verified-wording fallback that fits the budget and leads with the edition's timing phrase, then refuse |
 | compose | `compose.py` | - | the labelled PRE-MARKET / AFTER HOURS chip (the Short's own overlay, value + quote time, top-right corner block like the stamp) on any beat whose line says it; the quoted answer line outlined (`highlight.src_box` from the UI test's element frames) and pushed to; voices (owner, 10/1): EVERY line in the app's brief voice (the Minjae ElevenLabs clone; voice-lines.py `SHORTS_VOICE=minjae`, the default), OpenRouter gpt-audio marin/cedar only as the per-line backup when ElevenLabs fails (`SHORTS_VOICE=mixed` restores the old marin/cedar items + gpt-audio question); tempo 1.06 on every line (1.12 only in mixed); beats from the marks; one push on every beat |
-| build | repo `web/ios/App/marketing/shorts/make-short.sh` | - | speakable() + earAudit() on every line; voices, word-synced subtitles with story eyebrows, speaking pills, Apple Loops bed, duck, -14 LUFS / <= -1.5 dBTP, proof frames, Q1-Q19 |
-| qa | `qa_deliver.py` | - | Q21-Q41 (references/quality.md; Q32 answer quoted + visible + outlined, Q33 every spoken figure readable in its beat, Q34 one moment: every time shown <= corner stamp, no live quote in a pre-open Short; Q35 chips / tags in the top-right corner block, clear of the phone; Q38 the cover hero is a verified move read on frame 0 and in its beat; Q39 the end-card follow line; Q40 reach metadata), writes the report and the sources, delivers or refuses |
+| build | repo `web/ios/App/marketing/shorts/make-short.sh` | - | speakable() + earAudit() on every line; voices, word-synced subtitles with story eyebrows, speaking pills, the edition theme (US indigo / Korea amber, v1.4.0), the theme's Apple Loops bed at the exact length to the last frame (v1.4.0), duck, -14 LUFS / <= -1.5 dBTP, proof frames, Q1-Q19, Q43 (music covers the Short) |
+| qa | `qa_deliver.py` | - | Q21-Q44 (references/quality.md; Q32 answer quoted + visible + outlined, Q33 every spoken figure readable in its beat, Q34 one moment: every time shown <= corner stamp, no live quote in a pre-open Short; Q35 chips / tags in the top-right corner block, clear of the phone; Q38 the cover hero is a verified move read on frame 0 and in its beat; Q39 the end-card follow line; Q40 reach metadata; Q42 Korea-first; Q44 direct voice, no third-party attribution), writes the report and the sources, delivers or refuses |
 
 ## What still needs a person (or the agent running the skill)
 
@@ -127,4 +127,17 @@ item order, the end-card follow line, title / hashtag / tag rules) and what it d
 bait tags, no fewer uploads or re-uploads without the owner): `references/shorts-craft.md`. `thumbnail.png` (frame 0) is
 delivered with every Short.
 
-TikTok: every Short is also posted to @assetlyapp (API when a token exists, else the Chrome queue): `references/tiktok.md`.
+TikTok: every Short is also posted to @assetlyapp right after the YouTube upload, through the Content Posting API
+(`app/scripts/tiktok/post.py`; Direct Post once the app is audited, else the owner's TikTok inbox, one tap to post); the
+queue only on failure. The owner's one-time setup and `auth.py` sign-in, the offline self-test: `references/tiktok.md`.
+
+## v1.4.0 (owner 10/2)
+
+1. **Korea looks different**: amber accent on a warm ground for the three Korea editions, indigo on slate for the US ones
+   (craft.md "Two looks").
+2. **Direct voice**: the READ is a fact said in our own voice; "Analysts / Commentators / Investors say ..." is refused in
+   research, the storyline and Q44. Still two sources for every claim, still never advice.
+3. **Music to the last frame**: per-theme beds (US 120 BPM disco-funk, Korea 128 BPM electro), lift on the end card, fade
+   on the last frame, cuts on the bed's grid; Q43.
+4. **AI first, front pages, positive first** in research (craft.md "What gets picked").
+5. **TikTok by API** like YouTube (references/tiktok.md).

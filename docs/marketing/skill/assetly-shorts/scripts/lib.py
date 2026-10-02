@@ -216,7 +216,7 @@ def cnbc(symbols):
             e = r.get("ExtendedMktQuote") or {}
             out[s] = {"last": _num(r.get("last")), "pct": _num(r.get("change_pct")), "chg": _num(r.get("change")),
                       "prev": _num(r.get("previous_day_closing")), "time": r.get("last_time"), "name": r.get("name"),
-                      "high": _num(r.get("high")), "low": _num(r.get("low")),
+                      "high": _num(r.get("high")), "low": _num(r.get("low")), "vol": _num(r.get("volume")),
                       "ext_type": e.get("type"), "ext_last": _num(e.get("last")), "ext_pct": _num(e.get("change_pct")),
                       "ext_time": e.get("last_time")}
     return out
@@ -249,6 +249,31 @@ def nasdaq_pre(sym, kind="pre"):
         return {"last": _num(m.group(1)), "pct": _num(m.group(3))} if m else None
     except Exception:                                # noqa: BLE001
         return None
+
+
+# v1.4.0 (owner 10/2: "instead of saying commentators said this, be more direct. don't use third-party word like that"): the
+# read is said in the Short's own voice. A third-party attribution is refused in research (the READ field), the storyline
+# (item sentences) and the gate (Q44): "commentators / observers / pundits" anywhere, "according to", and analysts, Wall
+# Street, investors, traders ... as the SUBJECT of a say / see / expect verb. A fact that names them stays: "topped Wall
+# Street estimates", "beat analysts' forecasts", a flow ("Foreign investors sold $2 billion of Korean chips.").
+ATTRIB = re.compile(r"\b(?:commentators?|observers?|pundits|market watchers)\b|\baccording to\b|"
+                    r"\b(?:(?:analysts?|strategists?|economists?|experts?|critics|wall street|investors?|traders?|bulls|bears|skeptics|fans)"
+                    r"\s+(?:\w+\s+){0,2}|(?:many|some)\s+)(?:say|says|said|see|sees|saw|call|calls|called|"
+                    r"cite|cites|cited|expect|expects|expected|think|thinks|believe|believes|worry|worries|worried|doubt|doubts|doubted|"
+                    r"view|views|viewed|back|backs|backed|like|likes|liked|cheer|cheers|cheered|welcome|welcomes|welcomed|shrug|shrugs|shrugged|"
+                    r"watch|watches|bet|bets|fear|fears|feared|hope|hopes|hoped|question|questions|questioned|praise|praised|remain|remains|stay|stays|"
+                    r"await|awaits|awaited|monitor|monitors|eye|eyes|eyed|weigh|weighs|weighed|digest|digests|focus|focuses|brace|braces|"
+                    r"warn|warns|warned|note|notes|noted|argue|argues|argued|predict|predicts|predicted|"
+                    r"upgrade|upgrades|upgraded|downgrade|downgrades|downgraded|raise|raises|raised|cut|cuts|lift|lifted|love|loves|loved|"
+                    r"saying|seeing|calling|citing|expecting|weighing|awaiting|watching|eyeing|monitoring|betting|digesting|bracing|"
+                    r"cheering|questioning|worrying|doubting|focusing|hoping|fearing|warning|predicting|pricing in|piling into|fleeing)\b",
+                    re.I)
+
+
+def attributed(text):
+    """The third-party attribution in a line, or None (v1.4.0: the read is ours, direct and factual)."""
+    m = ATTRIB.search(text or "")
+    return m.group(0) if m else None
 
 
 def agree(a, b, tol):

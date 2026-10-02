@@ -12,7 +12,7 @@ Writes quality-report.md, sources.md, script.md, the upload copy and beat proof 
 """
 import difflib, glob, json, os, re, shutil, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from lib import Stage, jdump, jload, log
+from lib import Stage, attributed, jdump, jload, log
 import kr as KRM
 
 ED, DATE, W, ST, DST = sys.argv[1:6]
@@ -383,7 +383,14 @@ def main():
         # Q11 / Q20 from the verification artifacts
         row("Q11", "Every figure sourced (two agreeing feeds; disagreements dropped)", True,
             f"market figures: both quote feeds per item; portfolio: app vs Nasdaq recompute ({sum(c['ok'] for c in facts['checks'])}/{len(facts['checks'])} kept); Ask: {len(askc['verified'])} verified")
-        row("Q20", "Insight: each item says WHY + an attributed READ, two sources each", n_ok == len(story["items"]), "see Q23 and sources.md")
+        row("Q20", "Insight: each item says WHY + a direct READ, two sources each", n_ok == len(story["items"]), "see Q23 and sources.md")
+        # Q44 (v1.4.0, owner 10/2: "be more direct. don't use third-party word like that. you should gain credibility from viewers
+        # yourself"): no line in the Short's own voice (the items and the portfolio line) attributes its read to analysts,
+        # commentators, investors who say / see / call ... (the Ask answer is the app's own words, quoted, and is not graded here)
+        own = [x["text"] for it in story["items"] for x in it["sentences"]] + [story["portfolio"]["text"]]
+        att = [f"{t!r} ('{attributed(t)}')" for t in own if attributed(t)]
+        row("Q44", "Direct voice: no third-party attribution in the narration (analysts / commentators / investors say, see, call ...)",
+            not att, "; ".join(att) if att else f"{len(own)} narration sentences, none attributed")
         row("Q12", "Pronunciation: speakable() + earAudit() empty on every line", True, "make-short.sh refuses a line earAudit flags; Whisper round trip in Q28")
         row("Q14", "Disclaimer on every frame + description line", "Not financial advice" in open(os.path.join(B, "plan.json")).read() or os.path.exists(os.path.join(B, "disclaimer.png")),
             "standing 'Not financial advice' overlay on every frame (plan overlays) + end card; description line present (Q27)")
