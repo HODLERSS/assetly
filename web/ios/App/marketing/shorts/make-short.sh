@@ -32,6 +32,11 @@ DATE=$(python3 -c "import json;print(json.load(open('$DAY'))['date'])")
 NNN=$(python3 -c "import json;print(f\"{json.load(open('$DAY'))['demo']:03d}\")")
 LINES=$(python3 -c "import json;print(1 if json.load(open('$DAY')).get('lines') else 0)")
 python3 -c "import json;print(json.load(open('$DAY'))['script'])" > script_display.txt
+# the edition theme (assetly-shorts v1.4.0, owner 10/2: "make korea one a bit different from us one in color"): day.json
+# "accent" / "ground" [r,g,b] reach every card, subtitle eyebrow, speaking pill, outline and the canvas; absent = the US look
+SHORTS_ACCENT=$(python3 -c "import json;print(','.join(map(str,json.load(open('$DAY')).get('accent') or [])))")
+SHORTS_BG=$(python3 -c "import json;print(','.join(map(str,json.load(open('$DAY')).get('ground') or [])))")
+export SHORTS_ACCENT SHORTS_BG
 cat > speak.ts <<EOF
 import { speakable, earAudit } from "$APP/supabase/functions/narrate/ear.ts";
 const s = speakable(await new Response(Deno.stdin.readable).text());
@@ -83,14 +88,17 @@ PY
 fi
 
 # 2. beat timing follows the voice
-python3 - "$DAY" <<'PY'
+python3 - "$DAY" "$HERE/music-short.json" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1])); st = json.load(open("starts.json"))
+# the bed for this edition's theme (v1.4.0: us / korea); the cut grid is the bed's eighth note, so picture and music move together
+mus = json.load(open(sys.argv[2])); mus = mus.get(d.get("theme", "us")) or mus["us"]
+BEAT = 60.0 / mus["bpm"]
 starts, last = [x[0] for x in st[:-1]], st[-1][0]
 # "grid": cuts snap to the music's grid (0.3 s = an eighth at 100 BPM), so picture and bed move together.
 # "motion": ONE camera language for every beat: the same push (to, in, out seconds, smootherstep) toward
 # each beat's focus_src; the last beat holds its push into the card.
-G = d.get("grid", 0); snap = (lambda t: round(round(t / G) * G, 3)) if G else (lambda t: round(t, 3))
+G = BEAT / 2 if d.get("grid") else 0; snap = (lambda t: round(round(t / G) * G, 3)) if G else (lambda t: round(t, 3))
 mo = d.get("motion")
 hook = snap(d.get("hook_dur", starts[1] - 0.13)); cur = hook; beats = []
 for i, b in enumerate(d["beats"]):
@@ -112,7 +120,13 @@ if over > 0 and beats:
     if over > 0 and card - over >= 1.5: d["card"] = card = round(card - over, 2); over = 0
     json.dump(d, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
     print(f"over the {mx + 0.05:.0f} s ceiling: last beat trimmed by {cut:.2f}s, card {card:.2f}s")
-json.dump({"hook": hook, "beats": beats, "product": round(cur, 3)}, open("timing.json", "w"), indent=1)
+# v1.4.0: the Short ends on a beat of the bed, so its fade lands on the music, not across it: the card grows (never shrinks
+# below 1.6 s, never past the ceiling) to the next beat line
+end = cur + card; nxt = -(-round(end / BEAT, 6) // 1) * BEAT
+if nxt - end > 1e-3 and nxt <= mx and card + (nxt - end) <= 2.4:
+    d["card"] = round(card + nxt - end, 3); json.dump(d, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
+    print(f"card {card:.2f} -> {d['card']:.3f}s: the Short ends on a beat ({nxt:.3f}s at {mus['bpm']} BPM)")
+json.dump({"hook": hook, "beats": beats, "product": round(cur, 3), "grid": G}, open("timing.json", "w"), indent=1)
 print("timing: hook %.2fs, beats %s, product %.2fs" % (hook, [b["dur"] for b in beats], cur))
 PY
 LEN_PRODUCT=$(python3 -c "import json;print(json.load(open('timing.json'))['product'])")
@@ -123,9 +137,13 @@ python3 -c "import sys; sys.exit('Short is %.2fs, outside $LMIN-${LMAX}s: tighte
 
 # 3. sound first (the speaking pills are drawn from the mixed voice track): Apple Loops bed at the
 # Short's length, the voice cues, sidechain duck, -14 LUFS
-python3 -c "import json;p=json.load(open('$HERE/music-short.json'));p['len']=$LEN;json.dump(p,open('music.json','w'))"
+# v1.4.0 (owner 10/2: "Music finishes a bit early"): the bed is the edition theme's arrangement at the Short's exact length,
+# lifting on the end card (card_at) and fading out on the last frame; make-spot-music.py asserts it covers every 100 ms
+python3 -c "import json;d=json.load(open('$DAY'));m=json.load(open('$HERE/music-short.json'));p=m.get(d.get('theme','us')) or m['us'];p.update(len=$LEN,card_at=round($LEN-d.get('card',2.2),3));json.dump(p,open('music.json','w'))"
 "$M/make-spot-music.py" music.json music.wav
-DUCK_SC="${DUCK_SC:-0.7}" VO_OUT="$W/vo-track.wav" "$M/mix-spot-audio.sh" music.wav mix.wav "$LEN" $(cat mixcues.txt)
+# the bed's own duck key level (v1.4.0: the denser beds need ~1.2 to sit at -7..-8 dB under the first line; 0.7 gave -5.3)
+DSC=$(python3 -c "import json;print(json.load(open('music.json')).get('duck_sc',0.7))")
+DUCK_SC="${DUCK_SC:-$DSC}" VO_OUT="$W/vo-track.wav" "$M/mix-spot-audio.sh" music.wav mix.wav "$LEN" $(cat mixcues.txt)
 
 # 4. picture: subtitles, pills, disclaimer, beats, card
 # owner, 10/1: subtitles end on a fixed row (SUB_BOTTOM) 40 px above the phone whatever their line count, the eyebrow 16 px
@@ -145,7 +163,7 @@ for b in tm["beats"]:
     # show), laid on for exactly that beat, fading in with its line
     if ch and ch.get("png"): chips.append({"png": ch["png"], "x": 0, "y": 0, "start": round(t + 0.12, 3), "end": round(t + b["dur"] - 0.05, 3)})
     t += b["dur"]
-plan = {"w": 1080, "h": 1920, "len": L, "theme": "dark", "fps": 60, "xfade": 0.6, "crf": 15,
+plan = {"w": 1080, "h": 1920, "len": L, "theme": "dark", "fps": 60, "xfade": 0.6, "crf": 15, "grid": tm.get("grid"),
         "captions": "top", "cap_top": 150, "cap_h": 330, "bottom": 40, "slide": 0.4,
         "phone_w": 860, "zoom_anchor": "top",      # owner, 10/1: a bigger phone whose top edge never moves (constant gap)
         "hook": {"lines": d.get("hook", "AI stocks today|" + d["date"]), "dur": tm["hook"], "static": True,
@@ -153,6 +171,8 @@ plan = {"w": 1080, "h": 1920, "len": L, "theme": "dark", "fps": 60, "xfade": 0.6
         "beats": beats, "card": {"icon": f"{m}/../App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"},
         "overlays": [{"frames": f"{w}/fill", "x": 0, "y": 150}, {"png": f"{w}/disclaimer.png", "x": 0, "y": 0}] + chips}
 if lines: plan.update(speaking=f"{w}/spk", speaking_x=460, speaking_y=152)     # five pills over the strip while anyone speaks
+for k in ("accent", "ground"):
+    if d.get(k): plan[k] = d[k]                       # the edition theme (v1.4.0)
 json.dump(plan, open("plan.json", "w"), indent=1)
 PY
 # the end card's follow line (Shorts practice, 10/1): one true sentence, no "like and subscribe"; day.json "follow" overrides
@@ -168,7 +188,8 @@ if [ -n "$STAMP_ED" ]; then
     -map "[v]" -c:v libx264 -crf 15 -preset slow -aq-mode 3 -profile:v high -pix_fmt yuv420p -r 60 video_stamped.mp4 && mv video_stamped.mp4 video.mp4
 fi
 FINAL="$OUT/assetly-short-$(python3 -c "import json;d=json.load(open('$DAY'));print(d.get('slug',d['date']))").mp4"
-ffmpeg -v error -y -i video.mp4 -i mix.wav -map 0:v -map 1:a -c:v copy -af "afade=t=out:st=$(python3 -c "print($LEN-1.2)"):d=1.2" \
+# a 0.5 s fade only: the bed already fades into the last frame (v1.4.0; the old 1.2 s on top of the bed's own 1.6 s left the card near-silent)
+ffmpeg -v error -y -i video.mp4 -i mix.wav -map 0:v -map 1:a -c:v copy -af "afade=t=out:st=$(python3 -c "print($LEN-0.5)"):d=0.5" \
   -c:a aac_at -b:a 256k -ar 48000 -movflags +faststart "$FINAL"   # no -shortest: it cut 9 video frames
 
 # 5. proof frames and the automatic metrics
@@ -184,5 +205,5 @@ for f in $(ls fill | awk 'NR%120==60'); do L="$L;fill/$f,0,150"; done
 [ -d spk ] && for f in $(ls spk | awk 'NR%240==120'); do L="$L;spk/$f,460,152"; done
 STR="$(python3 -c "import json;d=json.load(open('$DAY'));s=d.get('stamp') or {};print(d.get('hook',''),d.get('hook_kicker',''),d.get('hook_foot',''),d.get('hook_hero','').replace('|',' '),d.get('follow',''),s.get('edition',''),s.get('text',''))") Not financial advice Your portfolio, explained daily Available on the App Store $(python3 -c "import json;print(' '.join(c.get('eyebrow','') for c in json.load(open('subs.json'))['cues']))")"
 HOLD_FROM=$(python3 -c "import json;t=json.load(open('timing.json'));print(round(t['hook']+sum(b['dur'] for b in t['beats'][:-1])+0.5,2))")
-SHORT_HOLD_FROM="$HOLD_FROM" SHORT_LEN_RANGE="$LMIN,$LMAX" SHORT_PLAN=plan.json SHORT_STRINGS="$STR" SHORT_LAYERS="$L" python3 "$HERE/qa-short.py" "$FINAL" vo-track.wav subs.json script_display.txt "$OUT/youtube-metadata.md" | tee "$OUT/qa-auto.md"
+SHORT_CARD="$(python3 -c "import json;print(json.load(open('$DAY')).get('card',2.2))")" SHORT_HOLD_FROM="$HOLD_FROM" SHORT_LEN_RANGE="$LMIN,$LMAX" SHORT_PLAN=plan.json SHORT_STRINGS="$STR" SHORT_LAYERS="$L" python3 "$HERE/qa-short.py" "$FINAL" vo-track.wav subs.json script_display.txt "$OUT/youtube-metadata.md" | tee "$OUT/qa-auto.md"
 echo "-> $FINAL  (demo $NNN)"

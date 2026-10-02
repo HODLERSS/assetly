@@ -194,7 +194,8 @@ if want build; then
     local D SC; D=$(tail -30 "$W/run.log" | grep -o "duck [-+][0-9.]* dB out of range" | tail -1 | awk '{print $2}' || true)
     [ -n "$D" ] || return 0
     # a too-shallow duck gets a stronger key, step by step (10/1 korea-open test: 0.7 -> -4.6 dB, 1.0 -> -5.8 dB, still out)
-    for SC in $(python3 -c "print('1.0 1.6 2.4' if $D > -9 else '0.5 0.35')"); do
+    # v1.4.0: the beds start at duck_sc 1.2 (music-short.json), so a shallow duck steps up from there and a deep one down
+    for SC in $(python3 -c "print('1.6 2.4' if $D > -9 else '0.8 0.5')"); do
       room 150 "a duck rebuild (same voices)"
       echo "duck out of range: rebuild on the same voices with DUCK_SC=$SC"
       REUSE_VO=1 DUCK_SC=$SC st rebuild 100 "$MK" "$ST/day.json" "$W/build" "$ST" || true
@@ -223,9 +224,10 @@ if want qa; then
     # One automatic remedy: a word the dry voice says cleanly but the MIX masks (Q28 alone) gets a deeper duck, same voices
     if grep -q "failing Q28\. " "$ST/quality-report.md" && grep "| Q28 |" "$ST/quality-report.md" | grep -q "dry voice track mismatches: none"; then
       room 150 "a Q28 remix (same voices) and a second grading"
-      echo "Q28 only, the dry voice is clean: remix with a deeper duck (DUCK_SC=1.0) and grade again"
+      # v1.4.0: the beds start at duck_sc 1.2, so "deeper" is 2.0 (it was 1.0 over the old 0.7 default)
+      echo "Q28 only, the dry voice is clean: remix with a deeper duck (DUCK_SC=2.0) and grade again"
       rm -f "$ST/qa-auto.md" "$ST/quality-report.md"
-      REUSE_VO=1 DUCK_SC=1.0 st rebuild 100 "$MK" "$ST/day.json" "$W/build" "$ST" || true
+      REUSE_VO=1 DUCK_SC=2.0 st rebuild 100 "$MK" "$ST/day.json" "$W/build" "$ST" || true
       st qa 50 python3 qa_deliver.py "$ED" "$DATE" "$W" "$ST" "$DST"
     else
       exit 1
@@ -244,21 +246,29 @@ if [ "$UPLOAD" = 1 ]; then
     else
       echo "UPLOAD FAILED (the Short is delivered; upload it by hand): $(tail -c 300 "$W/upload.err" | tr '\n' ' ')"
     fi
-    exit 3
-  fi
-  cp "$W/upload.json" "$DST/youtube-upload.json"; echo "uploaded (private): $(cat "$W/upload.json")"
+    YT_RC=3        # v1.4.0: a YouTube failure no longer skips TikTok; the run still exits 3 after it
+  else cp "$W/upload.json" "$DST/youtube-upload.json"; echo "uploaded (private): $(cat "$W/upload.json")"; fi
 fi
-# TikTok (owner, 10/1): every delivered Short also goes to @assetlyapp. The package is always built; with --upload it posts
-# through the Content Posting API when ~/.private_keys/tiktok_token.json exists, otherwise it joins the queue that an
-# interactive Claude session posts through TikTok Studio in Chrome (references/tiktok.md), and the owner gets a notice.
+# TikTok (owner, 10/1; v1.4.0 owner 10/2: "make sure you can update tiktok too as you do in Youtube"): every delivered Short
+# also goes to @assetlyapp, right after the YouTube upload, through the Content Posting API (app/scripts/tiktok/post.py;
+# the token from auth.py, references/tiktok.md "Owner setup"). Direct Post when the app is audited, else the owner's TikTok
+# inbox (he taps Post, like publishing the private YouTube upload). The queue + notice only on failure: no token / expired
+# (3) or refused before upload (4). Uploaded but unconfirmed (5) is never queued: a second post would duplicate it.
+YT_RC=${YT_RC:-0}
 if [ "$TEST" != 1 ]; then
   python3 "$SK/tiktok_pack.py" "$DST" "$DATE" || echo "TIKTOK PACKAGE FAILED (YouTube is unaffected)"
   if [ "$UPLOAD" = 1 ] && [ -s "$DST/tiktok.mp4" ]; then
-    if python3 "$APP/scripts/tiktok/post.py" "$DST" > "$W/tiktok.out" 2> "$W/tiktok.err"; then echo "tiktok: $(tail -1 "$W/tiktok.out")"
+    TT=0; python3 "$APP/scripts/tiktok/post.py" "$DST" > "$W/tiktok.out" 2> "$W/tiktok.err" || TT=$?
+    if [ $TT = 0 ]; then echo "tiktok: $(tail -1 "$W/tiktok.out")"
+    elif [ $TT = 5 ]; then
+      echo "tiktok: uploaded, not confirmed yet (publish_id in $DST/tiktok.json): check TikTok Studio, do not re-post"
+      osascript -e "display notification \"$ED TikTok uploaded but not confirmed: check TikTok Studio\" with title \"Assetly Shorts\"" 2>/dev/null || true
     else
       Q="$APP/docs/marketing/shorts/tiktok-queue.txt"; grep -qxF "$DST" "$Q" 2>/dev/null || echo "$DST" >> "$Q"
-      echo "tiktok: queued for Chrome posting ($(tail -c 160 "$W/tiktok.err" | tr '\n' ' ')) -> $Q"
-      osascript -e "display notification \"$ED Short ready for TikTok: ask Claude to post the TikTok queue\" with title \"Assetly Shorts\"" 2>/dev/null || true
+      echo "tiktok: API post failed (exit $TT: $(tail -c 200 "$W/tiktok.err" | tr '\n' ' ')) -> queued $Q"
+      MSG="$ED TikTok not posted: ask Claude to post the TikTok queue"; [ $TT = 3 ] && MSG="$ED TikTok not posted: run app/scripts/tiktok/auth.py once"
+      osascript -e "display notification \"$MSG\" with title \"Assetly Shorts\"" 2>/dev/null || true
     fi
   fi
 fi
+exit "$YT_RC"

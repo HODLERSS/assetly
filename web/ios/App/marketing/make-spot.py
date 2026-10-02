@@ -27,6 +27,11 @@ DARK = plan.get("theme", "light") == "dark"
 # On dark the canvas sits one step above the screen's own ground (#0F1216): the black phone body
 # otherwise merges into it and the clip reads as a screenshot on a slab.
 BG = "0x14181F" if DARK else "0xF4F5F7"
+# plan "accent" / "ground" [r,g,b]: the edition theme (assetly-shorts v1.4.0, owner 10/2: Korea Shorts in their own colour);
+# passed on to make-cards.py / make-fill-subtitles.py through the environment
+ACC = tuple(plan["accent"]) if plan.get("accent") else ((139, 152, 224) if DARK else (42, 63, 146))
+if plan.get("ground"): BG = "0x%02X%02X%02X" % tuple(plan["ground"]); os.environ["SHORTS_BG"] = ",".join(map(str, plan["ground"]))
+if plan.get("accent"): os.environ["SHORTS_ACCENT"] = ",".join(map(str, plan["accent"]))
 os.environ["THEME"] = plan.get("theme", "light")
 T = tempfile.mkdtemp()
 def frames(sec): return int(round(sec * FPS))
@@ -144,7 +149,7 @@ def phone_chain(dur, zoom=None, freeze=False, highlight=False, enter=None, hl_un
 
 # the scrim: transparent above the text zone, the ground colour from just above the phone's bottom edge
 from PIL import Image as _I
-_bg = (0x14, 0x18, 0x1F) if DARK else (0xF4, 0xF5, 0xF7)
+_bg = tuple(plan["ground"]) if plan.get("ground") else (0x14, 0x18, 0x1F) if DARK else (0xF4, 0xF5, 0xF7)   # the edition ground (v1.4.0)
 _sc = _I.new("RGBA", (W, H), _bg + (0,)); _px = _sc.load()
 if CAPTIONS_TOP:
     y0, y1 = CAP_OFF + CAP_H + 44, CAP_OFF + CAP_H - 6         # opaque through the strip, gone 44px below it: the zoomed UI reads
@@ -221,7 +226,7 @@ for i, b in enumerate(plan["beats"]):
             # a rounded accent frame with a faint fill around the line being spoken, in canvas px
             hlc = b["highlight"]; pad = hlc.get("pad", 10)
             boxes = hlc.get("src_boxes") or ([hlc["src_box"]] if "src_box" in hlc else None)
-            acc = (139, 152, 224) if DARK else (42, 63, 146)
+            acc = ACC
             img = _I.new("RGBA", (W, H), (0, 0, 0, 0)); dr = __import__("PIL.ImageDraw", fromlist=["Draw"]).Draw(img)
             if "src_span" in hlc:
                 # ONE outline around a sentence that starts mid-line and wraps: an L-shape from the first

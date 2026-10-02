@@ -117,9 +117,10 @@ if plan:
     outs = {s[2] for s in shape if s[2] is not None}
     cuts, t = [], plan["hook"]["dur"] if plan.get("hook") else 0.0
     for b in plan["beats"][:-1]: t += b["dur"]; cuts.append(round(t, 3))
-    off = [c for c in cuts if abs(c / 0.3 - round(c / 0.3)) > 0.02]
+    G = plan.get("grid") or 0.3                           # the bed's eighth (v1.4.0: 0.25 s at 120 BPM, 0.234 s at 128)
+    off = [c for c in cuts if abs(c / G - round(c / G)) > 0.02 * G / 0.3]
     ok18 = all(zs) and len({(s[0], s[1]) for s in shape}) == 1 and len(outs) <= 1 and not off
-    row("Q18", "Consistent motion (same push on every beat, cuts on the 0.3 s grid)", ok18,
+    row("Q18", f"Consistent motion (same push on every beat, cuts on the {G:.3g} s music grid)", ok18,
         f"{len(zs)} beats, push {sorted(shape, key=str)}; cuts {cuts}" + (f", off-grid {off}" if off else ""))
     # Q19 real scrolling: beats whose source footage scrolls (row-shift between frames) for >= 0.5 s
     n_scroll = 0; detail = []
@@ -130,6 +131,23 @@ if plan:
         moving = sum(1 for a, c in zip(fr, fr[1:]) if np.abs(a - c).mean() > 1.5) / 30
         detail.append(f"{moving:.1f}s"); n_scroll += moving >= 0.5
     row("Q19", "Live scroll segments >= 3", n_scroll >= 3, f"{n_scroll} beats scroll; moving time per beat {detail}")
+# Q43 (v1.4.0, owner 10/2: "Music finishes a bit early"): the bed sounds from frame 0 to the last 0.3 s with no gap, and
+# the end card still carries it. Read on the bed itself (music.wav: a gap under the voice would hide in the mix) and on the
+# final file's audio (the card, after the last word, where nothing else plays)
+def lv(f, ss=0.0, t=None):
+    a = ["ffmpeg", "-v", "error", "-ss", f"{ss:.3f}"] + (["-t", f"{t:.3f}"] if t else []) + ["-i", f, "-ac", "1", "-ar", "48000", "-f", "f32le", "-"]
+    return np.frombuffer(subprocess.run(a, capture_output=True).stdout, np.float32)
+if os.path.exists("music.wav"):
+    xb = lv("music.wav"); n = 4800; k = len(xb) // n
+    rb = 20 * np.log10(np.sqrt((xb[:k * n].reshape(k, n) ** 2).mean(1)) + 1e-9)
+    gaps = [round(i / 10, 1) for i in range(k) if (i + 1) / 10 <= dur - 0.3 and rb[i] < -45]
+    bed_len = len(xb) / 48000
+    card = float(os.environ.get("SHORT_CARD", "1.8")); cs = dur - card
+    def db(x): return 20 * np.log10(np.sqrt((x ** 2).mean()) + 1e-9) if len(x) else -180.0
+    card_db, tail_db = db(lv(mp4, cs + 0.1, max(0.1, card - 0.7))), db(lv(mp4, dur - 0.6, 0.3))
+    ok43 = not gaps and abs(bed_len - dur) <= 0.05 and card_db >= -32 and tail_db >= -42
+    row("Q43", "Music covers the whole Short (bed: no 100 ms gap to the last 0.3 s; end card and last 0.6-0.3 s audible)", ok43,
+        f"bed {bed_len:.2f}s of {dur:.2f}s, gaps {gaps[:5] or 'none'}; end card {card_db:.1f} dBFS, last 0.6-0.3 s {tail_db:.1f} dBFS")
 print("| # | Metric | Result | Measured |\n|---|---|---|---|")
 for r in rows: print(f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} |")
 for k, n in (("Q20", "Insight lines: why + sentiment, each with 2 sources"), ("Q11", "Every figure sourced"), ("Q12", "Pronunciation"), ("Q14", "Disclaimer visible"), ("Q15", "Brand"), ("Q16", "Proof frames viewed")):

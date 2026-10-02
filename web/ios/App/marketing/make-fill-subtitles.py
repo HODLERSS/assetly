@@ -28,7 +28,7 @@ LIT  = (233, 236, 241, 255) if DARK else (22, 24, 29, 255)      # spoken: the ca
 FONT = os.path.expanduser("~/Library/Fonts/assetly-brand/SchibstedGrotesk[wght].ttf")
 font = ImageFont.truetype(FONT, spec.get("size", 42)); font.set_variation_by_axes([500])
 EYEF = ImageFont.truetype(FONT, 24); EYEF.set_variation_by_axes([600])
-ACCENT = (139, 152, 224) if DARK else (42, 63, 146)
+ACCENT = (tuple(int(v) for v in os.environ["SHORTS_ACCENT"].split(",")) if os.environ.get("SHORTS_ACCENT") else (139, 152, 224) if DARK else (42, 63, 146))   # the edition theme (assetly-shorts v1.4.0)
 EYE_DROP = 10 if any(c.get("eyebrow") for c in spec["cues"]) else 0
 T = tempfile.mkdtemp()
 

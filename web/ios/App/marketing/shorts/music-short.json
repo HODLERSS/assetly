@@ -1,10 +1,20 @@
-{"bpm":100,"len":24.8,"loudness":-15,"fade_out":1.6,
- "stems":[
-  {"loop":"Forward Progress Bass","gain":-4,"from":0,"to":10},
-  {"loop":"Analog Clap Beat 01","gain":-8,"from":0,"to":4},
-  {"loop":"Forward Progress Synth","gain":-10,"from":1,"to":10},
-  {"loop":"Pastel Colors Beat 02","gain":-9,"from":4,"to":8},
-  {"loop":"Forward Progress Guitar","gain":-13,"from":6,"to":10},
-  {"loop":"Analog Clap Beat 01","gain":-8,"from":8,"to":10}
- ],
- "oneshots":[]}
+{"_doc": "assetly-shorts v1.4.0 (owner 10/2: music finished early, make it more engaging). One bed per edition theme (day.json 'theme', default us). Positions in bars, or 'card' (the end card's start on the nearest beat) / 'end' (the last sample): the bed covers the whole Short at any length and lifts on the end card, then fades out ending on the last frame. US = Indie Disco 'Disco Pop' (one family, one key) on a funk beat at 120 BPM; Korea = Electro House at 128 BPM, its own sound (the full-mix loop carries a speech-band dip; no snare roll into the card: it masked the Ask answer, 10/2 Q28 'chips -> apps'). The cut grid follows the bed (an eighth: 0.25 s / 0.234 s).",
+ "us": {"bpm": 120, "loudness": -15, "fade_out": 1.0, "cover": true, "phase": "song", "duck_sc": 1.2,
+  "stems": [
+   {"loop": "Electric Funk Beat", "gain": -9, "from": 0, "to": "end"},
+   {"loop": "Disco Pop Bass", "gain": -5, "from": 0, "to": "end"},
+   {"loop": "Disco Pop Rhythm Guitar", "gain": -13, "from": 1, "to": "end"},
+   {"loop": "Disco Pop Synth Stabs", "gain": -13, "from": 4, "to": "end"},
+   {"loop": "Disco Pop Synth Pad", "gain": -12, "from": "card", "to": "end"},
+   {"loop": "Disco Pop Lead Guitar", "gain": -13, "from": "card", "to": "end"}
+  ],
+  "oneshots": []},
+ "korea": {"bpm": 128, "loudness": -15, "fade_out": 1.0, "cover": true, "phase": "song", "duck_sc": 1.2,
+  "stems": [
+   {"loop": "Four Four Beat", "gain": -9, "from": 0, "to": "end"},
+   {"loop": "Classic Anthem Music", "gain": -14, "from": 0, "to": "end", "af": "equalizer=f=1800:t=q:w=1.2:g=-6,equalizer=f=3500:t=q:w=1:g=-4"},
+   {"loop": "Electro Clap Topper", "gain": -13, "from": 4, "to": "end"},
+   {"loop": "Electro Topper 08", "gain": -13, "from": "card", "to": "end"}
+  ],
+  "oneshots": []}
+}

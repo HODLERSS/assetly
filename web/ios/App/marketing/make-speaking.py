@@ -46,7 +46,7 @@ for i in range(1, nfr):
 speaking = np.convolve((sm.mean(1) > 0.12).astype(float), np.ones(6) / 6, mode="same")   # presence, softened
 
 W, H = 160, 44; PW, GAP, MINH, MAXH = 10, 12, 6, 40
-INK = (139, 152, 224) if theme == "dark" else (42, 63, 146)
+INK = (tuple(int(v) for v in os.environ["SHORTS_ACCENT"].split(",")) if os.environ.get("SHORTS_ACCENT") else (139, 152, 224) if theme == "dark" else (42, 63, 146))   # the edition theme (assetly-shorts v1.4.0)
 x0 = (W - (len(BANDS) * PW + (len(BANDS) - 1) * GAP)) // 2
 for i in range(nfr):
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0)); d = ImageDraw.Draw(img)

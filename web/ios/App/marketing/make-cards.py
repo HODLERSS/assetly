@@ -15,10 +15,11 @@ import os, sys
 from PIL import Image, ImageDraw, ImageFont
 
 DARK = os.environ.get("THEME", "light") == "dark"
-BG    = (15, 18, 22)   if DARK else (244, 245, 247)
+# SHORTS_ACCENT / SHORTS_BG "r,g,b": the edition theme (assetly-shorts v1.4.0, owner 10/2: the Korea Shorts in their own colour)
+BG    = (tuple(int(v) for v in os.environ["SHORTS_BG"].split(",")) if os.environ.get("SHORTS_BG") else (15, 18, 22) if DARK else (244, 245, 247))
 INK   = (233, 236, 241) if DARK else (22, 24, 29)
 MUTED = (155, 163, 176) if DARK else (93, 99, 110)
-ACCENT = (139, 152, 224) if DARK else (42, 63, 146)
+ACCENT = (tuple(int(v) for v in os.environ["SHORTS_ACCENT"].split(",")) if os.environ.get("SHORTS_ACCENT") else (139, 152, 224) if DARK else (42, 63, 146))
 FONTS = os.path.expanduser("~/Library/Fonts/assetly-brand")
 
 def grotesk(size, weight=700):

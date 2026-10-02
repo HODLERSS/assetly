@@ -9,7 +9,7 @@ Voices (owner, 10/1): every line in the app's own brief voice (the Minjae Eleven
 voice-lines.py uses only when ElevenLabs fails (SHORTS_VOICE=mixed restores that casting at 1.12x).
 Beats: each item on its holding's position page (1D chart, then the scroll to the intelligence and the position), a macro item on the brief (then News), the portfolio line on Home (total value, Today, All time,
 scrolling to the movers), the question on the Ask composer as it is typed, the answer on the real answer, held into
-the end card. One camera language: the same 1.3x push on every beat, cuts on the 0.3 s music grid.
+the end card. One camera language: the same 1.3x push on every beat, cuts on the bed's eighth-note grid (v1.4.0: 0.25 s US, 0.234 s Korea).
 """
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -68,7 +68,7 @@ def corner_block(path, lines):
 
 def chip_png(path, name, label, pct, asof):
     """The labelled extended-hours quote ('PRE-MARKET' / 'IBM +5.8%' / '8:47 AM ET') in the top-right corner block."""
-    acc, ink, muted = (139, 152, 224), (233, 236, 241), (155, 163, 176)
+    acc, ink, muted = ACCENT, (233, 236, 241), (155, 163, 176)
     val = ("+" if pct >= 0 else "\u2212") + f"{abs(pct):.1f}%"
     corner_block(path, [(label, 24, acc), (f"{name} {val}", 34, (88, 196, 140) if pct >= 0 else (232, 106, 106)), (asof, 24, muted)])
     return {"label": label, "name": name, "value": val, "asof": asof, "text": f"{label} {name} {val} {asof}"}
@@ -83,7 +83,7 @@ def tokens(text):
 def tag_png(path, text):
     """A time tag for a beat recorded at another moment ('ASK RECORDED' / '11:26 AM ET'), in the top-right corner block."""
     head, _, when = text.rpartition(" ") if False else (text.split(" ", 2)[0] + " " + text.split(" ", 2)[1], "", text.split(" ", 2)[2])
-    corner_block(path, [(head, 24, (139, 152, 224)), (when, 24, (233, 236, 241))])
+    corner_block(path, [(head, 24, ACCENT), (when, 24, (233, 236, 241))])
     return {"png": path, "text": text}
 
 
@@ -129,6 +129,13 @@ FOLLOW = "Follow for the open, midday and close"     # the end card's one CTA: t
 FOLLOW_KR = "Follow for Korea's chips, 3 times a day"   # v1.2.0: open, midday and close every KRX trading day; "three"
 # spelled out ran to x 974 on the centred end card, past the 950 safe edge (10/2 korea-midday Q10): <= ~40 characters
 if KR: FOLLOW = FOLLOW_KR
+# the edition theme (v1.4.0, owner 10/2: "make korea one a bit different from us one in color so people can understand the
+# difference between the two visually more clearly"): the US Shorts keep the app's indigo on the cool slate ground; the Korea
+# Shorts carry amber on a warm ground (cover kicker + hero rule, eyebrows, speaking pills, the answer outline, corner chips,
+# end-card follow line + CTA pill). Neither hue is the gain green or the loss red; indigo 6.4:1, amber 9.3:1 on their ground.
+ACCENT_US, GROUND_US = (139, 152, 224), (20, 24, 31)
+ACCENT_KR, GROUND_KR = (242, 178, 76), (29, 23, 17)
+ACCENT, GROUND = (ACCENT_KR, GROUND_KR) if KR else (ACCENT_US, GROUND_US)
 HERO_MIN = 1.0                                       # a smaller move is not a thumbnail hook: the headline cover stays
 BAIT = {"#viral", "#fyp", "#foryou", "#foryoupage", "#trending", "#explore", "#viralshorts", "#shortsfeed"}
 
@@ -328,7 +335,8 @@ def main():
         day = {"date": DATE, "slug": f"{DATE}-{ED}", "demo": 0, "edition": ED,
                "hook": "|".join(story["cover"]), "hook_kicker": f"{LABEL[ED]} · {MON[int(m) - 1]} {int(d)}", "hook_foot": "Assetly",
                "hook_dur": 1.5, "follow": FOLLOW, "stamp": stamp, "script": " ".join(ln["say"] for ln in lines), "grid": 0.3, "card": 1.8, "len_range": [20, 30],
-               "motion": {"to": 1.15, "in": 0.7, "out": 0.6}, "lines": lines, "beats": beats}
+               "motion": {"to": 1.15, "in": 0.7, "out": 0.6}, "lines": lines, "beats": beats,
+               "accent": list(ACCENT), "ground": list(GROUND), "theme": "korea" if KR else "us"}
         if hero:
             day["hook_hero"] = "|".join([hero["name"], hero["fig"], hero["label"], hero["dir"]]); day["hero"] = hero
             log(f"cover hero: {hero['name']} {hero['fig']} {hero['label']} ({hero['src']})")
