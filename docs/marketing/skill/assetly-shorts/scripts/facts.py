@@ -219,10 +219,15 @@ def main_ask():
             # row could be yesterday's KRX move before the first bar, and the second feed's alone is one source)
             if h["day_pct"] is not None and h["day_pct_nasdaq"] is not None and agree(h["day_pct"], h["day_pct_nasdaq"], 0.35):
                 cands_pct += [abs(h["day_pct"]), abs(h["day_pct_nasdaq"])]
+            # mid-session KRX (10/2 korea-midday: Hanmi 1M app +28.34 vs Daum +28.10, refused): the app's price row and
+            # Daum's trade are minutes apart while both histories agree on the base; the measured gap between the two
+            # day moves (same previous close) is that price lag, so a window may differ by it, scaled, capped at 0.35
+            lag = min(0.35, abs(h["day_pct"] - h["day_pct_nasdaq"])) if KRM.is_kr(h["symbol"]) and h["day_pct"] is not None \
+                and h["day_pct_nasdaq"] is not None and KRM.krx_open_now() else 0
             for k, v in h.items():
                 if k.endswith("_usdA") and v is not None and h.get(k[:-1] + "N") is not None and abs(v - h[k[:-1] + "N"]) <= max(3, 0.01 * abs(v)):
                     cands_usd += [abs(v), abs(h[k[:-1] + "N"])]
-                if k.endswith("_app") and v is not None and h.get(k[:-4] + "_nasdaq") is not None and agree(v, h[k[:-4] + "_nasdaq"], 0.15):
+                if k.endswith("_app") and v is not None and h.get(k[:-4] + "_nasdaq") is not None and agree(v, h[k[:-4] + "_nasdaq"], 0.15 + lag * (1 + abs(v) / 100)):
                     cands_pct += [abs(v), abs(h[k[:-4] + "_nasdaq"])]
         for c in f["checks"]:
             if c["figure"] == "total": cands_usd += [c["app"], c["nasdaq"]]
