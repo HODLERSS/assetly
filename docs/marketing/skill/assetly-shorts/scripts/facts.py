@@ -414,9 +414,9 @@ def main_ask():
             else:
                 mult = 1e3 if re.search(r"[kK]$", tok) else 1e6 if re.search(r"[mM]$", tok) else 1e9 if re.search(r"[bB]$", tok) else 1
                 v *= mult
-                # (per-figure typing by the bullet's words, kinds() above, is built but OFF until the owner approves it:
-                # SHORTS_ASK_TYPED=1 turns it on; by default every kind is one pool, as before)
-                kd = kinds(m.start()) if os.environ.get("SHORTS_ASK_TYPED") == "1" else {"day", "win", "level"}
+                # per-figure typing by the bullet's words (kinds() above; owner-approved 10/2, on by default):
+                # SHORTS_ASK_TYPED=0 falls back to one pool of every kind
+                kd = kinds(m.start()) if os.environ.get("SHORTS_ASK_TYPED", "1") != "0" else {"day", "win", "level"}
                 pool = (cands_usd if "level" in kd else []) + (day_c if "day" in kd else []) + (win_c if "win" in kd else [])
                 ok = any(abs(v - c) <= max(3, 0.006 * c) for c in pool)
                 if not ok and live_usd and "day" in kd:

@@ -59,9 +59,10 @@ the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 5
   feeds) x shares x the previous close both feeds agree on. On the 10/2 midday take: book x 3.79% = $9,182 (shown
   $9,181), AMD 3.7% + Nvidia 2.6% = $2,751 (shown $2.8k): 11/11 verified; a planted "$3.4k" still refuses. Band: 2% or
   $25 plus the shown rounding.
-- **Ask $ typing per figure: built, OFF** (awaiting the owner): `SHORTS_ASK_TYPED=1` checks a dollar figure only against
-  the kinds its bullet speaks of (day / window / value); a planted "+$9,900" then refuses instead of matching AMD's 3-month
-  $9,933. Default = one pool, as before. On by default: the answer-moment readings in both conventions (the move on
+- **Ask $ typed per figure** (owner-approved 10/2, on by default; `SHORTS_ASK_TYPED=0` = one pool as before): a dollar
+  figure is checked only against the kinds its bullet speaks of (day / window / value); a planted "+$9,900" now refuses
+  instead of matching AMD's 3-month $9,933. Replays: 10/2 midday 11/11, korea-close 33/33, 10/1 close 6/6, 10/2 preopen
+  4/4, korea-open 5/5; kinds() unit cases 7/7. On by default: the answer-moment readings in both conventions (the move on
   yesterday's value, and the app Ask's own "today's value x day %": "Applied Digital (+10%) lifts $2.5k" = $25.5k x 10%)
   and case-blind names ("Nvidia" for NVIDIA). 10/2 midday take: 11/11 verified.
 - **An item whose page does not show its day move goes to Home's Movers row** (10/2 midday: APLD +10.6% on both feeds, its
