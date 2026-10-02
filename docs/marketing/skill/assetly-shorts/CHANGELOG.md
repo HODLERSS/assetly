@@ -52,6 +52,13 @@ the real Ask answer outlined, never advice, Minjae's voice, 20-30 s, titles <= 5
   on (newest 140) instead of the whole prompt (MARA cut it at 12,000 tokens twice). The storyline fallback cleans verified
   wording before speaking it (banned words swapped: guidance -> outlook ...; an extended-hours claim with no fresh chip
   loses its premarket / after-hours words and figure), so verified items do not refuse on wording.
+- **Ask dollar figures verified at the answer's moment** (10/2 midday refused on "+$9,181" / "$2.8k"; 10/1 close "$2,187",
+  midday "$4,069"; each time the 20-minute budget had no room for a retake): facts.py --ask re-derives the portfolio's day
+  dollars at take time from the account's holdings x Nasdaq + CNBC (per holding, the book, each bullet's named holdings in
+  order; the two feeds must agree per holding), and at the answer's own moment: each shown % (within 1 pt of the live
+  feeds) x shares x the previous close both feeds agree on. On the 10/2 midday take: book x 3.79% = $9,182 (shown
+  $9,181), AMD 3.7% + Nvidia 2.6% = $2,751 (shown $2.8k): 11/11 verified; a planted "$3.4k" still refuses. Band: 2% or
+  $25 plus the shown rounding.
 - Schedule (owner 10/2): midday runs 9:00 CT (prestage 8:30), 30 minutes after the open.
 - **TikTok by API** ("make sure you can update tiktok too as you do in Youtube"): `app/scripts/tiktok/auth.py` (Login Kit
   for Desktop, hex-S256 PKCE, loopback `http://127.0.0.1:53683/callback/`, token file chmod 600, no secret printed);

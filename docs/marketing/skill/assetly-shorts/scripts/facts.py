@@ -16,7 +16,7 @@ With --ask (after the take): every $ and % figure in the on-screen Ask answer mu
 import json, os, re, sys
 from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from lib import ET, Stage, _num, agree, get, jdump, jload, log, nasdaq, rest, stale_moves
+from lib import ET, Stage, _num, agree, cnbc, get, jdump, jload, log, nasdaq, rest, stale_moves
 import kr as KRM
 
 ED, W = sys.argv[1], sys.argv[2]
@@ -301,6 +301,75 @@ def main_ask():
                     cands_usd += [sa, sb]; cands_pct += [100 * sa / tot, 100 * sb / tot]
                 if cash and re.search(r"\bcash\b", seg, re.I):
                     cands_usd += [sa + cash, sb + cash]; cands_pct += [100 * (sa + cash) / tot, 100 * (sb + cash) / tot]
+        # v1.4.0 (10/2 midday refused on "+$9,181" and "$2.8k"; 10/1 close "$2,187", midday "$4,069"): the answer's portfolio
+        # DOLLAR moves are the app's own arithmetic on its holdings at the moment it answered, minutes after the facts
+        # stage. They are re-derived at take time from the account's holdings x two quote feeds (Nasdaq and CNBC: shares x
+        # the day's change per share), per holding, for the whole book, and for each bullet's named holdings in its order,
+        # and the app's own rows (value x day %) give the third reading. A figure stands when it is within the live band of
+        # a reading that both feeds agree on (2% or $25, plus the shown rounding: "$2.8k" covers 2,750-2,850).
+        live_usd = []
+        if not KR:
+            try:
+                uid = jload(os.path.join(W, "account.json"))["uid"]
+                prow = [r for r in rest(W, f"portfolio?select=symbol,qty,value,change_pct&user_id=eq.{uid}") if not str(r["symbol"]).startswith("$")]
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=8) as ex:
+                    nq = dict(zip([r["symbol"] for r in prow], ex.map(lambda r: nasdaq(r["symbol"]) or {}, prow)))
+                cq = cnbc([r["symbol"] for r in prow])
+                day = {}
+                for r in prow:
+                    s_, q = r["symbol"], float(r["qty"])
+                    a = float(r["value"]) * float(r["change_pct"]) / (100 + float(r["change_pct"])) if r.get("change_pct") is not None else None
+                    n_ = q * nq[s_]["chg"] if (nq.get(s_) or {}).get("chg") is not None else None
+                    c_ = q * cq[s_]["chg"] if (cq.get(s_) or {}).get("chg") is not None else None
+                    # the two feeds must agree on the holding's day $ (live: within 2% or $10) before any reading counts
+                    if n_ is not None and c_ is not None and abs(n_ - c_) <= max(10, 0.02 * abs(n_)):
+                        day[s_] = [x for x in (a, n_, c_) if x is not None]
+                if day and len(day) == len(prow):
+                    for k in range(3):
+                        tot_k = sum(v[min(k, len(v) - 1)] for v in day.values()); live_usd.append(abs(tot_k))
+                for v in day.values(): live_usd += [abs(x) for x in v]
+                names = {r["symbol"]: {r["symbol"], (f.get("names") or {}).get(r["symbol"], "")} for r in prow}
+                for seg in re.split(r"\u2022|\n", ans):
+                    hit = sorted((min(m.start() for k in ks if k and len(k) >= 2 for m in re.finditer(r"(?<![A-Za-z])" + re.escape(k) + r"(?![a-z])", seg)), s_)
+                                 for s_, ks in names.items() if s_ in day and any(re.search(r"(?<![A-Za-z])" + re.escape(k) + r"(?![a-z])", seg) for k in ks if k and len(k) >= 2))
+                    if len(hit) < 2: continue
+                    for k in range(3):
+                        run_ = 0.0
+                        for _, s_ in hit:
+                            run_ += day[s_][min(k, len(day[s_]) - 1)]; live_usd.append(abs(run_))
+                # ... and at the answer's OWN moment: the percentages it shows next to each name (or for the whole book) times
+                # the shares x the previous close both feeds agree on. Prices move between the answer and this check (10/2
+                # midday: +3.2% in 6 min), the previous close does not: "+$9,181 (+3.79%)" = book x 3.79% = $9,182; "AMD
+                # (+3.7%) and Nvidia (+2.6%) contribute $2.8k" = $2,751. Each shown % must sit within 1 point of the live
+                # feeds' day move for that name (or the book's), so it is the app's quote, not a free number
+                prev = {}
+                for r in prow:
+                    s_ = r["symbol"]; n0, c0 = nq.get(s_) or {}, cq.get(s_) or {}
+                    pn = n0["last"] - n0["chg"] if n0.get("last") is not None and n0.get("chg") is not None else None
+                    pc = c0.get("prev")
+                    if pn and pc and abs(pn / pc - 1) <= 0.002: prev[s_] = float(r["qty"]) * pc
+                live_pct = {r["symbol"]: (cq.get(r["symbol"]) or {}).get("pct") for r in prow}
+                book_pct = 100 * sum(day[s_][-1] for s_ in day) / sum(prev.values()) if prev and len(day) == len(prow) else None
+                for seg in re.split(r"\u2022|\n", ans):
+                    named = []
+                    for s_, ks in names.items():
+                        for k in ks:
+                            m = re.search(r"(?<![A-Za-z])" + re.escape(k) + r"(?![a-z])[^%$]{0,12}?\(?([+\-\u2212\u2011]?\d+(?:\.\d+)?)%", seg) if k and len(k) >= 2 else None
+                            if m and s_ in prev:
+                                pct = float(m.group(1).replace("\u2212", "-").replace("\u2011", "-"))
+                                if live_pct.get(s_) is not None and abs(abs(pct) - abs(live_pct[s_])) <= 1.0: named.append((m.start(), s_, pct)); break
+                    if named:
+                        run_ = 0.0
+                        for _, s_, pct in sorted(named):
+                            run_ += prev[s_] * pct / 100; live_usd.append(abs(run_))
+                    elif book_pct is not None and len(prev) == len(prow):
+                        for m in re.finditer(r"([+\-\u2212]?\d+(?:\.\d+)?)%", seg):
+                            pct = abs(float(m.group(1).replace("\u2212", "-")))
+                            if abs(pct - abs(book_pct)) <= 1.0: live_usd.append(sum(prev.values()) * pct / 100)
+                log(f"ask: take-time day $ from holdings x Nasdaq + CNBC: {len(day)}/{len(prow)} holdings agree, {len(live_usd)} readings")
+            except Exception as e:                       # noqa: BLE001 (the checks below still run)
+                log(f"ask: take-time day $ recompute failed: {str(e)[:100]}")
         heads = [{"publisher": h["publisher"], "title": h["title"]} for h in jload(os.path.join(W, "research-data.json"))["headlines"]]
         # plus the app's own stored news for the holdings (title + summary, many publishers): the same pool Ask read
         syms = ",".join(h["symbol"] for h in f["holdings"])
@@ -321,6 +390,11 @@ def main_ask():
                 mult = 1e3 if re.search(r"[kK]$", tok) else 1e6 if re.search(r"[mM]$", tok) else 1e9 if re.search(r"[bB]$", tok) else 1
                 v *= mult
                 ok = any(abs(v - c) <= max(3, 0.006 * c) for c in cands_usd)
+                if not ok and live_usd:
+                    # the shown rounding ("$2.8k": half of 0.1k) plus the live band
+                    num = tok.split()[0].rstrip("kKmMbB"); dec = len(num.split(".")[1]) if "." in num else 0
+                    half = 0.5 * 10 ** -dec * mult if mult > 1 else 0.5
+                    ok = any(abs(v - c) <= half + max(25, 0.02 * c) for c in live_usd)
             if not ok:
                 # a company figure, not a portfolio one ("Micron guided ~$61.5B"): two publishers' headlines must carry it
                 core = re.sub(r"[^\d.]", "", tok.split()[0])
