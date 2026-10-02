@@ -3849,7 +3849,6 @@ export function fixBookDayClaims(text: string, day: { usd: number; pct: number }
  *  move is the PRIOR value x % ($2,319, Home's figure). A day-dollar figure stated right after ONE named holding is set
  *  to that holding's day $. A position value, a longer window, cost basis or dividends are never touched. */
 export function fixHoldingDayDollars(text: string, rows: { names: string[]; dayUsd: number | null; valueUsd: number }[]): string {
-  const fmt = (v: number, sg: string, k: string | undefined) => `${sg ? (v >= 0 ? "+" : "−") : ""}$${k ? (Math.abs(v) / 1000).toFixed(1) + k.trim() : Math.round(Math.abs(v)).toLocaleString("en-US")}`;
   return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => {
     if (/\b(?:week|month|quarter|year|YTD|since|all[- ]time|bought|cost|basis|dividends?|income|worth|valued|position value)\b|이번 주|한 달|배당/i.test(sen)) return sen;
     if (!/\b(?:today|on the day|so far|session|day's|lifts?|lifted|adds?|added|drags?|dragged|contribut\w*|gains?|gained|loses?|lost)\b|오늘/i.test(sen)) return sen;
@@ -3858,24 +3857,45 @@ export function fixHoldingDayDollars(text: string, rows: { names: string[]; dayU
     // one holding named: its first dollar figure within 40 characters; several (10/2 "APLD (+$1,049) and AVGO (+$966)"):
     // only a figure ATTACHED to each name ("Name (+$X", "Name +$X", "Name (+5.1%, +$X"), so no figure is given to the wrong name
     let out = sen;
-    for (const row of named) out = fixOne(out, row, named.length === 1 ? 40 : 12);
+    for (const row of named) out = fixAttachedDollar(out, row.names, row.dayUsd!, row.valueUsd, named.length === 1 ? 40 : 12);
     return out;
   }).join(" "));
-  function fixOne(sen: string, row: { names: string[]; dayUsd: number | null; valueUsd: number }, gap: number): string {
-    const want = row.dayUsd!;
-    for (const nm of new Set(row.names)) {
-      if (!nm || nm.length < 2) continue;
-      const re = new RegExp(`((?:^|[^A-Za-z0-9])${esc(nm)}(?![A-Za-z0-9])[^$;]{0,${gap}}?)([+\u2212-]?)\\$(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)(\\s?[Kk](?![a-z]))?`);
-      const m = re.exec(sen);
-      if (!m) continue;
-      const v = Number(m[3].replace(/,/g, "")) * (m[4] ? 1e3 : 1);
-      if (Math.abs(v - row.valueUsd) <= row.valueUsd * 0.03) return sen;          // the position's value, not a move
-      // rounding only: "$2.3k" is within $50, a full figure within 2% (the value-x-% error is the day % itself, 10% at +10%)
-      if (Math.abs(v - Math.abs(want)) <= (m[4] ? 50 : Math.max(10, Math.abs(want) * 0.02))) return sen;
-      return sen.slice(0, m.index) + m[1] + fmt(want, m[2], m[4]) + sen.slice(m.index + m[0].length);
+}
+
+/** 10/2 close Ask: "1W: ... TER (+12.7%, +$1,529) and HPE (+10.2%, +$976)" where the week's dollar moves at today's size
+ *  (windowUsd, the stat line's own figures) were $2,330 and $1,312; windowDollarMismatches missed them (its gap took no
+ *  digits). A holding's dollar figure in a sentence about ONE window is set to that window's move, in place. */
+export function fixHoldingWindowDollars(text: string, rows: PerfRow[], defaultWindow: number | null = null): string {
+  return perLine(String(text ?? ""), (line) => splitSentences(line).map((sen) => {
+    const ws = questionWindows(sen);
+    const w = ws.length === 1 ? ws[0] : ws.length ? null : defaultWindow;
+    if (w === null) return sen;
+    if (/\b(?:today|on the day|day's|since you bought|cost|basis|dividends?|income|worth|valued|position value)\b|오늘|배당/i.test(sen)) return sen;
+    const named = rows.filter((r) => typeof r.pct[w] === "number" && [r.symbol, ...r.names].some((n) => n && n.length >= 2 && nameIn(sen, n)));
+    let out = sen;
+    for (const r of named) {
+      const want = windowUsd(r.usd, r.pct[w]);
+      if (want !== null) out = fixAttachedDollar(out, [r.symbol, ...r.names], want, r.usd, named.length === 1 ? 40 : 12);
     }
-    return sen;
+    return out;
+  }).join(" "));
+}
+
+/** The first dollar figure attached to one of `names` (within `gap` characters, no other $ between) set to `want`, unless it
+ *  is the position's value or already right within rounding ("$2.3k" within $50, a full figure within 2%). */
+function fixAttachedDollar(sen: string, names: string[], want: number, valueUsd: number, gap: number): string {
+  const fmt = (v: number, sg: string, k: string | undefined) => `${sg ? (v >= 0 ? "+" : "−") : ""}$${k ? (Math.abs(v) / 1000).toFixed(1) + k.trim() : Math.round(Math.abs(v)).toLocaleString("en-US")}`;
+  for (const nm of new Set(names)) {
+    if (!nm || nm.length < 2) continue;
+    const re = new RegExp(`((?:^|[^A-Za-z0-9])${esc(nm)}(?![A-Za-z0-9])[^$;]{0,${gap}}?)([+\u2212-]?)\\$(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)(\\s?[Kk](?![a-z]))?`);
+    const m = re.exec(sen);
+    if (!m) continue;
+    const v = Number(m[3].replace(/,/g, "")) * (m[4] ? 1e3 : 1);
+    if (Math.abs(v - valueUsd) <= valueUsd * 0.03) return sen;          // the position's value, not a move
+    if (Math.abs(v - Math.abs(want)) <= (m[4] ? 50 : Math.max(10, Math.abs(want) * 0.02))) return sen;
+    return sen.slice(0, m.index) + m[1] + fmt(want, m[2], m[4]) + sen.slice(m.index + m[0].length);
   }
+  return sen;
 }
 
 /** "NVDA's current price $224.58" (Thursday's close; Friday's close $225.07 is the current price): a current-price claim

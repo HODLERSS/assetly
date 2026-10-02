@@ -22,3 +22,16 @@ Deno.test("several holdings in one sentence: each attached figure is set to its 
   assertEquals(fixHoldingDayDollars("APLD (+5.1%, +$1,049) and AVGO (+2.7%, +$966) lead today.", rows2),
     "APLD (+5.1%, +$1,049) and AVGO (+2.7%, +$943) lead today.");
 });
+
+Deno.test("window dollars: each holding's figure in a one-window sentence is set to that window's move", async () => {
+  const { fixHoldingWindowDollars } = await import("./intel.ts");
+  const rows = [
+    { symbol: "TER", label: "Teradyne", names: ["Teradyne", "TER"], usd: 20656, pct: { 7: 12.72, 30: 31.4 } as Record<number, number | null>, unknown: false },
+    { symbol: "HPE", label: "HPE", names: ["HPE"], usd: 14179, pct: { 7: 10.2, 30: 33.8 } as Record<number, number | null>, unknown: false },
+  ];
+  assertEquals(fixHoldingWindowDollars("1W: TER (+12.7%, +$1,529) and HPE (+10.2%, +$976) did the heavy lifting.", rows, 7),
+    "1W: TER (+12.7%, +$2,331) and HPE (+10.2%, +$1,312) did the heavy lifting.");
+  const keep = "TER (+12.7% wk, +31.4% mo) and HPE led.";
+  assertEquals(fixHoldingWindowDollars(keep, rows, 7), keep);                                   // two windows named: untouched
+  assertEquals(fixHoldingWindowDollars("TER is worth $20,656.", rows, 7), "TER is worth $20,656."); // a value
+});
