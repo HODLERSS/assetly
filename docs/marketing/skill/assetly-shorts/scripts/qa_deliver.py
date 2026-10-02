@@ -270,7 +270,9 @@ def main():
             for frac in (0.5, 0.9):
                 # never inside the 0.4 s slide to the next beat (10/1 v1.3.0 test: a 1.5 s beat sampled at 1.35 s read the
                 # sliding phone as a 74 px drop): the latest frame of a beat is 0.25 s before its cut
-                at = t + (min(bt["dur"] * frac, bt["dur"] - 0.25) if i < len(tm["beats"]) - 1 else bt["dur"] * frac)
+                # ... and the last beat never inside the 0.6 s cross-fade to the end card (10/2 korea-close: a 3.3 s last beat
+                # sampled at 90% read the dimming phone as top 1393)
+                at = t + min(bt["dur"] * frac, bt["dur"] - (0.25 if i < len(tm["beats"]) - 1 else 0.75))
                 png = os.path.join(B, f"q37_b{i + 1}_{frac}.png")
                 run("ffmpeg", "-v", "error", "-y", "-ss", f"{at:.2f}", "-i", final, "-frames:v", "1", png)
                 if not os.path.exists(png): continue

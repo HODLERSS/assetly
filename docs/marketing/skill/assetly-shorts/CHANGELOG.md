@@ -68,6 +68,8 @@ start, or refuses. No check was removed or loosened to get there.
   when both feeds carry it for this session and agree (an app-only or second-feed-only day move no longer verifies).
   Tested: Oct-1 15:30 KST row at 9:10 KST Oct 2 = stale, Oct-2 9:05 row = current; a fake stale Yahoo chart -> refused;
   the live 10:50 KST quote -> both feeds at 10:13.
+- Q37 never samples the last beat inside the 0.6 s cross-fade to the end card (10/2 korea-close: 90% of a 3.3 s beat read the
+  dimming phone as top 1393 and refused a finished Short; delivered on a QA re-run).
 - Ask (Korea): a bullet that lists holdings and their total ("Foundry/fab: TSM $36,736, Samsung $8,177 = $44,913 (24.8%)",
   "Non-chip: GOOGL, MSFT, cash $7,500 = $48,666") verifies against the running sum of THAT bullet's named holdings (each on
   two feeds) plus the cash row when it names cash; never an arbitrary subset. 10/2 korea-close had refused two takes on it.
