@@ -29,6 +29,8 @@ import { NewsScreen } from "./screens/News";
 import { SettingsScreen } from "./screens/Settings";
 import { ASK_FIRST_QUESTION, AskScreen } from "./screens/Ask";
 import { Icon } from "./components/Icon";
+import { captureRef, claimRef } from "./lib/signupRef";
+captureRef();   // first-touch ?ref= tag (flyer / channel links), saved on the profile after sign-in
 
 export type Tab = "home" | "news" | "ask" | "settings";
 export type View =
@@ -274,7 +276,7 @@ export function App({ api: rawApi = defaultApi }: { api?: Api }) {
       } catch { /* offline or blocked: run what we have */ }
     })();
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true); });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => { setSession(s); void claimRef(!!s); });
     return () => sub.subscription.unsubscribe();
   }, []);
 
