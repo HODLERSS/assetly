@@ -25,6 +25,8 @@ The owner's verdict on the Oct 4 drafts: "you end with asking question, but no a
 3. **A verdict with both branches:** "If X, the bet is working. If Y, that's your warning sign." Both branches must be observable in public data.
 4. **Portfolio stories end with an action the viewer can take today**, framed as a check, never advice: "Add up everything tied to one theme. If it's most of your portfolio, one slowdown hits it all. Then ask what still holds up if AI spending pauses."
 
+5. **Land on the constructive side** (owner, Oct 4: "make the conclusion a bit more positive ... S&P 500 feels like talking about risks only"). Name the risk, then finish on the upside or the winning move, still factual and never a promise: "The upside: you already own the AI boom, without picking a single stock" / "Know your number, and you ride the AI boom on your terms"; "Size it so you can hold through the drops: that's how investors keep their winners"; "If memory prices crack, profits can shrink. But if margins hold as new factories open, this AI boom has legs"; a bubble test that ends on the evidence so far ("Google Cloud's profit more than tripled: a boom signal"). Order matters: risk first, upside last. The Bottom-line card then shows THE RISK first and the positive panel on the "But" word.
+
 Visuals for the ending: a WHAT TO WATCH list whose rows light up as each item is spoken; then a BOTTOM LINE card with WORKING IF (green #7BE0A6) and WARNING SIGN (#FF8F7E) panels, the second revealed on its spoken word. Keep the takeaway (e.g. "9 tickers can still be 1 bet") as its own beat before the check. No buy/sell language, no price targets; label inferences ("a target, not a result", "investment test, not a forecast").
 
 ## Retention craft (owner, Oct 4: aim for broad reach)
@@ -35,7 +37,7 @@ Research what is winning first: scan YouTube Shorts search results (Shorts filte
 - **A picture change every ~1.5–2.5 s, cut on spoken words:** names light up as they are said, a figure lands on its word, a list row lights on "One"/"Two". This is not pan/zoom (still banned); each state is a still image.
 - **Bar reveals** of 0.15 s (three 0.05-s frames at 25/50/75%) on chart scenes.
 - **Series continuity:** "Follow the AI money · 2/4" in the header, and endings that point at the next or previous episode (the Nvidia episode ends on the budgets the Google episode is about).
-- Thumbnails: dark typography with a curiosity question plus the figure ("Is Google burning cash? −$5.9B"); readable at 180×320.
+- Thumbnails: the hero figure auto-shrinks to fit x90-990 (`thumb()` since Oct 4: "3 numbers" was cut off); check the right 40 px of every thumbnail are empty. Dark typography with a curiosity question plus the figure ("Is Google burning cash? −$5.9B"); readable at 180×320.
 
 Reference implementation (Oct 4): `docs/marketing/shorts/2026-10-05-ai-money/`.
 - `design.py`: palette, `Scene`, `bars()` (zero baseline, centred labels, GROW reveal frames), `watch()` (what-to-watch rows lit by count), `verdict()` (working-if / warning-sign card), `thumb()`, plus four episodes.

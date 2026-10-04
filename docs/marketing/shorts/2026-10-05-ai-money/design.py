@@ -105,7 +105,9 @@ def thumb(path, top, big, big_col, sub1, sub2, eyebrow):
     T(90, 470, eyebrow, 40, 700, ACC)
     y = 560
     for ln in top: T(90, y, ln, 118, 800); y += 136
-    fb = font(250, 850); T(90, y + 10, big, 250, 850, big_col); y += 320
+    n = 250                                                    # shrink the hero figure until it fits x90..990 (Oct 4: "3 numbers" was cut off)
+    while d.textlength(big, font=font(n, 850)) > 900 and n > 120: n -= 10
+    T(90, y + 10 + (250 - n) * 0.6, big, n, 850, big_col); y += 320
     d.line((90, y + 20, 990, y + 20), fill=ACC, width=6)
     T(90, y + 70, sub1, 60, 650); T(90, y + 145, sub2, 60, 650, MUT)
     T(90, 1700, DATE, 40, 650, MUT)

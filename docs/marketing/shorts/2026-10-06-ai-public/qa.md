@@ -2,10 +2,10 @@
 
 | Short | Length | Picture changes | Loudness | True peak | Upload file | ASR word match | check-explainer.py (30-50s) |
 |---|---|---|---|---|---|---:|---|
-| 01-nvidia-1000 | 43.5s | 17 (2.6 s each) | -14.19 LUFS | -2.06 dBTP | 2.58 MB | 0.842 | True |
-| 02-sp500-ai | 45.5s | 17 (2.7 s each) | -14.13 LUFS | -2.03 dBTP | 2.94 MB | 0.878 | True |
-| 03-micron-profit | 47.75s | 19 (2.5 s each) | -14.14 LUFS | -2.09 dBTP | 2.79 MB | 0.893 | True |
-| 04-ai-bubble | 48.5s | 18 (2.7 s each) | -14.18 LUFS | -1.97 dBTP | 2.84 MB | 0.929 | True |
+| 01-nvidia-1000 | 44.25s | 17 (2.6 s each) | -14.16 LUFS | -2.05 dBTP | 2.66 MB | 0.858 | True |
+| 02-sp500-ai | 44.25s | 19 (2.3 s each) | -14.07 LUFS | -1.99 dBTP | 2.79 MB | 0.875 | True |
+| 03-micron-profit | 48.25s | 19 (2.5 s each) | -14.15 LUFS | -2.04 dBTP | 2.81 MB | 0.895 | True |
+| 04-ai-bubble | 47.5s | 18 (2.6 s each) | -14.11 LUFS | -1.99 dBTP | 2.83 MB | 0.929 | True |
 | 05-chatgpt-stock | 49.0s | 17 (2.9 s each) | -14.08 LUFS | -1.98 dBTP | 2.79 MB | 0.81 | True |
 
 All 1080x1920, 60 fps, H.264/AAC; master = upload file; picture frames = duration x 60 for every Short (a renderer gap bug was found and fixed this round, see below). Captions <= 2 lines, a figure never split from its unit; content above the caption band.
@@ -21,3 +21,5 @@ All 1080x1920, 60 fps, H.264/AAC; master = upload file; picture frames = duratio
 **Stillness:** --still-window inside one long scene per Short: mean pixel delta 0.10-0.15 (no motion).
 **Not certified:** subjective listening; audience results. No upload performed.
 **Timing:** the 20-minute per-clip target was not met end to end (research, a fresh simulator recording, two revision rounds).
+
+**v2 (owner, Oct 4: "make the conclusion a bit more positive ... S&P 500 feels like talking about risks only"):** endings now land on the constructive, still-factual side: Nvidia "size it so you can hold through the drops: that's how investors keep their winners"; S&P "the upside: you already own the AI boom" + "know your number, ride the AI boom on your terms"; Micron risk first, then "if margins hold as new factories open, this AI boom has legs"; bubble ends on the evidence so far (Google Cloud profit 3.1x = boom signal); ChatGPT unchanged. "Big Tech plans to spend" (not "on AI": capex is not all AI). Thumbnail hero figures now auto-fit (bubble's "3 numbers" was cut off). Final-mix ASR heard "Assetly" as "we" once in the S&P Short; the isolated take is correct (music masking, not a bad take).

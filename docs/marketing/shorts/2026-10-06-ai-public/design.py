@@ -9,6 +9,32 @@ spec = importlib.util.spec_from_file_location('kit', R.parent / '2026-10-05-ai-m
 Scene, font, BG, INK, ACC, BAR, PANEL, LINE, MUT, LOSS, GOOD = K.Scene, K.font, K.BG, K.INK, K.ACC, K.BAR, K.PANEL, K.LINE, K.MUT, K.LOSS, K.GOOD
 
 
+def verdict2(S, seq, good, bad, show_good, show_bad, path, src=None, good_head='WORKING IF', bad_head='WARNING SIGN'):
+    s = Scene(S, seq); s.label(330, 'THE BOTTOM LINE')
+    for k, (head, lines, col, on) in enumerate(((good_head, good, GOOD, show_good), (bad_head, bad, LOSS, show_bad))):
+        y = 420 + k * 430; s.d.rounded_rectangle((80, y, 1000, y + 390), 30, fill=PANEL if on else BG, outline=col if on else LINE, width=5)
+        if not on: continue
+        s.d.ellipse((120, y + 48, 156, y + 84), fill=col); s.t(180, y + 36, head, 46, 800, col)
+        for j, ln in enumerate(lines): s.t(120, y + 130 + j * 82, ln, 62, 800)
+    if src: s.src(src)
+    s.save(path)
+
+
+def card(S, seq, label, head, lines, path, col=GOOD, sub=None, src=None):
+    s = Scene(S, seq); s.label(330, label)
+    s.d.rounded_rectangle((80, 430, 1000, 1080), 34, fill=PANEL, outline=col, width=6); s.d.ellipse((130, 490, 170, 530), fill=col); s.t(195, 476, head, 50, 800, col)
+    for j, ln in enumerate(lines): s.t(130, 600 + j * 110, ln, 84, 850)
+    if sub:                                                   # wrap the subline inside the card (x130..960)
+        words, ln, out = sub.split(), '', []
+        for w in words:
+            c = (ln + ' ' + w).strip()
+            if s.d.textlength(c, font=font(46, 650)) > 820: out.append(ln); ln = w
+            else: ln = c
+        for j, l2 in enumerate(out + [ln]): s.t(130, 600 + len(lines) * 110 + 30 + j * 60, l2, 46, 650, MUT)
+    if src: s.src(src)
+    s.save(path)
+
+
 def big(s, y, txt, n=250, col=ACC):
     s.t(80, y, txt, n, 850, col)
 
@@ -77,8 +103,9 @@ def nvidia(o):
     s = Scene(S, '08/09'); s.label(330, 'THE QUESTION'); s.d.rounded_rectangle((80, 470, 1000, 1080), 34, fill=PANEL, outline=ACC, width=5)
     for k, ln in enumerate(['Could I watch', 'this fall by', 'two thirds,', 'and still hold?']): s.t(130, 520 + k * 130, ln, 100, 850, ACC if k == 3 else INK)
     s.save(o / '07.png')
-    g = ['Yes: you can ride', 'the volatility']; b = ['No: the position', 'size is the problem']; src = 'A risk check, not advice · past returns do not predict future returns'
-    K.verdict(S, '09/09', g, b, False, o / '08_at0.png'); K.verdict(S, '09/09', g, b, True, o / '08_at5.png', src); K.verdict(S, '09/09', g, b, True, o / '08.png', src)
+    src = 'A risk check, not advice · past returns do not predict future returns'
+    stmt(S, '09/09', ['The good', 'news'], o / '08_at0.png', 'THE WINNING MOVE', [INK, GOOD])
+    for f in ('08_at3.png', '08.png'): card(S, '09/09', 'THE WINNING MOVE', 'SIZE IT SO YOU CAN HOLD', ['Through the drops,', 'not just the rally'], o / f, sub="That's how investors keep their winners", src=src)
     K.thumb(o / 'thumbnail.png', ['$1,000 in', 'Nvidia →'], '$11,279', ACC, 'But first it fell to $541.', 'Could you hold?', 'NVIDIA · 5 YEARS')
 
 
@@ -111,22 +138,23 @@ def sp500(o, ask):
     s.save(o / '03.png')
     s = Scene(S, '05/09'); s.label(330, 'ONE COMPANY'); s.t(80, 400, 'Nvidia alone', 84, 800); big(s, 480, '≈ 8%', 220); waffle(s, 0, y=800, n2=8, step=50)
     s.save(o / '04.png')
-    stmt(S, '06/09', ['A bad week', 'for AI...'], o / '05_at0.png', 'SO', [INK, INK])
-    stmt(S, '06/09', ['A bad week', 'for AI hits', 'your index', 'fund too'], o / '05_at8.png', 'SO', [INK, INK, ACC, ACC])
-    stmt(S, '06/09', ['A bad week', 'for AI hits', 'your index', 'fund too'], o / '05.png', 'SO', [INK, INK, ACC, ACC])
+    stmt(S, '06/09', ['The upside'], o / '05_at0.png', 'GOOD NEWS', [GOOD])
+    stmt(S, '06/09', ['You already', 'own the', 'AI boom'], o / '05_at2.png', 'THE UPSIDE', [INK, INK, GOOD])
+    for f in ('05_at8.png', '05.png'): stmt(S, '06/09', ['You already', 'own the', 'AI boom', 'no stock picking'], o / f, 'THE UPSIDE', [INK, INK, GOOD, MUT])
     rows = [('Look up your fund\'s top 10', 'free on the fund\'s website'), ('Add your own AI stocks', 'that total is your real AI bet')]
-    K.watch(S, '07/09', ['A two-minute', 'check'], rows, 0, o / '06_at0.png', 'DO THIS TODAY'); K.watch(S, '07/09', ['A two-minute', 'check'], rows, 1, o / '06_at4.png', 'DO THIS TODAY')
-    K.watch(S, '07/09', ['A two-minute', 'check'], rows, 1, o / '06.png', 'DO THIS TODAY')
-    K.watch(S, '08/09', ['A two-minute', 'check'], rows, 2, o / '07.png', 'DO THIS TODAY')
-    for at, quote in ((0, False), (10, True)):
-        s = Scene(S, '09/09'); s.label(330, 'ASKED IN ASSETLY'); s.d.rounded_rectangle((80, 400, 1000, 560), 26, fill=BAR)
+    rows = [("Look up your fund's top 10", "free on the fund's website"), ('Add your own AI stocks', 'that total is your AI number')]
+    K.watch(S, '07/09', ['Know your', 'AI number'], rows, 0, o / '06_at0.png', 'DO THIS TODAY'); K.watch(S, '07/09', ['Know your', 'AI number'], rows, 1, o / '06_at4.png', 'DO THIS TODAY')
+    K.watch(S, '07/09', ['Know your', 'AI number'], rows, 2, o / '06_at12.png', 'DO THIS TODAY'); K.watch(S, '07/09', ['Know your', 'AI number'], rows, 2, o / '06.png', 'DO THIS TODAY')
+    for at, quote in ((0, False), (11, True)):
+        s = Scene(S, '08/09'); s.label(330, 'ASKED IN ASSETLY'); s.d.rounded_rectangle((80, 400, 1000, 560), 26, fill=BAR)
         s.t(120, 450, ask['question'], 50, 800)
         if quote:
             s.t(80, 640, '“Heavy concentration in', 66, 800); s.t(80, 726, 'AI-related chips', 66, 800, ACC); s.t(80, 812, '(NVDA, AMD, ARM, TSM)', 52, 700, MUT)
             s.t(80, 900, 'makes portfolio sensitive', 66, 800); s.t(80, 986, 'to AI spending cycles.”', 66, 800)
-        else: s.t(80, 660, 'An AI-heavy portfolio', 66, 800, MUT); s.t(80, 746, 'asks one question', 66, 800, MUT)
-        s.src('Actual Assetly answer, Oct 4, 2026 · illustrative portfolio · verbatim'); s.save(o / f'08_at{at}.png')
-    s.save(o / '08.png')
+        else: s.t(80, 660, 'Assetly spots it', 66, 800, MUT); s.t(80, 746, 'for you', 66, 800, MUT)
+        s.src('Actual Assetly answer, Oct 4, 2026 · illustrative portfolio · verbatim'); s.save(o / f'07_at{at}.png')
+    s.save(o / '07.png')
+    card(S, '09/09', 'THE BOTTOM LINE', 'KNOW YOUR NUMBER', ['Ride the AI boom', 'on your terms'], o / '08.png', src='Not financial advice · weights: SPY Oct 1, 2026')
     K.thumb(o / 'thumbnail.png', ['Your S&P 500', 'fund is'], '32% AI', ACC, '8 AI companies,', 'a third of your money.', 'INDEX FUNDS · AI')
 
 
@@ -151,9 +179,9 @@ def micron(o):
     rows = [('Next quarter: $61.5B', "Micron's own forecast, ±$1.5B"), ('Gross margin: 86.8%', 'does it start to slip?')]
     for lit, at in ((1, 4), (2, 10)): K.watch(S, '07/08', ['Watch two', 'things'], rows, lit, o / f'06_at{at}.png', 'MICRON')
     K.watch(S, '07/08', ['Watch two', 'things'], rows, 0, o / '06_at0.png', 'MICRON'); K.watch(S, '07/08', ['Watch two', 'things'], rows, 2, o / '06.png', 'MICRON')
-    K.verdict(S, '08/08', ['Margins hold as', 'new factories open'], ['Memory prices crack,', 'profits shrink fast'], False, o / '07_at0.png')
-    K.verdict(S, '08/08', ['Margins hold as', 'new factories open'], ['Memory prices crack,', 'profits shrink fast'], True, o / '07_at11.png', 'Investment test, not a forecast')
-    K.verdict(S, '08/08', ['Margins hold as', 'new factories open'], ['Memory prices crack,', 'profits shrink fast'], True, o / '07.png', 'Investment test, not a forecast')
+    g = ['Margins hold as new', 'factories open: legs']; b = ['Memory prices crack,', 'profits shrink']
+    verdict2(S, '08/08', g, b, False, True, o / '07_at0.png', bad_head='THE RISK')
+    for f in ('07_at7.png', '07.png'): verdict2(S, '08/08', g, b, True, True, o / f, 'Investment test, not a forecast', good_head='THE BOOM HAS LEGS IF', bad_head='THE RISK')
     K.thumb(o / 'thumbnail.png', ['Micron made', 'in 3 months'], '$37.7B', GOOD, 'More than it sold', 'all last year.', 'MICRON · AI MEMORY')
 
 
@@ -163,7 +191,8 @@ def bubble(o):
     s = Scene(S, '01/08'); s.label(330, 'THE QUESTION EVERYONE ASKS'); s.t(80, 430, 'Is AI a', 150, 850); s.t(80, 610, 'bubble?', 150, 850, LOSS)
     for k, n in enumerate(['$725B', '$60B', '−$5.9B']): s.d.rounded_rectangle((80 + k * 312, 900, 370 + k * 312, 1060), 24, fill=PANEL); s.t(110 + k * 312, 945, n, 58, 850, [ACC, GOOD, LOSS][k])
     s.save(o / '00.png')
-    for at, lit in ((0, 0), (5, 1), (6, 2), (7, 3), (9, 4)):
+    s = Scene(S, '02/08'); s.label(330, 'NUMBER 1 · 2026 SPENDING PLANS'); big(s, 520, '#1', 300, MUT); s.save(o / '01_at0.png')
+    for at, lit in ((2, 0), (5, 4)):
         s = Scene(S, '02/08'); s.label(330, 'NUMBER 1 · 2026 SPENDING PLANS'); big(s, 420, '$725B', 250)
         for k, nm in enumerate(['Amazon', 'Microsoft', 'Google', 'Meta']):
             x = 80 + (k % 2) * 470; y = 760 + (k // 2) * 140; on = k < lit; s.d.rounded_rectangle((x, y, x + 450, y + 115), 22, fill=BAR if on else PANEL)
@@ -172,10 +201,14 @@ def bubble(o):
     s.save(o / '01.png')
     s = Scene(S, '03/08'); s.label(330, 'BIG TECH CAPITAL SPENDING · BILLIONS'); s.t(80, 390, 'Up 77%', 78, 800); s.t(80, 480, 'in one year', 78, 750, ACC)
     s.bars([('2025', 410), ('2026 plan', 725, '#7C8FE8')], top=640); s.src('FT compilation: $410B (2025) → $725B (2026 plans)'); s.save(o / '02.png')
-    s = Scene(S, '04/08'); s.label(330, "NUMBER 2 · NVIDIA'S QUARTERLY PROFIT"); big(s, 430, '$60B', 280, GOOD); s.t(80, 790, 'in three months', 90, 800)
-    s.src('GAAP net income $59.7B, quarter ended Jul 26, 2026 (Nvidia 8-K)'); s.save(o / '03.png')
-    s = Scene(S, '05/08'); s.label(330, "NUMBER 3 · GOOGLE'S FREE CASH FLOW, Q2"); big(s, 430, '−$5.9B', 250, LOSS); s.t(80, 760, 'after all that', 90, 800); s.t(80, 870, 'spending', 90, 800, MUT)
-    s.src('Alphabet Q2 2026 release: $39.1B cash in − $44.9B capex'); s.save(o / '04.png')
+    s = Scene(S, '04/08'); s.label(330, "NUMBER 2 · NVIDIA'S QUARTERLY PROFIT"); big(s, 520, '#2', 300, MUT); s.save(o / '03_at0.png')
+    for f in ('03_at2.png', '03.png'):
+        s = Scene(S, '04/08'); s.label(330, "NUMBER 2 · NVIDIA'S QUARTERLY PROFIT"); big(s, 430, '$60B', 280, GOOD); s.t(80, 790, 'in three months', 90, 800)
+        s.src('GAAP net income $59.7B, quarter ended Jul 26, 2026 (Nvidia 8-K)'); s.save(o / f)
+    s = Scene(S, '05/08'); s.label(330, "NUMBER 3 · GOOGLE'S FREE CASH FLOW, Q2"); big(s, 520, '#3', 300, MUT); s.save(o / '04_at0.png')
+    for f in ('04_at2.png', '04.png'):
+        s = Scene(S, '05/08'); s.label(330, "NUMBER 3 · GOOGLE'S FREE CASH FLOW, Q2"); big(s, 430, '−$5.9B', 250, LOSS); s.t(80, 760, 'after all that', 90, 800); s.t(80, 870, 'spending', 90, 800, MUT)
+        s.src('Alphabet Q2 2026 release: $39.1B cash in − $44.9B capex'); s.save(o / f)
     s = Scene(S, '06/08'); s.label(330, 'SO FAR')
     for k, (head, sub, col) in enumerate((('Sellers', 'cashing in', GOOD), ('Buyers', 'waiting for payback', LOSS))):
         y = 430 + k * 360; s.d.rounded_rectangle((80, y, 1000, y + 320), 30, fill=PANEL, outline=col, width=5); s.t(130, y + 50, head, 100, 850, col); s.t(130, y + 190, sub, 64, 750)
@@ -183,9 +216,10 @@ def bubble(o):
     rows = [('Cloud profit', 'Amazon, Microsoft, Google'), ('vs spending', 'next year\'s capex plans')]
     K.watch(S, '07/08', ['On the next', 'earnings calls'], rows, 0, o / '06_at0.png', 'BUBBLE CHECK'); K.watch(S, '07/08', ['On the next', 'earnings calls'], rows, 2, o / '06_at9.png', 'BUBBLE CHECK')
     K.watch(S, '07/08', ['On the next', 'earnings calls'], rows, 2, o / '06.png', 'BUBBLE CHECK')
-    g = ['Cloud profit grows', 'faster than spending']; b = ['Spending rises while', 'profits stall']
-    K.verdict(S, '08/08', g, b, False, o / '07_at0.png'); K.verdict(S, '08/08', g, b, True, o / '07_at10.png', 'A boom if the first, a bubble if the second · not a forecast')
-    K.verdict(S, '08/08', g, b, True, o / '07.png', 'A boom if the first, a bubble if the second · not a forecast')
+    verdict2(S, '08/08', ['—'], ['Spending rises while', 'profits stall'], False, True, o / '07_at0.png', bad_head='BUBBLE SIGN')
+    for f in ('07_at9.png', '07.png'):
+        verdict2(S, '08/08', ['Google Cloud profit', '3.1x in a year'], ['Spending rises while', 'profits stall'], True, True, o / f,
+                 'Google Cloud operating income $2.8B → $8.8B, Q2 2025 → Q2 2026 · not a forecast', good_head='SO FAR: BOOM SIGNAL', bad_head='BUBBLE SIGN')
     K.thumb(o / 'thumbnail.png', ['Is AI a', 'bubble?'], '3 numbers', ACC, '$725B. $60B. −$5.9B.', 'Here is what they say.', 'AI BUBBLE CHECK')
 
 
