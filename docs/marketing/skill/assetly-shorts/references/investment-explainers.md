@@ -43,6 +43,31 @@ Reference implementation (Oct 4): `docs/marketing/shorts/2026-10-05-ai-money/`.
 - Voice: `voice-lines.py` needs the ElevenLabs key as `elk` (chmod 600) in its work dir: `from lib import vault; vault(dir, 'eleven_api_key')`, then `install -m 600`. Without it, voice-lines falls back to OpenRouter gpt-audio (which may have no credit).
 - The stillness check (`--still-window`) can read ~0.3–0.4 across an encoder keyframe on text-heavy scenes; pick a window inside one GOP and confirm no pixel differs by more than ~40 before calling it motion.
 
+## Topic selection for reach: start from channel data (owner goal, Oct 4)
+
+Before brainstorming, read the channel itself (YouTube Studio > Analytics > Content, signed-in Chrome): traffic sources, stayed-to-watch vs swiped-away, top Shorts. On Oct 4 the 28-day picture was **45% of Shorts views from YouTube search, 43% Shorts feed; 36% stayed to watch.** The best Shorts were name-led ("Amazon.com plans $8B Nvidia chip move", "AI memory demand drives SK hynix") and the slide-paced explainers drew 1-63 views. Rules that follow:
+
+- **Title = what people type:** a famous name or ticker plus a plain question or claim ("Nvidia stock: what $1,000 became in 5 years", "Your S&P 500 fund is secretly an AI bet", "Is AI a bubble? 3 numbers decide it", "You can't buy ChatGPT stock. Here's the closest thing."). Put searched names in tags and the description's first line.
+- **Formats that travel with a general audience** (each still needs primary data and a resolving ending): "$1,000 in X N years ago" with the drawdown you had to sit through; "your index fund is really an AI bet" from the fund's holdings file; "made more profit in 3 months than it sold all last year"; "3 numbers decide it"; "you can't buy X stock: the closest public route, and how small it is".
+- Brainstorm 6-8, keep the 5 with the clearest primary numbers, drop overlap with recent uploads (the Assetly risk idea was folded into the S&P Short because "9 stocks, 1 bet" already covered it).
+- **Pace target: at most ~2.9 s per picture change** (segments / duration from timeline.json). Add word-synced `_at<k>` reveals until every Short meets it.
+
+### Data sources that worked (Oct 4)
+
+- Price paths: Nasdaq `api.nasdaq.com/api/quote/<T>/historical?assetclass=stocks&fromdate=YYYY-MM-DD&todate=YYYY-MM-DD&limit=9999` (a short window returns nothing for old dates) and Yahoo `v8/finance/chart` (split-adjusted closes). Both must agree on every voiced point.
+- Fund weights: State Street SPY holdings `https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-spy.xlsx` (follow the redirect) plus Slickcharts read in the browser. iShares blocks scripted downloads.
+- Market caps: Nasdaq `quote/<T>/summary` (MarketCap) with the Yahoo close as the second feed.
+- Company figures: SEC 8-K exhibit 99.1 / 10-Q, fetched directly; prefer business-unit lines over press headlines (Micron's "data center 11x" = Core Data Center BU $1.58B to $18.0B).
+- Private companies (OpenAI, SpaceX pre-IPO): state the valuation as a funding-round price and stakes as of their dated disclosure, with "diluted since" / "at most" bounds.
+
+### Production lessons (Oct 4)
+
+- **ElevenLabs allows 5 concurrent requests.** Voice one episode at a time (voice-lines.py already parallelizes its own lines); five episodes at once failed with 429 and fell through to an unfunded OpenRouter backup.
+- **Ask on camera:** a long answer can render after the display recording stops (the take ended on "Still thinking", then the home screen). The UI test's `ask.json` is still the real app text; quote it verbatim with "Actual Assetly answer, <date>, illustrative portfolio", keep the thinking frame as evidence, and retake only if the Short needs the screenshot itself. `record.py <edition> <work>` needs `account.json` + `research.json` (copy from a recent run of the same account) and `ask-question.json` `{"q": "..."}`.
+- **Renderer:** a line whose first word-synced state is not `_at0` used to leave a picture gap; fixed (the first state covers the line start). Always check `sum(frames) == duration x 60` and video vs audio stream durations after a render.
+- **Mishearing:** check the hook line's isolated transcript; "Three numbers decide it" read as "decided" and was rewritten.
+- Reference implementation: `docs/marketing/shorts/2026-10-06-ai-public/design.py` (imports the kit from `2026-10-05-ai-money/design.py`; adds `value_chart()` for a labelled log-scale $1,000 path with peak/trough markers and `waffle()` for a 10x10 share-of-fund grid).
+
 ## Finished visual standard
 
 Use **dark backgrounds throughout**, large type and stationary content. The approved reference palette is background `#101216`, off-white `#F4F5FA`, light indigo `#A4B3FF`, chart indigo `#5267C4`, panel `#22314B` and divider `#34415A`. Use Schibsted Grotesk, a modest Assetly signature and consistent scene numbering.
