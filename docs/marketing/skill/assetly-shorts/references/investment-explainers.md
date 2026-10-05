@@ -45,6 +45,35 @@ Reference implementation (Oct 4): `docs/marketing/shorts/2026-10-05-ai-money/`.
 - Voice: `voice-lines.py` needs the ElevenLabs key as `elk` (chmod 600) in its work dir: `from lib import vault; vault(dir, 'eleven_api_key')`, then `install -m 600`. Without it, voice-lines falls back to OpenRouter gpt-audio (which may have no credit).
 - The stillness check (`--still-window`) can read ~0.3–0.4 across an encoder keyframe on text-heavy scenes; pick a window inside one GOP and confirm no pixel differs by more than ~40 before calling it motion.
 
+## The approved model: "AI investing for everyone" (owner, Oct 4: "I love the five you created")
+
+`docs/marketing/shorts/2026-10-06-ai-public/` is the gold standard for explainers. Copy its recipe, not its facts:
+
+| Short | Title (search-led) | Frame-0 hook | Ending (risk first, upside last) |
+|---|---|---|---|
+| 01 | Nvidia stock: what $1,000 became in 5 years | $1,000 → $11,279 | could you hold through −66%? size it so you can: that's how investors keep winners |
+| 02 | Your S&P 500 fund is secretly an AI bet | S&P 500 fund = AI bet? | you already own the AI boom; know your number (two-minute check + real Assetly answer); ride it on your terms |
+| 03 | Micron made more profit in 3 months than it sold all last year | $37.7B profit in 3 months | watch the $61.5B guide + 86.8% margin; if margins hold as factories open, the boom has legs |
+| 04 | Is AI a bubble? 3 numbers decide it | Is AI a bubble? $725B · $60B · −$5.9B | cloud profit vs spending; so far, a boom signal |
+| 05 | You can't buy ChatGPT stock. Here's the closest thing. | ChatGPT stock? You can't buy it. | watch an IPO filing; judge Microsoft on Microsoft; ChatGPT a bonus, not the bet |
+
+**The recipe (every item mattered):**
+1. A general-investor question a beginner would search, about a famous name; one surprising, verified number answers it on frame 0.
+2. **8–9 narration lines, ~100–110 words, 44–49 s**; each line ≤ ~20 words, one fact per line, numbers spoken in plain words.
+3. Story arc: hook figure → 2–4 verified facts, each with one visual (value path, waffle, bars, a single giant figure) → the twist or insight that reframes it ("6¢ of each Microsoft dollar", "you had to sit through −66%") → a pivot line ("So here's what to watch." / "Here's a two-minute check.") → what to watch or do → **constructive close**.
+4. **17–19 picture changes (~2.3–2.9 s each)**: word-synced `_at<k>` reveals on names, figures and "#1 / #2 / #3", 0.15 s bar reveals, no camera motion.
+5. Every figure from a filing, a fund holdings file or two agreeing price feeds; calculations and inferences labelled on screen ("price only", "at most", "not a forecast", "our classification").
+6. Assetly appears where it genuinely helps the viewer's action (the S&P check), quoting a real recorded answer verbatim.
+7. Dark kit, header "AI investing for everyone · <topic>", search-led title, description that restates the facts and the ending, dated thumbnail with an auto-fitting hero figure.
+8. Owner review before upload; then schedule one per slot (see "Scheduling" below).
+
+## Scheduling explainers (Oct 4-5 practice)
+
+- Upload PRIVATE with `--publish-at` (upload.py), one Short per slot, never two in the same slot; confirm "Scheduled" in YouTube Studio and fix any description issue there (the upload token cannot edit metadata).
+- Default slots (America/Chicago): **7:00 AM** (before the open), **12:00 PM** (lunch), **6:00 PM** (after work). Keep clear of the daily market Shorts (~8:00, 9:20, 3:20 CT) and of other explainers already scheduled that day; at most three explainers a day so each gets its own early window.
+- Lead with the broadest, most searchable title; put a time-sensitive news item (an earnings result) earliest; evergreen items can wait a day.
+- These are reasoned defaults, not measured optima: the channel lacks "when your viewers are on YouTube" data, and YouTube says publish time is not known to affect long-term performance. Revisit once Studio shows the audience heatmap.
+
 ## Topic selection for reach: start from channel data (owner goal, Oct 4)
 
 Before brainstorming, read the channel itself (YouTube Studio > Analytics > Content, signed-in Chrome): traffic sources, stayed-to-watch vs swiped-away, top Shorts. On Oct 4 the 28-day picture was **45% of Shorts views from YouTube search, 43% Shorts feed; 36% stayed to watch.** The best Shorts were name-led ("Amazon.com plans $8B Nvidia chip move", "AI memory demand drives SK hynix") and the slide-paced explainers drew 1-63 views. Rules that follow:

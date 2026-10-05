@@ -11,4 +11,14 @@
 Every Short ends with what to watch or a check to do, then "Assetly. Invest smarter."
 Preview: ../2026-10-03-weekend-series/v4/preview.html (top section). Research: sources.md. Verification: qa.md.
 Rebuild: python3 design.py; voice via web/ios/App/marketing/shorts/voice-lines.py <slug>/day.json /tmp/ai-money/<slug> (elk key; one episode at a time: ElevenLabs allows 5 concurrent requests); python3 render.py <slug>.
-Not uploaded.
+Uploaded and scheduled (see below).
+
+## YouTube (uploaded Oct 4 after owner review; private, scheduled; all five confirmed "Scheduled" in Studio)
+| Short | Video | Publishes (CT) |
+|---|---|---|
+| Nvidia $1,000 | https://youtube.com/shorts/gZ3AWNPxfO0 | Tue Oct 6, 7:00 AM |
+| Micron profit | https://youtube.com/shorts/-UhLI_-UrRc | Tue Oct 6, 12:00 PM |
+| S&P 500 = AI bet | https://youtube.com/shorts/l93POxTR_wU | Tue Oct 6, 6:00 PM |
+| Is AI a bubble? | https://youtube.com/shorts/PjqqGdcdSE8 | Wed Oct 7, 7:00 AM |
+| ChatGPT stock | https://youtube.com/shorts/JNAF0btidSk | Wed Oct 7, 6:00 PM |
+Custom thumbnails set by upload.py. Manifest: upload-queue.json.
