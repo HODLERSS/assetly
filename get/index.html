@@ -1,20 +1,32 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>Assetly</title>
-<!-- Flyer / QR smart link (owner 10/2). iPhone/iPad -> App Store with campaign token ct=flyer-<c> (App Store Connect
-     counts flyer page views and downloads); Android and everything else -> the web app. ?c=<place> names the flyer. -->
+<!-- Tagged smart link (owner 10/2-10/3): ?c=<place> on a flyer -> tag flyer-<place>; ?c=youtube|tiktok|instagram|x -> that
+     tag. iPhone/iPad -> App Store with ct=<tag> (App Store Connect campaigns); everything else -> the web app with
+     ?ref=<tag> (saved on the profile at sign-up). Each open is counted once in campaign_hits: tag, platform bucket,
+     destination and the referrer's host only (no IP, no identity). The count never delays the redirect. -->
 <script>
 (function () {
   var q = new URLSearchParams(location.search);
-  var c = (q.get("c") || "cafe").replace(/[^a-z0-9-]/gi, "").slice(0, 20) || "cafe";
+  var c = (q.get("c") || "cafe").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24) || "cafe";
+  var tag = /^(youtube|tiktok|instagram|x|threads|reddit)$/.test(c) || c.indexOf("flyer-") === 0 ? c : "flyer-" + c;
   var ua = navigator.userAgent || "";
   var ios = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-  location.replace(ios ? "https://apps.apple.com/app/apple-store/id6811739789?pt=129454012&ct=flyer-" + c + "&mt=8"
-                       : "../?ref=flyer-" + c);
+  var platform = ios ? "ios" : /Android/i.test(ua) ? "android" : "other";
+  var to = ios ? "https://apps.apple.com/app/apple-store/id6811739789?pt=129454012&ct=" + tag + "&mt=8" : "../?ref=" + tag;
+  var refHost = ""; try { refHost = document.referrer ? new URL(document.referrer).hostname : ""; } catch (e) {}
+  try {
+    fetch("https://hhdpthrfmsdmxdrfckxq.supabase.co/rest/v1/rpc/log_campaign_hit", {
+      method: "POST", keepalive: true,
+      headers: { "Content-Type": "application/json", apikey: "sb_publishable_MKb_6rBvHA6JJ4UYxhg9Cw_BIrKkICE" },
+      body: JSON.stringify({ p_campaign: tag, p_platform: platform, p_dest: ios ? "app_store" : "web_app", p_referrer_host: refHost || null })
+    }).catch(function () {});
+  } catch (e) {}
+  setTimeout(function () { location.replace(to); }, 150);
 })();
 </script>
 <style>body{font:16px/1.5 -apple-system,system-ui,sans-serif;padding:24px;color:#16181D}a{color:#2A3F92}</style>
 </head><body>
 <p>Opening Assetly…</p>
-<p><a href="https://apps.apple.com/app/apple-store/id6811739789?pt=129454012&amp;ct=flyer-cafe&amp;mt=8">iPhone: App Store</a> · <a href="../">Android and others: open in your browser</a></p>
+<p><a href="https://apps.apple.com/app/apple-store/id6811739789?pt=129454012&amp;ct=flyer-cafe&amp;mt=8">iPhone: App Store</a> · <a href="../?ref=flyer-cafe">Android and others: open in your browser</a></p>
 </body></html>
